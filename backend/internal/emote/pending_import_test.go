@@ -46,17 +46,88 @@ func TestBootstrapDetectsPreExistingHandEdit(t *testing.T) {
 		t.Fatalf("unexpected pending field diff: %+v", f)
 	}
 
-	// Not yet imported: GetSpellEmote must not claim it's tracked/customized...
+	// Even before it's formally imported, GetSpellEmote must flag it as
+	// customized — a user looking at this spell's emotes (e.g. on the Spells
+	// page detail pane) needs to see "this differs from default" and get a
+	// revert option regardless of whether the app has gotten around to
+	// tracking it as an official override row yet. "Customized" reflects
+	// Default vs Current, not the store's bookkeeping.
 	se, err := svc.GetSpellEmote(1588)
 	if err != nil {
 		t.Fatalf("GetSpellEmote: %v", err)
 	}
-	if se.Customized {
-		t.Fatal("a pending (not-yet-imported) hand-edit must not show as a tracked customization")
+	if !se.Customized {
+		t.Fatal("a pending (not-yet-imported) hand-edit must still show as customized")
 	}
-	// ...but the hand-edited text itself must still be exactly what the user had.
+	if len(se.OverriddenFields) != 1 || se.OverriddenFields[0] != "cast_on_other" {
+		t.Fatalf("unexpected overridden fields: %+v", se.OverriddenFields)
+	}
 	if se.Current.CastOnOther != " yawns. (Turgur's Insects)" {
 		t.Fatalf("hand-edited text lost before import: %q", se.Current.CastOnOther)
+	}
+}
+
+// TestRevertOverrideClearsPendingImportEvenWithoutTrackedRow is the direct
+// regression for the bug report: a spell whose emote was altered but never
+// formally imported (still just a pending-import entry, no row in
+// emote_overrides) must actually reset when the user clicks "Revert to
+// default" — not silently no-op because DeleteOverride had nothing to
+// delete while the pending-import protection kept the altered text alive.
+func TestRevertOverrideClearsPendingImportEvenWithoutTrackedRow(t *testing.T) {
+	svc := newTestService(t)
+
+	livePath, _ := svc.livePath()
+	original, err := os.ReadFile(livePath)
+	if err != nil {
+		t.Fatalf("read fixture copy: %v", err)
+	}
+	handEdited := applyOverrides(string(original), map[int]OverrideRow{
+		207: {SpellID: 207, CastOnYou: strPtr("The gods have rendered you invulnerable (blessed).")},
+	})
+	if err := os.WriteFile(livePath, []byte(handEdited), 0o644); err != nil {
+		t.Fatalf("write hand-edited file: %v", err)
+	}
+	if err := svc.EnsureDefaultBackup(); err != nil {
+		t.Fatalf("EnsureDefaultBackup: %v", err)
+	}
+
+	// Confirm it's customized-but-untracked before reverting.
+	before, err := svc.GetSpellEmote(207)
+	if err != nil {
+		t.Fatalf("GetSpellEmote: %v", err)
+	}
+	if !before.Customized {
+		t.Fatal("expected spell to read as customized before revert")
+	}
+	if ov, err := svc.store.GetOverride(207); err != nil {
+		t.Fatalf("GetOverride: %v", err)
+	} else if ov != nil {
+		t.Fatal("expected no tracked override row yet (still just a pending import)")
+	}
+
+	if err := svc.RevertOverride(207); err != nil {
+		t.Fatalf("RevertOverride: %v", err)
+	}
+
+	after, err := svc.GetSpellEmote(207)
+	if err != nil {
+		t.Fatalf("GetSpellEmote after revert: %v", err)
+	}
+	if after.Customized {
+		t.Fatalf("expected spell to no longer be customized after revert, got %+v", after)
+	}
+	if after.Current.CastOnYou != "The gods have rendered you invulnerable." {
+		t.Fatalf("expected revert to restore canonical text, got %q", after.Current.CastOnYou)
+	}
+
+	pending, err := svc.PendingImports()
+	if err != nil {
+		t.Fatalf("PendingImports: %v", err)
+	}
+	for _, sd := range pending {
+		if sd.SpellID == 207 {
+			t.Fatalf("expected spell 207 removed from pending imports after revert, got %+v", pending)
+		}
 	}
 }
 

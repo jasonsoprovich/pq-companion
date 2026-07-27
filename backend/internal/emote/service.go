@@ -391,11 +391,45 @@ func (s *Service) SetOverride(spellID int, patch ColumnsPatch) error {
 }
 
 // RevertOverride reverts spellID to its default emotes and rewrites the file.
+// RevertOverride reverts spellID to its default emotes and rewrites the
+// file — clearing both a tracked override row (if any) and, if the spell is
+// only sitting in the not-yet-reviewed pending-import list, removing it
+// from there too. Without the second part, a spell that was never formally
+// imported would keep its pending entry protecting the altered text as an
+// implicit override (see effectiveOverrides), and "revert" would silently
+// do nothing.
 func (s *Service) RevertOverride(spellID int) error {
 	if err := s.store.DeleteOverride(spellID); err != nil {
 		return err
 	}
+	if err := s.removePendingImport(spellID); err != nil {
+		return err
+	}
 	return s.rebuildAndWrite()
+}
+
+// removePendingImport drops spellID from the pending-import list, if present.
+func (s *Service) removePendingImport(spellID int) error {
+	pending, err := s.pendingImports()
+	if err != nil {
+		return err
+	}
+	if len(pending) == 0 {
+		return nil
+	}
+	remaining := make([]SpellDiff, 0, len(pending))
+	changed := false
+	for _, sd := range pending {
+		if sd.SpellID == spellID {
+			changed = true
+			continue
+		}
+		remaining = append(remaining, sd)
+	}
+	if !changed {
+		return nil
+	}
+	return s.setPendingImports(remaining)
 }
 
 // RestoreDefaults writes the pristine default backup back to the live file
@@ -504,9 +538,16 @@ func (s *Service) IgnoreExternalChange() error {
 }
 
 // GetSpellEmote returns spellID's default/current emote text and which
-// columns are actively overridden. Reads directly from the live file (or the
-// default backup if the live file/EQ dir isn't available) plus the default
-// backup for comparison.
+// columns currently differ from default. Reads directly from the live file
+// (or the default backup if the live file/EQ dir isn't available) plus the
+// default backup for comparison.
+//
+// "Customized"/OverriddenFields are derived from comparing Default against
+// Current column-by-column — NOT from whether a tracked override row exists.
+// A spell can differ from default without being tracked yet (a pending
+// import the user hasn't reviewed, or any other divergence), and the UI
+// must flag that and offer to reset it either way; whether the divergence
+// happens to be backed by a store row is an internal bookkeeping detail.
 func (s *Service) GetSpellEmote(spellID int) (*SpellEmote, error) {
 	defaultContent, hasDefault, err := readBackup(s.defaultBackupPath())
 	if err != nil {
@@ -532,17 +573,11 @@ func (s *Service) GetSpellEmote(spellID int) (*SpellEmote, error) {
 		defaultFields = currentFields
 	}
 
-	ov, err := s.store.GetOverride(spellID)
-	if err != nil {
-		return nil, err
-	}
+	idxs := [5]int{idxYouCast, idxOtherCasts, idxCastOnYou, idxCastOnOther, idxSpellFades}
 	var overridden []string
-	if ov != nil {
-		ptrs := ov.fieldPtrs()
-		for i, p := range ptrs {
-			if p != nil {
-				overridden = append(overridden, columnField(i))
-			}
+	for i, idx := range idxs {
+		if idx < len(defaultFields) && idx < len(currentFields) && defaultFields[idx] != currentFields[idx] {
+			overridden = append(overridden, columnField(i))
 		}
 	}
 
@@ -560,16 +595,38 @@ func columnField(i int) string {
 	return [5]string{"you_cast", "other_casts", "cast_on_you", "cast_on_other", "spell_fades"}[i]
 }
 
-// ListCustomized returns every spell with at least one stored override,
-// enriched with its current emote text.
+// ListCustomized returns every spell whose emote text currently differs
+// from default, enriched with its current emote text — both spells with a
+// tracked override row and spells only sitting in the not-yet-reviewed
+// pending-import list (the "Customized only" filter should show everything
+// actually customized, not just the subset the app happens to be tracking).
 func (s *Service) ListCustomized() ([]SpellEmote, error) {
 	rows, err := s.store.ListOverrides()
 	if err != nil {
 		return nil, err
 	}
-	out := make([]SpellEmote, 0, len(rows))
+	pending, err := s.pendingImports()
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[int]bool, len(rows)+len(pending))
+	spellIDs := make([]int, 0, len(rows)+len(pending))
 	for _, r := range rows {
-		se, err := s.GetSpellEmote(r.SpellID)
+		if !seen[r.SpellID] {
+			seen[r.SpellID] = true
+			spellIDs = append(spellIDs, r.SpellID)
+		}
+	}
+	for _, sd := range pending {
+		if !seen[sd.SpellID] {
+			seen[sd.SpellID] = true
+			spellIDs = append(spellIDs, sd.SpellID)
+		}
+	}
+
+	out := make([]SpellEmote, 0, len(spellIDs))
+	for _, id := range spellIDs {
+		se, err := s.GetSpellEmote(id)
 		if err != nil {
 			continue // spell removed from the game DB/file since being overridden
 		}
