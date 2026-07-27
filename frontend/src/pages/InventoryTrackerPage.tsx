@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Package, RefreshCw, AlertCircle, Search, X, ChevronRight, ChevronDown } from 'lucide-react'
+import { Package, RefreshCw, AlertCircle, Search, X, ChevronRight, ChevronDown, Coins, Landmark } from 'lucide-react'
 import { getAllInventories, getItem, listCharacters } from '../services/api'
 import type { AllInventoriesResponse, Inventory, InventoryEntry } from '../types/zeal'
 import type { Item } from '../types/item'
 import ItemDetailModal from '../components/ItemDetailModal'
 import CharacterSubTabs from '../components/CharacterSubTabs'
 import { ItemIcon } from '../components/Icon'
+import { priceLabel } from '../lib/itemHelpers'
 import {
   bagContainerInfo,
   bagSlotInfo,
@@ -293,6 +294,51 @@ export default function InventoryTrackerPage(): React.ReactElement {
   }, [inventories, selectedChar])
 
   const showCharBadge = selectedChar === '' && inventories.length > 1
+
+  // Currency: Zeal reports coin as "General-Coin" (on person / cursor) and
+  // "Bank-Coin" rows, with `count` already in copper (base unit). No
+  // "SharedBank-Coin" row is ever produced — the shared bank can't hold coin.
+  //
+  // The bank itself is a single account-wide pool shared by every character
+  // on the account, not a per-character balance — each character's export
+  // just reports whatever that shared total was as of their last logout. So
+  // it must never be summed across characters (that would multiply one pool
+  // by the character count); only on-person coin is legitimately additive.
+  const characterCurrency = useMemo(() => {
+    return inventories.map((inv) => {
+      let onPerson = 0
+      let bank = 0
+      for (const e of inv.entries) {
+        if (e.location === 'General-Coin') onPerson += e.count
+        else if (e.location === 'Bank-Coin') bank += e.count
+      }
+      return { character: inv.character, exportedAt: inv.exported_at, onPerson, bank }
+    })
+  }, [inventories])
+
+  const visibleCurrency = useMemo(
+    () =>
+      selectedChar === ''
+        ? characterCurrency
+        : characterCurrency.filter((c) => c.character === selectedChar),
+    [characterCurrency, selectedChar],
+  )
+
+  // The most recently exported character's bank reading stands in for the
+  // shared pool's current balance.
+  const sharedBank = useMemo(() => {
+    if (visibleCurrency.length === 0) return 0
+    return [...visibleCurrency].sort(
+      (a, b) => new Date(b.exportedAt).getTime() - new Date(a.exportedAt).getTime(),
+    )[0].bank
+  }, [visibleCurrency])
+
+  const onPersonTotal = useMemo(
+    () => visibleCurrency.reduce((sum, c) => sum + c.onPerson, 0),
+    [visibleCurrency],
+  )
+
+  const currencyGrandTotal = onPersonTotal + sharedBank
 
   const equipped = useMemo(
     () => allTagged.filter((e) => isEquipmentSlot(e.location) && !isEmptyEntry(e)),
@@ -705,6 +751,105 @@ export default function InventoryTrackerPage(): React.ReactElement {
           </div>
         ) : (
           <>
+            {/* Currency — grand total, each character's on-person coin, and a
+                single shared Bank line (the bank is one account-wide pool,
+                not per-character, so it's shown once rather than summed). */}
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <span
+                  className="text-[10px] font-semibold uppercase tracking-widest"
+                  style={{ color: 'var(--color-muted)' }}
+                >
+                  Currency
+                </span>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <div
+                  className="flex items-center gap-2 rounded px-3 py-2"
+                  style={{
+                    backgroundColor: 'var(--color-surface-3)',
+                    border: '1px solid var(--color-border)',
+                  }}
+                >
+                  <Coins size={14} style={{ color: 'var(--color-primary)' }} />
+                  <span className="text-xs font-semibold" style={{ color: 'var(--color-foreground)' }}>
+                    {selectedChar === '' ? 'All Characters' : selectedChar}
+                  </span>
+                  <span
+                    className="ml-auto shrink-0 text-xs font-semibold tabular-nums"
+                    style={{ color: 'var(--color-primary)' }}
+                  >
+                    {priceLabel(currencyGrandTotal)}
+                  </span>
+                </div>
+                {selectedChar === '' && visibleCurrency.length > 1 && (
+                  <div className="flex flex-col gap-1">
+                    {visibleCurrency.map((c) => (
+                      <div
+                        key={c.character}
+                        className="flex items-center gap-2 rounded px-3 py-1.5 text-xs"
+                        style={{
+                          backgroundColor: 'var(--color-surface-2)',
+                          border: '1px solid var(--color-border)',
+                        }}
+                      >
+                        <span className="font-medium" style={{ color: 'var(--color-foreground)' }}>
+                          {c.character}
+                        </span>
+                        <span
+                          className="ml-auto shrink-0 tabular-nums font-semibold"
+                          style={{ color: 'var(--color-foreground)' }}
+                        >
+                          {priceLabel(c.onPerson)}
+                        </span>
+                      </div>
+                    ))}
+                    <div
+                      className="flex items-center gap-2 rounded px-3 py-1.5 text-xs"
+                      style={{
+                        backgroundColor: 'var(--color-surface-2)',
+                        border: '1px solid var(--color-border)',
+                      }}
+                      title="Bank is one account-wide pool shared by every character, not held separately per character"
+                    >
+                      <Landmark size={12} style={{ color: 'var(--color-muted-foreground)' }} />
+                      <span className="font-medium" style={{ color: 'var(--color-foreground)' }}>
+                        Bank
+                      </span>
+                      <span className="text-[11px]" style={{ color: 'var(--color-muted-foreground)' }}>
+                        (shared)
+                      </span>
+                      <span
+                        className="ml-auto shrink-0 tabular-nums font-semibold"
+                        style={{ color: 'var(--color-foreground)' }}
+                      >
+                        {priceLabel(sharedBank)}
+                      </span>
+                    </div>
+                  </div>
+                )}
+                {selectedChar !== '' && visibleCurrency.length === 1 && (
+                  <div
+                    className="flex flex-wrap gap-x-4 gap-y-0.5 px-3 text-[11px]"
+                    style={{ color: 'var(--color-muted-foreground)' }}
+                  >
+                    <span>
+                      On person:{' '}
+                      <span style={{ color: 'var(--color-foreground)' }}>
+                        {priceLabel(visibleCurrency[0].onPerson)}
+                      </span>
+                    </span>
+                    <span>
+                      Bank:{' '}
+                      <span style={{ color: 'var(--color-foreground)' }}>
+                        {priceLabel(visibleCurrency[0].bank)}
+                      </span>
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+
             {/* Rechargeable — limited-charge clickies, current/max charges. Hidden
                 entirely when the held set has none (or none match the search). */}
             {rechargeables.length > 0 && (
