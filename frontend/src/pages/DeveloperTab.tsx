@@ -24,9 +24,9 @@ interface SubTabDef {
 
 const SUB_TABS: SubTabDef[] = [
   { id: 'notes', label: 'Notes', icon: <FileText size={13} /> },
+  { id: 'flags', label: 'Flags', icon: <FlaskConical size={13} /> },
   { id: 'sandbox', label: 'SQL Sandbox', icon: <Database size={13} /> },
   { id: 'graph', label: 'Schema Graph', icon: <Network size={13} /> },
-  { id: 'flags', label: 'Flags', icon: <FlaskConical size={13} /> },
   { id: 'emotes', label: 'Spell Emotes', icon: <MessageSquareQuote size={13} /> },
 ]
 
@@ -73,13 +73,13 @@ export default function DeveloperTab(): React.ReactElement {
       {/* Sub-tab body — fills width, scrolls vertically */}
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
         {sub === 'notes' && <NotesPanel />}
+        {sub === 'flags' && <FlagsPanel />}
         {sub === 'sandbox' && <SqlSandboxPanel />}
         {sub === 'graph' && (
           <Suspense fallback={<div className="text-sm text-zinc-500">Loading schema graph…</div>}>
             <SchemaGraphPanel />
           </Suspense>
         )}
-        {sub === 'flags' && <FlagsPanel />}
         {sub === 'emotes' && <SpellEmotesPanel />}
       </div>
     </div>
