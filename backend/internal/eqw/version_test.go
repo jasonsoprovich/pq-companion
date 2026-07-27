@@ -17,8 +17,8 @@ func TestReadInstalledVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadInstalledVersion: %v", err)
 	}
-	if v != "1.0.1" {
-		t.Fatalf("version = %q, want %q", v, "1.0.1")
+	if v != "1.0.2" {
+		t.Fatalf("version = %q, want %q", v, "1.0.2")
 	}
 }
 

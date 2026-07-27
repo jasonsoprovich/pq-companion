@@ -36,8 +36,9 @@ func TestParseBZR(t *testing.T) {
 	// Spot-check a normal price, a zero (not-for-sale) entry, and a backtick name.
 	cases := map[string]int64{
 		"Bone Chips":              800,
-		"Skull of Jhen`Tra":       0,
-		"Gloves of Enrapturement": 600000,
+		"Insignia Protector":      0,
+		"Skull of Jhen`Tra":       25000,
+		"Gloves of Enrapturement": 400000,
 	}
 	for name, want := range cases {
 		got, ok := listing.priceOf(name)
@@ -118,10 +119,10 @@ func TestInferSales(t *testing.T) {
 		t.Fatalf("ParseSnapshot: %v", err)
 	}
 
-	// Build a "next" snapshot where the Incandescent Mask (350000) sold and the
+	// Build a "next" snapshot where the Incandescent Mask (250000) sold and the
 	// trader gained that much on-person coin.
 	const maskID = 2350
-	const maskPrice int64 = 350000
+	const maskPrice int64 = 250000
 	next := &Snapshot{
 		Character:      "Feane",
 		TakenAt:        prev.TakenAt.Add(time.Hour),
