@@ -1648,6 +1648,32 @@ hardening — no new features, but a broad sweep of reliability fixes.
 - **Zone drop pagination** — the Drops tab now pages past the previous
   500-item hard cap instead of silently truncating.
 
+## v0.18.0 — Spell Emote Customizer, Trigger Category Export, CH Chain Fix
+
+- **Spell Emote Customizer** — developer-mode users can edit the
+  client-visible chat emotes in `spells_en.txt` from Settings >
+  Developer > Spell Emotes, or inline on the Spells page. Lets you
+  disambiguate emotes several spells share verbatim (e.g. slows' "
+  yawns.") or add one to a spell that ships with none (e.g. Divine
+  Aura). Overrides are stored structurally in user.db rather than as a
+  raw file diff, so they survive a server patch republishing
+  `spells_en.txt` — a watcher detects the external change and offers to
+  re-apply customizations on top of the new file. Backed by pristine
+  default and edited backups with a per-spell field-level diff view.
+  Hand-edits made to `spells_en.txt` before ever using the customizer
+  are detected on first bootstrap and offered for import (per-spell
+  diff, Import All, or Not Now) instead of being silently baked in as
+  the "pristine default" and wiped by the next patch. Editing an emote
+  also surfaces any trigger whose regex pattern was written against the
+  old text — like the built-in Caustic Mist / Putrefy Flesh trigger —
+  and proposes a diff to apply, never an automatic bulk rewrite.
+- **Trigger category export** — export a single custom category (e.g.
+  "Raid Triggers") as its own shareable trigger pack via a per-category
+  Export button, instead of only export-all-or-nothing.
+- **CH Chain accuracy fix** — possible-miss detection now confirms
+  casts by caster identity instead of by target, fixing false-positive
+  flags in multi-cleric raids where every cleric heals the same tank.
+
 ## Phase 11 — Project Website
 _Planned_
 
