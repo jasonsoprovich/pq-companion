@@ -202,6 +202,9 @@ func (s *Store) migrate() error {
 	if err := s.backfillPackKeysAndBaselines(); err != nil {
 		return err
 	}
+	if err := s.migratePatternAudits(); err != nil {
+		return err
+	}
 	return nil
 }
 

@@ -38,7 +38,7 @@ import type { RaidThreatState, TargetState, ThreatState } from '../types/overlay
 import type { CombatState, HistoryFacets, HistoryFilter, HistoryListResponse, StoredFight } from '../types/combat'
 import type { TimerState } from '../types/timer'
 import type { RespawnState } from '../types/respawn'
-import type { Trigger, TriggerFired, TriggerPack, TriggerCategory, TimerGroup, Action, TimerType, TimerAlertThreshold, TriggerSource, PipeCondition, ExtraPattern, ImportPreview, PackUpdateSummary, PackDiff, PackUpdateMode, PackUpdateResult, ActionTemplate, BulkResult } from '../types/trigger'
+import type { Trigger, TriggerFired, TriggerPack, TriggerCategory, TimerGroup, Action, TimerType, TimerAlertThreshold, TriggerSource, PipeCondition, ExtraPattern, ImportPreview, PackUpdateSummary, PackDiff, PackUpdateMode, PackUpdateResult, ActionTemplate, BulkResult, EmoteChange, TriggerEmoteSuggestion, PatternLocation } from '../types/trigger'
 import type { RollsState, RollsSettingsPatch, WinnerRule } from '../types/rolls'
 import type { EnumsCatalog } from '../types/enums'
 import type {
@@ -2457,6 +2457,40 @@ export function applyPackUpdate(
     `/api/triggers/packs/${encodeURIComponent(packName)}/update`,
     { mode, keys },
   )
+}
+
+// ── Spell Emote Customizer ⇄ trigger pattern sync ───────────────────────────
+// Flags triggers linked to an edited spell whose pattern may be stale.
+// Suggest/apply/revert only — never an automatic bulk rewrite.
+
+export function getTriggerEmoteSuggestions(
+  spellId: number,
+  changes: EmoteChange[],
+): Promise<TriggerEmoteSuggestion[]> {
+  return post<TriggerEmoteSuggestion[]>('/api/triggers/emote-sync/suggestions', {
+    spell_id: spellId,
+    changes,
+  })
+}
+
+export function applyTriggerPatternUpdate(
+  triggerId: string,
+  location: PatternLocation,
+  extraIndex: number,
+  oldText: string,
+  newText: string,
+): Promise<{ audit_id: string }> {
+  return post<{ audit_id: string }>('/api/triggers/emote-sync/apply', {
+    trigger_id: triggerId,
+    location,
+    extra_index: extraIndex,
+    old: oldText,
+    new: newText,
+  })
+}
+
+export function revertTriggerPatternUpdate(auditId: string): Promise<void> {
+  return post<void>('/api/triggers/emote-sync/revert', { audit_id: auditId })
 }
 
 // ── Action templates + bulk edits ────────────────────────────────────────────

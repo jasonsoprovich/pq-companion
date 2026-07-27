@@ -486,6 +486,12 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Put("/categories/{name}", triggerH.renameCategory)
 			r.Delete("/categories/{name}", triggerH.deleteCategory)
 			r.Get("/categories/{name}/export", triggerH.exportCategory)
+			// Spell Emote Customizer integration: flags triggers linked to an
+			// edited spell whose pattern may need updating — suggest/apply/
+			// revert only, never an automatic bulk rewrite.
+			r.Post("/emote-sync/suggestions", triggerH.emoteSyncSuggestions)
+			r.Post("/emote-sync/apply", triggerH.emoteSyncApply)
+			r.Post("/emote-sync/revert", triggerH.emoteSyncRevert)
 			r.Get("/timer-groups", triggerH.listTimerGroups)
 			r.Post("/timer-groups", triggerH.createTimerGroup)
 			// Static /timer-groups/order is registered before the {id} wildcard

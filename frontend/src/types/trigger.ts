@@ -321,6 +321,34 @@ export interface PackDiff {
 /** How to apply a pack update: keep user customizations, or full reset. */
 export type PackUpdateMode = 'preserve' | 'reset'
 
+// ── Spell Emote Customizer integration ──────────────────────────────────────
+// Flags triggers linked to an edited spell (via Trigger.spell_id) whose
+// pattern may be stale, with a suggested replacement — suggest/apply/revert
+// only, never an automatic bulk rewrite.
+
+export interface EmoteChange {
+  field: string
+  old: string
+  new: string
+}
+
+export type PatternLocation = 'pattern' | 'worn_off_pattern' | 'extra_pattern'
+
+export interface TriggerPatternMatch {
+  location: PatternLocation
+  extra_index: number
+  field: string
+  current: string
+  suggested: string
+}
+
+export interface TriggerEmoteSuggestion {
+  trigger_id: string
+  name: string
+  pack_name: string
+  matches: TriggerPatternMatch[]
+}
+
 export interface PackUpdateResult {
   updated: number
   added: number
