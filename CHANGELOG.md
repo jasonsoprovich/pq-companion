@@ -9,6 +9,21 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.18.0 — 2026-07-27
+
+A new developer-mode Spell Emote Customizer arrives alongside trigger category export and a CH Chain possible-miss fix that eliminates false flags in large raids.
+
+### Highlights
+- **Spell Emote Customizer** — developer-mode users can now edit client-visible chat emotes in `spells_en.txt` (Settings > Developer > Spell Emotes, or inline on the Spells page) to disambiguate shared emotes like slows' " yawns." or add one to a spell that ships with none (e.g. Divine Aura). Overrides are stored in user.db, survive a server patch republishing `spells_en.txt`, and offer a per-spell field-level diff view.
+- **Pre-existing customization detection** — hand-edits to `spells_en.txt` made before ever using the customizer are now detected on first bootstrap and offered for import (per-spell diff, Import All, or Not Now) instead of being silently adopted as the "pristine default" and wiped by the next server patch.
+- **Linked trigger flagging on emote edit** — editing a spell's emote now surfaces any trigger whose regex was written against the old text (like the built-in Caustic Mist / Putrefy Flesh trigger) and proposes a diff to apply, never an automatic rewrite.
+- **Trigger category export** — a category (e.g. "Raid Triggers") can now be exported as its own shareable trigger pack via a per-category Export button, instead of only export-all-or-nothing.
+
+### Fixes
+- CH Chain possible-miss detection now confirms casts by caster identity instead of by target, fixing false-positive flags in multi-cleric raids where every cleric heals the same tank — verified against a real 6-cleric VT log (378 false flags and 200 misattributed confirmations down to 0).
+- The Spells page "customized" badge and "Revert to default" now work for any emote that differs from default, not just ones with a formally tracked override (e.g. a pending import awaiting review).
+- The Caustic Mist raid alert now also covers Putrefy Flesh, which shares an identical landed-on-other log string.
+
 ## v0.17.9 — 2026-07-24
 
 Reliability fixes for CH Metronome, CH Chain, Gear Upgrade Finder, and App Backup import.
