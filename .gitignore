@@ -98,3 +98,10 @@ backend/internal/trigger/testdata/import/*
 !backend/internal/trigger/testdata/import/Grokii_GINA_CharmBreak.gtp
 !backend/internal/trigger/testdata/import/Grokii_GINA_Enchanter.gtp
 !backend/internal/trigger/testdata/import/pq-triggers.json
+
+# Spell emote customizer fixture: 3 real spells_en.txt lines (207, 1588,
+# 2267) extracted verbatim so file-format tests (CRLF, pipe-delimited
+# fields) run against real syntax without bundling the full game text file.
+!backend/internal/emote/testdata/
+backend/internal/emote/testdata/*
+!backend/internal/emote/testdata/spells_en.txt

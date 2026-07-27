@@ -11,7 +11,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const fixturePath = "../../../testdata/TAKPv22/spells_en.txt"
+const fixturePath = "testdata/spells_en.txt"
 
 // newTestGameDB builds a small synthetic quarm.db seeded with just the three
 // spells these tests exercise, with emote text matching the checked-in
