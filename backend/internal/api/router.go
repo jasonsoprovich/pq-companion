@@ -16,6 +16,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/combat"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/emote"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/eqw"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/factiontracker"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/keyring"
@@ -47,7 +48,7 @@ import (
 // NewRouter builds and returns the chi router wired to all backend components.
 // combatHistory may be nil when persistence is disabled (e.g. user.db open
 // failed); in that case the history endpoints respond 503.
-func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher *zeal.Watcher, pipeSupervisor *zealpipe.Supervisor, backupMgr *backup.Manager, tailer *logparser.Tailer, replayer *logparser.Replayer, npcTracker *overlay.NPCTracker, combatTracker *combat.Tracker, combatHistory *combat.HistoryStore, threatTracker *threat.Tracker, raidThreatAssembler *raidthreat.Assembler, timerEngine *spelltimer.Engine, respawnEngine *respawn.Engine, triggerStore *trigger.Store, triggerEngine *trigger.Engine, charStore *character.Store, rollTracker *rolltracker.Tracker, appBackupMgr *appbackup.Manager, playerStore *players.Store, chatStore *chat.Store, lootStore *loot.Store, backfillRegistry *backfill.Registry, keyringStore *keyring.Store, keyringMaster []keyring.MasterEntry, lockoutStore *lockout.Store, sb *sandbox.Sandbox, savedQueryStore *savedquery.Store, skillsStore *skills.Store, traderStore *trader.Store, traderCapturer *trader.Capturer, popflagStore *popflag.Store, wishlistWatcher *wishlistwatch.Watcher, changelogEntries []changelog.Entry, factionEngine *factiontracker.Engine, actualPort int) http.Handler {
+func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher *zeal.Watcher, pipeSupervisor *zealpipe.Supervisor, backupMgr *backup.Manager, tailer *logparser.Tailer, replayer *logparser.Replayer, npcTracker *overlay.NPCTracker, combatTracker *combat.Tracker, combatHistory *combat.HistoryStore, threatTracker *threat.Tracker, raidThreatAssembler *raidthreat.Assembler, timerEngine *spelltimer.Engine, respawnEngine *respawn.Engine, triggerStore *trigger.Store, triggerEngine *trigger.Engine, charStore *character.Store, rollTracker *rolltracker.Tracker, appBackupMgr *appbackup.Manager, playerStore *players.Store, chatStore *chat.Store, lootStore *loot.Store, backfillRegistry *backfill.Registry, keyringStore *keyring.Store, keyringMaster []keyring.MasterEntry, lockoutStore *lockout.Store, sb *sandbox.Sandbox, savedQueryStore *savedquery.Store, skillsStore *skills.Store, traderStore *trader.Store, traderCapturer *trader.Capturer, popflagStore *popflag.Store, wishlistWatcher *wishlistwatch.Watcher, changelogEntries []changelog.Entry, factionEngine *factiontracker.Engine, emoteService *emote.Service, actualPort int) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
@@ -113,6 +114,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	savedQueryH := &savedQueryHandler{store: savedQueryStore, cfgMgr: cfgMgr}
 	popflagH := &popflagHandler{store: popflagStore, hub: hub, mgr: cfgMgr}
 	changelogH := &changelogHandler{entries: changelogEntries}
+	emotesH := &emotesHandler{service: emoteService}
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(middleware.SetHeader("Content-Type", "application/json"))
@@ -134,6 +136,21 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/{id}", spells.get)
 			r.Get("/{id}/items", spells.crossRefs)
 			r.Get("/{id}/raw", raw.rowFromTable("spells_new", "id"))
+		})
+		// Spell Emote Customizer (Settings > Developer): edits the
+		// client-visible chat emote text in spells_en.txt, backed by
+		// structured overrides so they survive a server patch replacing
+		// the file.
+		r.Route("/emotes", func(r chi.Router) {
+			r.Get("/status", emotesH.status)
+			r.Get("/overrides", emotesH.list)
+			r.Get("/diff", emotesH.diff)
+			r.Get("/spell/{id}", emotesH.get)
+			r.Put("/spell/{id}", emotesH.put)
+			r.Delete("/spell/{id}", emotesH.revert)
+			r.Post("/restore-defaults", emotesH.restoreDefaults)
+			r.Post("/reapply", emotesH.reapply)
+			r.Post("/ignore-external-change", emotesH.ignoreExternalChange)
 		})
 		r.Post("/resist-check", resistCalc.check)
 		r.Get("/resist-debuffs", resistCalc.debuffs)

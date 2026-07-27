@@ -2,6 +2,7 @@ import type { Config } from '../types/config'
 import type { Item, ItemSources, ItemQuests, QuestSummary, SearchResult } from '../types/item'
 import type { NPC, NPCSpawns, NPCLootTable, NPCFaction, NPCSpells } from '../types/npc'
 import type { BuffStatDelta, Spell, SpellCrossRefs, ShoppingRoute, ShoppingRouteOptions } from '../types/spell'
+import type { EmoteColumnsPatch, EmoteStatus, SpellEmote, SpellEmoteDiff } from '../types/emote'
 import type { Zone, ZoneConnection, ZoneGroundSpawn, ZoneForageItem, ZoneDropItem } from '../types/zone'
 import type {
   ZealInventoryResponse,
@@ -2755,4 +2756,42 @@ export function exportSavedQueryPack(): Promise<SavedQueryPack> {
 
 export function importSavedQueryPack(pack: SavedQueryPack): Promise<SavedQueryImportResponse> {
   return post<SavedQueryImportResponse>('/api/sandbox/saved/import', pack)
+}
+
+// ── Spell Emote Customizer (Settings > Developer) ───────────────────────────
+
+export function getEmoteStatus(): Promise<EmoteStatus> {
+  return get<EmoteStatus>('/api/emotes/status')
+}
+
+export function getEmoteOverrides(): Promise<SpellEmote[]> {
+  return get<SpellEmote[]>('/api/emotes/overrides')
+}
+
+export function getEmoteDiff(): Promise<SpellEmoteDiff[]> {
+  return get<SpellEmoteDiff[]>('/api/emotes/diff')
+}
+
+export function getSpellEmote(id: number): Promise<SpellEmote> {
+  return get<SpellEmote>(`/api/emotes/spell/${id}`)
+}
+
+export function putSpellEmote(id: number, patch: EmoteColumnsPatch): Promise<SpellEmote> {
+  return put<SpellEmote>(`/api/emotes/spell/${id}`, patch)
+}
+
+export function revertSpellEmote(id: number): Promise<SpellEmote> {
+  return del<SpellEmote>(`/api/emotes/spell/${id}`)
+}
+
+export function restoreEmoteDefaults(): Promise<void> {
+  return post<void>('/api/emotes/restore-defaults')
+}
+
+export function reapplyEmotes(): Promise<void> {
+  return post<void>('/api/emotes/reapply')
+}
+
+export function ignoreEmoteExternalChange(): Promise<void> {
+  return post<void>('/api/emotes/ignore-external-change')
 }

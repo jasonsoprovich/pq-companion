@@ -21,8 +21,10 @@ import { ItemIcon, SpellIcon } from '../components/Icon'
 import RawDataModal from '../components/RawDataModal'
 import VariantLinks from '../components/VariantLinks'
 import SpellAcquisition from '../components/SpellAcquisition'
+import EmoteEditor from '../components/EmoteEditor'
 import { useCachedState } from '../hooks/useCachedState'
 import { usePoPEnabled } from '../hooks/usePoPEnabled'
+import { useDeveloperMode } from '../hooks/useDeveloperMode'
 import { useSpellRefNames } from '../hooks/useSpellRefNames'
 import { useItemRefNames } from '../hooks/useItemRefNames'
 import { maxLevel as eraMaxLevel } from '../lib/era'
@@ -344,6 +346,7 @@ interface DetailPanelProps {
 function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
   const navigate = useNavigate()
   const levelCap = eraMaxLevel(usePoPEnabled())
+  const developerMode = useDeveloperMode()
   const [crossRefs, setCrossRefs] = useState<SpellCrossRefs | null>(null)
   const [showTriggerModal, setShowTriggerModal] = useState(false)
   const [rawOpen, setRawOpen] = useState(false)
@@ -542,34 +545,42 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
           </Section>
         )}
 
-        {/* Flavor text */}
-        {(spell.cast_on_you || spell.cast_on_other || spell.spell_fades) && (
+        {/* Flavor text — developer mode swaps this for the click-to-edit
+            Spell Emote Customizer (Settings > Developer > Spell Emotes has
+            the full search/diff/restore hub; this is the fast inline path). */}
+        {developerMode ? (
           <Section title="Messages">
-            {spell.cast_on_you && (
-              <div className="py-0.5 text-sm">
-                <span style={{ color: 'var(--color-muted-foreground)' }}>On you: </span>
-                <span className="italic" style={{ color: 'var(--color-foreground)' }}>
-                  {spell.cast_on_you}
-                </span>
-              </div>
-            )}
-            {spell.cast_on_other && (
-              <div className="py-0.5 text-sm">
-                <span style={{ color: 'var(--color-muted-foreground)' }}>On other: </span>
-                <span className="italic" style={{ color: 'var(--color-foreground)' }}>
-                  {spell.cast_on_other}
-                </span>
-              </div>
-            )}
-            {spell.spell_fades && (
-              <div className="py-0.5 text-sm">
-                <span style={{ color: 'var(--color-muted-foreground)' }}>Fades: </span>
-                <span className="italic" style={{ color: 'var(--color-foreground)' }}>
-                  {spell.spell_fades}
-                </span>
-              </div>
-            )}
+            <EmoteEditor key={spell.id} spellId={spell.id} />
           </Section>
+        ) : (
+          (spell.cast_on_you || spell.cast_on_other || spell.spell_fades) && (
+            <Section title="Messages">
+              {spell.cast_on_you && (
+                <div className="py-0.5 text-sm">
+                  <span style={{ color: 'var(--color-muted-foreground)' }}>On you: </span>
+                  <span className="italic" style={{ color: 'var(--color-foreground)' }}>
+                    {spell.cast_on_you}
+                  </span>
+                </div>
+              )}
+              {spell.cast_on_other && (
+                <div className="py-0.5 text-sm">
+                  <span style={{ color: 'var(--color-muted-foreground)' }}>On other: </span>
+                  <span className="italic" style={{ color: 'var(--color-foreground)' }}>
+                    {spell.cast_on_other}
+                  </span>
+                </div>
+              )}
+              {spell.spell_fades && (
+                <div className="py-0.5 text-sm">
+                  <span style={{ color: 'var(--color-muted-foreground)' }}>Fades: </span>
+                  <span className="italic" style={{ color: 'var(--color-foreground)' }}>
+                    {spell.spell_fades}
+                  </span>
+                </div>
+              )}
+            </Section>
+          )
         )}
 
         {/* Taught by */}

@@ -29,6 +29,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/combat"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/emote"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/factiontracker"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/keyring"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/lockout"
@@ -358,6 +359,20 @@ func main() {
 		}
 		logparser.SetCastIndex(logparser.NewCastIndex(idxMsgs))
 		slog.Info("spell-landed index loaded", "entries", len(idxMsgs))
+	}
+
+	// Spell Emote Customizer (Settings > Developer): lets developer-mode
+	// users edit the client-visible chat emote text in spells_en.txt.
+	// Non-fatal — failing here only disables the emote editor panel.
+	emoteStore, err := emote.OpenStore(filepath.Join(home, ".pq-companion", "user.db"))
+	var emoteService *emote.Service
+	if err != nil {
+		slog.Warn("open spell emote store (editor disabled)", "err", err)
+	} else {
+		defer emoteStore.Close()
+		emoteService = emote.NewService(emoteStore, cfgMgr, filepath.Join(home, ".pq-companion", "spell-emotes"))
+		emoteWatcher := emote.NewWatcher(cfgMgr, hub, emoteService)
+		go emoteWatcher.Start(context.Background())
 	}
 
 	zealWatcher := zeal.NewWatcher(cfgMgr, hub, charStore)
@@ -1549,7 +1564,7 @@ func main() {
 		go traderCapturer.Start(context.Background())
 	}
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, replayer, npcTracker, combatTracker, historyStore, threatTracker, raidThreatAssembler, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, sb, savedQueryStore, skillsStore, traderStore, traderCapturer, popflagStore, wishlistWatcher, changelogEntries, factionEngine, actualPort)
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, replayer, npcTracker, combatTracker, historyStore, threatTracker, raidThreatAssembler, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, sb, savedQueryStore, skillsStore, traderStore, traderCapturer, popflagStore, wishlistWatcher, changelogEntries, factionEngine, emoteService, actualPort)
 
 	slog.Info("server starting", "addr", listener.Addr().String(), "db", *dbPath)
 	if err := http.Serve(listener, router); err != nil {

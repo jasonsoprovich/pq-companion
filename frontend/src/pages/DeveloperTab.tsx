@@ -1,10 +1,11 @@
 import React, { useEffect, useState, Suspense } from 'react'
-import { Code2, AlertTriangle, FileText, Database, Network, FlaskConical } from 'lucide-react'
+import { Code2, AlertTriangle, FileText, Database, Network, FlaskConical, MessageSquareQuote } from 'lucide-react'
 import SqlSandboxPanel from './SqlSandboxPanel'
 // Lazy-loaded: SchemaGraphPanel pulls in @xyflow/react (~4MB) + dagre. Keeping
 // it out of the static import graph removes those heavy deps from the app's
 // boot bundle — only Dev-tab users who open the graph sub-tab pay the cost.
 const SchemaGraphPanel = React.lazy(() => import('./SchemaGraphPanel'))
+import SpellEmotesPanel from './SpellEmotesPanel'
 import { getConfig, updateConfig } from '../services/api'
 import type { Config } from '../types/config'
 
@@ -13,7 +14,7 @@ import type { Config } from '../types/config'
 // Ctrl+Shift+D while the Settings page is focused. Each sub-tool gets its
 // own sub-tab so we don't pile three large panels onto one scroll-strip.
 
-type SubTab = 'notes' | 'sandbox' | 'graph' | 'flags'
+type SubTab = 'notes' | 'sandbox' | 'graph' | 'flags' | 'emotes'
 
 interface SubTabDef {
   id: SubTab
@@ -26,6 +27,7 @@ const SUB_TABS: SubTabDef[] = [
   { id: 'sandbox', label: 'SQL Sandbox', icon: <Database size={13} /> },
   { id: 'graph', label: 'Schema Graph', icon: <Network size={13} /> },
   { id: 'flags', label: 'Flags', icon: <FlaskConical size={13} /> },
+  { id: 'emotes', label: 'Spell Emotes', icon: <MessageSquareQuote size={13} /> },
 ]
 
 export default function DeveloperTab(): React.ReactElement {
@@ -78,6 +80,7 @@ export default function DeveloperTab(): React.ReactElement {
           </Suspense>
         )}
         {sub === 'flags' && <FlagsPanel />}
+        {sub === 'emotes' && <SpellEmotesPanel />}
       </div>
     </div>
   )
