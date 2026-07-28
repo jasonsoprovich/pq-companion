@@ -81,7 +81,7 @@ export default function DiscordVoiceOverlaySettings({
         </label>
       </div>
 
-      <p className="mb-3 text-xs leading-relaxed" style={{ color: 'var(--color-muted-foreground)' }}>
+      <p className="mb-2 text-xs leading-relaxed" style={{ color: 'var(--color-muted-foreground)' }}>
         Shows a live Discord voice-channel roster with a speaking highlight in
         an overlay. PQ Companion never talks to Discord's API — instead it
         embeds Discord's own{' '}
@@ -94,10 +94,40 @@ export default function DiscordVoiceOverlaySettings({
         >
           StreamKit Overlay <ExternalLink size={10} />
         </a>{' '}
-        tool — the same thing streamers paste into OBS. Open that link, log
-        into Discord, pick your server and voice channel, click Install, and
-        paste the generated link below.
+        tool — the same thing streamers paste into OBS as a browser source.
       </p>
+
+      <ol
+        className="mb-3 flex list-decimal flex-col gap-1 pl-4 text-xs leading-relaxed"
+        style={{ color: 'var(--color-muted-foreground)' }}
+      >
+        <li>
+          Open{' '}
+          <a
+            href={STREAMKIT_URL}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="inline-flex items-center gap-0.5 underline"
+            style={{ color: 'var(--color-primary)' }}
+          >
+            streamkit.discord.com/overlay <ExternalLink size={10} />
+          </a>{' '}
+          and log in with Discord if it asks.
+        </li>
+        <li>Choose the <strong>Voice</strong> widget (not Status or Chat).</li>
+        <li>Pick your server, then pick the specific voice channel from the dropdowns.</li>
+        <li>
+          Optional: toggle display settings like "Small Avatars" or "Show
+          Speaking Users Only" to taste.
+        </li>
+        <li>
+          Click <strong>Install for OBS</strong> (or the similar install/copy
+          button) — this reveals a text box containing the actual link. It's
+          easy to miss: the link only appears after you click that button, not
+          before.
+        </li>
+        <li>Copy that link and paste it into the field below.</li>
+      </ol>
 
       {enabled && (
         <div className="flex flex-col gap-3">
