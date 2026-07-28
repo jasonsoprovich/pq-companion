@@ -114,19 +114,18 @@ export default function DiscordVoiceOverlaySettings({
           </a>{' '}
           and log in with Discord if it asks.
         </li>
+        <li>
+          Click <strong>Install for OBS</strong> (or the similar install/copy
+          button) — this opens the widget configuration panel, including the
+          link box you'll need at the end.
+        </li>
         <li>Choose the <strong>Voice</strong> widget (not Status or Chat).</li>
         <li>Pick your server, then pick the specific voice channel from the dropdowns.</li>
         <li>
           Optional: toggle display settings like "Small Avatars" or "Show
           Speaking Users Only" to taste.
         </li>
-        <li>
-          Click <strong>Install for OBS</strong> (or the similar install/copy
-          button) — this reveals a text box containing the actual link. It's
-          easy to miss: the link only appears after you click that button, not
-          before.
-        </li>
-        <li>Copy that link and paste it into the field below.</li>
+        <li>Copy the link from that box and paste it into the field below.</li>
       </ol>
 
       {enabled && (
