@@ -221,6 +221,12 @@ export interface Preferences {
   // pasting a new URL. Off by default.
   discord_voice_enabled?: boolean
   discord_voice_url?: string
+  // By default the content area (below the header) is always fully
+  // transparent regardless of overlay_opacity, so the live roster never gets
+  // shaded over the game. true makes it follow overlay_opacity/
+  // overlay_fade_enabled exactly like the header does, for users who prefer
+  // full visual consistency with every other overlay's body. Off by default.
+  discord_voice_shaded_content?: boolean
 }
 
 export interface BackupSettings {

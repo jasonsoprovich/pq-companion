@@ -11,7 +11,9 @@
  * This page only renders the title-bar chrome. The body area below the header
  * is left empty on purpose — the actual Discord content is a separate native
  * view layered on top by the main process, not React-rendered here. A
- * placeholder message fills that space until a valid URL is configured.
+ * placeholder message fills that space until a valid URL is configured. The
+ * body is fully transparent by default; the discord_voice_shaded_content
+ * preference opts it back into the header's app-consistent tint instead.
  *
  * Known limitation: because the embedded content is a separate native view,
  * this window's chrome-fade and locked-mode "hover to re-enable interaction"
@@ -44,6 +46,10 @@ export default function DiscordVoiceOverlayWindowPage(): React.ReactElement {
   // URL is actually loaded so the overlay stays clean and minimal rather than
   // showing setup instructions over a live roster.
   const [hasContent, setHasContent] = useState(false)
+  // Off by default: the content area stays fully transparent regardless of
+  // overlay_opacity. Some users prefer it to match every other overlay's
+  // shaded body instead — see DiscordVoiceOverlaySettings.tsx.
+  const [shadedContent, setShadedContent] = useState(false)
 
   // Hands the main process the current StreamKit URL so it can attach/update
   // the embedded child view — main never talks to the Go config store itself.
@@ -56,6 +62,7 @@ export default function DiscordVoiceOverlayWindowPage(): React.ReactElement {
         const url = c.preferences.discord_voice_url ?? ''
         const valid = enabled && isValidStreamKitVoiceUrl(url)
         setHasContent(valid)
+        setShadedContent(c.preferences.discord_voice_shaded_content ?? false)
         if (valid) {
           window.electron?.overlay?.setDiscordVoiceUrl?.(url)
         } else {
@@ -147,28 +154,32 @@ export default function DiscordVoiceOverlayWindowPage(): React.ReactElement {
         </div>
       </div>
 
-      {/* ── Body — intentionally empty. The main process layers Discord's own
-          StreamKit content here as a native child view; the placeholder below
-          only renders until a valid URL is actually loaded, so a properly
-          configured overlay stays clean and minimal instead of permanently
-          showing setup instructions underneath the live roster. ──────────── */}
-      {!hasContent && (
-        <div
-          style={{
-            flex: 1,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: 12,
-            textAlign: 'center',
-          }}
-        >
+      {/* ── Body — the main process layers Discord's own StreamKit content
+          here as a native child view on top of whatever renders below. Fully
+          transparent by default (issue #150 feedback); shadedContent opts
+          back into the header's tint for users who want full visual
+          consistency with every other overlay's body instead. The
+          placeholder text only renders until a valid URL is actually loaded,
+          so a properly configured overlay stays clean and minimal. ──────── */}
+      <div
+        style={{
+          flex: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 12,
+          textAlign: 'center',
+          backgroundColor: shadedContent ? `rgba(10,10,12,${chrome ? opacity : 0})` : undefined,
+          transition: shadedContent ? 'background-color 0.4s ease' : undefined,
+        }}
+      >
+        {!hasContent && (
           <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', lineHeight: 1.5 }}>
             Enable Discord Voice and paste a StreamKit overlay URL in
             Settings → Overlays to see your voice channel here.
           </p>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }

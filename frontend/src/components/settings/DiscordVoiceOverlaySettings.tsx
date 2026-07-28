@@ -192,6 +192,24 @@ export default function DiscordVoiceOverlaySettings({
             it the same way and paste the new one.
           </p>
 
+          <label
+            className="flex cursor-pointer items-center gap-2 text-sm"
+            style={{ color: 'var(--color-foreground)' }}
+          >
+            <input
+              type="checkbox"
+              checked={prefs.discord_voice_shaded_content ?? false}
+              onChange={(e) => saveNow({ discord_voice_shaded_content: e.target.checked })}
+            />
+            Shade content area to match app opacity
+          </label>
+          <p className="text-[11px] leading-relaxed" style={{ color: 'var(--color-muted)' }}>
+            Off by default: the roster stays fully see-through to the game
+            no matter what the Overlays opacity slider is set to. Turn this on
+            if you'd rather the content area match every other overlay's
+            shaded look — only the header is shaded either way.
+          </p>
+
           {urlValid && (
             <button
               onClick={() => window.electron?.overlay?.toggleDiscordVoice()}
