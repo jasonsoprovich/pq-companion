@@ -20,7 +20,7 @@
  * the header. Acceptable since the widget itself is read-only display, not
  * something users interact with directly.
  */
-import React, { useCallback, useEffect } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { Headphones } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
@@ -40,6 +40,11 @@ export default function DiscordVoiceOverlayWindowPage(): React.ReactElement {
 
   const onDragMouseDown = useWindowDrag()
 
+  // Drives the "not configured yet" placeholder text — hidden once a valid
+  // URL is actually loaded so the overlay stays clean and minimal rather than
+  // showing setup instructions over a live roster.
+  const [hasContent, setHasContent] = useState(false)
+
   // Hands the main process the current StreamKit URL so it can attach/update
   // the embedded child view — main never talks to the Go config store itself.
   // Re-checked on every config poll (mirroring useOverlayZoom) so a Settings
@@ -49,7 +54,9 @@ export default function DiscordVoiceOverlayWindowPage(): React.ReactElement {
       .then((c) => {
         const enabled = c.preferences.discord_voice_enabled ?? false
         const url = c.preferences.discord_voice_url ?? ''
-        if (enabled && isValidStreamKitVoiceUrl(url)) {
+        const valid = enabled && isValidStreamKitVoiceUrl(url)
+        setHasContent(valid)
+        if (valid) {
           window.electron?.overlay?.setDiscordVoiceUrl?.(url)
         } else {
           window.electron?.overlay?.clearDiscordVoice?.()
@@ -141,23 +148,27 @@ export default function DiscordVoiceOverlayWindowPage(): React.ReactElement {
       </div>
 
       {/* ── Body — intentionally empty. The main process layers Discord's own
-          StreamKit content here as a native child view; this placeholder only
-          shows through when no view is attached yet (not configured). ──── */}
-      <div
-        style={{
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: 12,
-          textAlign: 'center',
-        }}
-      >
-        <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', lineHeight: 1.5 }}>
-          Enable Discord Voice and paste a StreamKit overlay URL in
-          Settings → Overlays to see your voice channel here.
-        </p>
-      </div>
+          StreamKit content here as a native child view; the placeholder below
+          only renders until a valid URL is actually loaded, so a properly
+          configured overlay stays clean and minimal instead of permanently
+          showing setup instructions underneath the live roster. ──────────── */}
+      {!hasContent && (
+        <div
+          style={{
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 12,
+            textAlign: 'center',
+          }}
+        >
+          <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', lineHeight: 1.5 }}>
+            Enable Discord Voice and paste a StreamKit overlay URL in
+            Settings → Overlays to see your voice channel here.
+          </p>
+        </div>
+      )}
     </div>
   )
 }
