@@ -18,6 +18,7 @@ export type DashboardPanelKey =
   | 'chChain'
   | 'chMetronome'
   | 'custom'
+  | 'discordVoice'
 
 export interface PanelLayout {
   x: number
@@ -43,10 +44,11 @@ export const DEFAULT_DASHBOARD_LAYOUT: DashboardLayout = {
   chChain:     { x: 656, y: 416, width: 304, height: 336, visible: false },
   chMetronome: { x: 976, y: 416, width: 240, height: 272, visible: false },
   custom:      { x: 976, y: 16,  width: 304, height: 336, visible: false },
+  discordVoice: { x: 336, y: 816, width: 240, height: 200, visible: false },
 }
 
 export const DASHBOARD_PANEL_KEYS: DashboardPanelKey[] =
-  ['buff', 'detrim', 'dps', 'npc', 'threat', 'hps', 'rolls', 'respawn', 'chChain', 'chMetronome', 'custom']
+  ['buff', 'detrim', 'dps', 'npc', 'threat', 'hps', 'rolls', 'respawn', 'chChain', 'chMetronome', 'custom', 'discordVoice']
 
 // HPS tracking is wired up end-to-end (panel, dashboard layout, popout window)
 // but no log-parsing pipeline currently produces healer stats, so the UI is
@@ -54,6 +56,10 @@ export const DASHBOARD_PANEL_KEYS: DashboardPanelKey[] =
 export const SHOW_HPS_PANEL = false
 
 // Panel keys actually offered in the UI — hps is gated by SHOW_HPS_PANEL.
+// discordVoice is further gated at render time in OverlaysDashboard.tsx by
+// the user's Settings → Overlays "Discord Voice" toggle (a runtime
+// preference, not a build-time flag like SHOW_HPS_PANEL), so it's left in
+// this static list and filtered reactively rather than here.
 export const VISIBLE_DASHBOARD_PANEL_KEYS: DashboardPanelKey[] = SHOW_HPS_PANEL
   ? DASHBOARD_PANEL_KEYS
   : DASHBOARD_PANEL_KEYS.filter((k) => k !== 'hps')
@@ -70,6 +76,7 @@ export const DASHBOARD_PANEL_LABELS: Record<DashboardPanelKey, string> = {
   chChain: 'CH Chain',
   chMetronome: 'CH Metronome',
   custom: 'Custom Timers (default)',
+  discordVoice: 'Discord Voice',
 }
 
 export function isPanelLayout(v: unknown): v is PanelLayout {
