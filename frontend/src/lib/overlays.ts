@@ -23,6 +23,7 @@ export type OverlayName =
   | 'respawnTimer'
   | 'chChain'
   | 'chMetronome'
+  | 'discordVoice'
 
 /**
  * How an overlay behaves while locked.
@@ -50,7 +51,20 @@ export const OVERLAY_DEFS: { name: OverlayName; label: string }[] = [
   { name: 'respawnTimer', label: 'Respawn Timers' },
   { name: 'chChain', label: 'CH Chain' },
   { name: 'chMetronome', label: 'CH Metronome' },
+  { name: 'discordVoice', label: 'Discord Voice' },
 ]
+
+// Matches a StreamKit voice-overlay URL, e.g.
+// https://streamkit.discord.com/overlay/voice/123456789/987654321 — see
+// DiscordVoiceOverlaySettings.tsx and issue #150. Shared so the Settings card
+// and the overlay window page agree on what "looks valid" means; the Electron
+// main process (electron/main/index.ts) has its own copy of this same pattern
+// since it can't import frontend code.
+const STREAMKIT_VOICE_URL_RE = /^https:\/\/streamkit\.discord\.com\/overlay\/voice\/\d+\/\d+(?:[/?#].*)?$/
+
+export function isValidStreamKitVoiceUrl(url: string): boolean {
+  return STREAMKIT_VOICE_URL_RE.test(url.trim())
+}
 
 /**
  * Resolve a single overlay's locked mode from the stored preference map,

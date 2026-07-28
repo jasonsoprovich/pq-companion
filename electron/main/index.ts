@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, ipcMain, nativeTheme, dialog, screen, protocol, globalShortcut, Tray, Menu, nativeImage } from 'electron'
+import { app, BrowserWindow, shell, ipcMain, nativeTheme, dialog, screen, protocol, globalShortcut, Tray, Menu, nativeImage, WebContentsView } from 'electron'
 import { join, extname, dirname } from 'path'
 import { spawn, ChildProcess } from 'child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync, statSync } from 'fs'
@@ -277,7 +277,7 @@ function audioMimeType(ext: string): string {
 
 // ── Overlay bounds persistence ────────────────────────────────────────────────
 
-type OverlayName = 'dps' | 'hps' | 'buffTimer' | 'detrimTimer' | 'customTimer' | 'trigger' | 'npc' | 'threat' | 'rollTracker' | 'respawnTimer' | 'chChain' | 'chMetronome'
+type OverlayName = 'dps' | 'hps' | 'buffTimer' | 'detrimTimer' | 'customTimer' | 'trigger' | 'npc' | 'threat' | 'rollTracker' | 'respawnTimer' | 'chChain' | 'chMetronome' | 'discordVoice'
 type Bounds = { x: number; y: number; width: number; height: number }
 
 // A window's identity for bounds/lock persistence and the generic per-window
@@ -311,6 +311,7 @@ const OVERLAY_DEFAULTS: Record<Exclude<OverlayName, 'trigger'>, Bounds> = {
   respawnTimer: { x: 0, y: 0, width: 300, height: 320 },
   chChain: { x: 0, y: 0, width: 260, height: 320 },
   chMetronome: { x: 0, y: 0, width: 220, height: 220 },
+  discordVoice: { x: 0, y: 0, width: 220, height: 340 },
 }
 
 function boundsFilePath(): string {
@@ -646,6 +647,14 @@ let npcOverlayWindow: BrowserWindow | null = null
 let threatOverlayWindow: BrowserWindow | null = null
 let rollTrackerWindow: BrowserWindow | null = null
 let respawnTimerWindow: BrowserWindow | null = null
+let discordVoiceOverlayWindow: BrowserWindow | null = null
+// The Discord StreamKit page embedded inside discordVoiceOverlayWindow, added
+// as a child view above the window's own React chrome (see createDiscordVoiceOverlay
+// and issue #150). null until the renderer supplies a valid URL — there's
+// nothing to embed until then. lastDiscordVoiceUrl avoids a needless reload
+// when the renderer re-sends the same URL (e.g. after a config:updated poll).
+let discordVoiceChildView: WebContentsView | null = null
+let lastDiscordVoiceUrl: string | null = null
 let sidecarProcess: ChildProcess | null = null
 
 // Backend port is discovered at runtime: the Go sidecar tries its preferred
@@ -1748,6 +1757,122 @@ function createNPCOverlay(): void {
   })
 }
 
+// ── Discord Voice overlay window ─────────────────────────────────────────────
+// Embeds Discord's own hosted StreamKit Overlay page instead of talking to
+// Discord's API ourselves — see issue #150. The renderer
+// (DiscordVoiceOverlayWindowPage) draws the usual title-bar chrome; this
+// additionally attaches a WebContentsView as a child of the window, positioned
+// below the header, that renders the live Discord content. setIgnoreMouseEvents
+// (lock mode) is a native window-level property, so it click-throughs the
+// child view too without any special-casing.
+
+const DISCORD_VOICE_HEADER_HEIGHT = 30
+const STREAMKIT_VOICE_URL_RE = /^https:\/\/streamkit\.discord\.com\/overlay\/voice\/\d+\/\d+(?:[/?#].*)?$/
+
+function isValidStreamKitVoiceUrl(url: string): boolean {
+  return STREAMKIT_VOICE_URL_RE.test(url)
+}
+
+function repositionDiscordVoiceChildView(): void {
+  if (!discordVoiceOverlayWindow || discordVoiceOverlayWindow.isDestroyed() || !discordVoiceChildView) return
+  const { width, height } = discordVoiceOverlayWindow.getContentBounds()
+  discordVoiceChildView.setBounds({
+    x: 0,
+    y: DISCORD_VOICE_HEADER_HEIGHT,
+    width,
+    height: Math.max(0, height - DISCORD_VOICE_HEADER_HEIGHT),
+  })
+}
+
+// Attach (or update) the embedded Discord content for the given window. Skips
+// the reload if the URL hasn't changed from what's already loaded — the
+// renderer re-sends this on every config poll, not just on real changes.
+function setDiscordVoiceContent(win: BrowserWindow, url: string): void {
+  if (!isValidStreamKitVoiceUrl(url)) return
+  if (!discordVoiceChildView) {
+    discordVoiceChildView = new WebContentsView({
+      webPreferences: { contextIsolation: true, nodeIntegration: false },
+    })
+    win.contentView.addChildView(discordVoiceChildView)
+    repositionDiscordVoiceChildView()
+  }
+  if (url !== lastDiscordVoiceUrl) {
+    lastDiscordVoiceUrl = url
+    discordVoiceChildView.webContents.loadURL(url)
+  }
+}
+
+// Detach the embedded Discord content (feature disabled or URL cleared while
+// the popout is open) so stale voice data doesn't linger on screen.
+function clearDiscordVoiceContent(win: BrowserWindow): void {
+  if (discordVoiceChildView) {
+    win.contentView.removeChildView(discordVoiceChildView)
+    discordVoiceChildView.webContents.close()
+  }
+  discordVoiceChildView = null
+  lastDiscordVoiceUrl = null
+}
+
+function createDiscordVoiceOverlay(): void {
+  if (discordVoiceOverlayWindow && !discordVoiceOverlayWindow.isDestroyed()) {
+    discordVoiceOverlayWindow.focus()
+    return
+  }
+
+  const { x, y, width, height } = getRestoredBounds('discordVoice', OVERLAY_DEFAULTS.discordVoice)
+  discordVoiceOverlayWindow = new BrowserWindow({
+    x,
+    y,
+    width,
+    height,
+    minWidth: 180,
+    minHeight: 160,
+    transparent: true,
+    backgroundColor: '#00000000',
+    frame: false,
+    resizable: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    hasShadow: false,
+    show: false, // show after ready-to-show to avoid blank-frame flash
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    },
+  })
+
+  discordVoiceOverlayWindow.once('ready-to-show', () => {
+    discordVoiceOverlayWindow?.show()
+  })
+
+  discordVoiceOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
+  discordVoiceOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  windowToOverlayName.set(discordVoiceOverlayWindow, 'discordVoice')
+  applyInitialOverlayInput(discordVoiceOverlayWindow, 'discordVoice')
+  trackOverlayBounds('discordVoice', discordVoiceOverlayWindow)
+  discordVoiceOverlayWindow.on('resize', repositionDiscordVoiceChildView)
+
+  if (isDev) {
+    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
+    discordVoiceOverlayWindow.loadURL(`${rendererUrl}/#/discord-voice-overlay-window`)
+  } else {
+    discordVoiceOverlayWindow.loadFile(join(__dirname, '../renderer/index.html'), {
+      hash: '/discord-voice-overlay-window',
+    })
+  }
+
+  discordVoiceOverlayWindow.on('closed', () => {
+    // Destroying the parent window doesn't tear down an attached child
+    // WebContentsView's own renderer — without this its webContents (and the
+    // Discord page loaded into it) leaks as an orphaned target.
+    discordVoiceChildView?.webContents.close()
+    discordVoiceOverlayWindow = null
+    discordVoiceChildView = null
+    lastDiscordVoiceUrl = null
+  })
+}
+
 // ── Threat meter overlay window ──────────────────────────────────────────────
 
 function createThreatOverlay(): void {
@@ -2279,6 +2404,37 @@ ipcMain.handle('overlay:npc:toggle', () => {
   }
 })
 
+ipcMain.handle('overlay:discordvoice:open', () => {
+  createDiscordVoiceOverlay()
+})
+
+ipcMain.handle('overlay:discordvoice:close', () => {
+  if (discordVoiceOverlayWindow && !discordVoiceOverlayWindow.isDestroyed()) {
+    discordVoiceOverlayWindow.close()
+  }
+})
+
+ipcMain.handle('overlay:discordvoice:toggle', () => {
+  if (discordVoiceOverlayWindow && !discordVoiceOverlayWindow.isDestroyed()) {
+    discordVoiceOverlayWindow.close()
+  } else {
+    createDiscordVoiceOverlay()
+  }
+})
+
+// Called by DiscordVoiceOverlayWindowPage once it has read the saved
+// StreamKit URL out of Config — main process never talks to the Go backend's
+// config store itself, so it has to be handed the URL rather than fetching it.
+ipcMain.handle('overlay:discordvoice:set-url', (event, url: string) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  if (win) setDiscordVoiceContent(win, url)
+})
+
+ipcMain.handle('overlay:discordvoice:clear', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  if (win) clearDiscordVoiceContent(win)
+})
+
 ipcMain.handle('overlay:threat:open', () => {
   createThreatOverlay()
 })
@@ -2466,6 +2622,7 @@ function overlayWindowByName(name: WindowKey): BrowserWindow | null {
     case 'respawnTimer': return respawnTimerWindow
     case 'chChain': return chChainWindow
     case 'chMetronome': return chMetronomeWindow
+    case 'discordVoice': return discordVoiceOverlayWindow
     default: return null
   }
 }
@@ -2485,6 +2642,7 @@ function createOverlayByName(name: OverlayName): void {
     case 'respawnTimer': createRespawnTimerOverlay(); break
     case 'chChain': createCHChainOverlay(); break
     case 'chMetronome': createCHMetronomeOverlay(); break
+    case 'discordVoice': createDiscordVoiceOverlay(); break
     default: break
   }
 }

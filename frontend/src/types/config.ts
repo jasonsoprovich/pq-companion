@@ -213,6 +213,14 @@ export interface Preferences {
   kokoro_speed?: number
   // Wishlist watcher settings. See WishlistWatchSettings.
   wishlist_watch: WishlistWatchSettings
+  // ── Discord Voice overlay ──────────────────────────────────────────────
+  // Embeds Discord's own hosted StreamKit Overlay page in a popout overlay
+  // window (see issue #150) — we never talk to Discord's API ourselves, the
+  // user generates discord_voice_url via streamkit.discord.com/overlay and
+  // pastes it in. Pinned to one guild+channel; switching channels means
+  // pasting a new URL. Off by default.
+  discord_voice_enabled?: boolean
+  discord_voice_url?: string
 }
 
 export interface BackupSettings {

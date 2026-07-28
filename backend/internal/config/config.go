@@ -587,6 +587,19 @@ type Preferences struct {
 	// (loot lines, chat, raid calls, ...). See internal/wishlistwatch. Off by
 	// default — opt-in like the other alert-style preview features.
 	WishlistWatch WishlistWatchSettings `yaml:"wishlist_watch,omitempty" json:"wishlist_watch"`
+
+	// ── Discord Voice overlay ─────────────────────────────────────────────
+	// Embeds Discord's own hosted StreamKit Overlay page
+	// (streamkit.discord.com/overlay/voice/{guild}/{channel}) in a popout
+	// overlay window — see issue #150. We never talk to Discord's API
+	// ourselves; the user generates this URL themselves via Discord's site
+	// (which handles its own OAuth against Discord's pre-approved StreamKit
+	// app, not ours) and pastes it in. The URL is pinned to one guild+channel
+	// — there's no way to auto-follow the user's current channel without the
+	// same gated rpc.voice.read scope Discord already declined for us, so
+	// switching channels means pasting a new URL. Off by default.
+	DiscordVoiceEnabled bool   `yaml:"discord_voice_enabled,omitempty" json:"discord_voice_enabled"`
+	DiscordVoiceURL     string `yaml:"discord_voice_url,omitempty" json:"discord_voice_url"`
 }
 
 // WishlistWatchSettings configures the wishlist watcher's matching scope and
