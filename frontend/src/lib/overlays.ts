@@ -39,6 +39,17 @@ export type LockedMode = 'interactive' | 'clickthrough' | 'display-only'
 
 export const DEFAULT_LOCKED_MODE: LockedMode = 'interactive'
 
+// Per-overlay override of the fallback used when the user hasn't picked a
+// mode yet (see resolveLockedMode). Discord Voice has no rows to scroll or
+// clear — it's a passive roster — so "interactive" (the shared default) would
+// just mean "the whole thing captures the mouse on hover for no reason."
+// "clickthrough" is a better out-of-the-box default: only the header responds
+// to hover, the roster itself never blocks clicks to the game underneath.
+// Users can still change it in Settings → Overlays like any other overlay.
+const OVERLAY_DEFAULT_LOCKED_MODE: Partial<Record<OverlayName, LockedMode>> = {
+  discordVoice: 'clickthrough',
+}
+
 export const OVERLAY_DEFS: { name: OverlayName; label: string }[] = [
   { name: 'dps', label: 'DPS Meter' },
   { name: 'hps', label: 'HPS Meter' },
@@ -75,5 +86,5 @@ export function resolveLockedMode(
   modes: Partial<Record<string, LockedMode>> | undefined,
   name: OverlayName,
 ): LockedMode {
-  return modes?.[name] ?? DEFAULT_LOCKED_MODE
+  return modes?.[name] ?? OVERLAY_DEFAULT_LOCKED_MODE[name] ?? DEFAULT_LOCKED_MODE
 }

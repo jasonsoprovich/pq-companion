@@ -153,8 +153,13 @@ export default function DiscordVoiceOverlaySettings({
             This link is pinned to the one server + voice channel you picked
             when generating it — Discord doesn't let third-party apps like
             this one auto-detect "whichever channel I'm in right now."
-            Switching raid channels means repeating the StreamKit steps above
-            and pasting the new link.
+            Switching voice channels means repeating the StreamKit steps above
+            and pasting the new link. Only streamkit.discord.com links are
+            accepted — anything else is rejected and won't load. The link is
+            saved here and persists across restarts, so you only need to
+            paste it once per channel; if the roster ever stops updating,
+            the link itself may have expired on Discord's end — regenerate
+            it the same way and paste the new one.
           </p>
 
           {urlValid && (

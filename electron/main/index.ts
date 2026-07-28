@@ -655,6 +655,13 @@ let discordVoiceOverlayWindow: BrowserWindow | null = null
 // when the renderer re-sends the same URL (e.g. after a config:updated poll).
 let discordVoiceChildView: WebContentsView | null = null
 let lastDiscordVoiceUrl: string | null = null
+// Periodically reasserts the Discord Voice window's z-order above every
+// other overlay window (issue #150 feedback: the roster should stay visible
+// even if another overlay is dragged on top of it). setAlwaysOnTop's
+// relativeLevel argument only affects macOS window levels, so a plain
+// interval calling moveTop() is the mechanism that actually works on Windows,
+// which is the only platform this app ships a build for.
+let discordVoiceTopInterval: ReturnType<typeof setInterval> | null = null
 let sidecarProcess: ChildProcess | null = null
 
 // Backend port is discovered at runtime: the Go sidecar tries its preferred
@@ -1853,9 +1860,16 @@ function createDiscordVoiceOverlay(): void {
 
   discordVoiceOverlayWindow.once('ready-to-show', () => {
     discordVoiceOverlayWindow?.show()
+    discordVoiceOverlayWindow?.moveTop()
   })
 
   discordVoiceOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
+  if (discordVoiceTopInterval) clearInterval(discordVoiceTopInterval)
+  discordVoiceTopInterval = setInterval(() => {
+    if (discordVoiceOverlayWindow && !discordVoiceOverlayWindow.isDestroyed()) {
+      discordVoiceOverlayWindow.moveTop()
+    }
+  }, 2000)
   discordVoiceOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   windowToOverlayName.set(discordVoiceOverlayWindow, 'discordVoice')
   applyInitialOverlayInput(discordVoiceOverlayWindow, 'discordVoice')
@@ -1876,6 +1890,10 @@ function createDiscordVoiceOverlay(): void {
     // WebContentsView's own renderer — without this its webContents (and the
     // Discord page loaded into it) leaks as an orphaned target.
     discordVoiceChildView?.webContents.close()
+    if (discordVoiceTopInterval) {
+      clearInterval(discordVoiceTopInterval)
+      discordVoiceTopInterval = null
+    }
     discordVoiceOverlayWindow = null
     discordVoiceChildView = null
     lastDiscordVoiceUrl = null

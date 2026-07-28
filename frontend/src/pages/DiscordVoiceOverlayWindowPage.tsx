@@ -76,10 +76,12 @@ export default function DiscordVoiceOverlayWindowPage(): React.ReactElement {
       style={{
         width: '100vw',
         height: '100vh',
-        backgroundColor: `rgba(10,10,12,${chrome ? opacity : 0})`,
-        border: `1px solid rgba(255,255,255,${chrome ? 0.12 : 0})`,
-        transition: 'background-color 0.4s ease, border-color 0.4s ease',
-        borderRadius: 8,
+        // Deliberately no background/border here, unlike every other overlay
+        // — the body below the header is a live Discord roster, and shading
+        // it to match the app's opacity slider just obscures it for no
+        // reason (feedback from issue #150: "not a fan of the content area
+        // being shaded"). Only the header carries the app-consistent tint;
+        // the body is always fully see-through to the game.
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
@@ -97,15 +99,18 @@ export default function DiscordVoiceOverlayWindowPage(): React.ReactElement {
           alignItems: 'center',
           justifyContent: 'space-between',
           padding: '5px 8px',
-          borderBottom: '1px solid rgba(255,255,255,0.1)',
-          backgroundColor: 'rgba(255,255,255,0.04)',
+          borderTopLeftRadius: 8,
+          borderTopRightRadius: 8,
+          borderBottom: `1px solid rgba(255,255,255,${chrome ? 0.12 : 0})`,
+          backgroundColor: `rgba(10,10,12,${chrome ? opacity : 0})`,
+          backgroundImage: 'linear-gradient(rgba(255,255,255,0.04), rgba(255,255,255,0.04))',
           flexShrink: 0,
           height: 30,
           boxSizing: 'border-box',
           userSelect: 'none',
           opacity: chrome ? 1 : 0,
           pointerEvents: chrome ? 'auto' : 'none',
-          transition: 'opacity 0.4s ease',
+          transition: 'opacity 0.4s ease, background-color 0.4s ease, border-color 0.4s ease',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
