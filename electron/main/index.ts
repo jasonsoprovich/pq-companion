@@ -1793,6 +1793,15 @@ function setDiscordVoiceContent(win: BrowserWindow, url: string): void {
     discordVoiceChildView = new WebContentsView({
       webPreferences: { contextIsolation: true, nodeIntegration: false },
     })
+    // A WebContentsView has its own background color, independent of the
+    // parent BrowserWindow's `transparent: true` — it defaults to opaque
+    // white. StreamKit's page already renders its own body as transparent
+    // (that's the whole point — it's built for OBS/XSplit browser sources),
+    // but that only shows through if the embedder's compositor background is
+    // transparent too. Without this, the overlay above the game shows a solid
+    // white rectangle instead of letting the game show through around the
+    // roster.
+    discordVoiceChildView.setBackgroundColor('#00000000')
     win.contentView.addChildView(discordVoiceChildView)
     repositionDiscordVoiceChildView()
   }
