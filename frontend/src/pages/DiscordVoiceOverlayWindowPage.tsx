@@ -11,9 +11,13 @@
  * This page only renders the title-bar chrome. The body area below the header
  * is left empty on purpose — the actual Discord content is a separate native
  * view layered on top by the main process, not React-rendered here. A
- * placeholder message fills that space until a valid URL is configured. The
- * body is fully transparent by default; the discord_voice_shaded_content
- * preference opts it back into the header's app-consistent tint instead.
+ * placeholder message fills that space until a valid URL is configured.
+ *
+ * By default the header AND body share the same opacity/fade tint, matching
+ * every other overlay for visual consistency. discord_voice_minimal_mode is
+ * an opt-in "clean" look for once the window is positioned where it's
+ * wanted: both fade to permanently transparent (ignoring overlay_opacity),
+ * leaving just the live Discord avatars/names floating with no chrome.
  *
  * Known limitation: because the embedded content is a separate native view,
  * this window's chrome-fade and locked-mode "hover to re-enable interaction"
@@ -46,10 +50,10 @@ export default function DiscordVoiceOverlayWindowPage(): React.ReactElement {
   // URL is actually loaded so the overlay stays clean and minimal rather than
   // showing setup instructions over a live roster.
   const [hasContent, setHasContent] = useState(false)
-  // Off by default: the content area stays fully transparent regardless of
-  // overlay_opacity. Some users prefer it to match every other overlay's
-  // shaded body instead — see DiscordVoiceOverlaySettings.tsx.
-  const [shadedContent, setShadedContent] = useState(false)
+  // Off by default: header + body match every other overlay's opacity/fade.
+  // On: both permanently fade to transparent instead — see
+  // DiscordVoiceOverlaySettings.tsx.
+  const [minimalMode, setMinimalMode] = useState(false)
 
   // Hands the main process the current StreamKit URL so it can attach/update
   // the embedded child view — main never talks to the Go config store itself.
@@ -62,7 +66,7 @@ export default function DiscordVoiceOverlayWindowPage(): React.ReactElement {
         const url = c.preferences.discord_voice_url ?? ''
         const valid = enabled && isValidStreamKitVoiceUrl(url)
         setHasContent(valid)
-        setShadedContent(c.preferences.discord_voice_shaded_content ?? false)
+        setMinimalMode(c.preferences.discord_voice_minimal_mode ?? false)
         if (valid) {
           window.electron?.overlay?.setDiscordVoiceUrl?.(url)
         } else {
@@ -84,18 +88,18 @@ export default function DiscordVoiceOverlayWindowPage(): React.ReactElement {
   )
   useWebSocket(handleMessage)
 
+  // The shared tint every other overlay uses — applied to both header and
+  // body by default. In minimal mode both ignore this entirely and stay
+  // permanently transparent instead (see class doc comment above).
+  const tintBg = `rgba(10,10,12,${chrome ? opacity : 0})`
+  const tintBorder = `1px solid rgba(255,255,255,${chrome ? 0.12 : 0})`
+
   return (
     <div
       {...rootInteractionProps}
       style={{
         width: '100vw',
         height: '100vh',
-        // Deliberately no background/border here, unlike every other overlay
-        // — the body below the header is a live Discord roster, and shading
-        // it to match the app's opacity slider just obscures it for no
-        // reason (feedback from issue #150: "not a fan of the content area
-        // being shaded"). Only the header carries the app-consistent tint;
-        // the body is always fully see-through to the game.
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
@@ -115,15 +119,19 @@ export default function DiscordVoiceOverlayWindowPage(): React.ReactElement {
           padding: '5px 8px',
           borderTopLeftRadius: 8,
           borderTopRightRadius: 8,
-          borderBottom: `1px solid rgba(255,255,255,${chrome ? 0.12 : 0})`,
-          backgroundColor: `rgba(10,10,12,${chrome ? opacity : 0})`,
-          backgroundImage: 'linear-gradient(rgba(255,255,255,0.04), rgba(255,255,255,0.04))',
+          borderBottom: minimalMode ? 'none' : tintBorder,
+          backgroundColor: minimalMode ? 'transparent' : tintBg,
+          backgroundImage: minimalMode
+            ? undefined
+            : 'linear-gradient(rgba(255,255,255,0.04), rgba(255,255,255,0.04))',
           flexShrink: 0,
           height: 30,
           boxSizing: 'border-box',
           userSelect: 'none',
-          opacity: chrome ? 1 : 0,
-          pointerEvents: chrome ? 'auto' : 'none',
+          // Minimal mode keeps the controls always visible (no backdrop
+          // behind them, but still reachable) instead of fading with chrome.
+          opacity: minimalMode ? 1 : chrome ? 1 : 0,
+          pointerEvents: minimalMode ? 'auto' : chrome ? 'auto' : 'none',
           transition: 'opacity 0.4s ease, background-color 0.4s ease, border-color 0.4s ease',
         }}
       >
@@ -155,12 +163,11 @@ export default function DiscordVoiceOverlayWindowPage(): React.ReactElement {
       </div>
 
       {/* ── Body — the main process layers Discord's own StreamKit content
-          here as a native child view on top of whatever renders below. Fully
-          transparent by default (issue #150 feedback); shadedContent opts
-          back into the header's tint for users who want full visual
-          consistency with every other overlay's body instead. The
-          placeholder text only renders until a valid URL is actually loaded,
-          so a properly configured overlay stays clean and minimal. ──────── */}
+          here as a native child view on top of whatever renders below. Shares
+          the header's tint by default, matching every other overlay; minimal
+          mode drops it to permanently transparent instead. The placeholder
+          text only renders until a valid URL is actually loaded, so a
+          properly configured overlay stays clean and minimal. ────────────── */}
       <div
         style={{
           flex: 1,
@@ -169,8 +176,8 @@ export default function DiscordVoiceOverlayWindowPage(): React.ReactElement {
           justifyContent: 'center',
           padding: 12,
           textAlign: 'center',
-          backgroundColor: shadedContent ? `rgba(10,10,12,${chrome ? opacity : 0})` : undefined,
-          transition: shadedContent ? 'background-color 0.4s ease' : undefined,
+          backgroundColor: minimalMode ? 'transparent' : tintBg,
+          transition: 'background-color 0.4s ease',
         }}
       >
         {!hasContent && (

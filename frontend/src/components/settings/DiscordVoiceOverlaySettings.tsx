@@ -197,16 +197,18 @@ export default function DiscordVoiceOverlaySettings({
           >
             <input
               type="checkbox"
-              checked={prefs.discord_voice_shaded_content ?? false}
-              onChange={(e) => saveNow({ discord_voice_shaded_content: e.target.checked })}
+              checked={prefs.discord_voice_minimal_mode ?? false}
+              onChange={(e) => saveNow({ discord_voice_minimal_mode: e.target.checked })}
             />
-            Shade content area to match app opacity
+            Minimal mode (fade header + background, avatars only)
           </label>
           <p className="text-[11px] leading-relaxed" style={{ color: 'var(--color-muted)' }}>
-            Off by default: the roster stays fully see-through to the game
-            no matter what the Overlays opacity slider is set to. Turn this on
-            if you'd rather the content area match every other overlay's
-            shaded look — only the header is shaded either way.
+            Off by default: the header and content area both match every
+            other overlay's opacity/fade settings. Turn this on once you've
+            positioned the window where you want it — both the header and the
+            background tint fade to fully transparent, leaving just the live
+            avatars and names. The lock/close buttons stay reachable, just
+            without a shaded box behind them.
           </p>
 
           {urlValid && (

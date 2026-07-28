@@ -600,13 +600,15 @@ type Preferences struct {
 	// switching channels means pasting a new URL. Off by default.
 	DiscordVoiceEnabled bool   `yaml:"discord_voice_enabled,omitempty" json:"discord_voice_enabled"`
 	DiscordVoiceURL     string `yaml:"discord_voice_url,omitempty" json:"discord_voice_url"`
-	// DiscordVoiceShadedContent: by default the overlay's content area (below
-	// the header) is always fully transparent regardless of overlay_opacity,
-	// so the live roster never gets shaded over the game. Some users prefer
-	// full visual consistency with every other overlay's body instead —
-	// setting this true makes the content area follow overlay_opacity/
-	// overlay_fade_enabled exactly like the header does. Off by default.
-	DiscordVoiceShadedContent bool `yaml:"discord_voice_shaded_content,omitempty" json:"discord_voice_shaded_content"`
+	// DiscordVoiceMinimalMode: by default the header AND content area both
+	// follow overlay_opacity/overlay_fade_enabled exactly like every other
+	// overlay, for visual consistency. Setting this true is an opt-in "clean"
+	// look for once the window is positioned where it's wanted: both the
+	// header and the background tint fade to fully transparent permanently
+	// (ignoring overlay_opacity), leaving only the live Discord avatars/names
+	// visible — the header's lock/close controls stay put with no backdrop
+	// behind them, just without the shaded box. Off by default.
+	DiscordVoiceMinimalMode bool `yaml:"discord_voice_minimal_mode,omitempty" json:"discord_voice_minimal_mode"`
 }
 
 // WishlistWatchSettings configures the wishlist watcher's matching scope and
