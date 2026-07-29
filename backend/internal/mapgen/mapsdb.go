@@ -40,7 +40,7 @@ const (
 // Coordinates are rounded to int16. Real spans reach ~23,600 units, so 1-unit
 // resolution costs at most half a unit of error — about a quarter pixel at any
 // sane zoom.
-func WriteMapsDB(path string, zones []ZoneOutput) error {
+func WriteMapsDB(path string, zones []ZoneOutput, pois []POI) error {
 	if err := os.RemoveAll(path); err != nil {
 		return fmt.Errorf("remove existing %s: %w", path, err)
 	}
@@ -90,6 +90,24 @@ func WriteMapsDB(path string, zones []ZoneOutput) error {
 			return fmt.Errorf("insert %s zone: %w", z.Zone, err)
 		}
 	}
+	insPOI, err := tx.Prepare(`INSERT OR IGNORE INTO map_poi
+		(zone, x, y, z, category, label, source, ref_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+	if err != nil {
+		return fmt.Errorf("prepare map_poi: %w", err)
+	}
+	defer insPOI.Close()
+
+	// OR IGNORE rather than a plain INSERT: several sources legitimately land
+	// two identical pins on one spot — a spawngroup with the same NPC listed
+	// twice, or a zone line recorded from both sides. The UNIQUE constraint
+	// collapses them instead of failing the build.
+	for _, p := range pois {
+		if _, err := insPOI.Exec(p.Zone, p.X, p.Y, p.Z,
+			p.Category, p.Label, p.Source, p.RefID); err != nil {
+			return fmt.Errorf("insert poi %s/%s: %w", p.Zone, p.Label, err)
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit: %w", err)
 	}
@@ -120,6 +138,25 @@ CREATE TABLE map_zone (
   bnd_density REAL    NOT NULL,
   z_span      REAL    NOT NULL
 ) WITHOUT ROWID;
+
+CREATE TABLE map_poi (
+  id       INTEGER PRIMARY KEY,
+  zone     TEXT    NOT NULL,
+  x        INTEGER NOT NULL,
+  y        INTEGER NOT NULL,
+  z        INTEGER NOT NULL,
+  category TEXT    NOT NULL,
+  label    TEXT    NOT NULL,
+  -- source is load-bearing, not documentation: a quarm.db data release
+  -- regenerates every db:* row from scratch, and anything else (hand research,
+  -- community submissions) must survive that untouched. Without it there is no
+  -- safe way to refresh one and keep the other.
+  source   TEXT    NOT NULL,
+  ref_id   INTEGER,
+  UNIQUE (zone, x, y, category, label)
+);
+
+CREATE INDEX map_poi_zone ON map_poi (zone, category);
 `
 
 // ZoneOutput is one zone's finished map data, ready to write.

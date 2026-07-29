@@ -117,7 +117,32 @@ func main() {
 	if *report || *compareDir != "" {
 		return
 	}
-	if err := mapgen.WriteMapsDB(*outPath, outputs); err != nil {
+
+	// POIs come from quarm.db, not the client: everything here is source="db:*"
+	// and is rebuilt on every run.
+	poiDB, err := db.Open(*dbPath)
+	if err != nil {
+		log.Fatalf("open %s for POIs: %v", *dbPath, err)
+	}
+	pois, err := mapgen.GeneratePOIs(poiDB.DB)
+	poiDB.Close()
+	if err != nil {
+		log.Fatalf("generate POIs: %v", err)
+	}
+	byCategory := map[string]int{}
+	for _, p := range pois {
+		byCategory[p.Category]++
+	}
+	fmt.Printf("\n%d POIs\n", len(pois))
+	for _, c := range []string{
+		mapgen.CategoryVendor, mapgen.CategoryDoor, mapgen.CategoryGroundSpawn,
+		mapgen.CategoryZoneLine, mapgen.CategoryRaidTarget, mapgen.CategoryTradeskill,
+		mapgen.CategorySuccor, mapgen.CategoryTrap,
+	} {
+		fmt.Printf("   %-14s %5d\n", c, byCategory[c])
+	}
+
+	if err := mapgen.WriteMapsDB(*outPath, outputs, pois); err != nil {
 		log.Fatalf("write %s: %v", *outPath, err)
 	}
 	info, err := os.Stat(*outPath)

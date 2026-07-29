@@ -526,7 +526,51 @@ directly. Nothing else moved.
 Rendering was the only way to find this. Every one of these zones produced
 plausible numbers and a map that looked like *something*.
 
-### 5b.9 Effect on the risk register
+### 5b.9 POI generation — built
+
+`mapgen` now emits `map_poi` alongside the geometry. 4,723 POIs across eight
+categories, all `source="db:*"`:
+
+| Category | Rows | Source |
+|---|---|---|
+| vendor | 1,958 | `spawn2` + `npc_types.merchant_id > 0` |
+| door | 916 | `doors`, keyed or leading somewhere |
+| zone_line | 492 | `zone_points` |
+| ground_spawn | 467 | `ground_spawns` |
+| raid_target | 351 | `npc_types.raid_target = 1` |
+| tradeskill | 284 | `object`, named via the existing bagtype enum |
+| succor | 172 | `zone.safe_x/y/z` |
+| trap | 83 | `traps` |
+
+Three decisions worth recording:
+
+**No generic "named NPC" category.** The obvious heuristic — any name without a
+leading article — matches 9,018 NPCs, overwhelmingly guards and merchants. That
+would bury the map. `raid_target` is the server's own designation and gives 351
+pins that are actually worth finding. A curated notable-NPC layer can come later
+from `source='community'`.
+
+**Doors filtered to keyed-or-destination.** All 8,205 would be noise; most are
+ordinary interior doors. 916 are locked or lead somewhere.
+
+**Tradeskill container names reuse `internal/db/enums.ContainerTypeName`**
+rather than a second copy of the bagtype table that could drift from it.
+
+Validation: **99.9% of POIs fall inside their zone's geometry bounds**, and the
+Priest of Discord lands at map `(-235, -6)` from game `(235, 6)` — the same
+anchor the in-game `/map marker` check confirmed. That cross-check matters
+because POIs reach map space from `quarm.db` game coordinates by a different
+route than geometry does from client mesh coordinates; if the two diverged every
+pin would be silently misplaced with nothing looking wrong. It is now a test.
+
+`map_poi` writes with `INSERT OR IGNORE` against its UNIQUE key, because several
+sources legitimately produce duplicate pins on one spot — a spawngroup listing
+the same NPC twice, or a zone line recorded from both sides.
+
+Phase 2 is complete: geometry, three extractors, classifier, POIs and the
+`maps.db` writer. Final artifact is 6.9 MB.
+
+### 5b.10 Effect on the risk register
 
 The §11 "WLD/`.s3d` Go port is the long pole" risk drops from **High to
 Medium**. A complete working parser — PFS, WLD, `0x36` mesh, `0x15` placements,
