@@ -179,7 +179,7 @@ export default function MapsPage(): React.ReactElement {
               geometry={geometry}
               pois={pois}
               visibleCategories={visible}
-              focusPOI={selected}
+              highlights={selected ? [{ x: selected.x, y: selected.y, z: selected.z }] : []}
               onPOIClick={setSelected}
               height={560}
             />

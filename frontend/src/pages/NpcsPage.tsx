@@ -16,6 +16,7 @@ import {
 } from '../lib/npcHelpers'
 import { inGameItemLink, priceLabel } from '../lib/itemHelpers'
 import { mapMarkerCommand, mapRaidMarkerCommand, mapShowZoneCommand } from '../lib/zealMap'
+import { NPCSpawnMap } from '../components/maps/NPCSpawnMap'
 import CreateTriggerModal, { type TriggerPrefill } from '../components/CreateTriggerModal'
 import { ItemIcon } from '../components/Icon'
 import RawDataModal from './../components/RawDataModal'
@@ -1111,6 +1112,7 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
             <p className="pt-1 text-[10px]" style={{ color: 'var(--color-muted)' }}>
               Paste one command at a time — EQ collapses a multi-line paste into a single line.
             </p>
+            <NPCSpawnMap npcName={npc.name} spawns={spawns.spawn_points} />
           </Section>
         )}
 

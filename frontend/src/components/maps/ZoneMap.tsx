@@ -1,6 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MapGeometry, MapPOI, MapPOICategory, MapZone } from '../../types/map'
 
+// MapHighlight is a prominent marker drawn over the map, independent of the
+// generated POI set — an NPC's spawn point, or the POI the user just clicked.
+export interface MapHighlight {
+  x: number
+  y: number
+  z?: number
+  label?: string
+}
+
 // ZoneMap draws a zone's geometry and POIs on a canvas with pan/zoom and a
 // depth control.
 //
@@ -14,9 +23,10 @@ export interface ZoneMapProps {
   pois: MapPOI[]
   // visibleCategories gates POI layers; undefined shows all.
   visibleCategories?: Set<MapPOICategory>
-  // focusPOI centres and highlights one pin — used by the NPC page to point at
-  // a specific spawn.
-  focusPOI?: MapPOI | null
+  // highlights are drawn prominently on top of everything else. A list rather
+  // than a single pin because an NPC routinely has several spawn points, and
+  // showing only one would quietly imply it is the only place it appears.
+  highlights?: MapHighlight[]
   // playerPos is the live position from ZealPipes, when connected.
   playerPos?: { x: number; y: number; z: number; heading?: number } | null
   onPOIClick?: (poi: MapPOI) => void
@@ -48,7 +58,7 @@ export function ZoneMap({
   geometry,
   pois,
   visibleCategories,
-  focusPOI,
+  highlights,
   playerPos,
   onPOIClick,
   height = 520,
@@ -172,24 +182,25 @@ export function ZoneMap({
       ctx.globalAlpha = 1
     }
 
-    // ── focused pin ──
-    if (focusPOI) {
-      const [px, py] = toScreen(focusPOI.x, focusPOI.y)
+    // ── highlights ──
+    for (const h of highlights ?? []) {
+      const [px, py] = toScreen(h.x, h.y)
       ctx.strokeStyle = '#f8fafc'
       ctx.lineWidth = 2
       ctx.beginPath()
       ctx.arc(px, py, 9, 0, Math.PI * 2)
       ctx.stroke()
       ctx.beginPath()
-      ctx.moveTo(px - 14, py)
-      ctx.lineTo(px - 6, py)
-      ctx.moveTo(px + 6, py)
-      ctx.lineTo(px + 14, py)
-      ctx.moveTo(px, py - 14)
-      ctx.lineTo(px, py - 6)
-      ctx.moveTo(px, py + 6)
-      ctx.lineTo(px, py + 14)
+      ctx.moveTo(px - 14, py); ctx.lineTo(px - 6, py)
+      ctx.moveTo(px + 6, py); ctx.lineTo(px + 14, py)
+      ctx.moveTo(px, py - 14); ctx.lineTo(px, py - 6)
+      ctx.moveTo(px, py + 6); ctx.lineTo(px, py + 14)
       ctx.stroke()
+      if (h.label) {
+        ctx.font = '11px ui-monospace, monospace'
+        ctx.fillStyle = '#f8fafc'
+        ctx.fillText(h.label, px + 13, py - 10)
+      }
     }
 
     // ── player ──
@@ -209,7 +220,7 @@ export function ZoneMap({
       ctx.fill()
       ctx.restore()
     }
-  }, [geometry, shown, zone, size, toScreen, view.zoom, depth, focusPOI, playerPos, showLabels])
+  }, [geometry, shown, zone, size, toScreen, view.zoom, depth, highlights, playerPos, showLabels])
 
   const onWheel = (e: React.WheelEvent): void => {
     e.preventDefault()
