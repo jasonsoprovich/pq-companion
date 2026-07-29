@@ -475,7 +475,58 @@ prototype's numbers:
 Neither would have been caught by "does it compile and produce a map" — the
 maps looked fine in both cases.
 
-### 5b.8 Effect on the risk register
+### 5b.8 Valley-zone review — the override list was the wrong fix
+
+All 18 valley zones rendered three ways with `mapgen -compare` and inspected.
+The finding was not "three overrides were right" but that most of the valley was
+one misdiagnosed pattern.
+
+**The three existing overrides were all correct**, and for the reason expected:
+
+| Zone | Contours | Silhouette | Boundary | Verdict |
+|---|---|---|---|---|
+| arena | scattered fragments | bare rectangle | ring, alcoves, tunnel | boundary ✓ |
+| ssratemple | a few wall rings | blob outline | full temple floor plan | boundary ✓ |
+| warrens | 298 fragments | clean corridors | detailed corridors | not contours ✓ |
+
+**But five more zones were misclassified the same way.** `echo`, `powater`,
+`netherbian`, `paludal` and `thedeep` all took the terrain branch on boundary
+density alone, and on every one contours came out fragmentary or dashed while
+the silhouette was clean. They share a signature: **occupancy at or below 0.30**
+— walkable area covering less than a third of the footprint, which no open
+terrain zone does.
+
+That is a rule gap, not five more names for the override table. Added a sparse
+pre-check ahead of the density test:
+
+```
+if   occupancy < 0.35 && bnd_density >= 0.30  -> silhouette   (corridor / cave network)
+elif bnd_density < 0.45                       -> contours     (continuous terrain)
+elif occupancy   < 0.60                       -> silhouette
+else                                          -> boundary
+```
+
+The `bnd_density >= 0.30` floor is doing real work. `fungusgrove` is the one
+low-occupancy zone whose contours render continuous and genuinely informative,
+and its density (0.24) sits well below the others (0.34–0.38) — a more
+continuous mesh, not a corridor network. The floor keeps it on contours without
+needing an entry in the table.
+
+Corpus effect: exactly five zones flipped contours → silhouette, `fungusgrove`
+held, and **`warrens` no longer needs an override** — the rule now classifies it
+directly. Nothing else moved.
+
+| | before | after |
+|---|---|---|
+| contours | 77 | 72 |
+| silhouette | 78 | 83 |
+| boundary | 23 | 23 |
+| overrides | 3 | **2** |
+
+Rendering was the only way to find this. Every one of these zones produced
+plausible numbers and a map that looked like *something*.
+
+### 5b.9 Effect on the risk register
 
 The §11 "WLD/`.s3d` Go port is the long pole" risk drops from **High to
 Medium**. A complete working parser — PFS, WLD, `0x36` mesh, `0x15` placements,

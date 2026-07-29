@@ -42,21 +42,39 @@ type Classification struct {
 const (
 	bdThreshold  = 0.45
 	occThreshold = 0.60
+
+	// sparseOccThreshold / sparseBDFloor catch dungeons and cave networks whose
+	// boundary density lands in the terrain range.
+	//
+	// Established by rendering all 18 valley zones three ways: echo, powater,
+	// netherbian, paludal, thedeep and warrens all took the terrain branch on
+	// boundary density alone, and contours came out fragmentary or dashed on
+	// every one of them while silhouette was clean. What they share is very low
+	// occupancy — walkable area covers a quarter of the footprint or less, which
+	// no open terrain zone does.
+	//
+	// The BD floor is what keeps fungusgrove on contours. It is the one
+	// low-occupancy zone whose contours render continuous and informative, and
+	// its density (0.24) sits well below the others (0.34-0.38) — a genuinely
+	// more continuous mesh, not a corridor network.
+	sparseOccThreshold = 0.35
+	sparseBDFloor      = 0.30
 )
 
-// techniqueOverrides pins zones the thresholds get wrong.
+// techniqueOverrides pins the zones no threshold gets right.
 //
-// These sit in the 0.30-0.60 boundary-density valley, where the metric is
-// genuinely ambiguous. A short hand-checked list is more honest than tuning
-// thresholds until they happen to agree with 18 outliers — and tuning that
-// finely would misclassify zones currently handled correctly.
+// Both are high-occupancy built structures whose boundary density happens to
+// fall in the terrain range, so neither the sparse rule nor the density rule
+// reaches them. Verified by rendering all three techniques: for each, contours
+// are scattered fragments and the silhouette is a bare outline, while boundary
+// extraction produces the real floor plan.
+//
+// warrens used to need an entry; the sparse rule now classifies it directly,
+// which is the better outcome — a rule that generalises beats a pinned name.
 var techniqueOverrides = map[string]Technique{
-	// Indoor dungeon: low occupancy says sparse corridors, but its boundary
-	// density falls just under the terrain threshold.
-	"warrens": TechniqueSilhouette,
-	// A built structure, not terrain.
+	// The arena ring, its alcoves and the entrance tunnel. occ=0.78, bnd=0.38.
 	"arena": TechniqueBoundary,
-	// Large indoor temple with a tall Z span.
+	// Ssraeshza Temple's multi-level floor plan. occ=0.69, bnd=0.43.
 	"ssratemple": TechniqueBoundary,
 }
 
@@ -86,12 +104,14 @@ func Classify(z *Zone) Classification {
 	c.ZSpan = maxZ - minZ
 
 	switch {
+	case c.Occupancy < sparseOccThreshold && c.BoundaryDensit >= sparseBDFloor:
+		c.Technique = TechniqueSilhouette // sparse corridor / cave network
 	case c.BoundaryDensit < bdThreshold:
-		c.Technique = TechniqueContours
+		c.Technique = TechniqueContours // continuous terrain surface
 	case c.Occupancy < occThreshold:
 		c.Technique = TechniqueSilhouette
 	default:
-		c.Technique = TechniqueBoundary
+		c.Technique = TechniqueBoundary // discrete floor slabs
 	}
 
 	if t, ok := techniqueOverrides[z.ShortName]; ok {

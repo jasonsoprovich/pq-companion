@@ -33,6 +33,7 @@ func main() {
 	outPath := flag.String("out", "data/maps.db", "output maps.db path")
 	zoneList := flag.String("zones", "", "comma-separated zone short names (default: all)")
 	report := flag.Bool("report", false, "print the classification table and write nothing")
+	compareDir := flag.String("compare", "", "write per-zone side-by-side SVGs of all three techniques here, and write no maps.db")
 	flag.Parse()
 
 	if *clientDir == "" {
@@ -68,6 +69,18 @@ func main() {
 		segs := mapgen.Extract(z, c)
 		minX, minY, maxX, maxY := z.Bounds()
 
+		if *compareDir != "" {
+			if err := os.MkdirAll(*compareDir, 0o755); err != nil {
+				log.Fatalf("mkdir %s: %v", *compareDir, err)
+			}
+			title := fmt.Sprintf("%s   occ=%.2f  bnd_d=%.2f  z_span=%.0f  -> %s",
+				name, c.Occupancy, c.BoundaryDensit, c.ZSpan, c.Technique)
+			out := filepath.Join(*compareDir, name+".svg")
+			if err := mapgen.RenderComparison(out, title, mapgen.AllTechniques(z, c), 520); err != nil {
+				log.Fatalf("render %s: %v", name, err)
+			}
+		}
+
 		note := ""
 		if c.Overridden {
 			note = " (override)"
@@ -101,7 +114,7 @@ func main() {
 		fmt.Printf("   FAILED %s\n", f)
 	}
 
-	if *report {
+	if *report || *compareDir != "" {
 		return
 	}
 	if err := mapgen.WriteMapsDB(*outPath, outputs); err != nil {
