@@ -128,3 +128,69 @@ func within(got, want int, tol float64) bool {
 	d := float64(got-want) / float64(want)
 	return d <= tol && d >= -tol
 }
+
+// TestExtractors_MatchReferencePipeline pins each extractor to the Python
+// prototype's segment counts, and — more importantly — pins the technique the
+// classifier picks. A wrong technique is the failure that matters: boundary
+// extraction on terrain yields an empty rectangle, and a silhouette of an open
+// zone is just its footprint.
+func TestExtractors_MatchReferencePipeline(t *testing.T) {
+	requireClient(t)
+
+	cases := []struct {
+		zone      string
+		technique mapgen.Technique
+		segments  int
+	}{
+		{"unrest", mapgen.TechniqueBoundary, 5013},
+		{"qeynos2", mapgen.TechniqueBoundary, 4283},
+		{"gfaydark", mapgen.TechniqueContours, 14140},
+		{"akheva", mapgen.TechniqueSilhouette, 190},
+		{"necropolis", mapgen.TechniqueSilhouette, 1605},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.zone, func(t *testing.T) {
+			z, err := mapgen.LoadZone(clientDir, tc.zone)
+			if err != nil {
+				t.Fatalf("load: %v", err)
+			}
+			c := mapgen.Classify(z)
+			if c.Technique != tc.technique {
+				t.Errorf("technique: got %q, want %q (occ=%.2f bnd=%.2f)",
+					c.Technique, tc.technique, c.Occupancy, c.BoundaryDensit)
+			}
+			// Go's map iteration order differs from Python's insertion order,
+			// so chain start points differ and counts land a few percent apart.
+			// 5% catches a real regression without chasing that noise.
+			if n := len(mapgen.Extract(z, c)); !within(n, tc.segments, 0.05) {
+				t.Errorf("segments: got %d, want ~%d", n, tc.segments)
+			}
+		})
+	}
+}
+
+// TestChainKeyIncludesZ guards a bug that silently halved boundary detail:
+// dropping Z from the chain key merges vertices stacked on different floors,
+// which inflates their degree past 2 and cuts the chain walk short. The symptom
+// was quiet — maps still rendered, just with far less detail.
+func TestChainKeyIncludesZ(t *testing.T) {
+	// A vertical run and a horizontal run meeting at one XY but two different
+	// heights. With Z in the key these are two separate 1-segment chains; with
+	// Z dropped they look like a single degree-4 junction.
+	segs := []mapgen.Segment{
+		{A: mapgen.Vec3{X: 0, Y: 0, Z: 0}, B: mapgen.Vec3{X: 10, Y: 0, Z: 0}},
+		{A: mapgen.Vec3{X: 10, Y: 0, Z: 0}, B: mapgen.Vec3{X: 20, Y: 0, Z: 0}},
+		{A: mapgen.Vec3{X: 0, Y: 0, Z: 100}, B: mapgen.Vec3{X: 10, Y: 0, Z: 100}},
+		{A: mapgen.Vec3{X: 10, Y: 0, Z: 100}, B: mapgen.Vec3{X: 20, Y: 0, Z: 100}},
+	}
+	chains := mapgen.Chain(segs)
+	if len(chains) != 2 {
+		t.Fatalf("got %d chains, want 2 (one per storey)", len(chains))
+	}
+	for i, ch := range chains {
+		if len(ch) != 3 {
+			t.Errorf("chain %d: got %d points, want 3 (walk should not break)", i, len(ch))
+		}
+	}
+}
