@@ -30,7 +30,10 @@ const LAYERS: { key: MapPOICategory; label: string; on: boolean }[] = [
 
 export interface ZoneMapPanelProps {
   zoneShortName: string | null
-  height?: number
+  // 'fill' takes the parent's full height, which is what both full-page
+  // surfaces want — a fixed pixel height left dead space below the map and put
+  // the depth control adrift in the middle of the pane.
+  height?: number | 'fill'
   // showZoneButton adds the "Show in game" clipboard action. The Maps page puts
   // it in its own header instead.
   showZoneButton?: boolean
@@ -38,7 +41,7 @@ export interface ZoneMapPanelProps {
 
 export function ZoneMapPanel({
   zoneShortName,
-  height = 560,
+  height = 'fill',
   showZoneButton = true,
 }: ZoneMapPanelProps): React.ReactElement {
   const navigate = useNavigate()
@@ -82,9 +85,11 @@ export function ZoneMapPanel({
     )
   }
 
+  const fill = height === 'fill'
+
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-1">
+    <div className={`flex flex-col gap-2${fill ? ' h-full' : ''}`}>
+      <div className="flex shrink-0 flex-wrap items-center gap-1">
         {LAYERS.map((l) => {
           const n = counts[l.key] ?? 0
           const active = visible.has(l.key)
@@ -140,24 +145,28 @@ export function ZoneMapPanel({
       </div>
 
       {/* A render fault in the canvas must not unmount the app. One did:
-          a null deref in the drag handler blanked the whole window. */}
-      <ErrorBoundary label="Zone map">
-        <ZoneMap
-          zone={zone}
-          geometry={geometry}
-          detail={detail}
-          showDetail={showDetail}
-          pois={pois}
-          visibleCategories={visible}
-          highlights={selected ? [{ x: selected.x, y: selected.y, z: selected.z }] : []}
-          onPOIClick={setSelected}
-          height={height}
-        />
-      </ErrorBoundary>
+          a null deref in the drag handler blanked the whole window.
+          min-h-0 is what lets this shrink inside the flex column instead of
+          forcing the toggles and inspector off the bottom. */}
+      <div className={fill ? 'min-h-0 flex-1' : undefined}>
+        <ErrorBoundary label="Zone map">
+          <ZoneMap
+            zone={zone}
+            geometry={geometry}
+            detail={detail}
+            showDetail={showDetail}
+            pois={pois}
+            visibleCategories={visible}
+            highlights={selected ? [{ x: selected.x, y: selected.y, z: selected.z }] : []}
+            onPOIClick={setSelected}
+            height={height}
+          />
+        </ErrorBoundary>
+      </div>
 
       {selected && (
         <div
-          className="flex items-center gap-2 rounded border px-2 py-1.5 text-sm"
+          className="flex shrink-0 items-center gap-2 rounded border px-2 py-1.5 text-sm"
           style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
         >
           <span

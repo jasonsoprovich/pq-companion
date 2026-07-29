@@ -35,7 +35,9 @@ export interface ZoneMapProps {
   // playerPos is the live position from ZealPipes, when connected.
   playerPos?: { x: number; y: number; z: number; heading?: number } | null
   onPOIClick?: (poi: MapPOI) => void
-  height?: number
+  // height is a pixel height, or 'fill' to take whatever the parent gives —
+  // which needs the parent to have a definite height of its own.
+  height?: number | 'fill'
   showLabels?: boolean
 }
 
@@ -74,7 +76,8 @@ export function ZoneMap({
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const wrapRef = useRef<HTMLDivElement | null>(null)
   const [view, setView] = useState({ zoom: 1, panX: 0, panY: 0 })
-  const [size, setSize] = useState({ w: 800, h: height })
+  const fill = height === 'fill'
+  const [size, setSize] = useState({ w: 800, h: fill ? 520 : height })
   const drag = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null)
 
   // Depth window. null means "show everything"; otherwise geometry outside
@@ -90,13 +93,15 @@ export function ZoneMap({
   useEffect(() => {
     const el = wrapRef.current
     if (!el) return
-    const ro = new ResizeObserver(() => {
-      setSize({ w: el.clientWidth, h: height })
-    })
+    // In fill mode the wrapper's height comes from the parent's layout, not
+    // from its contents, so measuring it here is not circular.
+    const measure = (): void =>
+      setSize({ w: el.clientWidth, h: fill ? el.clientHeight : (height as number) })
+    const ro = new ResizeObserver(measure)
     ro.observe(el)
-    setSize({ w: el.clientWidth, h: height })
+    measure()
     return () => ro.disconnect()
-  }, [height])
+  }, [height, fill])
 
   // Reset the view whenever the zone changes, so switching zones doesn't leave
   // you panned off into empty space.
@@ -332,12 +337,15 @@ export function ZoneMap({
   }
 
   return (
-    <div ref={wrapRef} className="relative w-full select-none">
+    <div ref={wrapRef} className={`relative w-full select-none${fill ? ' h-full' : ''}`}>
       <canvas
         ref={canvasRef}
         style={{
           width: '100%',
-          height,
+          height: fill ? '100%' : height,
+          // Canvas is inline by default, so without this the baseline gap
+          // leaves a few stray pixels under it in fill mode.
+          display: 'block',
           background: 'var(--color-background)',
           cursor: drag.current ? 'grabbing' : 'grab',
           borderRadius: 6,
@@ -431,31 +439,47 @@ function DepthControl({
       >
         Depth
       </span>
-      <input
-        type="range"
-        min={lo}
-        max={hi}
-        value={cur.focus}
-        // Dragging the slider engages the filter, so there is no separate
-        // "enable" step to find.
-        onChange={(e) => onChange({ ...cur, focus: Number(e.target.value) })}
-        className="w-36"
-        title="Height to focus on"
-      />
-      <input
-        type="range"
-        min={Math.max(10, Math.round(zone.z_span / 40))}
-        max={Math.round(zone.z_span / 2)}
-        value={cur.range}
-        onChange={(e) => onChange({ ...cur, range: Number(e.target.value) })}
-        className="w-20"
-        title="How much depth to keep in focus"
-      />
+
+      {/* Each slider carries its own caption. Two bare sliders side by side
+          gave no clue which was which without hovering for a tooltip. */}
+      <label className="flex items-center gap-1.5">
+        <span className="text-[10px]" style={{ color: 'var(--color-muted)' }}>
+          Height
+        </span>
+        <input
+          type="range"
+          min={lo}
+          max={hi}
+          value={cur.focus}
+          // Dragging the slider engages the filter, so there is no separate
+          // "enable" step to find.
+          onChange={(e) => onChange({ ...cur, focus: Number(e.target.value) })}
+          className="w-36"
+          title="Which height to bring into focus — drag to move up and down through the zone"
+        />
+      </label>
+
+      <label className="flex items-center gap-1.5">
+        <span className="text-[10px]" style={{ color: 'var(--color-muted)' }}>
+          Thickness
+        </span>
+        <input
+          type="range"
+          min={Math.max(10, Math.round(zone.z_span / 40))}
+          max={Math.round(zone.z_span / 2)}
+          value={cur.range}
+          onChange={(e) => onChange({ ...cur, range: Number(e.target.value) })}
+          className="w-20"
+          title="How thick a slice stays in focus — widen to see more levels at once"
+        />
+      </label>
+
       <span
-        className="w-24 text-right text-[10px] tabular-nums"
+        className="w-28 text-right text-[10px] tabular-nums"
         style={{ color: 'var(--color-muted)' }}
+        title={active ? `Showing z ${cur.focus - cur.range} to ${cur.focus + cur.range}` : undefined}
       >
-        {active ? `${cur.focus} ±${cur.range}` : 'all levels'}
+        {active ? `z ${cur.focus} ±${cur.range}` : 'all levels'}
       </span>
       <button
         onClick={() => onChange(null)}

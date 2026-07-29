@@ -86,7 +86,9 @@ export default function MapsPage(): React.ReactElement {
         </div>
         {/* Remounting per zone resets pan/zoom and any POI selection, so
             switching zones never leaves a stale pin from the previous one. */}
-        <ZoneMapPanel key={zoneName ?? ''} zoneShortName={zoneName} height={560} />
+        <div className="min-h-0 flex-1">
+          <ZoneMapPanel key={zoneName ?? ''} zoneShortName={zoneName} />
+        </div>
       </div>
     </div>
   )

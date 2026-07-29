@@ -879,10 +879,15 @@ function DetailPanel({ zone }: DetailPanelProps): React.ReactElement {
         </div>
       </div>
 
-      {/* Tab content */}
-      <div className="flex-1 overflow-y-auto px-5 py-4">
+      {/* Tab content. The map tab sizes itself to the pane instead of
+          scrolling — a fixed-height canvas left dead space below it. */}
+      <div
+        className={`flex-1 px-5 py-4 ${
+          activeTab === 'map' ? 'min-h-0 overflow-hidden' : 'overflow-y-auto'
+        }`}
+      >
         {activeTab === 'overview' && <OverviewTab zone={zone} />}
-        {activeTab === 'map' && <ZoneMapPanel zoneShortName={zone.short_name} height={520} />}
+        {activeTab === 'map' && <ZoneMapPanel zoneShortName={zone.short_name} />}
         {activeTab === 'npcs' && <NPCsTab shortName={zone.short_name} />}
         {activeTab === 'connections' && <ConnectionsTab shortName={zone.short_name} />}
         {activeTab === 'drops' && <DropsTab shortName={zone.short_name} />}
