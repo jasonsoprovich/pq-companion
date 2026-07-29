@@ -61,6 +61,11 @@ export interface ElectronAPI {
     openNPC: () => Promise<void>
     closeNPC: () => Promise<void>
     toggleNPC: () => Promise<void>
+    openDiscordVoice: () => Promise<void>
+    closeDiscordVoice: () => Promise<void>
+    toggleDiscordVoice: () => Promise<void>
+    setDiscordVoiceUrl: (url: string) => Promise<void>
+    clearDiscordVoice: () => Promise<void>
     openThreat: () => Promise<void>
     closeThreat: () => Promise<void>
     toggleThreat: () => Promise<void>

@@ -82,6 +82,14 @@ contextBridge.exposeInMainWorld('electron', {
     openNPC: (): Promise<void> => ipcRenderer.invoke('overlay:npc:open'),
     closeNPC: (): Promise<void> => ipcRenderer.invoke('overlay:npc:close'),
     toggleNPC: (): Promise<void> => ipcRenderer.invoke('overlay:npc:toggle'),
+    openDiscordVoice: (): Promise<void> => ipcRenderer.invoke('overlay:discordvoice:open'),
+    closeDiscordVoice: (): Promise<void> => ipcRenderer.invoke('overlay:discordvoice:close'),
+    toggleDiscordVoice: (): Promise<void> => ipcRenderer.invoke('overlay:discordvoice:toggle'),
+    // Hands the main process the saved StreamKit URL so it can attach/update
+    // the embedded content view — main never talks to the Go config store.
+    setDiscordVoiceUrl: (url: string): Promise<void> =>
+      ipcRenderer.invoke('overlay:discordvoice:set-url', url),
+    clearDiscordVoice: (): Promise<void> => ipcRenderer.invoke('overlay:discordvoice:clear'),
     openThreat: (): Promise<void> => ipcRenderer.invoke('overlay:threat:open'),
     closeThreat: (): Promise<void> => ipcRenderer.invoke('overlay:threat:close'),
     toggleThreat: (): Promise<void> => ipcRenderer.invoke('overlay:threat:toggle'),

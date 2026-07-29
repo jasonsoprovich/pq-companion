@@ -213,6 +213,22 @@ export interface Preferences {
   kokoro_speed?: number
   // Wishlist watcher settings. See WishlistWatchSettings.
   wishlist_watch: WishlistWatchSettings
+  // ── Discord Voice overlay ──────────────────────────────────────────────
+  // Embeds Discord's own hosted StreamKit Overlay page in a popout overlay
+  // window (see issue #150) — we never talk to Discord's API ourselves, the
+  // user generates discord_voice_url via streamkit.discord.com/overlay and
+  // pastes it in. Pinned to one guild+channel; switching channels means
+  // pasting a new URL. Off by default.
+  discord_voice_enabled?: boolean
+  discord_voice_url?: string
+  // By default the header AND content area both follow overlay_opacity/
+  // overlay_fade_enabled exactly like every other overlay, for visual
+  // consistency. true is an opt-in "clean" look for once the window is
+  // positioned where it's wanted: both the header and the background tint
+  // fade to fully transparent permanently (ignoring overlay_opacity), leaving
+  // only the live Discord avatars/names visible — the header's lock/close
+  // controls stay put with no backdrop behind them. Off by default.
+  discord_voice_minimal_mode?: boolean
 }
 
 export interface BackupSettings {

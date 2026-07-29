@@ -23,6 +23,7 @@ export type OverlayName =
   | 'respawnTimer'
   | 'chChain'
   | 'chMetronome'
+  | 'discordVoice'
 
 /**
  * How an overlay behaves while locked.
@@ -38,6 +39,17 @@ export type LockedMode = 'interactive' | 'clickthrough' | 'display-only'
 
 export const DEFAULT_LOCKED_MODE: LockedMode = 'interactive'
 
+// Per-overlay override of the fallback used when the user hasn't picked a
+// mode yet (see resolveLockedMode). Discord Voice has no rows to scroll or
+// clear — it's a passive roster — so "interactive" (the shared default) would
+// just mean "the whole thing captures the mouse on hover for no reason."
+// "clickthrough" is a better out-of-the-box default: only the header responds
+// to hover, the roster itself never blocks clicks to the game underneath.
+// Users can still change it in Settings → Overlays like any other overlay.
+const OVERLAY_DEFAULT_LOCKED_MODE: Partial<Record<OverlayName, LockedMode>> = {
+  discordVoice: 'clickthrough',
+}
+
 export const OVERLAY_DEFS: { name: OverlayName; label: string }[] = [
   { name: 'dps', label: 'DPS Meter' },
   { name: 'hps', label: 'HPS Meter' },
@@ -50,7 +62,20 @@ export const OVERLAY_DEFS: { name: OverlayName; label: string }[] = [
   { name: 'respawnTimer', label: 'Respawn Timers' },
   { name: 'chChain', label: 'CH Chain' },
   { name: 'chMetronome', label: 'CH Metronome' },
+  { name: 'discordVoice', label: 'Discord Voice' },
 ]
+
+// Matches a StreamKit voice-overlay URL, e.g.
+// https://streamkit.discord.com/overlay/voice/123456789/987654321 — see
+// DiscordVoiceOverlaySettings.tsx and issue #150. Shared so the Settings card
+// and the overlay window page agree on what "looks valid" means; the Electron
+// main process (electron/main/index.ts) has its own copy of this same pattern
+// since it can't import frontend code.
+const STREAMKIT_VOICE_URL_RE = /^https:\/\/streamkit\.discord\.com\/overlay\/voice\/\d+\/\d+(?:[/?#].*)?$/
+
+export function isValidStreamKitVoiceUrl(url: string): boolean {
+  return STREAMKIT_VOICE_URL_RE.test(url.trim())
+}
 
 /**
  * Resolve a single overlay's locked mode from the stored preference map,
@@ -61,5 +86,5 @@ export function resolveLockedMode(
   modes: Partial<Record<string, LockedMode>> | undefined,
   name: OverlayName,
 ): LockedMode {
-  return modes?.[name] ?? DEFAULT_LOCKED_MODE
+  return modes?.[name] ?? OVERLAY_DEFAULT_LOCKED_MODE[name] ?? DEFAULT_LOCKED_MODE
 }

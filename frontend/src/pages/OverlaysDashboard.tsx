@@ -24,9 +24,12 @@ import RespawnTimerPanel from '../components/overlays/RespawnTimerPanel'
 import CHChainPanel from '../components/overlays/CHChainPanel'
 import CHMetronomePanel from '../components/overlays/CHMetronomePanel'
 import CustomTimerPanel from '../components/overlays/CustomTimerPanel'
+import DiscordVoicePanel from '../components/overlays/DiscordVoicePanel'
 import { ConfirmModal } from '../components/ConfirmModal'
 import TimerGroupsModal from '../components/TimerGroupsModal'
-import { clearTimers, listTimerGroups } from '../services/api'
+import { clearTimers, listTimerGroups, getConfig } from '../services/api'
+import { useWebSocket } from '../hooks/useWebSocket'
+import { WSEvent } from '../lib/wsEvents'
 import type { TimerGroup } from '../types/trigger'
 import {
   DASHBOARD_PANEL_LABELS,
@@ -73,6 +76,7 @@ const PANEL_POPOUT: Record<DashboardPanelKey, { name: OverlayName; toggle: () =>
   chChain:     { name: 'chChain',      toggle: () => { window.electron?.overlay?.toggleCHChain() } },
   chMetronome: { name: 'chMetronome',  toggle: () => { window.electron?.overlay?.toggleCHMetronome() } },
   custom:      { name: 'customTimer',  toggle: () => { window.electron?.overlay?.toggleCustomTimer() } },
+  discordVoice: { name: 'discordVoice', toggle: () => { window.electron?.overlay?.toggleDiscordVoice() } },
 }
 
 // Compact square icon button for the manager's per-overlay rows.
@@ -403,10 +407,38 @@ export default function OverlaysDashboard(): React.ReactElement {
   // new initial values.
   const [layoutVersion, setLayoutVersion] = useState(0)
 
+  // Discord Voice only makes sense to offer here once the user has actually
+  // turned it on in Settings → Overlays — unlike the other panels, showing it
+  // with nothing configured would just be dead weight in the menu. Read live
+  // (not a static build-time flag like SHOW_HPS_PANEL) since it's a runtime
+  // preference the user can flip at any time.
+  const [discordVoiceEnabled, setDiscordVoiceEnabled] = useState(false)
+  const refreshDiscordVoiceEnabled = useCallback(() => {
+    getConfig()
+      .then((c) => setDiscordVoiceEnabled(c.preferences.discord_voice_enabled ?? false))
+      .catch(() => {})
+  }, [])
+  useEffect(() => { refreshDiscordVoiceEnabled() }, [refreshDiscordVoiceEnabled])
+  useWebSocket(
+    useCallback(
+      (msg: { type: string }) => {
+        if (msg.type === WSEvent.ConfigUpdated) refreshDiscordVoiceEnabled()
+      },
+      [refreshDiscordVoiceEnabled],
+    ),
+  )
+
   // Panel keys actually offered in the UI: hps is gated by SHOW_HPS_PANEL
-  // (shared with the sidebar's pop-out-all toggle); the rest (including the
-  // Threat Meter) are always available.
-  const visiblePanelKeys = VISIBLE_DASHBOARD_PANEL_KEYS
+  // (shared with the sidebar's pop-out-all toggle); discordVoice is gated by
+  // the Settings toggle above; the rest (including the Threat Meter) are
+  // always available.
+  const visiblePanelKeys = useMemo(
+    () =>
+      discordVoiceEnabled
+        ? VISIBLE_DASHBOARD_PANEL_KEYS
+        : VISIBLE_DASHBOARD_PANEL_KEYS.filter((k) => k !== 'discordVoice'),
+    [discordVoiceEnabled],
+  )
 
   useEffect(() => {
     saveDashboardLayout(layout)
@@ -885,6 +917,17 @@ export default function OverlaysDashboard(): React.ReactElement {
             defaultHeight={layout.custom.height}
             snapGridSize={SNAP_GRID}
             onLayoutChange={handleLayoutChange('custom')}
+          />
+        )}
+        {discordVoiceEnabled && layout.discordVoice.visible && (
+          <DiscordVoicePanel
+            key={`discordVoice-${layoutVersion}`}
+            defaultX={layout.discordVoice.x}
+            defaultY={layout.discordVoice.y}
+            defaultWidth={layout.discordVoice.width}
+            defaultHeight={layout.discordVoice.height}
+            snapGridSize={SNAP_GRID}
+            onLayoutChange={handleLayoutChange('discordVoice')}
           />
         )}
         {timerGroups.map((g) => {

@@ -7,6 +7,7 @@ import EqLogStatusCard from '../components/settings/EqLogStatusCard'
 import { TtsVoiceDefault, OverlayTextDefaults } from '../components/settings/AlertDefaultsSettings'
 import PiperTtsSettings from '../components/settings/PiperTtsSettings'
 import KokoroTtsSettings from '../components/settings/KokoroTtsSettings'
+import DiscordVoiceOverlaySettings from '../components/settings/DiscordVoiceOverlaySettings'
 import TimerAlertPrefEditor from '../components/settings/TimerAlertPrefEditor'
 import { getConfig, updateConfig, getLogStatus, getLogFileInfo, cleanupLog, exportDebugLogs, getServerInfo, testPortAvailability, detectZeal, getZealPipeStatus, getQuarmClientStatus, getEqwStatus, getChangelog, type ServerInfo, type TestPortResult, type ChangelogEntry } from '../services/api'
 import { renderChangelogBody } from '../components/WhatsNewModal'
@@ -2345,6 +2346,10 @@ export default function SettingsPage(): React.ReactElement {
         />
         )}
 
+        {tab === 'overlays' && (
+          <DiscordVoiceOverlaySettings config={config} setConfig={setConfig} />
+        )}
+
         {/* ── Threat Meter ───────────────────────────────────────────────── */}
         {tab === 'overlays' && (
         <section
@@ -3832,6 +3837,7 @@ const OVERLAY_POPOUT_TOGGLE: Record<OverlayName, () => void> = {
   respawnTimer: () => { window.electron?.overlay?.toggleRespawnTimer() },
   chChain:      () => { window.electron?.overlay?.toggleCHChain() },
   chMetronome:  () => { window.electron?.overlay?.toggleCHMetronome() },
+  discordVoice: () => { window.electron?.overlay?.toggleDiscordVoice() },
 }
 
 // The HPS overlay can't be implemented correctly until EQ logs expose real
