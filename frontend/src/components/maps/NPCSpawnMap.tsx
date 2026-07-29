@@ -1,7 +1,9 @@
 import React, { useMemo, useState } from 'react'
+import { useCachedState } from '../../hooks/useCachedState'
 import { ChevronDown, ChevronRight, Map as MapIcon } from 'lucide-react'
 import { useZoneMap } from '../../hooks/useZoneMap'
 import { ZoneMap } from './ZoneMap'
+import { ErrorBoundary } from '../ErrorBoundary'
 import type { MapHighlight } from './ZoneMap'
 import type { MapPOICategory } from '../../types/map'
 import type { NPCSpawnPoint } from '../../types/npc'
@@ -9,9 +11,9 @@ import type { NPCSpawnPoint } from '../../types/npc'
 // NPCSpawnMap shows where an NPC spawns, closing the loop from the item page:
 // purchased from -> vendor -> here.
 //
-// Collapsed by default and mounted only when opened. Zone geometry is tens of
-// kilobytes, and pulling it on every NPC view — most of which are opened to
-// read stats, not to find the mob — would be wasteful for no benefit.
+// Expanded by default: "where is it" is one of the main reasons to open an NPC,
+// and a collapsed section is easy to miss entirely. The state is remembered, so
+// anyone who prefers it shut only has to close it once.
 
 // Context layers only. The NPC's own spawn points are drawn as highlights, so
 // showing every vendor and door as well would bury the thing being looked for.
@@ -23,7 +25,7 @@ interface NPCSpawnMapProps {
 }
 
 export function NPCSpawnMap({ npcName, spawns }: NPCSpawnMapProps): React.ReactElement | null {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useCachedState('npcs.mapOpen', true)
 
   // An NPC can spawn in several zones; each needs its own map.
   const zones = useMemo(() => {
@@ -123,15 +125,17 @@ function SpawnMapBody({
 
       {zone && (
         <>
-          <ZoneMap
-            zone={zone}
-            geometry={geometry}
-            pois={pois}
-            visibleCategories={visible}
-            highlights={highlights}
-            height={300}
-            showLabels={false}
-          />
+          <ErrorBoundary label="Spawn map">
+            <ZoneMap
+              zone={zone}
+              geometry={geometry}
+              pois={pois}
+              visibleCategories={visible}
+              highlights={highlights}
+              height={300}
+              showLabels={false}
+            />
+          </ErrorBoundary>
           <p className="text-[10px]" style={{ color: 'var(--color-muted)' }}>
             {highlights.length === 1
               ? `Spawn point for ${npcName.replace(/_/g, ' ')}.`

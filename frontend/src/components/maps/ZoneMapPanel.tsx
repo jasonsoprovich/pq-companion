@@ -4,6 +4,7 @@ import { Check, Copy, X } from 'lucide-react'
 import { useCachedState } from '../../hooks/useCachedState'
 import { useZoneMap } from '../../hooks/useZoneMap'
 import { ZoneMap } from './ZoneMap'
+import { ErrorBoundary } from '../ErrorBoundary'
 import { mapMarkerCommand, mapShowZoneCommand } from '../../lib/zealMap'
 import type { MapPOI, MapPOICategory } from '../../types/map'
 
@@ -123,15 +124,19 @@ export function ZoneMapPanel({
         )}
       </div>
 
-      <ZoneMap
-        zone={zone}
-        geometry={geometry}
-        pois={pois}
-        visibleCategories={visible}
-        highlights={selected ? [{ x: selected.x, y: selected.y, z: selected.z }] : []}
-        onPOIClick={setSelected}
-        height={height}
-      />
+      {/* A render fault in the canvas must not unmount the app. One did:
+          a null deref in the drag handler blanked the whole window. */}
+      <ErrorBoundary label="Zone map">
+        <ZoneMap
+          zone={zone}
+          geometry={geometry}
+          pois={pois}
+          visibleCategories={visible}
+          highlights={selected ? [{ x: selected.x, y: selected.y, z: selected.z }] : []}
+          onPOIClick={setSelected}
+          height={height}
+        />
+      </ErrorBoundary>
 
       {selected && (
         <div

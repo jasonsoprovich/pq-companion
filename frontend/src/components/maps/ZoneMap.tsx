@@ -222,20 +222,29 @@ export function ZoneMap({
     }
   }, [geometry, shown, zone, size, toScreen, view.zoom, depth, highlights, playerPos, showLabels])
 
-  const onWheel = (e: React.WheelEvent): void => {
-    e.preventDefault()
-    const rect = canvasRef.current?.getBoundingClientRect()
-    if (!rect) return
-    const mx = e.clientX - rect.left
-    const my = e.clientY - rect.top
-    setView((v) => {
-      // Zoom toward the cursor rather than the centre, so you can dive into a
-      // corner without chasing it with the pan.
-      const next = Math.min(40, Math.max(0.5, v.zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15)))
-      const k = next / v.zoom
-      return { zoom: next, panX: mx - (mx - v.panX) * k, panY: my - (my - v.panY) * k }
-    })
-  }
+  // Wheel zoom is attached natively with passive:false. React registers wheel
+  // as a passive listener, so preventDefault() there is ignored — it never
+  // stopped the page scrolling and logged a console error on every tick (401
+  // of them in one session).
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const handler = (e: WheelEvent): void => {
+      e.preventDefault()
+      const rect = canvas.getBoundingClientRect()
+      const mx = e.clientX - rect.left
+      const my = e.clientY - rect.top
+      setView((v) => {
+        // Zoom toward the cursor rather than the centre, so you can dive into
+        // a corner without chasing it with the pan.
+        const next = Math.min(40, Math.max(0.5, v.zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15)))
+        const k = next / v.zoom
+        return { zoom: next, panX: mx - (mx - v.panX) * k, panY: my - (my - v.panY) * k }
+      })
+    }
+    canvas.addEventListener('wheel', handler, { passive: false })
+    return () => canvas.removeEventListener('wheel', handler)
+  }, [])
 
   const hitTest = (mx: number, my: number): MapPOI | null => {
     let best: MapPOI | null = null
@@ -262,18 +271,21 @@ export function ZoneMap({
           cursor: drag.current ? 'grabbing' : 'grab',
           borderRadius: 6,
         }}
-        onWheel={onWheel}
         onPointerDown={(e) => {
           ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
           drag.current = { x: e.clientX, y: e.clientY, panX: view.panX, panY: view.panY }
         }}
         onPointerMove={(e) => {
-          if (!drag.current) return
-          setView((v) => ({
-            ...v,
-            panX: drag.current!.panX + (e.clientX - drag.current!.x),
-            panY: drag.current!.panY + (e.clientY - drag.current!.y),
-          }))
+          // Snapshot the drag origin before calling setView. The updater runs
+          // during a later render pass, by which time onPointerUp may already
+          // have cleared drag.current — dereferencing it in there threw and,
+          // with no boundary above this component, took the whole app down to
+          // a black screen.
+          const d = drag.current
+          if (!d) return
+          const dx = e.clientX - d.x
+          const dy = e.clientY - d.y
+          setView((v) => ({ ...v, panX: d.panX + dx, panY: d.panY + dy }))
         }}
         onPointerUp={(e) => {
           const moved =
