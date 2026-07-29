@@ -3,7 +3,7 @@ import { useCachedState } from '../hooks/useCachedState'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Check, Copy, Search, X, Bell } from 'lucide-react'
 import { searchNPCs, getNPC, getNPCSpawns, getNPCLoot, getNPCFaction, getNPCSpells, getNPCRaw, getNPCMerchant } from '../services/api'
-import type { NPC, NPCSpawns, NPCLootTable, NPCFaction, NPCSpells, NPCSpellEntry, NPCSpellProc, LootDrop, NPCMerchant } from '../types/npc'
+import type { NPC, NPCSpawns, NPCSpawnPoint, NPCLootTable, NPCFaction, NPCSpells, NPCSpellEntry, NPCSpellProc, LootDrop, NPCMerchant } from '../types/npc'
 import {
   bodyTypeName,
   className,
@@ -15,6 +15,7 @@ import {
   type SpecialAbility,
 } from '../lib/npcHelpers'
 import { inGameItemLink, priceLabel } from '../lib/itemHelpers'
+import { mapMarkerCommand, mapRaidMarkerCommand, mapShowZoneCommand } from '../lib/zealMap'
 import CreateTriggerModal, { type TriggerPrefill } from '../components/CreateTriggerModal'
 import { ItemIcon } from '../components/Icon'
 import RawDataModal from './../components/RawDataModal'
@@ -35,6 +36,67 @@ function formatRespawnTime(seconds: number): string {
 
 function formatNPCName(name: string): string {
   return name.replace(/_/g, ' ')
+}
+
+// ── Zeal map bridge ────────────────────────────────────────────────────────────
+
+// ZealMapActions copies Zeal /map commands for one spawn point, so the player
+// can drop a pin on their in-game map at this NPC's location.
+//
+// This needs no map data from us: Zeal already embeds geometry for every zone,
+// so the pin lands on a map the player is already looking at.
+function ZealMapActions({
+  spawn,
+  npcName,
+  copiedKey,
+  onCopy,
+}: {
+  spawn: NPCSpawnPoint
+  npcName: string
+  copiedKey: string | null
+  onCopy: (key: string, command: string) => void
+}): React.ReactElement {
+  const actions: { key: string; label: string; title: string; command: string }[] = [
+    {
+      key: `mark-${spawn.id}`,
+      label: 'Pin',
+      title: `Copy "/map marker" for this spawn point — paste in game to pin it on your map`,
+      command: mapMarkerCommand(spawn.x, spawn.y, npcName),
+    },
+    {
+      key: `raid-${spawn.id}`,
+      label: 'Raid',
+      title: 'Copy "/map rsay marker" — pins it and broadcasts to your raid',
+      command: mapRaidMarkerCommand(spawn.x, spawn.y, npcName),
+    },
+    {
+      key: `zone-${spawn.id}`,
+      label: 'Zone',
+      title: `Copy "/map show_zone ${spawn.zone}" — preview this zone's map without travelling there`,
+      command: mapShowZoneCommand(spawn.zone),
+    },
+  ]
+
+  return (
+    <span className="flex items-center justify-end gap-1">
+      {actions.map((a) => (
+        <button
+          key={a.key}
+          onClick={() => onCopy(a.key, a.command)}
+          title={a.title}
+          className="flex items-center gap-0.5 rounded border px-1 py-0.5 text-[10px] font-medium transition-colors"
+          style={{
+            backgroundColor: 'var(--color-surface)',
+            borderColor: copiedKey === a.key ? 'var(--color-primary)' : 'var(--color-border)',
+            color: copiedKey === a.key ? 'var(--color-primary)' : 'var(--color-muted-foreground)',
+          }}
+        >
+          {copiedKey === a.key ? <Check size={9} /> : <Copy size={9} />}
+          {copiedKey === a.key ? 'Copied' : a.label}
+        </button>
+      ))}
+    </span>
+  )
 }
 
 // ── Vendor inventory ───────────────────────────────────────────────────────────
@@ -696,6 +758,7 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
   const [faction, setFaction] = useState<NPCFaction | null>(null)
   const [spells, setSpells] = useState<NPCSpells | null>(null)
   const [merchant, setMerchant] = useState<NPCMerchant | null>(null)
+  const [zealCopied, setZealCopied] = useState<string | null>(null)
   const [bulkCopied, setBulkCopied] = useState<number | null>(null)
   const [rawOpen, setRawOpen] = useState(false)
   const rawFetcher = useCallback(() => getNPCRaw(npc!.id), [npc?.id])
@@ -732,6 +795,15 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
     }
     return () => { cancelled = true }
   }, [npc?.id])
+
+  // copyZealCommand copies a single Zeal /map command. Keyed per spawn point
+  // and action so only the button that was pressed shows its confirmation.
+  function copyZealCommand(key: string, command: string) {
+    navigator.clipboard.writeText(command).then(() => {
+      setZealCopied(key)
+      setTimeout(() => setZealCopied(null), 2000)
+    })
+  }
 
   function copyBulkLinks(dropId: number, items: { item_id: number; item_name: string }[]) {
     const links = items.map((it) => inGameItemLink(it.item_id, it.item_name)).join('\n')
@@ -991,7 +1063,7 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
             <div
               className="mb-1 grid gap-x-3 pt-1 text-[11px] font-medium"
               style={{
-                gridTemplateColumns: '1fr auto auto auto auto',
+                gridTemplateColumns: '1fr auto auto auto auto auto',
                 color: 'var(--color-muted)',
               }}
             >
@@ -1000,13 +1072,14 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
               <span className="text-right">X</span>
               <span className="text-right">Z</span>
               <span className="text-right">Respawn</span>
+              <span className="text-right">Map</span>
             </div>
             {spawns.spawn_points.map((sp) => (
               <div
                 key={sp.id}
                 className="grid items-center gap-x-3 border-t py-0.5 text-sm"
                 style={{
-                  gridTemplateColumns: '1fr auto auto auto auto',
+                  gridTemplateColumns: '1fr auto auto auto auto auto',
                   borderColor: 'var(--color-border)',
                 }}
               >
@@ -1027,8 +1100,17 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
                     ? `${formatRespawnTime(sp.fast_respawn_time)} / ${formatRespawnTime(sp.respawn_time)}`
                     : formatRespawnTime(sp.respawn_time)}
                 </span>
+                <ZealMapActions
+                  spawn={sp}
+                  npcName={npc.name}
+                  copiedKey={zealCopied}
+                  onCopy={copyZealCommand}
+                />
               </div>
             ))}
+            <p className="pt-1 text-[10px]" style={{ color: 'var(--color-muted)' }}>
+              Paste one command at a time — EQ collapses a multi-line paste into a single line.
+            </p>
           </Section>
         )}
 
