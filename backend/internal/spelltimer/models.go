@@ -126,6 +126,13 @@ type ActiveTimer struct {
 	// frontend doesn't need it.
 	IsCharm bool `json:"-"`
 
+	// CasterManaPct is the caster's self-reported remaining mana percentage,
+	// parsed from a CategoryCHChain / CategoryCHChain2 callout's trailing
+	// free-text note (see chchain.Matcher and Engine.SetCasterMana). nil when
+	// the callout didn't include one; a pointer (rather than an int with
+	// omitempty) so a genuine 0% doesn't get hidden as "no data".
+	CasterManaPct *int `json:"caster_mana_pct,omitempty"`
+
 	// PossibleMiss flags a CategoryCHChain / CategoryCHChain2 timer whose
 	// caster was never observed starting a cast (see Engine.ConfirmCast)
 	// within chChainMissCheckDelay of the callout — a likely fizzle,

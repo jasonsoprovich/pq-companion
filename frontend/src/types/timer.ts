@@ -80,6 +80,13 @@ export interface ActiveTimer {
    * disappears. Absent for every other category.
    */
   possible_miss?: boolean
+  /**
+   * Only meaningful for category 'ch_chain' / 'ch_chain_2': the caster's
+   * self-reported remaining mana percentage, parsed from the callout's
+   * trailing free-text note (e.g. "94% remaining", "90% mana"). Absent when
+   * that particular callout didn't include one.
+   */
+  caster_mana_pct?: number
 }
 
 export interface TimerState {

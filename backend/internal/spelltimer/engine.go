@@ -1889,6 +1889,28 @@ func (e *Engine) ConfirmCast(name, targetName string) {
 	}
 }
 
+// SetCasterMana updates the CH-chain timer keyed by (name, targetName) with
+// the caster's self-reported remaining mana percentage, parsed by
+// chchain.Matcher from the callout's trailing free-text note (e.g. "94%
+// remaining"). A side-channel update rather than a StartExternal parameter:
+// name doubles as the timer's map key, and mana changes on every callout, so
+// baking it in would mint a new key each cast instead of restarting the same
+// position's existing bar.
+func (e *Engine) SetCasterMana(name, targetName string, pct int) {
+	if name == "" {
+		return
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for _, t := range e.timers {
+		if !isCHChainCategory(t.Category) || t.SpellName != name || t.TargetName != targetName {
+			continue
+		}
+		t.CasterManaPct = &pct
+		return
+	}
+}
+
 func (e *Engine) broadcast() {
 	e.mu.Lock()
 	snap := e.snapshot(time.Now())

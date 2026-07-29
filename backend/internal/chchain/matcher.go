@@ -19,11 +19,22 @@ import (
 )
 
 // Sink is the subset of the spell-timer engine the matcher needs. It matches
-// (*spelltimer.Engine).StartExternal / .ConfirmCast so the engine satisfies it
-// directly.
+// (*spelltimer.Engine).StartExternal / .ConfirmCast / .SetCasterMana so the
+// engine satisfies it directly.
 type Sink interface {
 	StartExternal(name string, category string, durationSecs, displayThresholdSecs float64, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string, pinned bool, customGroup string)
 	ConfirmCast(name, targetName string)
+	// SetCasterMana updates the (name, targetName)-keyed timer with the
+	// caster's self-reported remaining mana percentage, without touching its
+	// identity, duration, or countdown. Called right after StartExternal for
+	// the same (name, targetName) pair when the callout's trailing text
+	// included one — kept as a side-channel update rather than folded into
+	// name/label because the label doubles as the timer's map key: baking in
+	// a value that changes every cast (mana drops as the fight goes on) would
+	// make each callout mint a brand-new key instead of restarting the same
+	// position's existing bar, producing a duplicate row for the ~4s tail of
+	// the old bar's countdown until it expired on its own.
+	SetCasterMana(name, targetName string, pct int)
 }
 
 // categoryCHChain / categoryCHChain2 mirror spelltimer.CategoryCHChain /
@@ -198,24 +209,29 @@ func (m *Matcher) matchAndStart(ts time.Time, msg, pattern string, cache *cached
 	if !ok {
 		return false
 	}
-	match := re.FindStringSubmatch(msg)
-	if match == nil {
+	// Indices (not just substrings) are needed so the mana lookup below can
+	// scan only the text after the target name, rather than the whole line.
+	loc := re.FindStringSubmatchIndex(msg)
+	if loc == nil {
 		return false
 	}
 
 	caster, target := "", ""
 	chainnum := 0
+	targetEnd := -1
 	for i, name := range names {
-		if i >= len(match) {
-			break
+		start, end := loc[2*i], loc[2*i+1]
+		if start < 0 {
+			continue // group didn't participate in the match (e.g. an alternation branch)
 		}
 		switch name {
 		case "caster":
-			caster = match[i]
+			caster = msg[start:end]
 		case "target":
-			target = match[i]
+			target = msg[start:end]
+			targetEnd = end
 		case "chainnum":
-			chainnum = parseChainNum(match[i])
+			chainnum = parseChainNum(msg[start:end])
 		}
 	}
 	if target == "" {
@@ -230,6 +246,18 @@ func (m *Matcher) matchAndStart(ts time.Time, msg, pattern string, cache *cached
 	label := fmt.Sprintf("#%d  %s", chainnum, target)
 	if caster != "" {
 		label += "  ← " + caster // "← caster"
+	}
+
+	// The caster's self-reported remaining mana, if the callout's trailing
+	// text included one — applied via SetCasterMana below (not baked into
+	// label; see the Sink doc comment for why).
+	manaPct := -1
+	if targetEnd >= 0 {
+		if mm := manaPercentRe.FindStringSubmatch(msg[targetEnd:]); mm != nil {
+			if pct, err := strconv.Atoi(mm[1]); err == nil && pct <= 100 {
+				manaPct = pct
+			}
+		}
 	}
 
 	// Record the callout for cast-begin correlation (see NoteCastBegin) so a
@@ -252,11 +280,21 @@ func (m *Matcher) matchAndStart(ts time.Time, msg, pattern string, cache *cached
 	// text) so it can be paired with the label to address exactly this timer
 	// in Engine.ConfirmCast.
 	m.sink.StartExternal(label, category, config.CHCastSecs, 0, ts, nil, 0, target, "", false, "")
+	if manaPct >= 0 {
+		m.sink.SetCasterMana(label, target, manaPct)
+	}
 	if earlyCast {
 		m.sink.ConfirmCast(label, target)
 	}
 	return true
 }
+
+// manaPercentRe finds a percentage in the free-form text after a chain
+// callout's target name — healers commonly tack their remaining mana onto the
+// callout ("CH Tank, 94% remaining", "CH Tank, 90% mana", "<< 100% Mana >>").
+// Requires the digits to be immediately followed by "%" so it never matches
+// the chain marker or other stray numbers in the line.
+var manaPercentRe = regexp.MustCompile(`(\d{1,3})\s*%`)
 
 // parseChainNum turns a chain marker into a position. Numeric markers ("001",
 // "002") parse directly; letter markers ("AAA", "bbb") map their first letter

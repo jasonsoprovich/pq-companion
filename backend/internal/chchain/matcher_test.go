@@ -16,9 +16,16 @@ type capture struct {
 	target   string
 }
 
+type manaCall struct {
+	name   string
+	target string
+	pct    int
+}
+
 type fakeSink struct {
 	calls     []capture
 	confirmed []capture
+	manas     []manaCall
 }
 
 func (f *fakeSink) StartExternal(name, category string, dur, _ float64, _ time.Time, _ json.RawMessage, _ int, targetName, _ string, _ bool, _ string) {
@@ -27,6 +34,10 @@ func (f *fakeSink) StartExternal(name, category string, dur, _ float64, _ time.T
 
 func (f *fakeSink) ConfirmCast(name, targetName string) {
 	f.confirmed = append(f.confirmed, capture{name: name, target: targetName})
+}
+
+func (f *fakeSink) SetCasterMana(name, targetName string, pct int) {
+	f.manas = append(f.manas, manaCall{name: name, target: targetName, pct: pct})
 }
 
 func newMatcher(s Sink, enabled bool, pattern string, interval float64) *Matcher {
@@ -100,6 +111,54 @@ func TestMatcher_RealRaidFormat(t *testing.T) {
 		}
 		if s.calls[0].name != tc.want {
 			t.Errorf("%q: label = %q, want %q", tc.in, s.calls[0].name, tc.want)
+		}
+	}
+}
+
+// TestMatcher_CasterMana covers extracting the caster's self-reported
+// remaining mana from a callout's trailing note. It must arrive via
+// SetCasterMana (a side-channel update keyed to the just-started timer),
+// never baked into the label itself — see the Sink doc comment for why.
+func TestMatcher_CasterMana(t *testing.T) {
+	s := &fakeSink{}
+	m := newMatcher(s, true, config.DefaultCHChainPattern, 6)
+
+	lines := []struct {
+		in       string
+		wantMana int // -1 = no SetCasterMana call expected
+	}{
+		{"Luna tells the raid,  '- - 001 - CH Krayziefoo'", -1},
+		{"Koramak tells the raid,  '- - 002 - CH Krayziefoo - 94% remaining'", 94},
+		{"Theofonias tells the raid,  '- - 003 - CH Krayziefoo, 90% mana'", 90},
+		{"Soandso tells the raid, '--- 004 --- CH Krayziefoo with << 100% Mana >>'", 100},
+		{"Baddy tells the raid, '--- 005 --- CH Krayziefoo, 994% mana'", -1}, // nonsensical >100%, ignored
+	}
+	for _, tc := range lines {
+		s.calls, s.manas = nil, nil
+		m.HandleLine(time.Unix(1, 0), tc.in)
+		if len(s.calls) != 1 {
+			t.Fatalf("%q: got %d StartExternal calls, want 1", tc.in, len(s.calls))
+		}
+		label := s.calls[0].name
+		if tc.wantMana < 0 {
+			if len(s.manas) != 0 {
+				t.Errorf("%q: SetCasterMana called with %v, want none", tc.in, s.manas)
+			}
+			// No mana embedded in the label either.
+			if strings.Contains(label, "%") {
+				t.Errorf("%q: label %q unexpectedly contains a mana percentage", tc.in, label)
+			}
+			continue
+		}
+		if len(s.manas) != 1 {
+			t.Fatalf("%q: got %d SetCasterMana calls, want 1", tc.in, len(s.manas))
+		}
+		if s.manas[0].pct != tc.wantMana {
+			t.Errorf("%q: mana = %d, want %d", tc.in, s.manas[0].pct, tc.wantMana)
+		}
+		if s.manas[0].name != label || s.manas[0].target != "Krayziefoo" {
+			t.Errorf("%q: SetCasterMana(%q, %q) doesn't match the started timer (%q, %q)",
+				tc.in, s.manas[0].name, s.manas[0].target, label, "Krayziefoo")
 		}
 	}
 }

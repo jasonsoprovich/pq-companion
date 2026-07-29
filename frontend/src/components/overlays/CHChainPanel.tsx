@@ -101,9 +101,18 @@ function computeCadence(
   return { cadence: median, stalled: gaps.length >= 2 && last > median * 1.5 }
 }
 
+// manaColor flags low remaining mana so a raid leader can spot a cleric who
+// may need relief without reading the exact number. Muted default above 50%.
+function manaColor(pct: number): string {
+  if (pct <= 25) return '#f87171'
+  if (pct <= 50) return '#fbbf24'
+  return 'var(--color-muted)'
+}
+
 function ChainRow({ timer, letters }: { timer: ActiveTimer; letters?: boolean }): React.ReactElement {
   const { position, text } = parseLabel(timer.spell_name)
   const missed = timer.possible_miss ?? false
+  const manaPct = timer.caster_mana_pct
   // The miss flag is display-only and must never disturb the bar: every row
   // keeps counting its real 10s cast down at the same rate whether or not it's
   // flagged. Zeroing the bar on a flag (and letting it re-inflate when a late
@@ -143,6 +152,9 @@ function ChainRow({ timer, letters }: { timer: ActiveTimer; letters?: boolean })
           )}
           <span style={{ fontSize: 12, color: 'var(--color-foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: landing || missed ? 600 : 400 }}>
             {text}
+            {manaPct !== undefined && (
+              <span style={{ marginLeft: 5, fontWeight: 700, color: manaColor(manaPct) }}>{manaPct}%</span>
+            )}
           </span>
         </div>
         <span
