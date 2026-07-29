@@ -98,7 +98,20 @@ export function ZoneMap({
     setDepth(null)
   }, [zone.zone])
 
-  // Fit-to-zone transform: world units -> screen pixels.
+  // Fit-to-zone transform: map units -> screen pixels.
+  //
+  // Orientation, established from game geography rather than from comparing
+  // renderings (which is how it was got wrong before — both sides of the
+  // comparison used this same code, so a global flip was invisible):
+  //
+  //   East Commonlands borders West Commonlands at game_x = -1621 in a zone
+  //   spanning -1666..3746, so east is NEGATIVE game_x, i.e. +game_x = west.
+  //   South Qeynos exits sit at game_y = -151/-26, so +game_y = north.
+  //
+  // Map space stores f1 = -game_x (east-positive) and f2 = -game_y
+  // (south-positive). A north-up, east-right map therefore needs screen X to
+  // grow with f1 AND screen Y to grow with f2 — no inversion on either axis.
+  // Inverting Y mirrored every map vertically.
   const base = useMemo(() => {
     const w = Math.max(1, zone.max_x - zone.min_x)
     const h = Math.max(1, zone.max_y - zone.min_y)
@@ -107,15 +120,14 @@ export function ZoneMap({
     return {
       scale,
       offX: (size.w - w * scale) / 2 - zone.min_x * scale,
-      // Screen Y grows downward; map Y grows up.
-      offY: (size.h - h * scale) / 2 + zone.max_y * scale,
+      offY: (size.h - h * scale) / 2 - zone.min_y * scale,
     }
   }, [zone, size])
 
   const toScreen = useCallback(
     (x: number, y: number): [number, number] => [
       (x * base.scale + base.offX) * view.zoom + view.panX,
-      (-y * base.scale + base.offY) * view.zoom + view.panY,
+      (y * base.scale + base.offY) * view.zoom + view.panY,
     ],
     [base, view],
   )
@@ -326,9 +338,13 @@ export function ZoneMap({
 
 // DepthControl fades geometry outside a height window.
 //
-// A single slider rather than a floor picker: only some zones have discrete
-// storeys. Akheva's floors are continuous ramps and terraces, so any list of
-// levels would be arbitrary cuts — a sliding window works on both shapes.
+// The slider is always visible rather than hidden behind a toggle: in a zone
+// with stacked tunnels the flattened view is the one that needs explaining, so
+// the control that fixes it should not need discovering first.
+//
+// A sliding window rather than a floor picker because only some zones have
+// discrete storeys — akheva's floors are continuous ramps, so any level list
+// would be arbitrary cuts.
 function DepthControl({
   zone,
   depth,
@@ -342,34 +358,55 @@ function DepthControl({
   if (zone.z_span < 120) return null
   const lo = Math.round(-zone.z_span / 2)
   const hi = Math.round(zone.z_span / 2)
+  const active = depth !== null
+  const cur = depth ?? { focus: 0, range: Math.round(zone.z_span / 8) }
 
   return (
     <div
       className="absolute bottom-2 left-2 flex items-center gap-2 rounded px-2 py-1"
       style={{ backgroundColor: 'var(--color-surface-2)' }}
     >
-      <button
-        onClick={() => onChange(depth ? null : { focus: 0, range: Math.round(zone.z_span / 8) })}
-        className="text-[10px] font-medium"
-        style={{ color: depth ? 'var(--color-primary)' : 'var(--color-muted)' }}
+      <span
+        className="text-[10px] font-semibold uppercase tracking-widest"
+        style={{ color: active ? 'var(--color-primary)' : 'var(--color-muted)' }}
       >
         Depth
+      </span>
+      <input
+        type="range"
+        min={lo}
+        max={hi}
+        value={cur.focus}
+        // Dragging the slider engages the filter, so there is no separate
+        // "enable" step to find.
+        onChange={(e) => onChange({ ...cur, focus: Number(e.target.value) })}
+        className="w-36"
+        title="Height to focus on"
+      />
+      <input
+        type="range"
+        min={Math.max(10, Math.round(zone.z_span / 40))}
+        max={Math.round(zone.z_span / 2)}
+        value={cur.range}
+        onChange={(e) => onChange({ ...cur, range: Number(e.target.value) })}
+        className="w-20"
+        title="How much depth to keep in focus"
+      />
+      <span
+        className="w-24 text-right text-[10px] tabular-nums"
+        style={{ color: 'var(--color-muted)' }}
+      >
+        {active ? `${cur.focus} ±${cur.range}` : 'all levels'}
+      </span>
+      <button
+        onClick={() => onChange(null)}
+        disabled={!active}
+        className="text-[10px] font-medium disabled:opacity-30"
+        style={{ color: 'var(--color-primary)' }}
+        title="Show all levels again"
+      >
+        Reset
       </button>
-      {depth && (
-        <>
-          <input
-            type="range"
-            min={lo}
-            max={hi}
-            value={depth.focus}
-            onChange={(e) => onChange({ ...depth, focus: Number(e.target.value) })}
-            className="w-32"
-          />
-          <span className="w-20 text-right text-[10px] tabular-nums" style={{ color: 'var(--color-muted)' }}>
-            {depth.focus} ±{depth.range}
-          </span>
-        </>
-      )}
     </div>
   )
 }

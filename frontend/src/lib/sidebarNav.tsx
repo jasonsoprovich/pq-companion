@@ -4,7 +4,6 @@ import {
   Users, Dice5, UserSearch, MessageSquare, Package, TrendingUp, BookOpen,
   Library, KeyRound, Hourglass, Star, Wand2, ListChecks, Percent, Store, PawPrint,
   Flag, Swords, Keyboard, Route, Scale,
-  Compass,
 } from 'lucide-react'
 import type { Preferences } from '../types/config'
 
@@ -41,7 +40,6 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: '/spells', label: 'Spells', icon: <Sparkles size={16} /> },
       { to: '/npcs', label: 'NPCs', icon: <Skull size={16} /> },
       { to: '/zones', label: 'Zones', icon: <Map size={16} /> },
-      { to: '/maps', label: 'Maps', icon: <Compass size={16} /> },
       { to: '/recipes', label: 'Recipes', icon: <Hammer size={16} /> },
       { to: '/tradeskill-leveling', label: 'Tradeskill Leveling', icon: <Route size={16} /> },
       { to: '/quests', label: 'Quests', icon: <ScrollText size={16} /> },
