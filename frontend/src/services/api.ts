@@ -1,6 +1,7 @@
 import type { Config } from '../types/config'
 import type { Item, ItemSources, ItemQuests, QuestSummary, SearchResult } from '../types/item'
 import type { NPC, NPCSpawns, NPCLootTable, NPCFaction, NPCSpells, NPCMerchant } from '../types/npc'
+import type { MapStatus, MapZone, MapZoneDetail, MapGeometry } from '../types/map'
 import type { BuffStatDelta, Spell, SpellCrossRefs, ShoppingRoute, ShoppingRouteOptions } from '../types/spell'
 import type { EmoteColumnsPatch, EmoteStatus, SpellEmote, SpellEmoteDiff } from '../types/emote'
 import type { Zone, ZoneConnection, ZoneGroundSpawn, ZoneForageItem, ZoneDropItem } from '../types/zone'
@@ -414,6 +415,30 @@ export function getNPCSpawns(id: number): Promise<NPCSpawns> {
 
 export function getNPCLoot(id: number): Promise<NPCLootTable> {
   return get<NPCLootTable>(`/api/npcs/${id}/loot`)
+}
+
+// ── Maps ──────────────────────────────────────────────────────────────────────
+
+export function getMapStatus(): Promise<MapStatus> {
+  return get<MapStatus>('/api/maps/status')
+}
+
+export function getMapZones(): Promise<{ zones: MapZone[] }> {
+  return get<{ zones: MapZone[] }>('/api/maps/zones')
+}
+
+export function getMapZone(zone: string): Promise<MapZoneDetail> {
+  return get<MapZoneDetail>(`/api/maps/zone/${encodeURIComponent(zone)}`)
+}
+
+// getMapGeometry fetches packed int16 segments and wraps them without copying.
+// The endpoint is immutable and cache-forever, so repeat zone switches are free.
+export async function getMapGeometry(zone: string): Promise<MapGeometry> {
+  const baseUrl = await getBackendBaseUrl()
+  const res = await fetch(`${baseUrl}/api/maps/zone/${encodeURIComponent(zone)}/geometry`)
+  if (!res.ok) throw new Error(`geometry ${zone}: ${res.statusText}`)
+  const buf = await res.arrayBuffer()
+  return { count: buf.byteLength / 12, coords: new Int16Array(buf) }
 }
 
 export function getNPCMerchant(id: number): Promise<NPCMerchant> {

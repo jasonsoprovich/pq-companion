@@ -1,0 +1,57 @@
+import { useEffect, useState } from 'react'
+import { getMapGeometry, getMapZone } from '../services/api'
+import type { MapGeometry, MapPOI, MapZone } from '../types/map'
+
+interface ZoneMapData {
+  zone: MapZone | null
+  geometry: MapGeometry | null
+  pois: MapPOI[]
+  loading: boolean
+  error: string | null
+}
+
+// useZoneMap loads one zone's metadata, POIs and geometry.
+//
+// Metadata and POIs land first so pins and controls can render immediately;
+// geometry is the big payload and arrives after. Both are discarded if the
+// zone changes mid-flight, so fast switching can't paint one zone's lines over
+// another's.
+export function useZoneMap(zone: string | null): ZoneMapData {
+  const [data, setData] = useState<ZoneMapData>({
+    zone: null, geometry: null, pois: [], loading: false, error: null,
+  })
+
+  useEffect(() => {
+    if (!zone) {
+      setData({ zone: null, geometry: null, pois: [], loading: false, error: null })
+      return
+    }
+    let cancelled = false
+    setData((d) => ({ ...d, loading: true, error: null }))
+
+    getMapZone(zone)
+      .then((detail) => {
+        if (cancelled) return
+        setData({
+          zone: detail.zone, pois: detail.pois ?? [],
+          geometry: null, loading: true, error: null,
+        })
+        return getMapGeometry(zone)
+      })
+      .then((geom) => {
+        if (cancelled || !geom) return
+        setData((d) => ({ ...d, geometry: geom, loading: false }))
+      })
+      .catch((err: Error) => {
+        if (cancelled) return
+        setData({
+          zone: null, geometry: null, pois: [], loading: false,
+          error: err.message,
+        })
+      })
+
+    return () => { cancelled = true }
+  }, [zone])
+
+  return data
+}
