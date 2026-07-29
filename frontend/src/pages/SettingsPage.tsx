@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, Layers, FileText, Palette, Code2, PanelLeft, Crosshair, Info, Globe, MessageCircle, Coffee, Heart, ExternalLink, Eye, Gauge, Download } from 'lucide-react'
+import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, Layers, FileText, Palette, Code2, PanelLeft, Crosshair, Info, Globe, MessageCircle, Coffee, Heart, ExternalLink, Eye, Gauge, Download, Headphones } from 'lucide-react'
 import BackfillPanel from '../components/settings/BackfillPanel'
 import SidebarNavSettings from '../components/settings/SidebarNavSettings'
 import EqLogStatusCard from '../components/settings/EqLogStatusCard'
@@ -60,7 +60,7 @@ import DeveloperTab from './DeveloperTab'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'discarded' | 'error'
 type UpdateState = 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'downloaded' | 'error'
-type Tab = 'general' | 'audio' | 'accessibility' | 'navigation' | 'overlays' | 'spelltimers' | 'dpscolors' | 'logs' | 'backups' | 'advanced' | 'about' | 'changelog' | 'developer'
+type Tab = 'general' | 'audio' | 'accessibility' | 'navigation' | 'overlays' | 'spelltimers' | 'dpscolors' | 'discord' | 'logs' | 'backups' | 'advanced' | 'about' | 'changelog' | 'developer'
 
 interface TabBarProps {
   tabs: { id: Tab; label: string; icon: React.ReactNode }[]
@@ -74,7 +74,7 @@ interface TabBarProps {
 // end — so forgetting to register one degrades gracefully rather than hiding it.
 const TAB_GROUPS: { label: string; ids: Tab[] }[] = [
   { label: 'General', ids: ['general', 'audio', 'accessibility'] },
-  { label: 'Interface', ids: ['navigation', 'overlays', 'spelltimers', 'dpscolors'] },
+  { label: 'Interface', ids: ['navigation', 'overlays', 'spelltimers', 'dpscolors', 'discord'] },
   { label: 'System', ids: ['logs', 'backups', 'advanced'] },
   { label: 'About', ids: ['about', 'changelog', 'developer'] },
 ]
@@ -311,7 +311,7 @@ export default function SettingsPage(): React.ReactElement {
   // Allow deep-linking to a specific tab via ?tab= (e.g. links to the Logs tab
   // for backfill). Falls back to General for unknown/absent values.
   const [tab, setTab] = useState<Tab>(() => {
-    const valid: Tab[] = ['general', 'audio', 'accessibility', 'navigation', 'overlays', 'spelltimers', 'dpscolors', 'logs', 'backups', 'advanced', 'about', 'developer']
+    const valid: Tab[] = ['general', 'audio', 'accessibility', 'navigation', 'overlays', 'spelltimers', 'dpscolors', 'discord', 'logs', 'backups', 'advanced', 'about', 'developer']
     const t = searchParams.get('tab') ?? ''
     return (valid as string[]).includes(t) ? (t as Tab) : 'general'
   })
@@ -705,6 +705,7 @@ export default function SettingsPage(): React.ReactElement {
     { id: 'overlays', label: 'Overlays', icon: <Layers size={13} /> },
     { id: 'spelltimers', label: 'Spell Timers', icon: <Sparkles size={13} /> },
     { id: 'dpscolors', label: 'DPS Meters', icon: <Palette size={13} /> },
+    { id: 'discord', label: 'Discord', icon: <Headphones size={13} /> },
     { id: 'logs', label: 'Logs', icon: <FileText size={13} /> },
     { id: 'backups', label: 'EQ Config Backups', icon: <HardDrive size={13} /> },
     { id: 'advanced', label: 'Advanced', icon: <Wifi size={13} /> },
@@ -2346,10 +2347,6 @@ export default function SettingsPage(): React.ReactElement {
         />
         )}
 
-        {tab === 'overlays' && (
-          <DiscordVoiceOverlaySettings config={config} setConfig={setConfig} />
-        )}
-
         {/* ── Threat Meter ───────────────────────────────────────────────── */}
         {tab === 'overlays' && (
         <section
@@ -2986,6 +2983,11 @@ export default function SettingsPage(): React.ReactElement {
         )}
 
         {/* ── DPS Class Colors ───────────────────────────────────────────── */}
+        {/* ── Discord ────────────────────────────────────────────────────── */}
+        {tab === 'discord' && (
+          <DiscordVoiceOverlaySettings config={config} setConfig={setConfig} />
+        )}
+
         {tab === 'dpscolors' && (
         <>
         <section

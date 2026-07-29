@@ -40,7 +40,7 @@ interface DiscordVoiceOverlaySettingsProps {
 }
 
 /**
- * DiscordVoiceOverlaySettings is the "Discord Voice" settings card (issue
+ * DiscordVoiceOverlaySettings is the Settings page's "Discord" tab (issue
  * #150). We never talk to Discord's API ourselves — the app's own rpc.voice.read
  * request was declined. Instead the user generates StreamKit Overlay links
  * themselves (Discord's own hosted tool for embedding a voice roster in OBS/
@@ -114,7 +114,7 @@ export default function DiscordVoiceOverlaySettings({
 
   return (
     <section
-      className="mt-4 rounded-lg p-4"
+      className="rounded-lg p-4"
       style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
     >
       <div className="mb-1 flex items-center justify-between">
