@@ -2519,6 +2519,7 @@ function userPopoutWindows(): BrowserWindow[] {
     respawnTimerWindow,
     chChainWindow,
     chMetronomeWindow,
+    discordVoiceOverlayWindow,
   ].filter((w): w is BrowserWindow => !!w && !w.isDestroyed())
   return [...fixed, ...customTimerGroupWindows.values()].filter((w) => !w.isDestroyed())
 }
@@ -2558,6 +2559,7 @@ ipcMain.handle('overlay:popouts:open-all', (_event, panels?: PopoutRequestEntry[
   if (wants('respawn') && (!respawnTimerWindow || respawnTimerWindow.isDestroyed())) createRespawnTimerOverlay()
   if (wants('chChain') && (!chChainWindow || chChainWindow.isDestroyed())) createCHChainOverlay()
   if (wants('chMetronome') && (!chMetronomeWindow || chMetronomeWindow.isDestroyed())) createCHMetronomeOverlay()
+  if (wants('discordVoice') && (!discordVoiceOverlayWindow || discordVoiceOverlayWindow.isDestroyed())) createDiscordVoiceOverlay()
   for (const g of groupWants) {
     const win = customTimerGroupWindows.get(g.id)
     if (!win || win.isDestroyed()) createCustomTimerGroupOverlay(g.id, g.name)
