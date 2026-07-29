@@ -238,7 +238,17 @@ func RDP(pts []Vec3, eps float64) []Vec3 {
 	}
 	left := RDP(pts[:bestIdx+1], eps)
 	right := RDP(pts[bestIdx:], eps)
-	return append(left[:len(left)-1], right...)
+
+	// Build a fresh slice rather than appending into left. The two halves are
+	// sub-slices of the same backing array, and the base case returns pts
+	// itself for short runs, so `append(left[:len(left)-1], right...)` can
+	// write over elements right still points at — silently corrupting output
+	// in a way that made a larger epsilon yield MORE segments than a smaller
+	// one.
+	out := make([]Vec3, 0, len(left)+len(right)-1)
+	out = append(out, left[:len(left)-1]...)
+	out = append(out, right...)
+	return out
 }
 
 // SimplifyRDP chains and Douglas-Peucker-simplifies in one step.

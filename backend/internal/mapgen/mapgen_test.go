@@ -1,6 +1,7 @@
 package mapgen_test
 
 import (
+	"math"
 	"os"
 	"testing"
 
@@ -144,9 +145,11 @@ func TestExtractors_MatchReferencePipeline(t *testing.T) {
 	}{
 		{"unrest", mapgen.TechniqueBoundary, 5013},
 		{"qeynos2", mapgen.TechniqueBoundary, 4283},
-		{"gfaydark", mapgen.TechniqueContours, 14140},
 		{"akheva", mapgen.TechniqueSilhouette, 190},
 		{"necropolis", mapgen.TechniqueSilhouette, 1605},
+		// gfaydark is covered by TestContours_SimplifiedNotRaw instead: the Go
+		// pipeline simplifies contours where the prototype did not, so its
+		// segment count intentionally differs.
 	}
 
 	for _, tc := range cases {
@@ -192,5 +195,58 @@ func TestChainKeyIncludesZ(t *testing.T) {
 		if len(ch) != 3 {
 			t.Errorf("chain %d: got %d points, want 3 (walk should not break)", i, len(ch))
 		}
+	}
+}
+
+// TestContours_SimplifiedNotRaw checks both halves of the contour path: the raw
+// slicing still matches the prototype, and simplification then meaningfully
+// reduces it. The prototype emitted contours unsimplified, so the shipped count
+// is deliberately lower.
+func TestContours_SimplifiedNotRaw(t *testing.T) {
+	requireClient(t)
+
+	z, err := mapgen.LoadZone(clientDir, "gfaydark")
+	if err != nil {
+		t.Fatalf("load gfaydark: %v", err)
+	}
+	c := mapgen.Classify(z)
+	if c.Technique != mapgen.TechniqueContours {
+		t.Fatalf("technique: got %q, want contours", c.Technique)
+	}
+
+	// The prototype produced 14,140 raw contour segments at a 30-unit interval.
+	raw := z.Contours(30)
+	if !within(len(raw), 14140, 0.05) {
+		t.Errorf("raw contours: got %d, want ~14140", len(raw))
+	}
+
+	got := len(mapgen.Extract(z, c))
+	if got >= len(raw) {
+		t.Errorf("simplified contours (%d) should be fewer than raw (%d)", got, len(raw))
+	}
+	if got == 0 {
+		t.Error("simplification removed every segment")
+	}
+}
+
+// TestRDPMonotonic guards the slice-aliasing bug that made Douglas-Peucker
+// return MORE points for a larger epsilon. The two recursive halves are
+// sub-slices of one backing array, so appending into the left half could
+// overwrite points the right half still referenced.
+func TestRDPMonotonic(t *testing.T) {
+	pts := make([]mapgen.Vec3, 0, 200)
+	for i := 0; i < 200; i++ {
+		f := float64(i)
+		// A wobbly diagonal: enough structure that epsilon actually bites.
+		pts = append(pts, mapgen.Vec3{X: f, Y: f + math.Sin(f/3)*4})
+	}
+	prev := len(mapgen.RDP(pts, 0.1))
+	for _, eps := range []float64{0.5, 1, 2, 5, 10} {
+		n := len(mapgen.RDP(pts, eps))
+		if n > prev {
+			t.Errorf("eps=%v produced %d points, more than the %d at the previous smaller eps",
+				eps, n, prev)
+		}
+		prev = n
 	}
 }

@@ -49,6 +49,11 @@ win:
     # EQ game database — required at runtime
     - from: backend/data/quarm.db
       to: bin/data/quarm.db
+    # Zone maps — generated offline by cmd/mapgen from an EQ client, on its own
+    # cadence rather than quarm.db's, which is why it is a separate file: a
+    # data-release regeneration of quarm.db must not clobber it.
+    - from: backend/data/maps.db
+      to: bin/data/maps.db
     # Release notes — read by defaultChangelogPath() in cmd/server/main.go to
     # power the "what's new" popup and Settings > Changelog tab.
     - from: CHANGELOG.md

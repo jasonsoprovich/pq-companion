@@ -1,0 +1,209 @@
+package mapgen
+
+import (
+	"bytes"
+	"compress/zlib"
+	"database/sql"
+	"encoding/binary"
+	"fmt"
+	"math"
+	"os"
+)
+
+// Layer numbers within a zone. Layer 0 is the geometry the classifier chose;
+// higher layers are overlays added later (POIs, generated packs).
+const (
+	LayerGeometry = 0
+)
+
+// segmentBytes is the packed width of one segment: six int16 coordinates plus
+// three colour bytes.
+const segmentBytes = 6*2 + 3
+
+// coordMin/coordMax bound what int16 can hold. Real zone coordinates span
+// roughly -11147..23621, so this is headroom, not a real constraint — but a
+// corrupt mesh could produce garbage and silently wrap.
+const (
+	coordMin = -32768
+	coordMax = 32767
+)
+
+// WriteMapsDB creates a maps.db at path containing one row per (zone, layer).
+//
+// Segments are stored as a packed, zlib-compressed blob rather than a row per
+// segment. Measured over the full corpus, row-per-segment came to 34.7 MB —
+// barely better than the 41.2 MB of raw text it replaces, because SQLite's
+// per-row overhead swamps a payload of nine small integers. The packed form is
+// 4.0 MB and fetches in ~0.05 ms per zone, and rendering always wants every
+// segment in a layer anyway, so there is nothing to gain from row granularity.
+//
+// Coordinates are rounded to int16. Real spans reach ~23,600 units, so 1-unit
+// resolution costs at most half a unit of error — about a quarter pixel at any
+// sane zoom.
+func WriteMapsDB(path string, zones []ZoneOutput) error {
+	if err := os.RemoveAll(path); err != nil {
+		return fmt.Errorf("remove existing %s: %w", path, err)
+	}
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		return fmt.Errorf("open %s: %w", path, err)
+	}
+	defer db.Close()
+
+	if _, err := db.Exec(mapsSchema); err != nil {
+		return fmt.Errorf("create schema: %w", err)
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin: %w", err)
+	}
+	defer tx.Rollback()
+
+	insLayer, err := tx.Prepare(
+		`INSERT INTO map_layer (zone, layer, nlines, lines) VALUES (?, ?, ?, ?)`)
+	if err != nil {
+		return fmt.Errorf("prepare map_layer: %w", err)
+	}
+	defer insLayer.Close()
+
+	insZone, err := tx.Prepare(`INSERT INTO map_zone
+		(zone, min_x, min_y, max_x, max_y, technique, occupancy, bnd_density, z_span)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	if err != nil {
+		return fmt.Errorf("prepare map_zone: %w", err)
+	}
+	defer insZone.Close()
+
+	for _, z := range zones {
+		blob, err := packSegments(z.Segments)
+		if err != nil {
+			return fmt.Errorf("%s: %w", z.Zone, err)
+		}
+		if _, err := insLayer.Exec(z.Zone, LayerGeometry, len(z.Segments), blob); err != nil {
+			return fmt.Errorf("insert %s layer: %w", z.Zone, err)
+		}
+		if _, err := insZone.Exec(z.Zone,
+			clampCoord(z.MinX), clampCoord(z.MinY),
+			clampCoord(z.MaxX), clampCoord(z.MaxY),
+			string(z.Technique), z.Occupancy, z.BoundaryDensity, z.ZSpan,
+		); err != nil {
+			return fmt.Errorf("insert %s zone: %w", z.Zone, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+	// VACUUM cannot run inside a transaction and materially shrinks the file.
+	if _, err := db.Exec(`VACUUM`); err != nil {
+		return fmt.Errorf("vacuum: %w", err)
+	}
+	return nil
+}
+
+const mapsSchema = `
+CREATE TABLE map_layer (
+  zone   TEXT    NOT NULL,
+  layer  INTEGER NOT NULL,
+  nlines INTEGER NOT NULL,
+  lines  BLOB    NOT NULL,
+  PRIMARY KEY (zone, layer)
+) WITHOUT ROWID;
+
+CREATE TABLE map_zone (
+  zone        TEXT PRIMARY KEY,
+  min_x       INTEGER NOT NULL,
+  min_y       INTEGER NOT NULL,
+  max_x       INTEGER NOT NULL,
+  max_y       INTEGER NOT NULL,
+  technique   TEXT    NOT NULL,
+  occupancy   REAL    NOT NULL,
+  bnd_density REAL    NOT NULL,
+  z_span      REAL    NOT NULL
+) WITHOUT ROWID;
+`
+
+// ZoneOutput is one zone's finished map data, ready to write.
+type ZoneOutput struct {
+	Zone            string
+	Segments        []Segment
+	MinX, MinY      float64
+	MaxX, MaxY      float64
+	Technique       Technique
+	Occupancy       float64
+	BoundaryDensity float64
+	ZSpan           float64
+}
+
+func packSegments(segs []Segment) ([]byte, error) {
+	raw := make([]byte, 0, len(segs)*segmentBytes)
+	var buf [segmentBytes]byte
+	for _, s := range segs {
+		put := func(off int, v float64) {
+			binary.LittleEndian.PutUint16(buf[off:], uint16(int16(clampCoord(v))))
+		}
+		put(0, s.A.X)
+		put(2, s.A.Y)
+		put(4, s.A.Z)
+		put(6, s.B.X)
+		put(8, s.B.Y)
+		put(10, s.B.Z)
+		// Colour is reserved: the renderer themes segments itself rather than
+		// baking Brewall's palette in. Kept in the format so per-category
+		// colouring (traps, zone lines) can land without a schema change.
+		buf[12], buf[13], buf[14] = 0, 0, 0
+		raw = append(raw, buf[:]...)
+	}
+
+	var out bytes.Buffer
+	zw, err := zlib.NewWriterLevel(&out, zlib.BestCompression)
+	if err != nil {
+		return nil, fmt.Errorf("open zlib writer: %w", err)
+	}
+	if _, err := zw.Write(raw); err != nil {
+		return nil, fmt.Errorf("compress segments: %w", err)
+	}
+	if err := zw.Close(); err != nil {
+		return nil, fmt.Errorf("flush zlib: %w", err)
+	}
+	return out.Bytes(), nil
+}
+
+// UnpackSegments reverses packSegments. Used by the validation harness and the
+// API layer; kept beside the writer so the two formats cannot drift.
+func UnpackSegments(blob []byte) ([]Segment, error) {
+	zr, err := zlib.NewReader(bytes.NewReader(blob))
+	if err != nil {
+		return nil, fmt.Errorf("open zlib reader: %w", err)
+	}
+	defer zr.Close()
+	var raw bytes.Buffer
+	if _, err := raw.ReadFrom(zr); err != nil {
+		return nil, fmt.Errorf("decompress: %w", err)
+	}
+	b := raw.Bytes()
+	if len(b)%segmentBytes != 0 {
+		return nil, fmt.Errorf("blob is %d bytes, not a multiple of %d", len(b), segmentBytes)
+	}
+	segs := make([]Segment, 0, len(b)/segmentBytes)
+	for p := 0; p+segmentBytes <= len(b); p += segmentBytes {
+		i16 := func(off int) float64 {
+			return float64(int16(binary.LittleEndian.Uint16(b[p+off:])))
+		}
+		segs = append(segs, Segment{
+			A: Vec3{X: i16(0), Y: i16(2), Z: i16(4)},
+			B: Vec3{X: i16(6), Y: i16(8), Z: i16(10)},
+		})
+	}
+	return segs, nil
+}
+
+func clampCoord(v float64) int {
+	r := math.Round(v)
+	if r < coordMin {
+		return coordMin
+	}
+	if r > coordMax {
+		return coordMax
+	}
+	return int(r)
+}

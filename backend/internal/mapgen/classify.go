@@ -115,12 +115,21 @@ func contourInterval(zSpan float64) float64 {
 	}
 }
 
+// contourRDPEpsilon simplifies contour lines. Contours come out of
+// triangle-plane intersection as one segment per crossed triangle, which is far
+// finer than anything visible: at 0.5 world units the error is well under a
+// pixel at any usable zoom, and it roughly halves the segment count. Contours
+// are the bulk of the corpus, so this is where size is won.
+const contourRDPEpsilon = 0.5
+
 // Extract runs the technique the classification selected and returns the map
 // segments for the zone.
 func Extract(z *Zone, c Classification) []Segment {
 	switch c.Technique {
 	case TechniqueContours:
-		return z.Contours(contourInterval(c.ZSpan))
+		raw := z.Contours(contourInterval(c.ZSpan))
+		// Chaining keys on Z, so separate elevation bands never join.
+		return SimplifyRDP(Chain(raw), contourRDPEpsilon)
 	case TechniqueSilhouette:
 		return z.Silhouette()
 	default:

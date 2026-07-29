@@ -437,7 +437,45 @@ a small override table, rather than trying to find a threshold that classifies
 every zone correctly. A hand-checked override list of ~18 entries is cheaper and
 more honest than an over-fitted heuristic.
 
-### 5b.7 Effect on the risk register
+### 5b.7 Go pipeline — full corpus build (2026-07-29)
+
+`backend/cmd/mapgen` now builds `maps.db` end to end. First full run:
+
+```
+178 zones, 0 failed, 1,127,344 segments, 2m21s
+   contours     77
+   silhouette   78
+   boundary     23
+wrote data/maps.db (6.3 MB)
+```
+
+**Zero failures across the whole client**, matching the Python prototype.
+
+**Size: 6.3 MB, not the 4.0 MB projected in §6.1.** The projection assumed
+Brewall-equivalent density; our pipeline emits ~1.13M segments against his
+637k, so per-segment cost is as predicted and the delta is purely extra detail.
+Fetch is 0.74 ms per zone including decompression — slower than the 0.05 ms
+measured in Python because that figure excluded unpacking, but far below
+anything a user notices.
+
+Two bugs surfaced only because the Go output was compared against the
+prototype's numbers:
+
+- **Contours were shipping unsimplified.** Boundary and silhouette were both
+  simplified; contours went straight from triangle-plane intersection to
+  output. Adding Douglas-Peucker at ε=0.5 cut the corpus from 1.94M segments to
+  1.13M and the file from 10.9 MB to 6.3 MB, with sub-pixel error.
+- **Douglas-Peucker had a slice-aliasing bug.** The two recursive halves are
+  sub-slices of one backing array, and the base case returns the input slice
+  itself, so appending into the left half overwrote points the right half still
+  referenced. The tell was impossible output: a *larger* epsilon produced
+  *more* segments. Both halves are now copied into a fresh slice, and a
+  monotonicity test guards it.
+
+Neither would have been caught by "does it compile and produce a map" — the
+maps looked fine in both cases.
+
+### 5b.8 Effect on the risk register
 
 The §11 "WLD/`.s3d` Go port is the long pole" risk drops from **High to
 Medium**. A complete working parser — PFS, WLD, `0x36` mesh, `0x15` placements,
