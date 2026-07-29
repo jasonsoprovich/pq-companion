@@ -178,6 +178,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/{id}", npcs.get)
 			r.Get("/{id}/spawns", npcs.spawns)
 			r.Get("/{id}/loot", npcs.loot)
+			r.Get("/{id}/merchant", npcs.merchant)
 			r.Get("/{id}/faction", npcs.faction)
 			r.Get("/{id}/spells", npcs.spells)
 			r.Get("/{id}/raw", raw.rowFromTable("npc_types", "id"))
@@ -469,6 +470,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Put("/action-templates/{id}", triggerH.updateActionTemplate)
 			r.Delete("/action-templates/{id}", triggerH.deleteActionTemplate)
 			r.Post("/bulk-actions", triggerH.bulkEditActions)
+			r.Post("/reset-positions", triggerH.resetAllPositions)
 			r.Get("/packs", triggerH.listBuiltinPacks)
 			// Static /packs/updates is registered before the {name} wildcard
 			// so a pack can never shadow it.

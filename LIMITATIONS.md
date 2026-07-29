@@ -940,6 +940,28 @@ These are inherent to log-file parsing and affect multiple features:
 
 ---
 
+## 16. Vendor prices
+
+### 16.1 `npc_types.greed` multiplier is undocumented
+
+- **Limitation:** The vendor inventory on the NPC page shows each item's base
+  list price (`items.price`) and flags whether the vendor is marked greedy, but
+  does not show what a player would actually be charged.
+- **Root cause:** `npc_types.greed` is populated (0 for 1,831 merchants, then 50,
+  100, 5, 20, 200, 90, 75 for a long tail of ~108) but its exact role in the
+  price formula has not been verified against EQMacEmu source. The obvious
+  reading — a percentage markup — is a guess. Showing a derived total computed
+  from an unverified formula would present a wrong number with false authority,
+  so only the raw list price is displayed.
+- **Sources checked:** quarm.db has the column but SCHEMA.md does not document
+  it and no other part of the app consumes it. Log and Zeal provide nothing.
+- **Could a future data source fix this?** Yes — reading the merchant pricing
+  path in the Project Quarm EQMacEmu fork would settle both the greed formula
+  and the faction/CHA adjustment, at which point the real quoted price could be
+  shown. Until then the base price plus the greedy flag is the honest subset.
+
+---
+
 ## Template for new entries
 
 ```

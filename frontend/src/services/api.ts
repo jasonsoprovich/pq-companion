@@ -1,6 +1,6 @@
 import type { Config } from '../types/config'
 import type { Item, ItemSources, ItemQuests, QuestSummary, SearchResult } from '../types/item'
-import type { NPC, NPCSpawns, NPCLootTable, NPCFaction, NPCSpells } from '../types/npc'
+import type { NPC, NPCSpawns, NPCLootTable, NPCFaction, NPCSpells, NPCMerchant } from '../types/npc'
 import type { BuffStatDelta, Spell, SpellCrossRefs, ShoppingRoute, ShoppingRouteOptions } from '../types/spell'
 import type { EmoteColumnsPatch, EmoteStatus, SpellEmote, SpellEmoteDiff } from '../types/emote'
 import type { Zone, ZoneConnection, ZoneGroundSpawn, ZoneForageItem, ZoneDropItem } from '../types/zone'
@@ -414,6 +414,10 @@ export function getNPCSpawns(id: number): Promise<NPCSpawns> {
 
 export function getNPCLoot(id: number): Promise<NPCLootTable> {
   return get<NPCLootTable>(`/api/npcs/${id}/loot`)
+}
+
+export function getNPCMerchant(id: number): Promise<NPCMerchant> {
+  return get<NPCMerchant>(`/api/npcs/${id}/merchant`)
 }
 
 export function getNPCFaction(id: number): Promise<NPCFaction | null> {
@@ -2548,6 +2552,14 @@ export function bulkConvertTTSToSound(
     volume,
     include_timer_alerts: includeTimerAlerts,
   })
+}
+
+/**
+ * Clear the pinned position on every trigger's overlay_text actions, so
+ * they all fall back to the global default set on the Settings page.
+ */
+export function resetAllTriggerPositions(): Promise<BulkResult> {
+  return post<BulkResult>('/api/triggers/reset-positions', {})
 }
 
 export function importTriggerPack(pack: TriggerPack): Promise<{ status: string; pack_name: string }> {

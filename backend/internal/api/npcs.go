@@ -110,6 +110,24 @@ func (h *npcsHandler) spells(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, spells)
 }
 
+func (h *npcsHandler) merchant(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	m, err := h.db.GetNPCMerchant(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if m == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"items": []any{}})
+		return
+	}
+	writeJSON(w, http.StatusOK, m)
+}
+
 func (h *npcsHandler) loot(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil {

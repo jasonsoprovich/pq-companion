@@ -26,7 +26,7 @@ import {
 } from '../lib/itemHelpers'
 import { ItemIcon } from './Icon'
 import { ItemTradeskillsTab } from './RecipeView'
-import { SourceNPCLink } from './SourceNPCLink'
+import { SourceNPCTable } from './SourceNPCTable'
 import SpellEffectRow from './SpellEffectRow'
 
 // ── Shared primitives ──────────────────────────────────────────────────────────
@@ -192,20 +192,12 @@ function OverviewTab({ item, copied, onCopy }: { item: Item; copied: boolean; on
 
 function DropsFromTab({ drops }: { drops: ItemSourceNPC[] }): React.ReactElement {
   if (drops.length === 0) return <EmptyTabMessage message="No drop sources found." />
-  return (
-    <div>
-      <div className="mb-1 flex justify-between text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>
-        <span>NPC</span>
-        <span>Drop Rate / Zone</span>
-      </div>
-      {drops.map((npc) => <SourceNPCLink key={npc.id} npc={npc} showRate />)}
-    </div>
-  )
+  return <SourceNPCTable npcs={drops} showRate defaultSort={{ key: 'rate', dir: 'desc' }} />
 }
 
 function PurchasedFromTab({ merchants }: { merchants: ItemSourceNPC[] }): React.ReactElement {
   if (merchants.length === 0) return <EmptyTabMessage message="Not sold by any merchant." />
-  return <div>{merchants.map((npc) => <SourceNPCLink key={npc.id} npc={npc} />)}</div>
+  return <SourceNPCTable npcs={merchants} defaultSort={{ key: 'zone', dir: 'asc' }} />
 }
 
 function ForagedFromTab({ zones }: { zones: ItemForageZone[] }): React.ReactElement {

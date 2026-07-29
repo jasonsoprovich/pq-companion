@@ -206,3 +206,26 @@ export interface NPCSpells {
   // consistent readout above the full enumerated list.
   summary?: NPCCasterSummary
 }
+
+// NPCMerchant is a vendor's sale inventory. Prices are the base list — the
+// server further scales them per buyer by faction and charisma, so treat them
+// as a floor rather than the exact quote a player sees.
+export interface NPCMerchant {
+  merchant_id: number
+  // greed is a percentage markup over each item's base price; 0 for most.
+  greed: number
+  items: NPCMerchantItem[]
+}
+
+export interface NPCMerchantItem {
+  slot: number
+  item_id: number
+  name: string
+  icon: number
+  base_price: number
+  // quantity 0 means an unlimited stock slot.
+  quantity: number
+  faction_required: number
+  level_required: number
+  classes_required: number
+}

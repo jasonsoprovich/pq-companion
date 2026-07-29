@@ -26,6 +26,7 @@ import {
 import { ItemIcon } from '../components/Icon'
 import RawDataModal from '../components/RawDataModal'
 import ItemCompareModal from '../components/ItemCompareModal'
+import { SourceNPCTable } from '../components/SourceNPCTable'
 import { ITEM_SLOTS } from '../lib/itemSlots'
 import WishlistStarButton from '../components/WishlistStarButton'
 import VariantLinks from '../components/VariantLinks'
@@ -655,46 +656,6 @@ function Section({ title, children }: SectionProps): React.ReactElement {
   )
 }
 
-function formatNPCName(name: string): string {
-  return name.replace(/_/g, ' ')
-}
-
-interface SourceNPCLinkProps {
-  npc: ItemSourceNPC
-  showRate?: boolean
-}
-
-function SourceNPCLink({ npc, showRate }: SourceNPCLinkProps): React.ReactElement {
-  const navigate = useNavigate()
-  return (
-    <div className="flex w-full items-center justify-between gap-3 py-0.5 text-sm">
-      <button
-        onClick={() => navigate(`/npcs?select=${npc.id}`)}
-        className="min-w-0 truncate text-left underline decoration-dotted"
-        style={{ color: 'var(--color-primary)' }}
-      >
-        {formatNPCName(npc.name)}
-      </button>
-      <div className="flex shrink-0 items-center gap-2">
-        {showRate && npc.drop_rate != null && npc.drop_rate > 0 && (
-          <span className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-            {npc.drop_rate.toFixed(2)}%
-          </span>
-        )}
-        {npc.zone_name && (
-          <button
-            onClick={() => navigate(`/zones?select=${npc.zone_short_name}`)}
-            className="text-xs underline decoration-dotted"
-            style={{ color: 'var(--color-muted)' }}
-          >
-            {npc.zone_name}
-          </button>
-        )}
-      </div>
-    </div>
-  )
-}
-
 function EmptyTabMessage({ message }: { message: string }): React.ReactElement {
   return (
     <p className="py-4 text-sm" style={{ color: 'var(--color-muted)' }}>{message}</p>
@@ -867,30 +828,18 @@ function OverviewTab({ item, copied, onCopy }: OverviewTabProps): React.ReactEle
 
 function DropsFromTab({ drops }: { drops: ItemSourceNPC[] }): React.ReactElement {
   if (drops.length === 0) return <EmptyTabMessage message="No drop sources found." />
-  return (
-    <div>
-      <div className="mb-1 flex justify-between text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>
-        <span>NPC</span>
-        <span>Drop Rate / Zone</span>
-      </div>
-      {drops.map((npc) => (
-        <SourceNPCLink key={npc.id} npc={npc} showRate />
-      ))}
-    </div>
-  )
+  // Drops default to best rate first — the question here is "where is this most
+  // likely to come from", not "where is it".
+  return <SourceNPCTable npcs={drops} showRate defaultSort={{ key: 'rate', dir: 'desc' }} />
 }
 
 // ── Tab: Purchased From ────────────────────────────────────────────────────────
 
 function PurchasedFromTab({ merchants }: { merchants: ItemSourceNPC[] }): React.ReactElement {
   if (merchants.length === 0) return <EmptyTabMessage message="Not sold by any merchant." />
-  return (
-    <div>
-      {merchants.map((npc) => (
-        <SourceNPCLink key={npc.id} npc={npc} />
-      ))}
-    </div>
-  )
+  // Vendors default to zone — the question is "which vendor can I actually get
+  // to", so grouping by zone beats the old NPC-name ordering.
+  return <SourceNPCTable npcs={merchants} defaultSort={{ key: 'zone', dir: 'asc' }} />
 }
 
 // ── Tab: Foraged From ──────────────────────────────────────────────────────────

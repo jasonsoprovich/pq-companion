@@ -2,8 +2,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useCachedState } from '../hooks/useCachedState'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Check, Copy, Search, X, Bell } from 'lucide-react'
-import { searchNPCs, getNPC, getNPCSpawns, getNPCLoot, getNPCFaction, getNPCSpells, getNPCRaw } from '../services/api'
-import type { NPC, NPCSpawns, NPCLootTable, NPCFaction, NPCSpells, NPCSpellEntry, NPCSpellProc, LootDrop } from '../types/npc'
+import { searchNPCs, getNPC, getNPCSpawns, getNPCLoot, getNPCFaction, getNPCSpells, getNPCRaw, getNPCMerchant } from '../services/api'
+import type { NPC, NPCSpawns, NPCLootTable, NPCFaction, NPCSpells, NPCSpellEntry, NPCSpellProc, LootDrop, NPCMerchant } from '../types/npc'
 import {
   bodyTypeName,
   className,
@@ -14,7 +14,7 @@ import {
   specialAbilityAlertPattern,
   type SpecialAbility,
 } from '../lib/npcHelpers'
-import { inGameItemLink } from '../lib/itemHelpers'
+import { inGameItemLink, priceLabel } from '../lib/itemHelpers'
 import CreateTriggerModal, { type TriggerPrefill } from '../components/CreateTriggerModal'
 import { ItemIcon } from '../components/Icon'
 import RawDataModal from './../components/RawDataModal'
@@ -35,6 +35,115 @@ function formatRespawnTime(seconds: number): string {
 
 function formatNPCName(name: string): string {
   return name.replace(/_/g, ' ')
+}
+
+// ── Vendor inventory ───────────────────────────────────────────────────────────
+
+// MerchantInventory lists what a vendor sells. Sortable by name or price, with
+// zebra rows, matching the item page's source tables.
+//
+// Prices are the base list. The server scales them per buyer by faction and
+// charisma at purchase time, so these are a floor rather than an exact quote —
+// the header says so rather than implying false precision.
+function MerchantInventory({
+  merchant,
+  onItemClick,
+}: {
+  merchant: NPCMerchant
+  onItemClick: (itemID: number) => void
+}): React.ReactElement {
+  const [sort, setSort] = useState<{ key: 'slot' | 'name' | 'price'; dir: 'asc' | 'desc' }>({
+    key: 'slot',
+    dir: 'asc',
+  })
+
+  const items = React.useMemo(() => {
+    const dir = sort.dir === 'asc' ? 1 : -1
+    return [...merchant.items].sort((a, b) => {
+      switch (sort.key) {
+        case 'name': return a.name.localeCompare(b.name) * dir
+        case 'price': return (a.base_price - b.base_price) * dir
+        default: return (a.slot - b.slot) * dir
+      }
+    })
+  }, [merchant.items, sort])
+
+  const toggle = (key: 'slot' | 'name' | 'price'): void => {
+    setSort((prev) =>
+      prev.key === key
+        ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+        : { key, dir: key === 'price' ? 'desc' : 'asc' },
+    )
+  }
+
+  const header = (label: string, key: 'slot' | 'name' | 'price', right?: boolean): React.ReactElement => (
+    <th className={`px-1.5 pb-1 font-semibold ${right ? 'text-right' : 'text-left'}`}>
+      <button
+        type="button"
+        onClick={() => toggle(key)}
+        className="inline-flex items-center gap-1 whitespace-nowrap hover:underline"
+        style={{ color: sort.key === key ? 'var(--color-foreground)' : 'inherit' }}
+      >
+        {label}
+        {sort.key === key && <span>{sort.dir === 'desc' ? '▼' : '▲'}</span>}
+      </button>
+    </th>
+  )
+
+  return (
+    <div>
+      {merchant.greed > 0 && (
+        <p className="pb-1 text-[11px]" style={{ color: 'var(--color-warning)' }}>
+          Flagged greedy (greed={merchant.greed}) — charges above the base price below.
+        </p>
+      )}
+      <table className="w-full table-fixed border-collapse text-sm">
+        <thead>
+          <tr
+            className="text-[10px] font-semibold uppercase tracking-widest"
+            style={{ color: 'var(--color-muted)' }}
+          >
+            {header('Item', 'name')}
+            {header('Price', 'price', true)}
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((it, i) => (
+            <tr
+              key={`${it.slot}-${it.item_id}`}
+              style={{
+                backgroundColor: i % 2 === 1 ? 'var(--color-surface-2)' : 'transparent',
+              }}
+            >
+              <td className="truncate px-1.5 py-0.5">
+                <button
+                  onClick={() => onItemClick(it.item_id)}
+                  className="flex w-full items-center gap-2 text-left"
+                >
+                  <ItemIcon id={it.icon} name={it.name} size={20} />
+                  <span
+                    className="truncate underline decoration-dotted"
+                    style={{ color: 'var(--color-primary)' }}
+                  >
+                    {it.name}
+                  </span>
+                </button>
+              </td>
+              <td
+                className="w-28 px-1.5 py-0.5 text-right text-xs whitespace-nowrap"
+                style={{ color: 'var(--color-muted-foreground)' }}
+              >
+                {it.base_price > 0 ? priceLabel(it.base_price) : '—'}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="pt-1 text-[10px]" style={{ color: 'var(--color-muted)' }}>
+        Base list prices — the server adjusts per buyer by faction and charisma.
+      </p>
+    </div>
+  )
 }
 
 // ── Search pane ────────────────────────────────────────────────────────────────
@@ -586,12 +695,13 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
   const [loot, setLoot] = useState<NPCLootTable | null>(null)
   const [faction, setFaction] = useState<NPCFaction | null>(null)
   const [spells, setSpells] = useState<NPCSpells | null>(null)
+  const [merchant, setMerchant] = useState<NPCMerchant | null>(null)
   const [bulkCopied, setBulkCopied] = useState<number | null>(null)
   const [rawOpen, setRawOpen] = useState(false)
   const rawFetcher = useCallback(() => getNPCRaw(npc!.id), [npc?.id])
 
   useEffect(() => {
-    if (!npc) { setSpawns(null); setLoot(null); setFaction(null); return }
+    if (!npc) { setSpawns(null); setLoot(null); setFaction(null); setMerchant(null); return }
     let cancelled = false
     getNPCSpawns(npc.id)
       .then((s) => { if (!cancelled) setSpawns(s) })
@@ -599,6 +709,13 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
     getNPCLoot(npc.id)
       .then((l) => { if (!cancelled) setLoot(l) })
       .catch(() => { if (!cancelled) setLoot(null) })
+    if (npc.merchant_id > 0) {
+      getNPCMerchant(npc.id)
+        .then((m) => { if (!cancelled) setMerchant(m) })
+        .catch(() => { if (!cancelled) setMerchant(null) })
+    } else {
+      setMerchant(null)
+    }
     if (npc.npc_faction_id > 0) {
       getNPCFaction(npc.id)
         .then((f) => { if (!cancelled) setFaction(f) })
@@ -846,6 +963,13 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
                 ))}
               </div>
             )}
+          </Section>
+        )}
+
+        {/* Vendor inventory */}
+        {merchant && merchant.items.length > 0 && (
+          <Section title={`Sells (${merchant.items.length})`}>
+            <MerchantInventory merchant={merchant} onItemClick={(id) => navigate(`/items?select=${id}`)} />
           </Section>
         )}
 
