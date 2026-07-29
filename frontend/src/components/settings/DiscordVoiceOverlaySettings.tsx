@@ -1,7 +1,16 @@
-import React from 'react'
-import { Headphones, CheckCircle2, AlertTriangle, ExternalLink, PictureInPicture2 } from 'lucide-react'
+import React, { useState } from 'react'
+import {
+  Headphones,
+  CheckCircle2,
+  AlertTriangle,
+  ExternalLink,
+  PictureInPicture2,
+  Pencil,
+  Trash2,
+  Plus,
+} from 'lucide-react'
 
-import type { Config, Preferences } from '../../types/config'
+import type { Config, Preferences, DiscordVoiceLink } from '../../types/config'
 import { updateConfig } from '../../services/api'
 import { isValidStreamKitVoiceUrl } from '../../lib/overlays'
 
@@ -19,6 +28,12 @@ function Dot({ state }: { state: 'on' | 'off' | 'unknown' }): React.ReactElement
   )
 }
 
+function newLinkId(): string {
+  return typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `link-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
 interface DiscordVoiceOverlaySettingsProps {
   config: Config
   setConfig: (c: Config) => void
@@ -27,12 +42,12 @@ interface DiscordVoiceOverlaySettingsProps {
 /**
  * DiscordVoiceOverlaySettings is the "Discord Voice" settings card (issue
  * #150). We never talk to Discord's API ourselves — the app's own rpc.voice.read
- * request was declined. Instead the user generates a StreamKit Overlay URL
+ * request was declined. Instead the user generates StreamKit Overlay links
  * themselves (Discord's own hosted tool for embedding a voice roster in OBS/
- * XSplit browser sources) and pastes it here; the popout overlay window then
- * embeds that URL directly. Pinned to one guild+channel — switching channels
- * means pasting a new URL, since auto-following the current channel would
- * need the same gated Discord scope.
+ * XSplit browser sources) and saves them here, named, one per voice channel
+ * they use — each link is pinned to one guild+channel, so switching channels
+ * is picking a different saved link from the Active link dropdown rather
+ * than re-pasting a URL every time.
  */
 export default function DiscordVoiceOverlaySettings({
   config,
@@ -40,16 +55,61 @@ export default function DiscordVoiceOverlaySettings({
 }: DiscordVoiceOverlaySettingsProps): React.ReactElement {
   const prefs = config.preferences
   const enabled = prefs.discord_voice_enabled ?? false
-  const url = prefs.discord_voice_url ?? ''
-  const urlValid = isValidStreamKitVoiceUrl(url)
+  const links = prefs.discord_voice_links ?? []
+  const activeId = prefs.discord_voice_active_link_id ?? ''
+  const activeLink = links.find((l) => l.id === activeId)
+  const activeUrl = activeLink?.url ?? ''
+  const activeUrlValid = isValidStreamKitVoiceUrl(activeUrl)
 
-  function stage(patch: Partial<Preferences>): void {
-    setConfig({ ...config, preferences: { ...config.preferences, ...patch } })
-  }
+  // Inline add/edit form state — 'new' for a not-yet-saved link, an existing
+  // link's id to rename/re-paste its URL, or null when the form is closed.
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [draftName, setDraftName] = useState('')
+  const [draftUrl, setDraftUrl] = useState('')
+
   function saveNow(patch: Partial<Preferences>): void {
     const next: Config = { ...config, preferences: { ...config.preferences, ...patch } }
     setConfig(next)
     void updateConfig(next)
+  }
+
+  function startAdd(): void {
+    setEditingId('new')
+    setDraftName('')
+    setDraftUrl('')
+  }
+  function startEdit(link: DiscordVoiceLink): void {
+    setEditingId(link.id)
+    setDraftName(link.name)
+    setDraftUrl(link.url)
+  }
+  function cancelEdit(): void {
+    setEditingId(null)
+  }
+  function saveEdit(): void {
+    if (!editingId) return
+    const name = draftName.trim() || 'Untitled link'
+    const url = draftUrl.trim()
+    let nextLinks: DiscordVoiceLink[]
+    let nextActiveId = activeId
+    if (editingId === 'new') {
+      const id = newLinkId()
+      nextLinks = [...links, { id, name, url }]
+      // First link ever saved becomes active automatically — otherwise
+      // enabling + saving a link would still show nothing until the user
+      // separately picks it from the dropdown.
+      if (!activeId) nextActiveId = id
+    } else {
+      nextLinks = links.map((l) => (l.id === editingId ? { ...l, name, url } : l))
+    }
+    saveNow({ discord_voice_links: nextLinks, discord_voice_active_link_id: nextActiveId })
+    setEditingId(null)
+  }
+  function deleteLink(id: string): void {
+    const nextLinks = links.filter((l) => l.id !== id)
+    const nextActiveId = activeId === id ? '' : activeId
+    saveNow({ discord_voice_links: nextLinks, discord_voice_active_link_id: nextActiveId })
+    if (editingId === id) setEditingId(null)
   }
 
   return (
@@ -125,39 +185,45 @@ export default function DiscordVoiceOverlaySettings({
           Optional: toggle display settings like "Small Avatars" or "Show
           Speaking Users Only" to taste.
         </li>
-        <li>Copy the link from that box and paste it into the field below.</li>
+        <li>Copy the link from that box and save it below.</li>
       </ol>
 
       {enabled && (
         <div className="flex flex-col gap-3">
-          <div>
-            <div className="mb-1 flex items-center gap-2">
-              <Dot state={url ? (urlValid ? 'on' : 'off') : 'unknown'} />
-              <span className="text-sm" style={{ color: 'var(--color-foreground)' }}>
-                StreamKit overlay URL
-              </span>
+          {links.length > 0 && (
+            <div>
+              <div className="mb-1 flex items-center gap-2">
+                <Dot state={activeId ? (activeUrlValid ? 'on' : 'off') : 'unknown'} />
+                <span className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+                  Active link
+                </span>
+              </div>
+              <select
+                value={activeId}
+                onChange={(e) => saveNow({ discord_voice_active_link_id: e.target.value })}
+                className="w-full rounded px-2 py-1 text-xs outline-none"
+                style={{
+                  backgroundColor: 'var(--color-surface-2)',
+                  border: '1px solid var(--color-border)',
+                  color: 'var(--color-foreground)',
+                }}
+              >
+                <option value="">— none —</option>
+                {links.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                  </option>
+                ))}
+              </select>
             </div>
-            <input
-              type="text"
-              value={url}
-              placeholder="https://streamkit.discord.com/overlay/voice/..."
-              onChange={(e) => stage({ discord_voice_url: e.target.value })}
-              onBlur={() => saveNow({ discord_voice_url: url })}
-              className="w-full rounded px-2 py-1 text-xs font-mono outline-none"
-              style={{
-                backgroundColor: 'var(--color-surface-2)',
-                border: '1px solid var(--color-border)',
-                color: 'var(--color-foreground)',
-              }}
-            />
-          </div>
+          )}
 
-          {url && (
+          {activeId && (
             <div
               className="flex items-start gap-2 rounded px-2 py-1.5 text-xs"
               style={{ backgroundColor: 'var(--color-surface-2)' }}
             >
-              {urlValid ? (
+              {activeUrlValid ? (
                 <>
                   <CheckCircle2 size={13} style={{ color: '#22c55e' }} />
                   <span style={{ color: 'var(--color-foreground)' }}>
@@ -178,17 +244,138 @@ export default function DiscordVoiceOverlaySettings({
             </div>
           )}
 
+          {/* Saved links list + inline add/edit form */}
+          <div>
+            <div className="mb-1 text-sm" style={{ color: 'var(--color-foreground)' }}>
+              Saved links
+            </div>
+            <div className="flex flex-col gap-1">
+              {links.map((l) => (
+                <div
+                  key={l.id}
+                  className="flex items-center gap-2 rounded px-2 py-1.5"
+                  style={{ backgroundColor: 'var(--color-surface-2)' }}
+                >
+                  <span
+                    className="min-w-0 flex-1 truncate text-xs"
+                    style={{ color: 'var(--color-foreground)' }}
+                    title={l.url}
+                  >
+                    {l.name}
+                    {l.id === activeId && (
+                      <span className="ml-1.5" style={{ color: 'var(--color-primary)' }}>
+                        (active)
+                      </span>
+                    )}
+                  </span>
+                  <button
+                    onClick={() => startEdit(l)}
+                    title="Rename or update this link's URL"
+                    className="flex items-center rounded p-1"
+                    style={{ color: 'var(--color-muted-foreground)' }}
+                  >
+                    <Pencil size={12} />
+                  </button>
+                  <button
+                    onClick={() => deleteLink(l.id)}
+                    title="Delete this link"
+                    className="flex items-center rounded p-1"
+                    style={{ color: 'var(--color-danger, #ef4444)' }}
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              ))}
+              {links.length === 0 && (
+                <p className="text-xs" style={{ color: 'var(--color-muted)' }}>
+                  No links saved yet.
+                </p>
+              )}
+            </div>
+
+            {editingId ? (
+              <div
+                className="mt-2 flex flex-col gap-2 rounded p-2"
+                style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}
+              >
+                <input
+                  type="text"
+                  value={draftName}
+                  onChange={(e) => setDraftName(e.target.value)}
+                  placeholder="Name, e.g. Raid channel"
+                  className="w-full rounded px-2 py-1 text-xs outline-none"
+                  style={{
+                    backgroundColor: 'var(--color-surface)',
+                    border: '1px solid var(--color-border)',
+                    color: 'var(--color-foreground)',
+                  }}
+                />
+                <input
+                  type="text"
+                  value={draftUrl}
+                  onChange={(e) => setDraftUrl(e.target.value)}
+                  placeholder="https://streamkit.discord.com/overlay/voice/..."
+                  className="w-full rounded px-2 py-1 text-xs font-mono outline-none"
+                  style={{
+                    backgroundColor: 'var(--color-surface)',
+                    border: '1px solid var(--color-border)',
+                    color: 'var(--color-foreground)',
+                  }}
+                />
+                {draftUrl && !isValidStreamKitVoiceUrl(draftUrl) && (
+                  <span className="flex items-center gap-1.5 text-[11px]" style={{ color: '#f59e0b' }}>
+                    <AlertTriangle size={11} /> Only streamkit.discord.com voice links are accepted.
+                  </span>
+                )}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={saveEdit}
+                    disabled={!isValidStreamKitVoiceUrl(draftUrl)}
+                    className="rounded px-2.5 py-1 text-xs font-medium disabled:opacity-50"
+                    style={{ backgroundColor: 'var(--color-primary)', color: '#fff' }}
+                  >
+                    Save
+                  </button>
+                  <button
+                    onClick={cancelEdit}
+                    className="rounded px-2.5 py-1 text-xs font-medium"
+                    style={{
+                      backgroundColor: 'var(--color-surface)',
+                      color: 'var(--color-muted-foreground)',
+                      border: '1px solid var(--color-border)',
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={startAdd}
+                className="mt-2 flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium"
+                style={{
+                  backgroundColor: 'var(--color-surface-2)',
+                  color: 'var(--color-foreground)',
+                  border: '1px solid var(--color-border)',
+                }}
+              >
+                <Plus size={11} /> Add link
+              </button>
+            )}
+          </div>
+
           <p className="text-[11px] leading-relaxed" style={{ color: 'var(--color-muted)' }}>
-            This link is pinned to the one server + voice channel you picked
+            Each link is pinned to the one server + voice channel you picked
             when generating it — Discord doesn't let third-party apps like
-            this one auto-detect "whichever channel I'm in right now."
-            Switching voice channels means repeating the StreamKit steps above
-            and pasting the new link. Only streamkit.discord.com links are
-            accepted — anything else is rejected and won't load. The link is
-            saved here and persists across restarts, so you only need to
-            paste it once per channel; if the roster ever stops updating,
-            the link itself may have expired on Discord's end — regenerate
-            it the same way and paste the new one.
+            this one auto-detect "whichever channel I'm in right now." Save
+            one link per voice channel you use and switch between them with
+            the Active link dropdown above. Only streamkit.discord.com links
+            are accepted — anything else is rejected and won't load. Links
+            persist across restarts. There's no documented fixed expiry for
+            these, but Discord can invalidate one if you revoke the
+            "Streamkit Overlay" app from your Discord connections, reset
+            permissions, or reinstall Discord — if a roster ever stops
+            updating, regenerate that link the same way and update it here.
           </p>
 
           <label
@@ -211,7 +398,7 @@ export default function DiscordVoiceOverlaySettings({
             without a shaded box behind them.
           </p>
 
-          {urlValid && (
+          {activeUrlValid && (
             <button
               onClick={() => window.electron?.overlay?.toggleDiscordVoice()}
               className="flex items-center gap-1.5 self-start rounded px-2.5 py-1 text-xs font-medium"

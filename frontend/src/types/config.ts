@@ -74,6 +74,18 @@ export interface WishlistWatchSettings {
   sound_volume?: number
 }
 
+/**
+ * One saved StreamKit voice-overlay link — a name the user picked (e.g.
+ * "Raid channel", "Guild Hangout") plus the URL Discord's StreamKit tool
+ * generated for that one guild+channel. See Preferences.discord_voice_links/
+ * discord_voice_active_link_id and issue #150.
+ */
+export interface DiscordVoiceLink {
+  id: string
+  name: string
+  url: string
+}
+
 export interface Preferences {
   overlay_opacity: number
   // Fade overlay chrome (background, border, title bar) to transparent a few
@@ -216,11 +228,13 @@ export interface Preferences {
   // ── Discord Voice overlay ──────────────────────────────────────────────
   // Embeds Discord's own hosted StreamKit Overlay page in a popout overlay
   // window (see issue #150) — we never talk to Discord's API ourselves, the
-  // user generates discord_voice_url via streamkit.discord.com/overlay and
-  // pastes it in. Pinned to one guild+channel; switching channels means
-  // pasting a new URL. Off by default.
+  // user generates each link via streamkit.discord.com/overlay and pastes it
+  // in. Each link is pinned to one guild+channel, so instead of a single URL
+  // the user can save several named links and pick which is active — see
+  // DiscordVoiceLink. Off by default.
   discord_voice_enabled?: boolean
-  discord_voice_url?: string
+  discord_voice_links?: DiscordVoiceLink[]
+  discord_voice_active_link_id?: string
   // By default the header AND content area both follow overlay_opacity/
   // overlay_fade_enabled exactly like every other overlay, for visual
   // consistency. true is an opt-in "clean" look for once the window is

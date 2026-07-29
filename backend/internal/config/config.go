@@ -592,14 +592,23 @@ type Preferences struct {
 	// Embeds Discord's own hosted StreamKit Overlay page
 	// (streamkit.discord.com/overlay/voice/{guild}/{channel}) in a popout
 	// overlay window — see issue #150. We never talk to Discord's API
-	// ourselves; the user generates this URL themselves via Discord's site
+	// ourselves; the user generates each URL themselves via Discord's site
 	// (which handles its own OAuth against Discord's pre-approved StreamKit
-	// app, not ours) and pastes it in. The URL is pinned to one guild+channel
-	// — there's no way to auto-follow the user's current channel without the
-	// same gated rpc.voice.read scope Discord already declined for us, so
-	// switching channels means pasting a new URL. Off by default.
-	DiscordVoiceEnabled bool   `yaml:"discord_voice_enabled,omitempty" json:"discord_voice_enabled"`
-	DiscordVoiceURL     string `yaml:"discord_voice_url,omitempty" json:"discord_voice_url"`
+	// app, not ours) and pastes it in. Each link is pinned to one guild+
+	// channel — there's no way to auto-follow the user's current channel
+	// without the same gated rpc.voice.read scope Discord already declined
+	// for us. So instead of a single URL, the user can save several named
+	// links (one per voice channel they use) and pick which one is active —
+	// switching channels is then a dropdown pick, not a re-paste. Off by
+	// default.
+	DiscordVoiceEnabled bool `yaml:"discord_voice_enabled,omitempty" json:"discord_voice_enabled"`
+	// DiscordVoiceLinks is the user's saved StreamKit links. Managed entirely
+	// client-side via updateConfig, like SidebarFavorites/DPSClassColors —
+	// no dedicated backend CRUD, the Go side just stores and returns it.
+	DiscordVoiceLinks []DiscordVoiceLink `yaml:"discord_voice_links,omitempty" json:"discord_voice_links"`
+	// DiscordVoiceActiveLinkID selects which DiscordVoiceLinks entry (by ID)
+	// is currently loaded into the overlay. Empty/no match = nothing loaded.
+	DiscordVoiceActiveLinkID string `yaml:"discord_voice_active_link_id,omitempty" json:"discord_voice_active_link_id"`
 	// DiscordVoiceMinimalMode: by default the header AND content area both
 	// follow overlay_opacity/overlay_fade_enabled exactly like every other
 	// overlay, for visual consistency. Setting this true is an opt-in "clean"
@@ -609,6 +618,16 @@ type Preferences struct {
 	// visible — the header's lock/close controls stay put with no backdrop
 	// behind them, just without the shaded box. Off by default.
 	DiscordVoiceMinimalMode bool `yaml:"discord_voice_minimal_mode,omitempty" json:"discord_voice_minimal_mode"`
+}
+
+// DiscordVoiceLink is one saved StreamKit voice-overlay link — a name the
+// user picked (e.g. "Raid channel", "Guild Hangout") plus the URL Discord's
+// StreamKit tool generated for that one guild+channel. See Preferences.
+// DiscordVoiceLinks/DiscordVoiceActiveLinkID and issue #150.
+type DiscordVoiceLink struct {
+	ID   string `yaml:"id" json:"id"`
+	Name string `yaml:"name" json:"name"`
+	URL  string `yaml:"url" json:"url"`
 }
 
 // WishlistWatchSettings configures the wishlist watcher's matching scope and

@@ -63,7 +63,8 @@ export default function DiscordVoiceOverlayWindowPage(): React.ReactElement {
     getConfig()
       .then((c) => {
         const enabled = c.preferences.discord_voice_enabled ?? false
-        const url = c.preferences.discord_voice_url ?? ''
+        const activeId = c.preferences.discord_voice_active_link_id ?? ''
+        const url = c.preferences.discord_voice_links?.find((l) => l.id === activeId)?.url ?? ''
         const valid = enabled && isValidStreamKitVoiceUrl(url)
         setHasContent(valid)
         setMinimalMode(c.preferences.discord_voice_minimal_mode ?? false)
@@ -182,8 +183,8 @@ export default function DiscordVoiceOverlayWindowPage(): React.ReactElement {
       >
         {!hasContent && (
           <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', lineHeight: 1.5 }}>
-            Enable Discord Voice and paste a StreamKit overlay URL in
-            Settings → Overlays to see your voice channel here.
+            Enable Discord Voice, save a StreamKit link, and pick it as the
+            active link in Settings → Overlays to see your voice channel here.
           </p>
         )}
       </div>
