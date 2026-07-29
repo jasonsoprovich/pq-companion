@@ -44,6 +44,37 @@ func BulkApplyActions(store *Store, ids []string, actions []Action) (*BulkResult
 	return res, nil
 }
 
+// ClearAllPositions unpins every trigger's overlay_text actions, falling
+// them back to the global default position (or centered stacking). Used by
+// the Settings "reset all custom positions" control: without it, a trigger
+// pinned to its own spot keeps overriding a newly-set global default until
+// someone clears it by hand, one trigger at a time.
+func ClearAllPositions(store *Store) (*BulkResult, error) {
+	triggers, err := store.List()
+	if err != nil {
+		return nil, err
+	}
+	res := &BulkResult{}
+	for _, t := range triggers {
+		changed := false
+		for i := range t.Actions {
+			if t.Actions[i].Type == ActionOverlayText && t.Actions[i].Position != nil {
+				t.Actions[i].Position = nil
+				changed = true
+			}
+		}
+		if !changed {
+			res.Skipped++
+			continue
+		}
+		if err := store.Update(t); err != nil {
+			return res, fmt.Errorf("clear positions on %s: %w", t.ID, err)
+		}
+		res.Updated++
+	}
+	return res, nil
+}
+
 // BulkConvertTTSToSound rewrites every text_to_speech action on the given
 // triggers to play_sound with the supplied file and volume (0.0–1.0). Other
 // actions are left alone. When includeTimerAlerts is set, TTS "fading soon"

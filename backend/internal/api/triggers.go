@@ -1204,6 +1204,19 @@ func (h *triggerHandler) bulkEditActions(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, res)
 }
 
+// resetAllPositions clears the pinned position on every trigger's
+// overlay_text actions, so they all fall back to the global default set on
+// the Settings page.
+func (h *triggerHandler) resetAllPositions(w http.ResponseWriter, r *http.Request) {
+	res, err := trigger.ClearAllPositions(h.store)
+	h.engine.Reload()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
 // findBuiltinPack returns the named built-in pack definition, or nil.
 func findBuiltinPack(name string) *trigger.TriggerPack {
 	for _, p := range trigger.AllPacks() {

@@ -14,13 +14,15 @@
  * persists them like every other preference.
  */
 import React, { useState, useEffect, useCallback } from 'react'
-import { Crosshair, Check, X as XIcon, Monitor } from 'lucide-react'
+import { Crosshair, Check, X as XIcon, Monitor, RotateCcw } from 'lucide-react'
 import type { Config } from '../../types/config'
 import { useVoices } from '../../hooks/useVoices'
 import { useTTSVoices } from '../../hooks/usePiperStatus'
 import { voiceLabel } from '../../lib/piper'
 import { usePositioningSession } from '../../hooks/usePositioningSession'
 import { ColorOverrideField, AlignOverrideField } from '../NotificationActionEditor'
+import { ConfirmModal } from '../ConfirmModal'
+import { resetAllTriggerPositions } from '../../services/api'
 import {
   resolveOverlayTextStyle,
   overlayTextShadow,
@@ -152,6 +154,30 @@ export function OverlayTextDefaults({
     [refreshDisplays],
   )
 
+  // Per-trigger pinned positions (set in the trigger editor) always beat this
+  // global default, so a new default has no effect on any trigger that was
+  // ever manually positioned — until someone clears it here. Clearing them
+  // one by one doesn't scale, hence this bulk reset.
+  const [showResetPositionsConfirm, setShowResetPositionsConfirm] = useState(false)
+  const [resetPositionsStatus, setResetPositionsStatus] = useState<string | null>(null)
+  const handleResetAllPositions = useCallback((): void => {
+    setShowResetPositionsConfirm(false)
+    resetAllTriggerPositions()
+      .then((res) => {
+        setResetPositionsStatus(
+          res.updated > 0
+            ? `Cleared pinned positions on ${res.updated} trigger${res.updated === 1 ? '' : 's'}.`
+            : 'No triggers had a pinned position.',
+        )
+      })
+      .catch(() => setResetPositionsStatus('Failed to reset trigger positions.'))
+  }, [])
+  useEffect(() => {
+    if (!resetPositionsStatus) return
+    const t = setTimeout(() => setResetPositionsStatus(null), 5000)
+    return () => clearTimeout(t)
+  }, [resetPositionsStatus])
+
   return (
     <>
       <div className="mt-4">
@@ -165,26 +191,48 @@ export function OverlayTextDefaults({
               own. Unset = centered on the overlay monitor.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={toggle}
-            className="flex items-center gap-1 rounded px-2 py-1 text-[11px] shrink-0"
-            style={{
-              backgroundColor: positioning ? '#16a34a' : 'var(--color-primary)',
-              color: positioning ? '#fff' : 'var(--color-background)',
-              border: '1px solid transparent',
-              cursor: 'pointer',
-            }}
-            title={
-              positioning
-                ? 'Drag the on-screen card to position, then click here (or press Esc to cancel)'
-                : 'Pop up a sample alert in the overlay so you can drag it into position'
-            }
-          >
-            {positioning ? <Check size={11} /> : <Crosshair size={11} />}
-            {positioning ? 'Done — Keep Position' : 'Set Default Position'}
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => setShowResetPositionsConfirm(true)}
+              className="flex items-center gap-1 rounded px-2 py-1 text-[11px]"
+              style={{
+                backgroundColor: 'transparent',
+                color: 'var(--color-muted-foreground)',
+                border: '1px solid var(--color-border)',
+                cursor: 'pointer',
+              }}
+              title="Clear every trigger's individually-pinned overlay position, so they all use this default"
+            >
+              <RotateCcw size={11} />
+              Reset All Custom Positions
+            </button>
+            <button
+              type="button"
+              onClick={toggle}
+              className="flex items-center gap-1 rounded px-2 py-1 text-[11px]"
+              style={{
+                backgroundColor: positioning ? '#16a34a' : 'var(--color-primary)',
+                color: positioning ? '#fff' : 'var(--color-background)',
+                border: '1px solid transparent',
+                cursor: 'pointer',
+              }}
+              title={
+                positioning
+                  ? 'Drag the on-screen card to position, then click here (or press Esc to cancel)'
+                  : 'Pop up a sample alert in the overlay so you can drag it into position'
+              }
+            >
+              {positioning ? <Check size={11} /> : <Crosshair size={11} />}
+              {positioning ? 'Done — Keep Position' : 'Set Default Position'}
+            </button>
+          </div>
         </div>
+        {resetPositionsStatus && (
+          <p className="mt-1 text-[11px]" style={{ color: 'var(--color-muted-foreground)' }}>
+            {resetPositionsStatus}
+          </p>
+        )}
         {displays.length > 1 && (
           <div
             className="mt-1 flex items-center gap-1.5"
@@ -379,6 +427,16 @@ export function OverlayTextDefaults({
           </span>
         </div>
       </div>
+      {showResetPositionsConfirm && (
+        <ConfirmModal
+          title="Reset All Custom Positions"
+          message="Every trigger with its own pinned overlay position will fall back to this default. This can't be undone."
+          confirmLabel="Reset All"
+          tone="danger"
+          onConfirm={handleResetAllPositions}
+          onCancel={() => setShowResetPositionsConfirm(false)}
+        />
+      )}
     </>
   )
 }
