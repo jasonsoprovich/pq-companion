@@ -35,6 +35,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/lockout"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/loot"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/maps"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/overlay"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/players"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/popflag"
@@ -1564,7 +1565,20 @@ func main() {
 		go traderCapturer.Start(context.Background())
 	}
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, replayer, npcTracker, combatTracker, historyStore, threatTracker, raidThreatAssembler, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, sb, savedQueryStore, skillsStore, traderStore, traderCapturer, popflagStore, wishlistWatcher, changelogEntries, factionEngine, emoteService, actualPort)
+	// Zone maps are optional: a build without maps.db still runs, with map
+	// features reporting unavailable rather than failing at startup.
+	mapStore, err := maps.Open(maps.DefaultPath())
+	if err != nil {
+		slog.Warn("maps.db failed to open; map features disabled", "err", err)
+		mapStore = nil
+	} else if mapStore.Available() {
+		slog.Info("maps.db located", "path", maps.DefaultPath())
+	} else {
+		slog.Info("maps.db not present; map features disabled")
+	}
+	defer mapStore.Close()
+
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, replayer, npcTracker, combatTracker, historyStore, threatTracker, raidThreatAssembler, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, sb, savedQueryStore, skillsStore, traderStore, traderCapturer, popflagStore, wishlistWatcher, changelogEntries, factionEngine, emoteService, mapStore, actualPort)
 
 	slog.Info("server starting", "addr", listener.Addr().String(), "db", *dbPath)
 	if err := http.Serve(listener, router); err != nil {
