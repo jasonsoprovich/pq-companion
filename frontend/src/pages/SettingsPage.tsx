@@ -4098,7 +4098,7 @@ const NPC_SECTION_ROWS: ReadonlyArray<{
   hint: string
 }> = [
   { key: 'identity', label: 'Identity', hint: 'Level, class, race, body type' },
-  { key: 'combat', label: 'Combat', hint: 'HP, mana, AC, damage, attacks/round' },
+  { key: 'combat', label: 'Combat', hint: 'HP, mana, AC, damage, attacks/round, PBAoE XP penalty' },
   { key: 'resists', label: 'Resists', hint: 'MR, CR, FR, DR, PR chips' },
   { key: 'attributes', label: 'Attributes', hint: 'STR / STA / DEX / AGI / INT / WIS / CHA' },
   { key: 'special_abilities', label: 'Special Abilities', hint: 'Summon, rampage, immunities, etc.' },

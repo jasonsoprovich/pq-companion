@@ -69,6 +69,35 @@ export function npcRunSpeedPct(runSpeed: number): number {
   return Math.round((runSpeed / PLAYER_BASE_RUNSPEED) * 100)
 }
 
+// ── PBAoE XP Penalty ─────────────────────────────────────────────────────────────
+
+export interface PBAoEReduction {
+  // True when this kill would actually receive reduced XP from majority-PBAoE
+  // damage (level gates satisfied AND the formula resolves below 100%).
+  applies: boolean
+  // Fraction of normal XP received, in [0.05, 1].
+  xpMultiplier: number
+}
+
+/**
+ * Project Quarm's (EQMacEmu) PBAoE experience penalty: killing an NPC with
+ * more than 50% of its damage dealt via point-blank AE lands only a fraction
+ * of normal XP, when the killer is level 42+ and the mob is level 55 or
+ * below. Ported from NPC::GetPBAoEReduction (zone/exp.cpp, EQMacEmu fork) —
+ * see https://github.com/SecretsOTheP/EQMacEmu/blob/a346382e7abd2a854551f88dbc1b81bd488d3616/zone/exp.cpp#L1115
+ */
+export function pbaoeReduction(killerLevel: number, mobLevel: number): PBAoEReduction {
+  if (killerLevel < 42 || mobLevel > 55) return { applies: false, xpMultiplier: 1 }
+  const diff = killerLevel - mobLevel
+  const x = killerLevel < 51 ? 4 : 5
+  const y = killerLevel < 51 ? 70 : 72
+  let mult = (1000 - (diff - x) * y) / 1000
+  if (mult < 0.05) mult = 0.05
+  if (mult > 0.75 && mobLevel > 50) mult = 0.75
+  else if (mult > 1) mult = 1
+  return { applies: mult < 1, xpMultiplier: mult }
+}
+
 // ── Special Abilities ───────────────────────────────────────────────────────────
 
 export interface SpecialAbility {

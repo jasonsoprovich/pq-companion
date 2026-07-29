@@ -6,9 +6,10 @@ import { useNPCOverlaySections } from '../../hooks/useNPCOverlaySections'
 import { useWishlistItemIds } from '../../hooks/useWishlistItemIds'
 import { useTargetTimers } from '../../hooks/useTargetTimers'
 import { useTargetPlayer } from '../../hooks/useTargetPlayer'
+import { useActiveCharacterLevel } from '../../hooks/useActiveCharacterLevel'
 import { WSEvent } from '../../lib/wsEvents'
 import { getOverlayNPCTarget, getLogStatus, getNPCLoot, getNPCFaction, getItem } from '../../services/api'
-import { className, bodyTypeName, npcRunSpeedPct, npcLevelLabel } from '../../lib/npcHelpers'
+import { className, bodyTypeName, npcRunSpeedPct, npcLevelLabel, pbaoeReduction } from '../../lib/npcHelpers'
 import { cleanLootDropLabel, effectiveDropPct, rarityColor } from '../../lib/lootHelpers'
 import OverlayWindow from '../OverlayWindow'
 import TargetPinButton from '../TargetPinButton'
@@ -421,12 +422,14 @@ function OtherVariants({
   view,
   onItemClick,
   wishlistItemIds,
+  charLevel,
 }: {
   variants: TargetVariant[]
   sections: NPCOverlaySections
   view: View
   onItemClick: (id: number) => void
   wishlistItemIds: Set<number>
+  charLevel: number | null
 }): React.ReactElement {
   const [open, setOpen] = useState(true)
   return (
@@ -454,6 +457,7 @@ function OtherVariants({
             variantLabel={`${className(v.npc.class)} · L${npcLevelLabel(v.npc)} · ${v.npc.hp.toLocaleString()} HP`}
             onItemClick={onItemClick}
             wishlistItemIds={wishlistItemIds}
+            charLevel={charLevel}
           />
         ))}
     </div>
@@ -473,6 +477,7 @@ function NPCDetails({
   variantLabel,
   onItemClick,
   wishlistItemIds,
+  charLevel,
 }: {
   npc: NPC
   abilities: SpecialAbility[]
@@ -482,7 +487,12 @@ function NPCDetails({
   variantLabel?: string
   onItemClick: (id: number) => void
   wishlistItemIds: Set<number>
+  charLevel: number | null
 }): React.ReactElement {
+  // Worst-case mob level for a range-spawn NPC, mirroring the resist
+  // calculator's convention of using the top end of the level range.
+  const mobLevel = npc.max_level > npc.level ? npc.max_level : npc.level
+  const pbaoe = charLevel != null ? pbaoeReduction(charLevel, mobLevel) : null
   return (
     <div className="flex flex-col gap-2">
       {variantLabel && (
@@ -522,6 +532,16 @@ function NPCDetails({
                 <Stat label="Atk/Rd" value={npc.attack_count < 0 ? 'default' : npc.attack_count} />
                 <Stat label="Speed" value={`${npcRunSpeedPct(npc.run_speed)}%`} />
               </div>
+              {pbaoe?.applies && (
+                <div
+                  className="mt-1.5 inline-flex w-fit items-center gap-1.5 rounded px-2 py-1"
+                  style={{ backgroundColor: 'rgba(249,115,22,0.12)' }}
+                  title={`Project Quarm reduces XP on this kill if more than 50% of the damage was PBAoE (you're level ${charLevel}, mob is ${mobLevel}). Expect ~${Math.round(pbaoe.xpMultiplier * 100)}% of normal XP if you PBAoE it.`}
+                >
+                  <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: '#f97316' }}>PBAoE XP</span>
+                  <span className="text-xs font-semibold tabular-nums" style={{ color: '#f97316' }}>{Math.round(pbaoe.xpMultiplier * 100)}%</span>
+                </div>
+              )}
             </div>
           )}
 
@@ -590,12 +610,14 @@ function NPCCard({
   sections,
   onItemClick,
   wishlistItemIds,
+  charLevel,
 }: {
   state: TargetState
   view: View
   sections: NPCOverlaySections
   onItemClick: (id: number) => void
   wishlistItemIds: Set<number>
+  charLevel: number | null
 }): React.ReactElement {
   const npc = state.npc_data
   const abilities = state.special_abilities ?? []
@@ -668,6 +690,7 @@ function NPCCard({
             view={view}
             onItemClick={onItemClick}
             wishlistItemIds={wishlistItemIds}
+            charLevel={charLevel}
           />
           {otherVariants.length > 0 && (
             <OtherVariants
@@ -677,6 +700,7 @@ function NPCCard({
               view={view}
               onItemClick={onItemClick}
               wishlistItemIds={wishlistItemIds}
+              charLevel={charLevel}
             />
           )}
         </>
@@ -710,6 +734,7 @@ export default function NPCPanel({
   const pinnedRef = useRef(false)
   const sections = useNPCOverlaySections('dashboard')
   const wishlistItemIds = useWishlistItemIds()
+  const charLevel = useActiveCharacterLevel()
 
   useEffect(() => {
     getOverlayNPCTarget().then(setTarget).catch(() => setTarget(null))
@@ -799,7 +824,7 @@ export default function NPCPanel({
             <p className="text-sm" style={{ color: 'var(--color-muted)' }}>Loading…</p>
           </div>
         ) : target.has_target ? (
-          <NPCCard state={target} view={view} sections={sections} onItemClick={handleItemClick} wishlistItemIds={wishlistItemIds} />
+          <NPCCard state={target} view={view} sections={sections} onItemClick={handleItemClick} wishlistItemIds={wishlistItemIds} charLevel={charLevel} />
         ) : (
           <NoTarget zone={target.current_zone} />
         )}

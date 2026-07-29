@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useCachedState } from '../hooks/useCachedState'
+import { useActiveCharacterLevel } from '../hooks/useActiveCharacterLevel'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Check, Copy, Search, X, Bell } from 'lucide-react'
 import { searchNPCs, getNPC, getNPCSpawns, getNPCLoot, getNPCFaction, getNPCSpells, getNPCRaw, getNPCMerchant } from '../services/api'
@@ -11,6 +12,7 @@ import {
   npcLevelLabel,
   npcRunSpeedPct,
   npcSpecialAbilities,
+  pbaoeReduction,
   specialAbilityAlertPattern,
   type SpecialAbility,
 } from '../lib/npcHelpers'
@@ -763,6 +765,7 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
   const [bulkCopied, setBulkCopied] = useState<number | null>(null)
   const [rawOpen, setRawOpen] = useState(false)
   const rawFetcher = useCallback(() => getNPCRaw(npc!.id), [npc?.id])
+  const charLevel = useActiveCharacterLevel()
 
   useEffect(() => {
     if (!npc) { setSpawns(null); setLoot(null); setFaction(null); setMerchant(null); return }
@@ -880,6 +883,11 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
   const hasStats = npc.str || npc.sta || npc.dex || npc.agi || npc.int || npc.wis || npc.cha
   const hasResists = npc.mr || npc.cr || npc.dr || npc.fr || npc.pr
 
+  // Worst-case mob level for a range-spawn NPC, mirroring the resist
+  // calculator's convention of using the top end of the level range.
+  const pbaoeMobLevel = npc.max_level > npc.level ? npc.max_level : npc.level
+  const pbaoe = charLevel != null ? pbaoeReduction(charLevel, pbaoeMobLevel) : null
+
   return (
     <div className="flex-1 overflow-y-auto px-5 py-4">
       {/* Header */}
@@ -937,6 +945,12 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
             <StatRow label="Attacks" value={npc.attack_count} />
           )}
           <StatRow label="AC" value={npc.ac} />
+          {pbaoe?.applies && (
+            <StatRow
+              label="PBAoE XP"
+              value={`${Math.round(pbaoe.xpMultiplier * 100)}% (you're L${charLevel})`}
+            />
+          )}
         </Section>
 
         {/* Attributes */}
