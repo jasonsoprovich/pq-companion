@@ -17,14 +17,12 @@ import { clampChatLine } from './eqClipboard'
 // quarm.db directly, with no negation — Zeal applies the map-space negation
 // internally when it draws the pin.
 //
-// NOT YET VERIFIED IN GAME. The check is 30 seconds: stand anywhere in North
-// Qeynos and run
+// VERIFIED IN GAME 2026-07-29: `/map marker 6 235 Test` run in North Qeynos
+// dropped the pin directly on the Priest of Discord, who sits at x=235, y=6 in
+// quarm.db. Order and sign are both confirmed.
 //
-//     /map marker 6 235 Test
-//
-// The pin should land on the Priest of Discord (quarm.db has him at x=235,
-// y=6). If it lands mirrored, negate both values in markerArgs below — that is
-// the only place the convention is encoded, so the fix is one line.
+// This stays the only place the convention is encoded, so a future Zeal change
+// is a one-line fix here.
 function markerArgs(x: number, y: number): string {
   return `${Math.round(y)} ${Math.round(x)}`
 }
