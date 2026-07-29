@@ -211,6 +211,25 @@ export function ZoneMap({
     }
 
     // ── POIs ──
+    //
+    // Labels are decluttered: one is skipped if its box overlaps a label
+    // already drawn. Without this, dense zones stack several labels on the same
+    // few pixels and the glyphs superimpose into something that reads as
+    // corrupted text rather than as overlapping words.
+    //
+    // Pins are always drawn — only the text is suppressed, so nothing is hidden,
+    // and zooming in frees space for more labels.
+    const placed: { x0: number; y0: number; x1: number; y1: number }[] = []
+    const fitsLabel = (x: number, y: number, w: number): boolean => {
+      const box = { x0: x, y0: y - 9, x1: x + w, y1: y + 3 }
+      for (const b of placed) {
+        if (box.x0 < b.x1 && box.x1 > b.x0 && box.y0 < b.y1 && box.y1 > b.y0) return false
+      }
+      placed.push(box)
+      return true
+    }
+
+    ctx.font = '10px ui-monospace, monospace'
     for (const p of shown) {
       const style = CATEGORY_STYLE[p.category]
       if (!style) continue
@@ -225,9 +244,11 @@ export function ZoneMap({
       ctx.fill()
 
       if (showLabels && view.zoom > 1.8 && !dimmed) {
-        ctx.font = '10px ui-monospace, monospace'
-        ctx.fillStyle = 'rgba(226,232,240,0.85)'
-        ctx.fillText(p.label, px + 6, py + 3)
+        const w = ctx.measureText(p.label).width
+        if (fitsLabel(px + 6, py + 3, w)) {
+          ctx.fillStyle = 'rgba(226,232,240,0.85)'
+          ctx.fillText(p.label, px + 6, py + 3)
+        }
       }
       ctx.globalAlpha = 1
     }

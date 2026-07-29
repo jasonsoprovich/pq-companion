@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db/enums"
@@ -423,7 +424,19 @@ func poiTrapNPCs(qdb *sql.DB, _ map[int]string) ([]POI, error) {
 	}
 	defer rows.Close()
 
-	var out []POI
+	// Collapse by position. A trap spawn point is one spawngroup that rolls
+	// between several flavours — akheva's group 179148 spawns A_rock (33%),
+	// Shadows (34%) or The_stones (33%) at one spot. Emitting a POI per NPC
+	// counted one trap three times (318 rows for 129 real locations) and stacked
+	// three labels on a single pixel, which rendered as unreadable glyph soup.
+	type spot struct {
+		zone    string
+		x, y, z int
+	}
+	names := map[spot][]string{}
+	refs := map[spot]int{}
+	var order []spot
+
 	for rows.Next() {
 		var zone, name string
 		var gx, gy, gz float64
@@ -438,9 +451,26 @@ func poiTrapNPCs(qdb *sql.DB, _ map[int]string) ([]POI, error) {
 		if !ok {
 			continue
 		}
-		out = append(out, POI{Zone: zone, X: x, Y: y, Z: z,
-			Category: CategoryTrap, Label: "Trap: " + cleanName(name),
-			Source: "db:spawn2-trap", RefID: npcID})
+		k := spot{zone, x, y, z}
+		if _, seen := names[k]; !seen {
+			order = append(order, k)
+			refs[k] = npcID
+		}
+		names[k] = append(names[k], cleanName(name))
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	out := make([]POI, 0, len(order))
+	for _, k := range order {
+		v := names[k]
+		sort.Strings(v)
+		// Name every flavour: which one is up tells a player what to expect, and
+		// at one label per spot there is room to say so.
+		out = append(out, POI{Zone: k.zone, X: k.x, Y: k.y, Z: k.z,
+			Category: CategoryTrap, Label: "Trap: " + strings.Join(v, " / "),
+			Source: "db:spawn2-trap", RefID: refs[k]})
+	}
+	return out, nil
 }
