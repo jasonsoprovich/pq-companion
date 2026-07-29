@@ -433,9 +433,11 @@ export function getMapZone(zone: string): Promise<MapZoneDetail> {
 
 // getMapGeometry fetches packed int16 segments and wraps them without copying.
 // The endpoint is immutable and cache-forever, so repeat zone switches are free.
-export async function getMapGeometry(zone: string): Promise<MapGeometry> {
+export async function getMapGeometry(zone: string, layer = 0): Promise<MapGeometry> {
   const baseUrl = await getBackendBaseUrl()
-  const res = await fetch(`${baseUrl}/api/maps/zone/${encodeURIComponent(zone)}/geometry`)
+  const res = await fetch(
+    `${baseUrl}/api/maps/zone/${encodeURIComponent(zone)}/geometry?layer=${layer}`,
+  )
   if (!res.ok) throw new Error(`geometry ${zone}: ${res.statusText}`)
   const buf = await res.arrayBuffer()
   return { count: buf.byteLength / 12, coords: new Int16Array(buf) }

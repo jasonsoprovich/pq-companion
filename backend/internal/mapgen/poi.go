@@ -60,6 +60,7 @@ func GeneratePOIs(qdb *sql.DB) ([]POI, error) {
 		{"zone lines", poiZoneLines},
 		{"ground spawns", poiGroundSpawns},
 		{"traps", poiTraps},
+		{"trap NPCs", poiTrapNPCs},
 		{"tradeskill containers", poiTradeskillObjects},
 		{"succor points", poiSuccor},
 		{"vendors", poiVendors},
@@ -346,6 +347,100 @@ func poiDoors(qdb *sql.DB, _ map[int]string) ([]POI, error) {
 		}
 		out = append(out, POI{Zone: zone, X: x, Y: y, Z: z,
 			Category: CategoryDoor, Label: label, Source: "db:doors", RefID: id})
+	}
+	return out, rows.Err()
+}
+
+// ── Trap NPCs ─────────────────────────────────────────────────────────────────
+
+// Many zones implement traps as invisible NPCs rather than rows in the traps
+// table. Grokii's Zeal-maps write-up is entirely about this: Maiden's Eye traps
+// spawn as "The ground" (npc 173034), and Akheva Ruins has 318 trap spawns —
+// "You_trip", "Shadows", "You_can_feel", "The_stones" — while the traps table
+// holds none for either zone. Generating from that table alone left the two
+// most trap-heavy zones in the game showing nothing.
+//
+// There is no clean structural signal. The invisible race (127) with "immune to
+// harm from client" also covers script utilities and invisible decoy copies of
+// real mobs, and the abilities that would exclude those (immune to melee/magic)
+// also exclude The_ground itself. So this is a prefilter plus a name denylist,
+// deliberately conservative, and tagged with its own source so a later
+// correction can replace exactly these rows.
+const trapNPCRace = 127
+
+// utilityNamePatterns mark script plumbing rather than a trap a player can
+// trigger: spawn controllers, counters, encounter state machines.
+var utilityNamePatterns = []string{
+	"spawner", "spawn_", "trigger", "placeholder", "counter", "listener",
+	"stopper", "marker", "timer", "controller", "invis", "_test", "dummy",
+	"beacon", "actor", "anim", "raid", "encounter", "event",
+}
+
+func looksLikeUtility(name string) bool {
+	l := strings.ToLower(name)
+	for _, p := range utilityNamePatterns {
+		if strings.Contains(l, p) {
+			return true
+		}
+	}
+	// Trailing underscore marks a script-spawned override variant, not a
+	// distinct trap.
+	if strings.HasSuffix(name, "_") {
+		return true
+	}
+	// Programmer-style CamelCase with no underscores: real EQ names are
+	// underscore-separated ("A_musty_smell"), so "AMTrigger" or "AnimMan" is
+	// plumbing.
+	if !strings.Contains(name, "_") {
+		caps := 0
+		for _, r := range name[1:] {
+			if r >= 'A' && r <= 'Z' {
+				caps++
+			}
+		}
+		if caps > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func poiTrapNPCs(qdb *sql.DB, _ map[int]string) ([]POI, error) {
+	rows, err := qdb.Query(`
+		SELECT DISTINCT s2.zone, s2.x, s2.y, s2.z, n.name, n.id
+		FROM spawn2 s2
+		JOIN spawnentry se ON se.spawngroupID = s2.spawngroupID
+		JOIN npc_types n   ON n.id = se.npcID
+		WHERE n.race = ?
+		  AND n.name NOT LIKE '#%'
+		  AND ('^' || n.special_abilities || '^') LIKE '%^35,%'
+		  -- Decoys share a name with a real, visible NPC; traps do not.
+		  AND NOT EXISTS (
+		        SELECT 1 FROM npc_types v WHERE v.race <> ? AND v.name = n.name)`,
+		trapNPCRace, trapNPCRace)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []POI
+	for rows.Next() {
+		var zone, name string
+		var gx, gy, gz float64
+		var npcID int
+		if err := rows.Scan(&zone, &gx, &gy, &gz, &name, &npcID); err != nil {
+			return nil, err
+		}
+		if zone == "" || looksLikeUtility(name) {
+			continue
+		}
+		x, y, z, ok := toMapPoint(gx, gy, gz)
+		if !ok {
+			continue
+		}
+		out = append(out, POI{Zone: zone, X: x, Y: y, Z: z,
+			Category: CategoryTrap, Label: "Trap: " + cleanName(name),
+			Source: "db:spawn2-trap", RefID: npcID})
 	}
 	return out, rows.Err()
 }

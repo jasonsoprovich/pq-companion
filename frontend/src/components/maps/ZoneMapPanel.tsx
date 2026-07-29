@@ -42,7 +42,7 @@ export function ZoneMapPanel({
   showZoneButton = true,
 }: ZoneMapPanelProps): React.ReactElement {
   const navigate = useNavigate()
-  const { zone, geometry, pois, loading, error } = useZoneMap(zoneShortName)
+  const { zone, geometry, detail, pois, loading, error } = useZoneMap(zoneShortName)
   // Layer choices persist across zones and across the two surfaces, so a player
   // who turns doors on keeps them on.
   const [enabled, setEnabled] = useCachedState<MapPOICategory[]>(
@@ -50,6 +50,7 @@ export function ZoneMapPanel({
     LAYERS.filter((l) => l.on).map((l) => l.key),
   )
   const [selected, setSelected] = useState<MapPOI | null>(null)
+  const [showDetail, setShowDetail] = useCachedState('maps.detail', true)
   const [copied, setCopied] = useState<string | null>(null)
 
   const visible = useMemo(() => new Set(enabled), [enabled])
@@ -107,6 +108,20 @@ export function ZoneMapPanel({
             </button>
           )
         })}
+        {detail && detail.count > 0 && (
+          <button
+            onClick={() => setShowDetail((v) => !v)}
+            title="Fine boundary detail drawn under the main map"
+            className="rounded border px-1.5 py-0.5 text-[10px] font-medium"
+            style={{
+              backgroundColor: showDetail ? 'var(--color-surface-2)' : 'transparent',
+              borderColor: showDetail ? 'var(--color-primary)' : 'var(--color-border)',
+              color: showDetail ? 'var(--color-primary)' : 'var(--color-muted)',
+            }}
+          >
+            Detail <span className="opacity-60">{detail.count}</span>
+          </button>
+        )}
         {showZoneButton && (
           <button
             onClick={() => copy('showzone', mapShowZoneCommand(zone.zone))}
@@ -130,6 +145,8 @@ export function ZoneMapPanel({
         <ZoneMap
           zone={zone}
           geometry={geometry}
+          detail={detail}
+          showDetail={showDetail}
           pois={pois}
           visibleCategories={visible}
           highlights={selected ? [{ x: selected.x, y: selected.y, z: selected.z }] : []}

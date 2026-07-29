@@ -5,6 +5,7 @@ import type { MapGeometry, MapPOI, MapZone } from '../types/map'
 interface ZoneMapData {
   zone: MapZone | null
   geometry: MapGeometry | null
+  detail: MapGeometry | null
   pois: MapPOI[]
   loading: boolean
   error: string | null
@@ -18,12 +19,12 @@ interface ZoneMapData {
 // another's.
 export function useZoneMap(zone: string | null): ZoneMapData {
   const [data, setData] = useState<ZoneMapData>({
-    zone: null, geometry: null, pois: [], loading: false, error: null,
+    zone: null, geometry: null, detail: null, pois: [], loading: false, error: null,
   })
 
   useEffect(() => {
     if (!zone) {
-      setData({ zone: null, geometry: null, pois: [], loading: false, error: null })
+      setData({ zone: null, geometry: null, detail: null, pois: [], loading: false, error: null })
       return
     }
     let cancelled = false
@@ -34,18 +35,26 @@ export function useZoneMap(zone: string | null): ZoneMapData {
         if (cancelled) return
         setData({
           zone: detail.zone, pois: detail.pois ?? [],
-          geometry: null, loading: true, error: null,
+          geometry: null, detail: null, loading: true, error: null,
         })
-        return getMapGeometry(zone)
+        // Base layer first so something draws immediately; the optional
+        // boundary-detail layer follows and refines it.
+        return getMapGeometry(zone, 0)
       })
       .then((geom) => {
         if (cancelled || !geom) return
         setData((d) => ({ ...d, geometry: geom, loading: false }))
+        return getMapGeometry(zone, 1)
+      })
+      .then((det) => {
+        // A zone with no detail layer returns zero segments, not an error.
+        if (cancelled || !det || det.count === 0) return
+        setData((d) => ({ ...d, detail: det }))
       })
       .catch((err: Error) => {
         if (cancelled) return
         setData({
-          zone: null, geometry: null, pois: [], loading: false,
+          zone: null, geometry: null, detail: null, pois: [], loading: false,
           error: err.message,
         })
       })

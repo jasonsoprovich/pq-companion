@@ -20,6 +20,11 @@ export interface MapHighlight {
 export interface ZoneMapProps {
   zone: MapZone
   geometry: MapGeometry | null
+  // detail is the optional secondary boundary layer, drawn thinner and dimmer
+  // beneath the primary one so it reads as texture rather than competing with
+  // the structure that defines the zone.
+  detail?: MapGeometry | null
+  showDetail?: boolean
   pois: MapPOI[]
   // visibleCategories gates POI layers; undefined shows all.
   visibleCategories?: Set<MapPOICategory>
@@ -56,6 +61,8 @@ const GEOMETRY_COLOR: Record<MapZone['technique'], string> = {
 export function ZoneMap({
   zone,
   geometry,
+  detail,
+  showDetail = true,
   pois,
   visibleCategories,
   highlights,
@@ -144,10 +151,14 @@ export function ZoneMap({
     ctx.clearRect(0, 0, size.w, size.h)
 
     // ── geometry ──
-    if (geometry && geometry.count > 0) {
-      const c = geometry.coords
-      const color = GEOMETRY_COLOR[zone.technique] ?? '#7dd3fc'
-      ctx.lineWidth = 1
+    //
+    // Line weight carries hierarchy, which is most of what separates a drawn
+    // map from a wireframe dump. The primary layer defines the zone and gets
+    // full weight; the detail layer is texture and gets a hairline, so it adds
+    // information without competing.
+    const drawLayer = (g: MapGeometry, color: string, width: number, scale: number): void => {
+      const c = g.coords
+      ctx.lineWidth = width
       ctx.lineCap = 'round'
 
       // Graduated fade by height, in a few opacity buckets.
@@ -161,7 +172,7 @@ export function ZoneMap({
       // Bucketed rather than per-segment alpha because globalAlpha cannot vary
       // within a path: a continuous ramp would force one stroke() per segment,
       // and these zones run to tens of thousands.
-      const ALPHAS = depth ? [1, 0.5, 0.25, 0.1] : [1]
+      const ALPHAS = (depth ? [1, 0.5, 0.25, 0.1] : [1]).map((a) => a * scale)
       const bucketOf = (zMid: number): number => {
         if (!depth) return 0
         const d = Math.abs(zMid - depth.focus)
@@ -176,7 +187,7 @@ export function ZoneMap({
         ctx.strokeStyle = color
         ctx.globalAlpha = ALPHAS[b]
         let any = false
-        for (let i = 0; i < geometry.count; i++) {
+        for (let i = 0; i < g.count; i++) {
           const o = i * 6
           if (bucketOf((c[o + 2] + c[o + 5]) / 2) !== b) continue
           any = true
@@ -188,6 +199,15 @@ export function ZoneMap({
         if (any) ctx.stroke()
       }
       ctx.globalAlpha = 1
+    }
+
+    const primaryColor = GEOMETRY_COLOR[zone.technique] ?? '#7dd3fc'
+    // Detail underneath, so primary structure always reads on top.
+    if (showDetail && detail && detail.count > 0) {
+      drawLayer(detail, primaryColor, 0.55, 0.45)
+    }
+    if (geometry && geometry.count > 0) {
+      drawLayer(geometry, primaryColor, 1.15, 1)
     }
 
     // ── POIs ──
@@ -250,7 +270,7 @@ export function ZoneMap({
       ctx.fill()
       ctx.restore()
     }
-  }, [geometry, shown, zone, size, toScreen, view.zoom, depth, highlights, playerPos, showLabels])
+  }, [geometry, shown, zone, size, toScreen, view.zoom, depth, highlights, playerPos, showLabels, detail, showDetail])
 
   // Wheel zoom is attached natively with passive:false. React registers wheel
   // as a passive listener, so preventDefault() there is ignored — it never

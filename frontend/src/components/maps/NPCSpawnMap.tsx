@@ -76,7 +76,7 @@ function SpawnMapBody({
   active: string
   onZone: (z: string) => void
 }): React.ReactElement {
-  const { zone, geometry, pois, loading, error } = useZoneMap(active)
+  const { zone, geometry, detail, pois, loading, error } = useZoneMap(active)
 
   // Spawn points arrive in game coordinates; the map works in map space, which
   // is the same negation the geometry pipeline applies.
@@ -129,6 +129,7 @@ function SpawnMapBody({
             <ZoneMap
               zone={zone}
               geometry={geometry}
+              detail={detail}
               pois={pois}
               visibleCategories={visible}
               highlights={highlights}

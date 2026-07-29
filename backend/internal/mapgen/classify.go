@@ -142,6 +142,43 @@ func contourInterval(zSpan float64) float64 {
 // are the bulk of the corpus, so this is where size is won.
 const contourRDPEpsilon = 0.5
 
+// LayerDetail is the optional second layer: boundary extraction, emitted for
+// zones whose primary technique is something else.
+//
+// Contour zones get their built structures back — gfaydark's terrain relief
+// says nothing about Kelethin's platforms, which only boundary extraction
+// finds. Silhouette zones get finer interior structure than the outline alone
+// carries. Boundary zones need no second layer; they already are one.
+const LayerDetail = 1
+
+// detailRDPEpsilon simplifies the detail layer far harder than the primary one.
+// It is drawn as a 0.55px hairline at 0.45 alpha — texture, not structure — so
+// a two-unit deviation is imperceptible, while carrying it at full fidelity
+// would nearly double maps.db for detail nobody can see.
+const detailRDPEpsilon = 2.0
+
+// ExtractDetail returns the secondary layer — only for contour zones.
+//
+// Contours describe the ground surface and say nothing about what is built on
+// it: gfaydark gets its terrain relief but loses Kelethin's platforms entirely,
+// and only boundary extraction finds those. That is the case where a second
+// layer adds information nothing else carries.
+//
+// Silhouette zones are deliberately excluded. Before height-banding their
+// outlines were nearly empty and boundary detail would have helped, but banded
+// silhouettes already carry interior structure (akheva went 190 -> 6,423
+// segments), so a boundary layer there mostly duplicates what is drawn and cost
+// ~4 MB across the corpus for it. Boundary zones need no second layer at all.
+//
+// Contour zones are also the cheap case: low boundary density is what put them
+// on contours in the first place, so their boundary output is small.
+func ExtractDetail(z *Zone, c Classification) []Segment {
+	if c.Technique != TechniqueContours {
+		return nil
+	}
+	return SimplifyRDP(Chain(z.BoundaryEdges()), detailRDPEpsilon)
+}
+
 // Extract runs the technique the classification selected and returns the map
 // segments for the zone.
 func Extract(z *Zone, c Classification) []Segment {

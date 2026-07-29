@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/binary"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/maps"
@@ -70,7 +71,15 @@ func (h *mapsHandler) zone(w http.ResponseWriter, r *http.Request) {
 // array. Layout is little-endian int16 x1,y1,z1,x2,y2,z2 per segment.
 func (h *mapsHandler) geometry(w http.ResponseWriter, r *http.Request) {
 	short := chi.URLParam(r, "zone")
-	segs, err := h.store.Segments(short, 0)
+	// ?layer=1 fetches the optional boundary-detail layer. An absent layer is
+	// not an error — most zones have only layer 0 — so it returns empty.
+	layer := 0
+	if v := r.URL.Query().Get("layer"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			layer = n
+		}
+	}
+	segs, err := h.store.Segments(short, layer)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

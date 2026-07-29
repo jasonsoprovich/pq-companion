@@ -82,6 +82,15 @@ func WriteMapsDB(path string, zones []ZoneOutput, pois []POI) error {
 		if _, err := insLayer.Exec(z.Zone, LayerGeometry, len(z.Segments), blob); err != nil {
 			return fmt.Errorf("insert %s layer: %w", z.Zone, err)
 		}
+		if len(z.Detail) > 0 {
+			db, err := packSegments(z.Detail)
+			if err != nil {
+				return fmt.Errorf("%s detail: %w", z.Zone, err)
+			}
+			if _, err := insLayer.Exec(z.Zone, LayerDetail, len(z.Detail), db); err != nil {
+				return fmt.Errorf("insert %s detail layer: %w", z.Zone, err)
+			}
+		}
 		if _, err := insZone.Exec(z.Zone,
 			clampCoord(z.MinX), clampCoord(z.MinY),
 			clampCoord(z.MaxX), clampCoord(z.MaxY),
@@ -161,8 +170,10 @@ CREATE INDEX map_poi_zone ON map_poi (zone, category);
 
 // ZoneOutput is one zone's finished map data, ready to write.
 type ZoneOutput struct {
-	Zone            string
-	Segments        []Segment
+	Zone     string
+	Segments []Segment
+	// Detail is the optional boundary layer drawn under/over the primary one.
+	Detail          []Segment
 	MinX, MinY      float64
 	MaxX, MaxY      float64
 	Technique       Technique

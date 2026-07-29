@@ -67,6 +67,7 @@ func main() {
 		}
 		c := mapgen.Classify(z)
 		segs := mapgen.Extract(z, c)
+		detail := mapgen.ExtractDetail(z, c)
 		minX, minY, maxX, maxY := z.Bounds()
 
 		if *compareDir != "" {
@@ -90,7 +91,7 @@ func main() {
 			c.Technique, len(segs), note)
 
 		outputs = append(outputs, mapgen.ZoneOutput{
-			Zone: name, Segments: segs,
+			Zone: name, Segments: segs, Detail: detail,
 			MinX: minX, MinY: minY, MaxX: maxX, MaxY: maxY,
 			Technique: c.Technique, Occupancy: c.Occupancy,
 			BoundaryDensity: c.BoundaryDensit, ZSpan: c.ZSpan,
