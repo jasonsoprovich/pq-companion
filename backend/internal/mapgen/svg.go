@@ -61,9 +61,11 @@ func RenderComparison(path, title string, panels []Panel, panelW int) error {
 		fmt.Fprintf(&b, `<g stroke="%s" stroke-width="0.9" fill="none" stroke-linecap="round">`,
 			p.Stroke)
 		for _, s := range p.Segments {
+			// North-up, east-right: screen X and Y both grow with their map
+			// component (see ZoneMap.tsx for the derivation from game geography).
 			fmt.Fprintf(&b, `<line x1="%.1f" y1="%.1f" x2="%.1f" y2="%.1f"/>`,
-				ox+pad+(s.A.X-minX)*scale, header+pad+(maxY-s.A.Y)*scale,
-				ox+pad+(s.B.X-minX)*scale, header+pad+(maxY-s.B.Y)*scale)
+				ox+pad+(s.A.X-minX)*scale, header+pad+(s.A.Y-minY)*scale,
+				ox+pad+(s.B.X-minX)*scale, header+pad+(s.B.Y-minY)*scale)
 		}
 		b.WriteString(`</g>`)
 	}

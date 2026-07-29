@@ -45,13 +45,18 @@ func (g *OccupancyGrid) Occupancy() float64 {
 	return float64(n) / float64(len(g.Filled))
 }
 
-// Rasterize projects the walkable faces onto a 2D occupancy grid and closes
-// hairline gaps.
-func (z *Zone) Rasterize() *OccupancyGrid {
-	faces := z.WalkableFaces()
-	if len(faces) == 0 {
-		return &OccupancyGrid{}
-	}
+// gridFrame is the shared raster coordinate frame for a zone.
+//
+// Every Z band must rasterise into the SAME frame, or the bands come out at
+// different scales and origins and will not composite.
+type gridFrame struct {
+	minX, minY float64
+	cell       float64
+	W, H, pad  int
+	reps       int
+}
+
+func (z *Zone) gridFrame(faces []int) gridFrame {
 	minX, minY := math.Inf(1), math.Inf(1)
 	maxX, maxY := math.Inf(-1), math.Inf(-1)
 	for _, i := range faces {
@@ -72,15 +77,23 @@ func (z *Zone) Rasterize() *OccupancyGrid {
 		reps = 10
 	}
 	pad := reps + 3
-
-	g := &OccupancyGrid{
-		W: int((maxX-minX)/cell) + 2*pad, H: int((maxY-minY)/cell) + 2*pad,
-		Cell: cell, OriginX: minX, OriginY: minY, Pad: pad,
+	return gridFrame{
+		minX: minX, minY: minY, cell: cell,
+		W:   int((maxX-minX)/cell) + 2*pad,
+		H:   int((maxY-minY)/cell) + 2*pad,
+		pad: pad, reps: reps,
 	}
-	g.Filled = make([]bool, g.W*g.H)
+}
 
+// rasterizeInto fills a grid in the given frame from a subset of faces.
+func (z *Zone) rasterizeInto(f gridFrame, faces []int) *OccupancyGrid {
+	g := &OccupancyGrid{
+		W: f.W, H: f.H, Cell: f.cell,
+		OriginX: f.minX, OriginY: f.minY, Pad: f.pad,
+		Filled: make([]bool, f.W*f.H),
+	}
 	toGrid := func(v Vec3) (float64, float64) {
-		return (v.X-minX)/cell + float64(pad), (v.Y-minY)/cell + float64(pad)
+		return (v.X-f.minX)/f.cell + float64(f.pad), (v.Y-f.minY)/f.cell + float64(f.pad)
 	}
 	for _, i := range faces {
 		t := z.Triangles[i]
@@ -89,13 +102,26 @@ func (z *Zone) Rasterize() *OccupancyGrid {
 		cx, cy := toGrid(z.Vertices[t.C])
 		g.fillTriangle(ax, ay, bx, by, cx, cy)
 	}
-	for i := 0; i < reps; i++ {
+	for i := 0; i < f.reps; i++ {
 		g.dilate()
 	}
-	for i := 0; i < reps; i++ {
+	for i := 0; i < f.reps; i++ {
 		g.erode()
 	}
 	return g
+}
+
+// Rasterize projects every walkable face onto one flat occupancy grid.
+//
+// Flat on purpose: Classify() uses the occupancy ratio, and its thresholds were
+// calibrated against the flattened footprint over all 178 zones. Extraction
+// uses the banded path instead.
+func (z *Zone) Rasterize() *OccupancyGrid {
+	faces := z.WalkableFaces()
+	if len(faces) == 0 {
+		return &OccupancyGrid{}
+	}
+	return z.rasterizeInto(z.gridFrame(faces), faces)
 }
 
 // fillTriangle rasterises one triangle by testing cell centres inside its
@@ -238,15 +264,93 @@ func (g *OccupancyGrid) March() []Segment {
 	return out
 }
 
-// Silhouette returns the simplified outline of the walkable area.
+// Z-banding parameters.
+const (
+	// silBandTarget is the height a band aims to cover. Roughly one storey: EQ
+	// floors sit ~20-40 units apart and a tunnel is ~15-30 units tall, so this
+	// separates stacked passages without shredding a single floor into slices.
+	silBandTarget = 40.0
+	// silMaxBands bounds cost and output size on very tall zones.
+	silMaxBands = 14
+	// silMinBandedSpan is the Z range below which banding buys nothing.
+	silMinBandedSpan = 80.0
+)
+
+type zBand struct{ lo, hi, mid float64 }
+
+// zBands divides a zone's walkable heights into bands.
+func (z *Zone) zBands(faces []int) []zBand {
+	lo, hi := math.Inf(1), math.Inf(-1)
+	for _, i := range faces {
+		t := z.Triangles[i]
+		for _, v := range [3]Vec3{z.Vertices[t.A], z.Vertices[t.B], z.Vertices[t.C]} {
+			lo, hi = math.Min(lo, v.Z), math.Max(hi, v.Z)
+		}
+	}
+	span := hi - lo
+	if !(span > silMinBandedSpan) {
+		return []zBand{{lo: lo, hi: hi, mid: (lo + hi) / 2}}
+	}
+	n := int(math.Ceil(span / silBandTarget))
+	if n > silMaxBands {
+		n = silMaxBands
+	}
+	if n < 2 {
+		n = 2
+	}
+	h := span / float64(n)
+	out := make([]zBand, 0, n)
+	for i := 0; i < n; i++ {
+		b := zBand{lo: lo + float64(i)*h, hi: lo + float64(i+1)*h}
+		b.mid = (b.lo + b.hi) / 2
+		out = append(out, b)
+	}
+	return out
+}
+
+// Silhouette returns the outline of the walkable area, sliced by height.
 //
-// Only meaningful where walkable area is sparse. In open zones the walkable
-// region IS the zone footprint, so this collapses to the perimeter and carries
-// no information — Classify() decides.
+// Slicing is what makes this usable in zones with stacked passages. Rasterising
+// every face onto one flat grid merges tunnels that cross at different heights
+// into a single undifferentiated blob — which is both why dense dungeons looked
+// featureless and why the depth control did nothing on them: a flat pass emits
+// every segment at one height, so there is nothing for a height filter to
+// separate. Each band is rasterised independently and its segments carry that
+// band's height, so the renderer can fade by depth like a hand-drawn map.
+//
+// Bands share one grid frame, so they line up exactly when composited.
 func (z *Zone) Silhouette() []Segment {
-	g := z.Rasterize()
-	if len(g.Filled) == 0 {
+	faces := z.WalkableFaces()
+	if len(faces) == 0 {
 		return nil
 	}
-	return SimplifyRDP(Chain(g.March()), silRDPEpsilon)
+	frame := z.gridFrame(faces)
+	bands := z.zBands(faces)
+
+	var out []Segment
+	for _, b := range bands {
+		// Assign each face to the band holding its centroid. No overlap: a ramp
+		// crossing a boundary breaks into two pieces, each at its true height,
+		// which reads correctly once the renderer fades by depth. Overlapping
+		// bands would instead duplicate that geometry at two heights.
+		sub := make([]int, 0, len(faces)/len(bands)+8)
+		for _, i := range faces {
+			t := z.Triangles[i]
+			mid := (z.Vertices[t.A].Z + z.Vertices[t.B].Z + z.Vertices[t.C].Z) / 3
+			if mid >= b.lo && (mid < b.hi || b.hi == bands[len(bands)-1].hi) {
+				sub = append(sub, i)
+			}
+		}
+		if len(sub) == 0 {
+			continue
+		}
+		g := z.rasterizeInto(frame, sub)
+		segs := SimplifyRDP(Chain(g.March()), silRDPEpsilon)
+		for i := range segs {
+			segs[i].A.Z = b.mid
+			segs[i].B.Z = b.mid
+		}
+		out = append(out, segs...)
+	}
+	return out
 }

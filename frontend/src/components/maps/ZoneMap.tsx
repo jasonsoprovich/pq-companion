@@ -150,24 +150,42 @@ export function ZoneMap({
       ctx.lineWidth = 1
       ctx.lineCap = 'round'
 
-      // Two passes so faded lines never draw over in-focus ones.
-      for (const pass of depth ? (['far', 'near'] as const) : (['near'] as const)) {
+      // Graduated fade by height, in a few opacity buckets.
+      //
+      // Silhouette geometry is sliced into height bands, so a zone with stacked
+      // tunnels arrives as several overlapping levels. A hard in/out cut would
+      // make everything off-level vanish; fading instead keeps the surrounding
+      // structure legible while the focused level stands out — which is what
+      // makes a multi-level map readable rather than a tangle.
+      //
+      // Bucketed rather than per-segment alpha because globalAlpha cannot vary
+      // within a path: a continuous ramp would force one stroke() per segment,
+      // and these zones run to tens of thousands.
+      const ALPHAS = depth ? [1, 0.5, 0.25, 0.1] : [1]
+      const bucketOf = (zMid: number): number => {
+        if (!depth) return 0
+        const d = Math.abs(zMid - depth.focus)
+        if (d <= depth.range) return 0
+        // Each further band out steps down one bucket.
+        return Math.min(ALPHAS.length - 1, 1 + Math.floor((d - depth.range) / depth.range))
+      }
+
+      // Draw faintest first so in-focus lines land on top.
+      for (let b = ALPHAS.length - 1; b >= 0; b--) {
         ctx.beginPath()
         ctx.strokeStyle = color
-        ctx.globalAlpha = pass === 'far' ? 0.15 : 1
+        ctx.globalAlpha = ALPHAS[b]
+        let any = false
         for (let i = 0; i < geometry.count; i++) {
           const o = i * 6
-          if (depth) {
-            const mid = (c[o + 2] + c[o + 5]) / 2
-            const near = Math.abs(mid - depth.focus) <= depth.range
-            if ((pass === 'near') !== near) continue
-          }
+          if (bucketOf((c[o + 2] + c[o + 5]) / 2) !== b) continue
+          any = true
           const [x1, y1] = toScreen(c[o], c[o + 1])
           const [x2, y2] = toScreen(c[o + 3], c[o + 4])
           ctx.moveTo(x1, y1)
           ctx.lineTo(x2, y2)
         }
-        ctx.stroke()
+        if (any) ctx.stroke()
       }
       ctx.globalAlpha = 1
     }
@@ -180,7 +198,7 @@ export function ZoneMap({
       if (px < -20 || py < -20 || px > size.w + 20 || py > size.h + 20) continue
 
       const dimmed = depth ? Math.abs(p.z - depth.focus) > depth.range : false
-      ctx.globalAlpha = dimmed ? 0.25 : 1
+      ctx.globalAlpha = dimmed ? 0.2 : 1
       ctx.fillStyle = style.color
       ctx.beginPath()
       ctx.arc(px, py, 3.5, 0, Math.PI * 2)

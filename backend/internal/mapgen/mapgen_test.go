@@ -145,11 +145,10 @@ func TestExtractors_MatchReferencePipeline(t *testing.T) {
 	}{
 		{"unrest", mapgen.TechniqueBoundary, 5013},
 		{"qeynos2", mapgen.TechniqueBoundary, 4283},
-		{"akheva", mapgen.TechniqueSilhouette, 190},
-		{"necropolis", mapgen.TechniqueSilhouette, 1605},
-		// gfaydark is covered by TestContours_SimplifiedNotRaw instead: the Go
-		// pipeline simplifies contours where the prototype did not, so its
-		// segment count intentionally differs.
+		// Contour and silhouette zones are covered by their own tests: both
+		// deliberately diverge from the flat prototype's counts, contours
+		// because they are now simplified and silhouettes because they are now
+		// sliced by height.
 	}
 
 	for _, tc := range cases {
@@ -248,5 +247,52 @@ func TestRDPMonotonic(t *testing.T) {
 				eps, n, prev)
 		}
 		prev = n
+	}
+}
+
+// TestSilhouette_IsBandedByHeight is the guard for the change that made dense
+// dungeons usable. A flat silhouette rasterises every walkable face onto one
+// grid, so tunnels crossing at different heights merge into a single blob and
+// every segment comes out at one height — which is why those zones looked
+// featureless AND why the depth control did nothing on them.
+//
+// Asserting distinct heights rather than a segment count: the count is a tuning
+// artefact, but "the output carries real height information" is the property
+// that has to hold.
+func TestSilhouette_IsBandedByHeight(t *testing.T) {
+	requireClient(t)
+
+	for _, zone := range []string{"akheva", "necropolis"} {
+		t.Run(zone, func(t *testing.T) {
+			z, err := mapgen.LoadZone(clientDir, zone)
+			if err != nil {
+				t.Fatalf("load: %v", err)
+			}
+			c := mapgen.Classify(z)
+			if c.Technique != mapgen.TechniqueSilhouette {
+				t.Fatalf("technique: got %q, want silhouette", c.Technique)
+			}
+			segs := mapgen.Extract(z, c)
+			if len(segs) == 0 {
+				t.Fatal("no segments")
+			}
+
+			levels := map[int]int{}
+			for _, s := range segs {
+				levels[int(s.A.Z)]++
+			}
+			if len(levels) < 4 {
+				t.Errorf("distinct heights: got %d, want >= 4 — output looks flat, "+
+					"so the depth control will do nothing here", len(levels))
+			}
+			// No band should hold nearly everything; that would mean the split
+			// happened but did not actually separate the geometry.
+			for zv, n := range levels {
+				if float64(n) > 0.9*float64(len(segs)) {
+					t.Errorf("height %d holds %d/%d segments — bands are not separating",
+						zv, n, len(segs))
+				}
+			}
+		})
 	}
 }
