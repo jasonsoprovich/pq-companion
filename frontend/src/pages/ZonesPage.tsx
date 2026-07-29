@@ -15,6 +15,8 @@ import {
   searchZones,
 } from '../services/api'
 import RawDataModal from '../components/RawDataModal'
+import { ZoneMapPanel } from '../components/maps/ZoneMapPanel'
+import { useHasMap } from '../hooks/useMapZones'
 import type { NPC } from '../types/npc'
 import type { Zone, ZoneConnection, ZoneDropItem, ZoneForageItem, ZoneGroundSpawn } from '../types/zone'
 import { className, npcDisplayName, npcLevelLabel } from '../lib/npcHelpers'
@@ -758,10 +760,11 @@ function ForageTab({ shortName }: { shortName: string }): React.ReactElement {
 
 // ── Detail panel ───────────────────────────────────────────────────────────────
 
-type TabKey = 'overview' | 'npcs' | 'connections' | 'drops' | 'ground-spawns' | 'forage'
+type TabKey = 'overview' | 'map' | 'npcs' | 'connections' | 'drops' | 'ground-spawns' | 'forage'
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'overview', label: 'Overview' },
+  { key: 'map', label: 'Map' },
   { key: 'npcs', label: 'NPCs' },
   { key: 'connections', label: 'Connected Zones' },
   { key: 'drops', label: 'Drops' },
@@ -775,6 +778,9 @@ interface DetailPanelProps {
 
 function DetailPanel({ zone }: DetailPanelProps): React.ReactElement {
   const [activeTab, setActiveTab] = useState<TabKey>('overview')
+  // Hide the Map tab for zones with no geometry (instanced copies, and any
+  // build shipped without maps.db) rather than offering a dead tab.
+  const hasMap = useHasMap(zone?.short_name)
   const [rawOpen, setRawOpen] = useState(false)
   const rawFetcher = useCallback(() => getZoneRaw(zone!.id), [zone?.id])
 
@@ -854,7 +860,7 @@ function DetailPanel({ zone }: DetailPanelProps): React.ReactElement {
 
         {/* Tabs */}
         <div className="flex gap-0 overflow-x-auto">
-          {TABS.map((tab) => (
+          {TABS.filter((t) => t.key !== 'map' || hasMap).map((tab) => (
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
@@ -876,6 +882,7 @@ function DetailPanel({ zone }: DetailPanelProps): React.ReactElement {
       {/* Tab content */}
       <div className="flex-1 overflow-y-auto px-5 py-4">
         {activeTab === 'overview' && <OverviewTab zone={zone} />}
+        {activeTab === 'map' && <ZoneMapPanel zoneShortName={zone.short_name} height={520} />}
         {activeTab === 'npcs' && <NPCsTab shortName={zone.short_name} />}
         {activeTab === 'connections' && <ConnectionsTab shortName={zone.short_name} />}
         {activeTab === 'drops' && <DropsTab shortName={zone.short_name} />}
