@@ -25,6 +25,11 @@ const (
 	// overlay/TTS text — e.g. "/tar {1}" becomes "/tar Soandso" so the user
 	// can paste a ready-made command into EverQuest.
 	ActionClipboard ActionType = "clipboard"
+	// ActionDiscordWebhook posts Action.Text (after the usual {1}/$1
+	// substitution) to a Discord incoming webhook, identified by
+	// Action.WebhookID — see that field's doc comment for why the URL itself
+	// never lives on the action.
+	ActionDiscordWebhook ActionType = "discord_webhook"
 )
 
 // TimerType identifies the overlay a trigger-driven timer should appear on.
@@ -88,6 +93,17 @@ type Action struct {
 	// upgrading users see no change. Has no visible effect on unpinned
 	// (stacking) alerts.
 	Align string `json:"align,omitempty"`
+
+	// WebhookID references a Preferences.DiscordWebhooks entry by ID for a
+	// discord_webhook action — the URL itself is deliberately never stored
+	// here. A webhook URL is a bearer credential (anyone who has it can post
+	// into that channel), and Action values round-trip through trigger
+	// category/pack export (internal/trigger/packs.go), which has no field
+	// stripping. Keeping only an opaque ID on the action means exporting a
+	// pack can never leak a URL; importing shows "no webhook selected" the
+	// same way a missing StreamKit link does, and the user picks/creates one
+	// locally.
+	WebhookID string `json:"webhook_id,omitempty"`
 }
 
 // TimerAlertType identifies the kind of audio alert fired when a timer-bound

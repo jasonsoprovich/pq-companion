@@ -37,6 +37,7 @@ function actionsSummary(actions: Action[]): string {
     play_sound: 'sound',
     text_to_speech: 'TTS',
     clipboard: 'clipboard',
+    discord_webhook: 'Discord',
   }
   return actions.map((a) => label[a.type] ?? a.type).join(' + ')
 }

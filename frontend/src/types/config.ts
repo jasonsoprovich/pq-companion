@@ -86,6 +86,19 @@ export interface DiscordVoiceLink {
   url: string
 }
 
+/**
+ * One saved Discord incoming webhook — a name the user picked plus the URL
+ * Discord issued in a channel's Integrations → Webhooks settings. Trigger
+ * discord_webhook actions reference this by id (Action.webhook_id) rather
+ * than storing the URL on the action itself, so exporting a trigger
+ * category/pack never leaks it. See Preferences.discord_webhooks.
+ */
+export interface DiscordWebhook {
+  id: string
+  name: string
+  url: string
+}
+
 export interface Preferences {
   overlay_opacity: number
   // Fade overlay chrome (background, border, title bar) to transparent a few
@@ -243,6 +256,9 @@ export interface Preferences {
   // only the live Discord avatars/names visible — the header's lock/close
   // controls stay put with no backdrop behind them. Off by default.
   discord_voice_minimal_mode?: boolean
+  // Saved Discord incoming webhooks, referenced by id from trigger
+  // discord_webhook actions. See DiscordWebhook.
+  discord_webhooks?: DiscordWebhook[]
 }
 
 export interface BackupSettings {

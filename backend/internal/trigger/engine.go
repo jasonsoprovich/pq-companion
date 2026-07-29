@@ -1,11 +1,13 @@
 package trigger
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
@@ -76,6 +78,17 @@ type Engine struct {
 	// no target. Wired to overlay.NPCTracker via SetTargetProvider; nil when
 	// target integration is disabled (tests). Feeds the {target} action token.
 	currentTarget func() string
+	// resolveWebhook looks up a Preferences.DiscordWebhooks entry by ID,
+	// returning its URL and whether it was found. Wired via
+	// SetWebhookResolver to a closure over the config manager (kept as a
+	// provider function, not a direct config import, so the trigger package
+	// stays decoupled from internal/config — same convention as activeChar/
+	// currentTarget). Nil disables discord_webhook actions entirely (tests).
+	resolveWebhook func(id string) (url string, ok bool)
+	// sendWebhook performs the actual outbound POST. A field (not a package
+	// function) so tests can stub network I/O; defaults to
+	// postDiscordWebhook in NewEngine.
+	sendWebhook func(url, content string)
 
 	mu           sync.RWMutex
 	compiled     []compiled // Source=="log" triggers, indexed by regex
@@ -106,7 +119,11 @@ type Engine struct {
 // activeChar returns the currently active character name; nil disables
 // per-character filtering (used by tests).
 func NewEngine(store *Store, hub *ws.Hub, sink TimerSink, activeChar func() string) *Engine {
-	return &Engine{store: store, hub: hub, sink: sink, activeChar: activeChar, lastFired: make(map[string]time.Time)}
+	return &Engine{
+		store: store, hub: hub, sink: sink, activeChar: activeChar,
+		lastFired:   make(map[string]time.Time),
+		sendWebhook: postDiscordWebhook,
+	}
 }
 
 // SetTargetProvider wires a current-target lookup (overlay.NPCTracker) into
@@ -114,6 +131,14 @@ func NewEngine(store *Store, hub *ws.Hub, sink TimerSink, activeChar func() stri
 // lines; nil leaves the token unresolved.
 func (e *Engine) SetTargetProvider(fn func() string) {
 	e.currentTarget = fn
+}
+
+// SetWebhookResolver wires a Preferences.DiscordWebhooks lookup into the
+// engine so discord_webhook actions can resolve their WebhookID to a URL at
+// fire time. Call before routing lines; nil leaves discord_webhook actions a
+// no-op.
+func (e *Engine) SetWebhookResolver(fn func(id string) (string, bool)) {
+	e.resolveWebhook = fn
 }
 
 // Reload re-reads all enabled triggers from the store and recompiles their
@@ -415,6 +440,7 @@ func (e *Engine) firePipe(t *Trigger, matchedLine string, firedAt time.Time) {
 			actions[i].Text = substituteCaptures(actions[i].Text, nil, nil, builtins)
 		}
 	}
+	e.dispatchWebhooks(actions)
 	event := TriggerFired{
 		TriggerID:   t.ID,
 		TriggerName: t.Name,
@@ -689,6 +715,7 @@ func (e *Engine) fire(c compiled, matchedLine string, firedAt time.Time, match [
 	for i := range actions {
 		actions[i].Text = substituteCaptures(actions[i].Text, match, names, builtins)
 	}
+	e.dispatchWebhooks(actions)
 
 	event := TriggerFired{
 		TriggerID:   t.ID,
@@ -727,6 +754,78 @@ func (e *Engine) fire(c compiled, matchedLine string, firedAt time.Time, match [
 		}
 	}
 	e.startCooldownTimer(t, firedAt)
+}
+
+// discordWebhookURLRe restricts outbound webhook posts to Discord's own
+// incoming-webhook endpoints. Defense in depth: the URL always comes from a
+// value the user typed into Settings themselves (never from an imported
+// pack — see Action.WebhookID's doc comment), but this still guards against
+// a mistyped/malicious URL turning a trigger fire into a request to an
+// arbitrary host.
+var discordWebhookURLRe = regexp.MustCompile(`^https://(?:discord|discordapp)\.com/api/webhooks/\d+/[\w-]+$`)
+
+func isValidDiscordWebhookURL(url string) bool {
+	return discordWebhookURLRe.MatchString(strings.TrimSpace(url))
+}
+
+// discordWebhookHTTPClient bounds every webhook POST so a slow or
+// unreachable Discord endpoint can never back up log parsing — dispatch
+// already runs each post on its own goroutine (see dispatchWebhooks), this
+// is the second half of that guarantee.
+var discordWebhookHTTPClient = &http.Client{Timeout: 5 * time.Second}
+
+// postDiscordWebhook sends content as a Discord incoming-webhook message.
+// Fire-and-forget: errors are logged, never surfaced to the caller — a
+// broken webhook must not affect the trigger's other actions (overlay text,
+// TTS, etc.) or log parsing.
+func postDiscordWebhook(url, content string) {
+	if !isValidDiscordWebhookURL(url) {
+		slog.Warn("discord webhook action: URL is not a discord.com incoming webhook, skipping")
+		return
+	}
+	if content == "" {
+		return
+	}
+	body, err := json.Marshal(struct {
+		Content string `json:"content"`
+	}{Content: content})
+	if err != nil {
+		slog.Warn("discord webhook action: marshal failed", "err", err)
+		return
+	}
+	resp, err := discordWebhookHTTPClient.Post(url, "application/json", bytes.NewReader(body))
+	if err != nil {
+		slog.Warn("discord webhook action: post failed", "err", err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		slog.Warn("discord webhook action: non-2xx response", "status", resp.StatusCode)
+	}
+}
+
+// dispatchWebhooks fires any discord_webhook actions in actions (already
+// capture-substituted by the caller). Each post runs in its own goroutine so
+// a slow/unreachable Discord endpoint never blocks log-line handling, and one
+// trigger with several webhook actions doesn't serialize them behind each
+// other.
+func (e *Engine) dispatchWebhooks(actions []Action) {
+	if e.resolveWebhook == nil {
+		return
+	}
+	for _, a := range actions {
+		if a.Type != ActionDiscordWebhook || a.WebhookID == "" {
+			continue
+		}
+		url, ok := e.resolveWebhook(a.WebhookID)
+		if !ok || url == "" {
+			slog.Warn("discord webhook action fired but the referenced webhook no longer exists", "webhook_id", a.WebhookID)
+			continue
+		}
+		content := a.Text
+		send := e.sendWebhook
+		go send(url, content)
+	}
 }
 
 // resolveTimerKey returns the spelltimer key for one firing. When the

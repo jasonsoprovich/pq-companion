@@ -51,6 +51,7 @@ import { CSS } from '@dnd-kit/utilities'
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import { useVoices } from '../hooks/useVoices'
 import { useTTSVoices } from '../hooks/usePiperStatus'
+import { useDiscordWebhooks } from '../hooks/useDiscordWebhooks'
 import NotificationActionEditor, { NotificationTypeSelect } from '../components/NotificationActionEditor'
 import DecimalInput from '../components/DecimalInput'
 import SpellSearchPicker from '../components/SpellSearchPicker'
@@ -270,6 +271,7 @@ interface ActionEditorProps {
 
 function ActionEditor({ action, index, onChange, onRemove }: ActionEditorProps): React.ReactElement {
   const voices = useTTSVoices(useVoices())
+  const webhooks = useDiscordWebhooks()
   const volume0to100 = Math.round((action.volume || 1.0) * 100)
 
   return (
@@ -343,6 +345,11 @@ function ActionEditor({ action, index, onChange, onRemove }: ActionEditorProps):
         onTtsVolumeChange={(v) => onChange(index, { ...action, volume: v / 100 })}
         clipboardText={action.text}
         onClipboardTextChange={(v) => onChange(index, { ...action, text: v })}
+        webhookText={action.text}
+        onWebhookTextChange={(v) => onChange(index, { ...action, text: v })}
+        webhookId={action.webhook_id || ''}
+        onWebhookIdChange={(v) => onChange(index, { ...action, webhook_id: v })}
+        webhooks={webhooks}
       />
     </div>
   )

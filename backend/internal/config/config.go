@@ -618,6 +618,18 @@ type Preferences struct {
 	// visible — the header's lock/close controls stay put with no backdrop
 	// behind them, just without the shaded box. Off by default.
 	DiscordVoiceMinimalMode bool `yaml:"discord_voice_minimal_mode,omitempty" json:"discord_voice_minimal_mode"`
+
+	// DiscordWebhooks is the user's saved Discord incoming webhooks — a name
+	// they picked plus the URL Discord issued in a channel's Integrations →
+	// Webhooks settings. Referenced BY ID from a trigger's discord_webhook
+	// action (trigger.Action.WebhookID) rather than storing the URL directly
+	// on the action: trigger categories/packs can be exported and shared
+	// (see internal/trigger/packs.go), and that export has no field
+	// stripping, so a URL living on the action would leak verbatim to
+	// whoever imports the pack. Keeping the URL only here means export only
+	// ever carries the opaque reference. Managed entirely client-side via
+	// updateConfig, like DiscordVoiceLinks — no dedicated backend CRUD.
+	DiscordWebhooks []DiscordWebhook `yaml:"discord_webhooks,omitempty" json:"discord_webhooks"`
 }
 
 // DiscordVoiceLink is one saved StreamKit voice-overlay link — a name the
@@ -625,6 +637,14 @@ type Preferences struct {
 // StreamKit tool generated for that one guild+channel. See Preferences.
 // DiscordVoiceLinks/DiscordVoiceActiveLinkID and issue #150.
 type DiscordVoiceLink struct {
+	ID   string `yaml:"id" json:"id"`
+	Name string `yaml:"name" json:"name"`
+	URL  string `yaml:"url" json:"url"`
+}
+
+// DiscordWebhook is one saved Discord incoming webhook — see
+// Preferences.DiscordWebhooks.
+type DiscordWebhook struct {
 	ID   string `yaml:"id" json:"id"`
 	Name string `yaml:"name" json:"name"`
 	URL  string `yaml:"url" json:"url"`

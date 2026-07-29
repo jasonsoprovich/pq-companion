@@ -27,7 +27,10 @@ import {
   AlignCenter,
   AlignRight,
   Monitor as MonitorIcon,
+  Webhook,
+  AlertTriangle,
 } from 'lucide-react'
+import type { DiscordWebhook } from '../types/config'
 import { playSoundForTest, speakTextForTest, stopTestPlayback } from '../services/audio'
 import { usePositioningSession } from '../hooks/usePositioningSession'
 import { useOverlayTextDefaults } from '../hooks/useOverlayTextDefaults'
@@ -40,12 +43,14 @@ export type NotificationActionType =
   | 'play_sound'
   | 'text_to_speech'
   | 'clipboard'
+  | 'discord_webhook'
 
 const TYPE_LABEL: Record<NotificationActionType, string> = {
   overlay_text: 'Overlay Text',
   play_sound: 'Play Sound',
   text_to_speech: 'Text to Speech',
   clipboard: 'Copy to Clipboard',
+  discord_webhook: 'Discord Webhook',
 }
 
 const ALL_TYPES: readonly NotificationActionType[] = [
@@ -53,6 +58,7 @@ const ALL_TYPES: readonly NotificationActionType[] = [
   'play_sound',
   'text_to_speech',
   'clipboard',
+  'discord_webhook',
 ]
 
 const inputStyle: React.CSSProperties = {
@@ -708,6 +714,85 @@ export function ClipboardFields({
   )
 }
 
+interface DiscordWebhookFieldsProps {
+  text: string
+  onTextChange: (v: string) => void
+  textPlaceholder?: string
+  webhookId: string
+  onWebhookIdChange: (v: string) => void
+  webhooks: DiscordWebhook[]
+}
+
+/**
+ * DiscordWebhookFields — the editor for a "Discord Webhook" action: posts
+ * text (after the usual {1}/$1 capture substitution) to a saved Discord
+ * webhook when the trigger fires. The webhook is picked by reference
+ * (webhookId), never a raw URL on the action — see Action.webhook_id's doc
+ * comment for why (trigger category/pack export would otherwise leak it).
+ */
+export function DiscordWebhookFields({
+  text,
+  onTextChange,
+  textPlaceholder = 'Message (e.g. {2} just died)',
+  webhookId,
+  onWebhookIdChange,
+  webhooks,
+}: DiscordWebhookFieldsProps): React.ReactElement {
+  const navigate = useNavigate()
+  const selected = webhooks.find((w) => w.id === webhookId)
+
+  return (
+    <>
+      <div className="flex items-center gap-1.5">
+        <select
+          value={webhookId}
+          onChange={(e) => onWebhookIdChange(e.target.value)}
+          className="rounded px-2 py-0.5 text-xs outline-none flex-1 min-w-0"
+          style={selectStyle}
+        >
+          <option value="">— select a webhook —</option>
+          {webhooks.map((w) => (
+            <option key={w.id} value={w.id}>{w.name}</option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={() => navigate('/settings?tab=discord')}
+          className="shrink-0 flex items-center gap-1 rounded px-2 py-1 text-[11px]"
+          style={{
+            backgroundColor: 'transparent',
+            color: 'var(--color-muted-foreground)',
+            border: '1px solid var(--color-border)',
+            cursor: 'pointer',
+          }}
+          title="Add or manage saved Discord webhooks in Settings → Discord"
+        >
+          <Webhook size={11} />
+          Manage
+        </button>
+      </div>
+      {webhookId && !selected && (
+        <span className="flex items-center gap-1.5 text-[11px]" style={{ color: '#f59e0b' }}>
+          <AlertTriangle size={11} /> This action references a webhook that no
+          longer exists — pick another or re-add it in Settings.
+        </span>
+      )}
+      <input
+        type="text"
+        placeholder={textPlaceholder}
+        value={text}
+        onChange={(e) => onTextChange(e.target.value)}
+        className="w-full rounded px-2 py-1 text-xs outline-none font-mono"
+        style={inputStyle}
+      />
+      <p className="text-[10px] leading-snug" style={{ color: 'var(--color-muted)' }}>
+        Posted to the selected webhook when the trigger fires. Use {'{1}'} / $1
+        for capture groups.
+      </p>
+    </>
+  )
+}
+
 // ── Type selector ─────────────────────────────────────────────────────────────
 
 interface TypeSelectorProps {
@@ -784,6 +869,14 @@ interface NotificationActionEditorProps {
   clipboardText?: string
   onClipboardTextChange?: (v: string) => void
   clipboardTextPlaceholder?: string
+
+  // discord_webhook fields
+  webhookText?: string
+  onWebhookTextChange?: (v: string) => void
+  webhookTextPlaceholder?: string
+  webhookId?: string
+  onWebhookIdChange?: (v: string) => void
+  webhooks?: DiscordWebhook[]
 }
 
 /**
@@ -850,6 +943,18 @@ export default function NotificationActionEditor(
         text={props.clipboardText ?? ''}
         onTextChange={props.onClipboardTextChange ?? noop}
         textPlaceholder={props.clipboardTextPlaceholder}
+      />
+    )
+  }
+  if (type === 'discord_webhook') {
+    return (
+      <DiscordWebhookFields
+        text={props.webhookText ?? ''}
+        onTextChange={props.onWebhookTextChange ?? noop}
+        textPlaceholder={props.webhookTextPlaceholder}
+        webhookId={props.webhookId ?? ''}
+        onWebhookIdChange={props.onWebhookIdChange ?? noop}
+        webhooks={props.webhooks ?? []}
       />
     )
   }

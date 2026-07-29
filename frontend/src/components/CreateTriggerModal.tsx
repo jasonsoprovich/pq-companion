@@ -6,6 +6,7 @@ import NotificationActionEditor, { NotificationTypeSelect } from './Notification
 import DecimalInput from './DecimalInput'
 import { useVoices } from '../hooks/useVoices'
 import { useTTSVoices } from '../hooks/usePiperStatus'
+import { useDiscordWebhooks } from '../hooks/useDiscordWebhooks'
 import { compileTriggerRegex } from '../lib/triggerRegex'
 
 export interface TriggerPrefill {
@@ -97,6 +98,7 @@ export default function CreateTriggerModal({
   const [error, setError] = useState<string | null>(null)
   const [patternError, setPatternError] = useState<string | null>(null)
   const voices = useTTSVoices(useVoices())
+  const webhooks = useDiscordWebhooks()
 
   // Dismiss on Escape. Backdrop click already works via the outer div's
   // onClick handler; this covers the keyboard path.
@@ -488,6 +490,11 @@ export default function CreateTriggerModal({
               onTtsVolumeChange={(v) => setAction((prev) => ({ ...prev, volume: v / 100 }))}
               clipboardText={action.text}
               onClipboardTextChange={(v) => setAction((prev) => ({ ...prev, text: v }))}
+              webhookText={action.text}
+              onWebhookTextChange={(v) => setAction((prev) => ({ ...prev, text: v }))}
+              webhookId={action.webhook_id || ''}
+              onWebhookIdChange={(v) => setAction((prev) => ({ ...prev, webhook_id: v }))}
+              webhooks={webhooks}
             />
           </div>
         </div>

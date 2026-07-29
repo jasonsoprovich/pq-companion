@@ -3,6 +3,7 @@ export type ActionType =
   | 'play_sound'
   | 'text_to_speech'
   | 'clipboard'
+  | 'discord_webhook'
 
 export type TimerType = 'none' | 'buff' | 'detrimental' | 'custom'
 
@@ -55,6 +56,9 @@ export interface Action {
   /** Anchor/text alignment for a pinned Position: 'left' | 'center' | 'right'.
    *  empty/omit = global default, falling back to 'left'. */
   align?: string
+  /** discord_webhook: id of a Preferences.discord_webhooks entry. The URL
+   *  itself is never stored here — see DiscordWebhook's doc comment. */
+  webhook_id?: string
 }
 
 /**

@@ -778,6 +778,17 @@ func main() {
 	triggerEngine.SetTargetProvider(func() string {
 		return npcTracker.GetState().TargetName
 	})
+	// discord_webhook actions store only a Preferences.DiscordWebhooks id —
+	// resolve it to the actual URL at fire time via the live config, so
+	// editing/deleting a saved webhook in Settings takes effect immediately.
+	triggerEngine.SetWebhookResolver(func(id string) (string, bool) {
+		for _, wh := range cfgMgr.Get().Preferences.DiscordWebhooks {
+			if wh.ID == id {
+				return wh.URL, true
+			}
+		}
+		return "", false
+	})
 	triggerEngine.Reload()
 
 	// Wishlist watcher: alerts when an item on any character's wishlist
