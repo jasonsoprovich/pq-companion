@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Crosshair, AlertTriangle, CheckCircle2, Circle, ExternalLink } from 'lucide-react'
+import { Crosshair, AlertTriangle, CheckCircle2, Circle, Database, ExternalLink } from 'lucide-react'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useNPCOverlaySections } from '../../hooks/useNPCOverlaySections'
 import { useWishlistItemIds } from '../../hooks/useWishlistItemIds'
@@ -758,6 +758,15 @@ export default function NPCPanel({
         }
         headerRight={
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {target?.npc_data && (
+              <Link
+                to={`/npcs?select=${target.npc_data.id}`}
+                title="Open in NPC database"
+                style={{ color: 'var(--color-muted)', display: 'flex', alignItems: 'center' }}
+              >
+                <Database size={12} />
+              </Link>
+            )}
             {target?.npc_data && <CopyTargetStatsButton state={target} />}
             {(target?.has_target || pinned) && (
               <TargetPinButton pinned={pinned} onToggle={togglePin} />

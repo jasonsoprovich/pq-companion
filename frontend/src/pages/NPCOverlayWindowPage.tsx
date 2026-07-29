@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { Crosshair, X } from 'lucide-react'
+import { Crosshair, ExternalLink, X } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
@@ -631,6 +631,7 @@ export default function NPCOverlayWindowPage(): React.ReactElement {
   const pinnedRef = useRef(false)
   const sections = useNPCOverlaySections('popout')
   const wishlistItemIds = useWishlistItemIds()
+  const linksEnabled = useOverlayEntityLinks()
 
   useEffect(() => {
     getOverlayNPCTarget()
@@ -704,6 +705,25 @@ export default function NPCOverlayWindowPage(): React.ReactElement {
           className="no-drag"
           style={{ display: 'flex', alignItems: 'center', gap: 6 }}
         >
+          {target?.npc_data && linksEnabled && (
+            <button
+              onClick={() => openEntityInMain('npc', target.npc_data!.id)}
+              style={{
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                color: 'rgba(255,255,255,0.4)',
+                padding: '2px 4px',
+                lineHeight: 1,
+                borderRadius: 3,
+                display: 'flex',
+                alignItems: 'center',
+              }}
+              title="Open in NPC database"
+            >
+              <ExternalLink size={13} />
+            </button>
+          )}
           {target?.npc_data && (
             <CopyTargetStatsButton state={target} idleColor="rgba(255,255,255,0.4)" size={13} />
           )}
