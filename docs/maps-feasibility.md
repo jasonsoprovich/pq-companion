@@ -352,19 +352,9 @@ Brewall is not applying one technique either. His akheva is a corridor
 silhouette; his unrest is a detailed floor plan with walls and the hedge maze.
 He picks per zone, and so must we.
 
-**Grid occupancy is a clean automatic discriminator** — 46–49% for the zones
-where silhouette works, 73–81% where it degenerates, with no overlap. A
-threshold at ~60% separates them robustly. The pipeline should compute
-occupancy per zone offline and pick the default view from it, rather than
-applying one technique everywhere.
-
-Three techniques now, selected per zone:
-
-| Zone character | Technique | Signal |
-|---|---|---|
-| Corridor / cave dungeons | Walkable silhouette | occupancy < ~60% |
-| Structured interiors | Boundary extraction + Z-bands | occupancy ≥ ~60%, bounded Z |
-| Open terrain | Elevation contours | large Z span, continuous surface |
+Grid occupancy looked like a clean discriminator on these five zones — 46–49%
+where silhouette works, 73–81% where it degenerates. **That turned out to be an
+artifact of the small sample; see §5b.6.**
 
 Tuning notes for the port: the morphological close is nearly irrelevant
 (1–3% occupancy change from 0 to 8 units) — it bridges triangle seams and
@@ -373,7 +363,81 @@ marching-squares staircases into straight runs (akheva: 9,848 → 190). Pad the
 raster by more than the dilation radius or contours clip at the image border
 and never close.
 
-### 5b.6 Effect on the risk register
+### 5b.6 Full-corpus classification — all 178 zones
+
+`scripts/mapspike/classify.py` run across every Quarm zone with client files.
+Output: `zone_classification.csv` (gitignored — regenerate locally).
+
+**178 zones parsed, zero failures.** The parser handles the entire client, not
+just the sample. That is the strongest single result of the spike.
+
+**Correction to §5b.5: occupancy is not bimodal.** Across 178 zones it is
+roughly uniform from 0.1 to 1.0 with no natural gap anywhere. The "clean
+separation, no overlap" claim came from a five-zone sample and does not hold.
+
+**Boundary density is the reliable primary signal.** It *is* strongly bimodal:
+
+```
+bnd_density   0.00-0.30  ###################################  71 zones
+              0.30-0.60  #########                            18 zones   <- valley
+              0.60-1.10  ###########################████████  87 zones
+```
+
+The sparse valley at 0.30–0.60 is a genuine natural boundary. Revised rule,
+occupancy demoted to a secondary split *within* the high-density cluster:
+
+```
+if   bnd_density < 0.45          -> contours     (continuous terrain)
+elif occupancy   < 0.60          -> silhouette   (sparse corridors / caves)
+else                             -> boundary     (discrete floor slabs)
+```
+
+Scores 5/5 against the visually-verified zones. Resulting distribution:
+
+| Technique | Zones | Share |
+|---|---|---|
+| contours | 80 | 45% |
+| silhouette | 76 | 43% |
+| boundary | 22 | 12% |
+
+45% terrain is plausible for classic EQ. Spot-checks agree on the obvious
+cases — `tox`, `sro`, `steamfont`, `stonebrunt`, `timorous`, `trakanon`,
+`twilight`, `umbral`, `wakening`, `warslikswood`, `westwastes` all → contours;
+`sebilis`, `guktop`, `najena`, `charasis`, `soltemple`, `permafrost`,
+`thurgadinb`, `veeshan`, `vexthal` all → silhouette; `unrest`, `qeynos2`,
+`mistmoore`, `sseru` → boundary.
+
+**160 of 178 zones (90%) classify confidently.** The 18 in the valley need
+visual review before the build is trusted — the classifier is a strong first
+pass, not a fully automatic decision:
+
+| Zone | occ | bnd | Rule says | Note |
+|---|---|---|---|---|
+| gfaydark | 0.81 | 0.32 | contours | verified correct |
+| paludal | 0.30 | 0.34 | contours | |
+| netherbian | 0.24 | 0.34 | contours | |
+| warrens | 0.26 | 0.35 | contours | **likely wrong** — indoor dungeon, low occ suggests silhouette |
+| echo | 0.15 | 0.37 | contours | |
+| thedeep | 0.31 | 0.38 | contours | |
+| powater | 0.16 | 0.38 | contours | |
+| arena | 0.78 | 0.38 | contours | **suspect** — a built structure |
+| ssratemple | 0.69 | 0.42 | contours | **suspect** — large indoor temple |
+| airplane | 0.99 | 0.48 | boundary | |
+| potimeb | 0.47 | 0.49 | silhouette | |
+| poearthb | 0.43 | 0.49 | silhouette | |
+| droga | 0.15 | 0.53 | silhouette | |
+| befallen | 0.48 | 0.55 | silhouette | |
+| cshome | 0.63 | 0.56 | boundary | |
+| frozenshadow | 0.37 | 0.57 | silhouette | |
+| potimea | 0.78 | 0.58 | boundary | |
+| crushbone | 0.52 | 0.59 | silhouette | |
+
+Plan: render all 18 both ways during Phase 2 and pin the technique per zone in
+a small override table, rather than trying to find a threshold that classifies
+every zone correctly. A hand-checked override list of ~18 entries is cheaper and
+more honest than an over-fitted heuristic.
+
+### 5b.7 Effect on the risk register
 
 The §11 "WLD/`.s3d` Go port is the long pole" risk drops from **High to
 Medium**. A complete working parser — PFS, WLD, `0x36` mesh, `0x15` placements,
