@@ -433,6 +433,22 @@ type SpellVendorOption struct {
 	Y          float64 `json:"y"`
 }
 
+// ItemVendorOption is one place an item can be purchased directly (not via a
+// scroll — see SpellVendorOption for that): a vendor NPC and the zone it
+// spawns in. Mirrors SpellVendorOption's shape so both feed the same
+// shopping-route optimizer (internal/shoproute).
+type ItemVendorOption struct {
+	ItemID     int     `json:"item_id"`
+	ItemName   string  `json:"item_name"`
+	ZoneShort  string  `json:"zone_short"`
+	ZoneName   string  `json:"zone_name"`
+	VendorID   int     `json:"vendor_id"`
+	VendorName string  `json:"vendor_name"`
+	Price      int     `json:"price"` // base price in copper (approximate)
+	X          float64 `json:"x"`
+	Y          float64 `json:"y"`
+}
+
 // NPCSpawnPoint represents a single spawn point for an NPC.
 type NPCSpawnPoint struct {
 	ID              int     `json:"id"`

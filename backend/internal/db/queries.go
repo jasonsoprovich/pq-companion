@@ -2088,6 +2088,74 @@ func (db *DB) GetSpellVendorOptions(spellIDs []int) ([]SpellVendorOption, error)
 	return out, rows.Err()
 }
 
+// GetItemVendorOptions returns, for each requested item id, every vendor/zone
+// pair where that item can be bought directly. Unlike GetSpellVendorOptions
+// there's no scroll indirection — items are sold as themselves via
+// merchantlist — so this is the same vendor/zone/spawn resolution minus the
+// items.scrolleffect -> spells_new hop. Rows collapse to one per (item, zone,
+// vendor); vendors with no resolvable spawn are dropped, matching the spell
+// version, since the route can't direct a player there.
+//
+// This is the batch input for the shopping-route optimizer (internal/shoproute),
+// reused here for tradeskill component runs.
+func (db *DB) GetItemVendorOptions(itemIDs []int) ([]ItemVendorOption, error) {
+	if len(itemIDs) == 0 {
+		return nil, nil
+	}
+	placeholders := strings.Repeat("?,", len(itemIDs))
+	placeholders = placeholders[:len(placeholders)-1]
+	args := make([]any, len(itemIDs))
+	for i, id := range itemIDs {
+		args[i] = id
+	}
+
+	rows, err := db.Query(`
+		SELECT i.id           AS item_id,
+		       i.Name         AS item_name,
+		       s2.zone        AS zone_short,
+		       COALESCE(z.long_name, s2.zone) AS zone_name,
+		       n.id           AS vendor_id,
+		       n.name         AS vendor_name,
+		       MIN(i.price)   AS price,
+		       -- See GetSpellVendorOptions: x and y must come from the same
+		       -- spawn point, so pick one row per (vendor, zone) rather than
+		       -- independently MIN()-ing each coordinate.
+		       (SELECT s2b.x FROM spawnentry se2
+		          JOIN spawn2 s2b ON s2b.spawngroupID = se2.spawngroupid
+		          WHERE se2.npcid = n.id AND s2b.zone = s2.zone
+		          ORDER BY s2b.x, s2b.y LIMIT 1) AS x,
+		       (SELECT s2b.y FROM spawnentry se2
+		          JOIN spawn2 s2b ON s2b.spawngroupID = se2.spawngroupid
+		          WHERE se2.npcid = n.id AND s2b.zone = s2.zone
+		          ORDER BY s2b.x, s2b.y LIMIT 1) AS y
+		FROM items i
+		JOIN merchantlist ml ON ml.item = i.id
+		JOIN npc_types n ON n.merchant_id = ml.merchantid AND n.merchant_id > 0
+		JOIN spawnentry se ON se.npcid = n.id
+		JOIN spawngroup sg ON sg.id = se.spawngroupid
+		JOIN spawn2 s2 ON s2.spawngroupID = sg.id
+		LEFT JOIN zone z ON z.short_name = s2.zone
+		WHERE i.id IN (`+placeholders+`)
+		  AND s2.zone IS NOT NULL AND s2.zone != ''
+		GROUP BY i.id, s2.zone, n.id
+		ORDER BY i.id, zone_name, vendor_name`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("get item vendor options: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ItemVendorOption
+	for rows.Next() {
+		var o ItemVendorOption
+		if err := rows.Scan(&o.ItemID, &o.ItemName, &o.ZoneShort, &o.ZoneName,
+			&o.VendorID, &o.VendorName, &o.Price, &o.X, &o.Y); err != nil {
+			return nil, fmt.Errorf("scan item vendor option: %w", err)
+		}
+		out = append(out, o)
+	}
+	return out, rows.Err()
+}
+
 // GetZoneAdjacency returns an undirected zone-connectivity graph derived from
 // zone_points: a map of zone short_name → the short_names of zones reachable by
 // a single zone line. Each line yields both directions so the graph can be

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronDown, ChevronRight, Hammer, Check } from 'lucide-react'
+import { ChevronDown, ChevronRight, Hammer, Check, Map as MapIcon } from 'lucide-react'
 import { getRecipe, getItemSources } from '../services/api'
 import { tradeskillLabel } from '../lib/enumsCache'
 import { priceLabel } from '../lib/itemHelpers'
@@ -8,6 +8,7 @@ import { describeLocation } from '../lib/inventoryLocations'
 import { findHoldingsForItems, type ItemHolding } from '../services/itemHoldings'
 import { ItemIcon } from './Icon'
 import FavoriteRecipeStar from './FavoriteRecipeStar'
+import ItemShoppingRoutePanel from './ItemShoppingRoutePanel'
 import type { RecipeDetail, RecipeEntry } from '../types/recipe'
 import type { ItemTradeskillEntry } from '../types/item'
 
@@ -313,6 +314,10 @@ interface RecipeBodyProps {
  */
 export function RecipeBody({ recipe, depth = 0, onNavigate }: RecipeBodyProps): React.ReactElement {
   const [holdingsInfo, setHoldingsInfo] = useState<{ configured: boolean; map: Map<number, ItemHolding[]> } | null>(null)
+  // Shopping-route selection is local to this recipe view — it's a one-off
+  // "where do I buy this run's components" errand, not a persisted
+  // cross-character list like the spell checklist's shopping route.
+  const [shoppingIds, setShoppingIds] = useState<number[] | null>(null)
 
   useEffect(() => {
     setHoldingsInfo(null)
@@ -366,6 +371,17 @@ export function RecipeBody({ recipe, depth = 0, onNavigate }: RecipeBodyProps): 
         onNavigate={onNavigate}
         holdingsMap={holdingsInfo?.configured ? holdingsInfo.map : undefined}
       />
+      {recipe.components.some(isLinkableEntry) && (
+        <button
+          onClick={() => setShoppingIds(recipe.components.filter(isLinkableEntry).map((e) => e.item_id))}
+          className="flex w-fit items-center gap-1.5 rounded px-2 py-1 text-[11px]"
+          style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-primary)', border: '1px solid var(--color-border)' }}
+          title="Find the fewest-stop vendor route to buy these components"
+        >
+          <MapIcon size={11} />
+          Find vendors for these components
+        </button>
+      )}
       {holdingsInfo && !holdingsInfo.configured && recipe.components.length > 0 && (
         <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
           Set up Zeal inventory export to see which components you already have.
@@ -394,6 +410,13 @@ export function RecipeBody({ recipe, depth = 0, onNavigate }: RecipeBodyProps): 
         </div>
       )}
       <EntrySection title="Yields" entries={recipe.products} depth={depth} onNavigate={onNavigate} />
+      {shoppingIds && (
+        <ItemShoppingRoutePanel
+          itemIds={shoppingIds}
+          onRemoveItem={(id) => setShoppingIds((ids) => (ids ? ids.filter((x) => x !== id) : ids))}
+          onClose={() => setShoppingIds(null)}
+        />
+      )}
     </div>
   )
 }

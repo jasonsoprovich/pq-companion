@@ -1,5 +1,5 @@
 import type { Config } from '../types/config'
-import type { Item, ItemSources, ItemQuests, QuestSummary, SearchResult } from '../types/item'
+import type { Item, ItemSources, ItemQuests, QuestSummary, SearchResult, ItemShoppingRoute, ItemShoppingRouteOptions } from '../types/item'
 import type { NPC, NPCSpawns, NPCLootTable, NPCFaction, NPCSpells, NPCMerchant } from '../types/npc'
 import type { MapStatus, MapZone, MapZoneDetail, MapGeometry } from '../types/map'
 import type { BuffStatDelta, Spell, SpellCrossRefs, ShoppingRoute, ShoppingRouteOptions } from '../types/spell'
@@ -385,6 +385,19 @@ export function getShoppingRoute(
 ): Promise<ShoppingRoute> {
   return post<ShoppingRoute>(`/api/spells/shopping-route`, {
     spell_ids: spellIds,
+    exclude_alignments: opts.excludeAlignments ?? [],
+    start_zone: opts.startZone ?? '',
+    include_pok: opts.includePoK ?? false,
+    exclude_zones: opts.excludeZones ?? [],
+  })
+}
+
+export function getItemShoppingRoute(
+  itemIds: number[],
+  opts: ItemShoppingRouteOptions = {},
+): Promise<ItemShoppingRoute> {
+  return post<ItemShoppingRoute>(`/api/items/shopping-route`, {
+    item_ids: itemIds,
     exclude_alignments: opts.excludeAlignments ?? [],
     start_zone: opts.startZone ?? '',
     include_pok: opts.includePoK ?? false,

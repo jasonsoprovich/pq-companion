@@ -195,3 +195,58 @@ export interface SearchResult<T> {
   items: T[]
   total: number
 }
+
+// ── Item shopping route ──────────────────────────────────────────────────────
+// Mirrors the spell shopping-route shapes in types/spell.ts (same solver,
+// same response shape) but for items bought directly rather than via a
+// spell's teaching scroll. Used by the recipe view's "find vendors for these
+// components" action.
+
+export type ZoneAlignment = 'good' | 'neutral' | 'evil'
+
+export interface ShoppingListItem {
+  id: number
+  name: string
+}
+
+export interface ItemShoppingVendor {
+  id: number
+  name: string
+  x: number
+  y: number
+  item_ids: number[]
+}
+
+export interface ItemShoppingStop {
+  zone_short: string
+  zone_name: string
+  reason: 'anchor' | 'greedy'
+  alignment: ZoneAlignment
+  items: ShoppingListItem[]
+  vendors: ItemShoppingVendor[]
+}
+
+export interface ItemShoppingCandidateZone {
+  zone_short: string
+  zone_name: string
+  alignment: ZoneAlignment
+  item_count: number
+}
+
+export interface ItemShoppingRoute {
+  stops: ItemShoppingStop[]
+  unavailable: ShoppingListItem[]
+  excluded_by_alignment: ShoppingListItem[]
+  excluded_by_expansion: ShoppingListItem[]
+  excluded_by_zone: ShoppingListItem[]
+  candidate_zones: ItemShoppingCandidateZone[]
+  total_zones: number
+  total_items: number
+}
+
+export interface ItemShoppingRouteOptions {
+  excludeAlignments?: ZoneAlignment[]
+  startZone?: string
+  includePoK?: boolean
+  excludeZones?: string[]
+}
