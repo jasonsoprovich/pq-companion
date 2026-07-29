@@ -250,6 +250,9 @@ function CardBody({
           <CardSection title="Targeting">
             <CardRow label="Target" value={targetLabel(spell.target_type)} />
             <CardRow label="Resist" value={resistLabel(spell.resist_type)} />
+            {spell.resist_diff !== 0 && (
+              <CardRow label="Resist Mod" value={spell.resist_diff > 0 ? `+${spell.resist_diff}` : `${spell.resist_diff}`} />
+            )}
             {spell.range > 0 && <CardRow label="Range" value={`${spell.range} units`} />}
             {spell.aoe_range > 0 && <CardRow label="AoE Range" value={`${spell.aoe_range} units`} />}
           </CardSection>

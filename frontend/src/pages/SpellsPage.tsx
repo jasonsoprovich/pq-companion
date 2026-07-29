@@ -506,6 +506,9 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
         <Section title="Targeting">
           <StatRow label="Target" value={targetLabel(spell.target_type)} />
           <StatRow label="Resist" value={resistLabel(spell.resist_type)} />
+          {spell.resist_diff !== 0 && (
+            <StatRow label="Resist Mod" value={spell.resist_diff > 0 ? `+${spell.resist_diff}` : `${spell.resist_diff}`} />
+          )}
           {spell.range > 0 && <StatRow label="Range" value={`${spell.range} units`} />}
           {hasAoE && <StatRow label="AoE Range" value={`${spell.aoe_range} units`} />}
           {zoneType && <StatRow label="Zone Type" value={zoneType} />}

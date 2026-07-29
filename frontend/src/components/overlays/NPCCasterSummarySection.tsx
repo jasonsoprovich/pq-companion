@@ -1,5 +1,6 @@
 import React from 'react'
 import type { NPCCasterSummary } from '../../types/overlay'
+import type { NamedSpell } from '../../types/npc'
 import type { NPCOverlaySections } from '../../types/config'
 
 // Theme tokens the section needs. The dashboard panel passes CSS-variable
@@ -30,27 +31,54 @@ function chunkLabel(kind?: string): string {
   }
 }
 
+// spellHoverDetail builds a plain-text, multi-line summary (AE type + radius,
+// resist type + mod, effective recast) from the combat-detail fields already
+// carried on NamedSpell — no extra fetch needed. Rendered via the native
+// `title` attribute rather than a DOM tooltip: the popped-out NPC overlay is
+// its own small, transparent Electron window, and a DOM-portaled tooltip
+// would be clipped to that window's bounds. A native title tooltip is an
+// OS-level widget positioned near the cursor, unconstrained by the window's
+// own content area, so it renders cleanly even on a tightly-sized overlay.
+function spellHoverDetail(s: NamedSpell): string | undefined {
+  const lines: string[] = []
+  if (s.ae_type) {
+    lines.push(s.ae_range ? `${s.ae_type} · ${s.ae_range} radius` : s.ae_type)
+  }
+  if (s.resist_type && s.resist_diff) {
+    lines.push(`Resist: ${s.resist_diff > 0 ? '+' : ''}${s.resist_diff} ${s.resist_type}`)
+  }
+  if (s.recast_secs) {
+    lines.push(`Recast: ${s.recast_secs}s`)
+  }
+  return lines.length > 0 ? lines.join('\n') : undefined
+}
+
 // SpellName renders a spell as a clickable link when onClick is supplied (the
 // DB page wires it to the spell explorer), and as plain text otherwise (the
 // floating overlay windows have no in-window navigation target). Mirrors the
 // SpellLink used by the full enumerated list so the summary feels the same.
+// `detail`, when present, becomes a native hover tooltip (see spellHoverDetail).
 function SpellName({
   id,
   name,
   onClick,
+  detail,
 }: {
   id: number
   name: string
   onClick?: (id: number) => void
+  detail?: string
 }): React.ReactElement {
-  if (!onClick || id <= 0) return <>{name}</>
+  if (!onClick || id <= 0) {
+    return detail ? <span title={detail}>{name}</span> : <>{name}</>
+  }
   return (
     <button
       type="button"
       onClick={() => onClick(id)}
       className="hover:underline"
       style={{ color: 'var(--color-primary)', cursor: 'pointer', background: 'none', border: 'none', padding: 0, font: 'inherit' }}
-      title={`Open spell ${id} in the spell explorer`}
+      title={detail ? `${detail}\n\nClick to open in the spell explorer` : `Open spell ${id} in the spell explorer`}
     >
       {name}
     </button>
@@ -148,7 +176,7 @@ export default function NPCCasterSummarySection({
               return (
                 <React.Fragment key={p.spell_id || i}>
                   {i > 0 && ', '}
-                  <SpellName id={p.spell_id} name={p.spell_name} onClick={onSpellClick} />
+                  <SpellName id={p.spell_id} name={p.spell_name} onClick={onSpellClick} detail={spellHoverDetail(p)} />
                   {chance}
                   {ctx ? ` (${ctx})` : ''}
                 </React.Fragment>
@@ -165,7 +193,7 @@ export default function NPCCasterSummarySection({
             {signature.map((s, i) => (
               <React.Fragment key={s.spell_id || i}>
                 {i > 0 && ', '}
-                <SpellName id={s.spell_id} name={s.spell_name} onClick={onSpellClick} />
+                <SpellName id={s.spell_id} name={s.spell_name} onClick={onSpellClick} detail={spellHoverDetail(s)} />
               </React.Fragment>
             ))}
             {overflow > 0 && <span style={{ color: theme.muted }}>{`, +${overflow} more`}</span>}
