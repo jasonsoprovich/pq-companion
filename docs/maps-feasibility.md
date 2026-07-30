@@ -1095,6 +1095,40 @@ vertex buffer. Whether that caps drawn map lines is unclear from reading alone,
 and Akheva would ship 129 P-lines plus whatever geometry — so a large file needs
 an in-game check before this is trusted.
 
+**The base file is mandatory.** Checked against the loading loop, because the
+README's wording left it open and the answer changes the design:
+
+```cpp
+std::string filename = "map_files/" + short_name + ".txt";
+if (!add_map_data_from_file(filename, *new_map)) {
+  map_data_cache[zone_id] = nullptr;
+  return internal_map;          // never checks _1 at all
+}
+```
+
+So we cannot politely take `_1` and leave `<zone>.txt` free for a future Brewall
+install. On an install with no `map_files/` — which is what a plain Quarm + Zeal
+setup looks like, confirmed against a real one — writing only `_1` would be read
+by nothing.
+
+Two consequences:
+
+1. **Slot strategy depends on what is already there.** With an existing pack,
+   append at the first free contiguous slot and clobber nothing. With no pack, we
+   must own `<zone>.txt`, so write a recognisable marker line into it — if a
+   Brewall installer later overwrites it, we need to be able to tell "replaced"
+   from "the user deleted it".
+2. **A malformed base file disables external maps for that zone entirely**, since
+   a failed parse returns `internal_map` and skips every numbered file. Whatever
+   we write has to be valid, and validated before it lands.
+
+**We do not need to ship geometry.** In `data_mode both` Zeal draws its internal
+geometry *and* the external file, so the base file can contain only our `P`
+markers — traps, locked doors, teleports — with no `L` lines at all. That makes
+the export small, avoids drawing a second copy of the zone outline over Zeal's
+own, and sidesteps any line-count limit. Geometry export stays possible later for
+`data_mode external`, but it is not what makes this feature useful.
+
 **Still required before writing a byte into anyone's EQ directory:** back up
 `map_files/` through the existing config backup manager, and record which files
 we wrote so removing them is exact rather than a guess.
