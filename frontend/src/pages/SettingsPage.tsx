@@ -94,13 +94,18 @@ function TabBar({ tabs, active, onChange }: TabBarProps): React.ReactElement {
     <button
       key={id}
       onClick={() => onChange(id)}
-      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs font-medium transition-colors"
+      // text-left because a button centres its text by default, which only
+      // shows up on a label long enough to wrap — "In-Game Map Markers" sat
+      // centred while every one-line label above it was flush left.
+      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs font-medium transition-colors"
       style={{
         backgroundColor: active === id ? 'var(--color-surface-2)' : 'transparent',
         color: active === id ? 'var(--color-primary)' : 'var(--color-muted-foreground)',
       }}
     >
-      {icon}
+      {/* Without shrink-0 the icon is squeezed narrower on a wrapping row,
+          which misaligns it with the icons above and below. */}
+      <span className="shrink-0">{icon}</span>
       {label}
     </button>
   )
