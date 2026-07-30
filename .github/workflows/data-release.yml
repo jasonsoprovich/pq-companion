@@ -120,6 +120,9 @@ jobs:
               --repo "$GITHUB_REPOSITORY"
           fi
 
+          # Named explicitly, never a wildcard: data-latest also holds maps.db,
+          # which is extracted from an EQ client on its own cadence and must
+          # survive a game-data regeneration untouched.
           echo "Uploading quarm.db"
           gh release upload data-latest backend/data/quarm.db \
             --clobber \

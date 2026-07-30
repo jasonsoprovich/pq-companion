@@ -18,15 +18,28 @@ permissions:
 # ─────────────────────────────────────────────────────────────────────────────
 # PREREQUISITES
 #
-#  quarm.db is not committed to the repository (84 MB binary). Before this
-#  workflow can succeed you must upload it once to a GitHub Release tagged
-#  "data-latest":
+#  Two generated databases are not committed to the repository, and both must
+#  exist as assets on the GitHub Release tagged "data-latest" before this
+#  workflow can succeed. The build jobs download them at build time.
+#
+#  quarm.db (84 MB) — EQ game data, regenerated with backend/cmd/dbconvert and
+#  published by data-release.yml:
 #
 #    gh release create data-latest backend/data/quarm.db \
 #      --prerelease --title "Game Database" \
 #      --notes "EQ game data — regenerate with backend/cmd/dbconvert"
 #
-#  The build jobs download it from that release at build time.
+#  maps.db (~14 MB) — zone geometry, extracted from an EQ client by
+#  backend/cmd/mapgen. Uploaded by hand, because it needs a client install that
+#  CI does not have:
+#
+#    cd backend && go run ./cmd/mapgen -client <EQ client dir>
+#    gh release upload data-latest backend/data/maps.db --clobber
+#
+#  The two move on independent cadences: quarm.db tracks server data releases,
+#  maps.db tracks the extraction pipeline. Regenerating one must never imply
+#  regenerating the other, which is why they are separate assets and why
+#  data-release.yml clobbers only quarm.db by name.
 #
 # AUTO-UPDATER
 #
@@ -65,6 +78,33 @@ jobs:
           else
             echo "::error::quarm.db not found in the 'data-latest' release."
             echo "::error::Run: gh release create data-latest backend/data/quarm.db --prerelease --title 'Game Database'"
+            exit 1
+          fi
+
+      # Zone maps. Gated exactly like quarm.db and for a sharper reason: the app
+      # hides the Map tab when maps.db is absent instead of erroring, so a build
+      # without it publishes cleanly and looks like a feature that was never
+      # written. Fail here rather than ship that.
+      #
+      # maps.db is generated offline by `cmd/mapgen` against an EQ client and
+      # uploaded by hand — it moves on its own cadence, independent of quarm.db,
+      # which is why a quarm.db data release must never regenerate it.
+      - name: Download zone maps
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p backend/data
+          if gh release download data-latest \
+              --pattern "maps.db" \
+              --dir backend/data \
+              --repo "$GITHUB_REPOSITORY" 2>/dev/null; then
+            echo "maps.db downloaded ($(du -sh backend/data/maps.db | cut -f1))"
+          else
+            echo "::error::maps.db not found in the 'data-latest' release."
+            echo "::error::Generate it on a machine with an EQ client:"
+            echo "::error::  cd backend && go run ./cmd/mapgen -client <EQ client dir>"
+            echo "::error::then upload: gh release upload data-latest backend/data/maps.db --clobber"
             exit 1
           fi
 
