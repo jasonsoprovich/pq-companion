@@ -1053,12 +1053,51 @@ copy-paste cycles.
 - **6c — Patrol routes** from `grid_entries` as line data — something no static
   map pack has, since patrol paths are server data.
 
-**Open risk, needs investigation first:** most players already have Brewall's
-packs in `map_files/`, and Zeal's overlay slots are a fixed set
-(`<zone>.txt`, `_1`, `_2`, `_3`). Writing ours could clobber theirs. Resolve
-before writing a byte into anyone's EQ directory: confirm how many slots Zeal
-reads, whether appending to an existing file works, and back up via the existing
-config backup manager first. Nothing here ships until that is answered.
+### 6.1 The clobber question — answered (2026-07-30)
+
+Resolved from Zeal's own source and README rather than by experiment, since it is
+MIT and public. The answer changes the design, so it was worth doing first.
+
+**Slots:** `map_files/<zone>.txt` plus `_1` through `_10` — eleven files per zone.
+
+**They must be contiguous**, which is the part that matters and the part I would
+have got wrong by assuming:
+
+> "The previous optional file must exist (ie: `map_files/commons_2.txt` must
+> exist) before it will check for the following one"
+
+So "write to a high slot to stay out of Brewall's way" does not work: dropping
+`commons_5.txt` next to a pack that ends at `_2` means Zeal never reads it, and
+it fails *silently*. The correct strategy is to **append at the first free slot
+in the sequence** — scan for the highest contiguous `_N` and write `_N+1`. That
+clobbers nothing and is guaranteed to load.
+
+**Format**, from `add_map_data_from_file`:
+
+```
+L x0, y0, z0, x1, y1, z1, r, g, b
+P x,  y,  z,  r, g, b, dummy, label
+```
+
+Same format as the reference corpus (§2), and the same map-space coordinates our
+`map_poi` already stores (§3) — so writing is direct, with no transform.
+
+**Constraints to respect:**
+- Label buffer is 64 bytes; truncate at 63. Our longest collapsed trap labels run
+  ~35 characters, so this bites only on the longest vendor names.
+- RGB is cast to `uint8_t`, so clamp to 0-255.
+- `data_mode` must be `both` (adds to Zeal's internal geometry) or `external`
+  (replaces it). `both` is what we want.
+- Files reload on zone change, so no manual reload command is needed.
+
+**Still unverified:** the source mentions `kMaxNonAllyTriangles = 500` around the
+vertex buffer. Whether that caps drawn map lines is unclear from reading alone,
+and Akheva would ship 129 P-lines plus whatever geometry — so a large file needs
+an in-game check before this is trusted.
+
+**Still required before writing a byte into anyone's EQ directory:** back up
+`map_files/` through the existing config backup manager, and record which files
+we wrote so removing them is exact rather than a guess.
 
 ---
 
