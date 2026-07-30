@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, Layers, FileText, Palette, Code2, PanelLeft, Crosshair, Info, Globe, MessageCircle, Coffee, Heart, ExternalLink, Eye, Gauge, Download, Headphones } from 'lucide-react'
+import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, Layers, FileText, Palette, Code2, PanelLeft, Crosshair, Info, Globe, MessageCircle, Coffee, Heart, ExternalLink, Eye, Gauge, Download, Headphones, Map as MapIcon } from 'lucide-react'
 import BackfillPanel from '../components/settings/BackfillPanel'
 import SidebarNavSettings from '../components/settings/SidebarNavSettings'
 import EqLogStatusCard from '../components/settings/EqLogStatusCard'
@@ -56,12 +56,13 @@ function formatManifestDate(d: string): string {
 }
 
 import BackupManagerPage from './BackupManagerPage'
+import GameMapExportPanel from '../components/maps/GameMapExportPanel'
 import DeveloperTab from './DeveloperTab'
 
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'discarded' | 'error'
 type UpdateState = 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'downloaded' | 'error'
-type Tab = 'general' | 'audio' | 'accessibility' | 'navigation' | 'overlays' | 'spelltimers' | 'dpscolors' | 'discord' | 'logs' | 'backups' | 'advanced' | 'about' | 'changelog' | 'developer'
+type Tab = 'general' | 'audio' | 'accessibility' | 'navigation' | 'overlays' | 'spelltimers' | 'dpscolors' | 'discord' | 'logs' | 'backups' | 'gamemaps' | 'advanced' | 'about' | 'changelog' | 'developer'
 
 interface TabBarProps {
   tabs: { id: Tab; label: string; icon: React.ReactNode }[]
@@ -76,7 +77,7 @@ interface TabBarProps {
 const TAB_GROUPS: { label: string; ids: Tab[] }[] = [
   { label: 'General', ids: ['general', 'audio', 'accessibility'] },
   { label: 'Interface', ids: ['navigation', 'overlays', 'spelltimers', 'dpscolors', 'discord'] },
-  { label: 'System', ids: ['logs', 'backups', 'advanced'] },
+  { label: 'System', ids: ['logs', 'backups', 'gamemaps', 'advanced'] },
   { label: 'About', ids: ['about', 'changelog', 'developer'] },
 ]
 
@@ -312,7 +313,7 @@ export default function SettingsPage(): React.ReactElement {
   // Allow deep-linking to a specific tab via ?tab= (e.g. links to the Logs tab
   // for backfill). Falls back to General for unknown/absent values.
   const [tab, setTab] = useState<Tab>(() => {
-    const valid: Tab[] = ['general', 'audio', 'accessibility', 'navigation', 'overlays', 'spelltimers', 'dpscolors', 'discord', 'logs', 'backups', 'advanced', 'about', 'developer']
+    const valid: Tab[] = ['general', 'audio', 'accessibility', 'navigation', 'overlays', 'spelltimers', 'dpscolors', 'discord', 'logs', 'backups', 'gamemaps', 'advanced', 'about', 'developer']
     const t = searchParams.get('tab') ?? ''
     return (valid as string[]).includes(t) ? (t as Tab) : 'general'
   })
@@ -709,6 +710,7 @@ export default function SettingsPage(): React.ReactElement {
     { id: 'discord', label: 'Discord', icon: <Headphones size={13} /> },
     { id: 'logs', label: 'Logs', icon: <FileText size={13} /> },
     { id: 'backups', label: 'EQ Config Backups', icon: <HardDrive size={13} /> },
+    { id: 'gamemaps', label: 'In-Game Map Markers', icon: <MapIcon size={13} /> },
     { id: 'advanced', label: 'Advanced', icon: <Wifi size={13} /> },
     { id: 'about', label: 'About', icon: <Info size={13} /> },
     { id: 'changelog', label: 'Changelog', icon: <Sparkles size={13} /> },
@@ -829,6 +831,17 @@ export default function SettingsPage(): React.ReactElement {
           <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
             Loading settings…
           </p>
+        </div>
+      </div>
+    )
+  }
+
+  if (tab === 'gamemaps') {
+    return (
+      <div className="flex h-full">
+        <TabBar tabs={tabs} active={tab} onChange={setTab} />
+        <div className="min-h-0 flex-1">
+          <GameMapExportPanel />
         </div>
       </div>
     )

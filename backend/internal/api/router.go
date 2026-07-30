@@ -116,7 +116,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	popflagH := &popflagHandler{store: popflagStore, hub: hub, mgr: cfgMgr}
 	changelogH := &changelogHandler{entries: changelogEntries}
 	emotesH := &emotesHandler{service: emoteService}
-	mapsH := &mapsHandler{store: mapStore, annotations: mapAnnotations}
+	mapsH := &mapsHandler{store: mapStore, annotations: mapAnnotations, cfg: cfgMgr}
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(middleware.SetHeader("Content-Type", "application/json"))
@@ -187,6 +187,10 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Post("/zone/{zone}/annotations", mapsH.createAnnotation)
 			r.Put("/annotations/{id}", mapsH.updateAnnotation)
 			r.Delete("/annotations/{id}", mapsH.deleteAnnotation)
+			// In-game map export (phase 6): writes Zeal map_files.
+			r.Get("/game-export/status", mapsH.gameMapStatus)
+			r.Post("/game-export", mapsH.gameMapExport)
+			r.Delete("/game-export", mapsH.gameMapRemove)
 		})
 
 		r.Route("/npcs", func(r chi.Router) {

@@ -91,3 +91,22 @@ export interface UserAnnotation {
   created_at: number
   updated_at: number
 }
+
+// GameMapExportStatus describes whether markers can be written into the EQ
+// folder, and what is already there.
+export interface GameMapExportStatus {
+  eq_path: string
+  ready: boolean
+  reason?: string
+  default_categories?: string[]
+  existing_files: number
+  foreign_files: number
+  exported_files: number
+}
+
+export interface GameMapExportResult {
+  written: number
+  skipped: number
+  points: number
+  dir: string
+}

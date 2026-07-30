@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	_ "modernc.org/sqlite"
@@ -223,4 +224,39 @@ func DefaultPath() string {
 		}
 	}
 	return filepath.Join("data", "maps.db")
+}
+
+// POIsByCategory returns every POI in the given categories, grouped by zone.
+//
+// Used by the in-game map export, which is a whole-corpus operation rather than
+// a per-zone one — 178 separate queries to build one export would be a lot of
+// round trips for data that is already a single small table.
+func (s *Store) POIsByCategory(categories []string) (map[string][]POI, error) {
+	if !s.Available() || len(categories) == 0 {
+		return map[string][]POI{}, nil
+	}
+	ph := strings.Repeat("?,", len(categories))
+	ph = ph[:len(ph)-1]
+	args := make([]any, len(categories))
+	for i, c := range categories {
+		args[i] = c
+	}
+	rows, err := s.db.Query(
+		`SELECT zone, id, x, y, z, category, label, source, COALESCE(ref_id, 0)
+		 FROM map_poi WHERE category IN (`+ph+`) ORDER BY zone, category, label`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("read POIs by category: %w", err)
+	}
+	defer rows.Close()
+	out := map[string][]POI{}
+	for rows.Next() {
+		var zone string
+		var p POI
+		if err := rows.Scan(&zone, &p.ID, &p.X, &p.Y, &p.Z, &p.Category,
+			&p.Label, &p.Source, &p.RefID); err != nil {
+			return nil, fmt.Errorf("scan POI: %w", err)
+		}
+		out[zone] = append(out[zone], p)
+	}
+	return out, rows.Err()
 }

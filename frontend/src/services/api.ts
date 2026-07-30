@@ -1,7 +1,10 @@
 import type { Config } from '../types/config'
 import type { Item, ItemSources, ItemQuests, QuestSummary, SearchResult, ItemShoppingRoute, ItemShoppingRouteOptions } from '../types/item'
 import type { NPC, NPCSpawns, NPCLootTable, NPCFaction, NPCSpells, NPCMerchant } from '../types/npc'
-import type { MapStatus, MapZone, MapZoneDetail, MapGeometry, UserAnnotation } from '../types/map'
+import type {
+  MapStatus, MapZone, MapZoneDetail, MapGeometry, UserAnnotation,
+  GameMapExportStatus, GameMapExportResult,
+} from '../types/map'
 import type { BuffStatDelta, Spell, SpellCrossRefs, ShoppingRoute, ShoppingRouteOptions } from '../types/spell'
 import type { EmoteColumnsPatch, EmoteStatus, SpellEmote, SpellEmoteDiff } from '../types/emote'
 import type { Zone, ZoneConnection, ZoneGroundSpawn, ZoneForageItem, ZoneDropItem } from '../types/zone'
@@ -489,6 +492,23 @@ export async function deleteMapAnnotation(id: number): Promise<void> {
 // internal/mapgen/annotations.json reads, so a submission needs no conversion.
 export function getMapAnnotationExport(): Promise<unknown> {
   return get<unknown>('/api/maps/annotations/export')
+}
+
+// ── In-game map export (phase 6) ──────────────────────────────────────────────
+
+export function getGameMapExportStatus(): Promise<GameMapExportStatus> {
+  return get<GameMapExportStatus>('/api/maps/game-export/status')
+}
+
+export function runGameMapExport(categories: string[]): Promise<GameMapExportResult> {
+  return post<GameMapExportResult>('/api/maps/game-export', { categories })
+}
+
+export async function removeGameMapExport(): Promise<{ removed: number; kept: number }> {
+  const baseUrl = await getBackendBaseUrl()
+  const res = await fetch(`${baseUrl}/api/maps/game-export`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`remove map export: ${res.statusText}`)
+  return res.json() as Promise<{ removed: number; kept: number }>
 }
 
 export function getNPCMerchant(id: number): Promise<NPCMerchant> {

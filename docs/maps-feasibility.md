@@ -1032,7 +1032,7 @@ Constraint: Windows + Zeal only, and the pipe has no staleness detection
 (`project_npc_overlay_pipe_stall_no_fallback`), so a dead pipe must read as "no
 position" rather than freezing the arrow somewhere misleading.
 
-### Phase 6 — Export our POIs to the in-game map
+### Phase 6 — Export our POIs to the in-game map (built 2026-07-30)
 
 Grokii's original ask, fully realised, and a different thing from the existing
 "Pin in game" button — worth being precise, because they look similar:
@@ -1047,11 +1047,30 @@ Grokii's original ask, fully realised, and a different thing from the existing
 So: Akheva's 129 trap markers become 129 pins on the in-game map instead of 129
 copy-paste cycles.
 
-- **6a — Emit `map_files/<zone>_N.txt`** from `map_poi`, grouped into packs the
-  player chooses (traps only / vendors / everything).
-- **6b — Write into `config.EQPath`**, then prompt `/map data_mode both`.
-- **6c — Patrol routes** from `grid_entries` as line data — something no static
-  map pack has, since patrol paths are server data.
+- **6a/6b — Done.** `internal/mapexport` writes P-line files into
+  `<EQPath>/map_files`, exposed as Settings → In-Game Map Markers with per-category
+  toggles. Defaults to the categories no existing map set carries (traps, locked
+  doors, teleports, switches, plus the user's own markers); vendors, zone lines
+  and raid targets are available but off, since packs already mark those. The UI
+  prompts for `/map data_mode both` after writing, without which the export
+  appears to do nothing.
+
+  Measured on the real corpus: 1,398 markers across 94 zones.
+
+  **The safety property is the design.** Ownership is tracked by content hash in
+  `~/.pq-companion/map_export.json` — outside `map_files`, because the format
+  permits no comments, so a marker line would fail the parse and a base file that
+  fails to parse disables external data for the whole zone. From that:
+  - With a foreign pack present, we append at the first free contiguous slot.
+    Verified against a fixture with a foreign base + `_1`: we took `_2` and left
+    both of theirs byte-identical.
+  - Remove deletes only files whose contents still match what we wrote. Verified
+    by overwriting one of ours before removing: 93 deleted, that one kept, the
+    foreign files untouched.
+  - A corrupt manifest authorises nothing, rather than falling back to
+    path-matching and deleting somebody's map pack.
+- **6c — Patrol routes** from `grid_entries` as line data, still to do. Something
+  no static map pack has, since patrol paths are server data.
 
 ### 6.1 The clobber question — answered (2026-07-30)
 

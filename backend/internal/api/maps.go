@@ -4,9 +4,14 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/mapexport"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/maps"
 )
 
@@ -16,6 +21,8 @@ type mapsHandler struct {
 	// maps.db is a shipped read-only artifact replaced by every app update —
 	// anything written there would be destroyed on the next release.
 	annotations *maps.AnnotationStore
+	// cfg supplies the EQ install path for the in-game map export.
+	cfg *config.Manager
 }
 
 // status reports whether map data is present, so the UI can hide map features
@@ -175,4 +182,141 @@ func (h *mapsHandler) exportAnnotations(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, maps.BuildExport(rows))
+}
+
+// ── In-game map export (phase 6) ──────────────────────────────────────────────
+
+// mapExportManifest is where ownership of written files is tracked. Outside the
+// EQ directory because the file format permits no comments, so the marker cannot
+// live in-band; see internal/mapexport.
+func (h *mapsHandler) mapExportManifest() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".pq-companion", "map_export.json")
+}
+
+// gameMapStatus reports whether an export is possible and what is already there.
+func (h *mapsHandler) gameMapStatus(w http.ResponseWriter, r *http.Request) {
+	eq := h.cfg.Get().EQPath
+	out := map[string]any{
+		"eq_path":            eq,
+		"default_categories": mapexport.DefaultCategories,
+	}
+	if eq == "" {
+		out["ready"] = false
+		out["reason"] = "EQ folder is not set in Settings"
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
+	if _, err := os.Stat(eq); err != nil {
+		out["ready"] = false
+		out["reason"] = "EQ folder does not exist: " + eq
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
+	out["ready"] = true
+
+	m, err := mapexport.LoadManifest(h.mapExportManifest())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	out["exported_files"] = len(m.Files)
+
+	// Whether a foreign map pack is present changes which slot we take, so say so.
+	entries, _ := os.ReadDir(filepath.Join(eq, mapexport.MapFilesDir))
+	foreign := 0
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".txt") {
+			continue
+		}
+		if _, ours := m.Files[e.Name()]; !ours {
+			foreign++
+		}
+	}
+	out["existing_files"] = len(entries)
+	out["foreign_files"] = foreign
+	writeJSON(w, http.StatusOK, out)
+}
+
+type gameMapExportRequest struct {
+	Categories []string `json:"categories"`
+}
+
+func (h *mapsHandler) collectPoints(categories []string) (map[string][]mapexport.Point, error) {
+	if len(categories) == 0 {
+		categories = mapexport.DefaultCategories
+	}
+	byZone, err := h.store.POIsByCategory(categories)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string][]mapexport.Point{}
+	for zone, pois := range byZone {
+		for _, p := range pois {
+			out[zone] = append(out[zone], mapexport.Point{
+				X: p.X, Y: p.Y, Z: p.Z, Category: p.Category, Label: p.Label,
+			})
+		}
+	}
+	// The user's own markers ride along, so a note placed in the app shows up in
+	// game without a second action.
+	own, err := h.annotations.All()
+	if err != nil {
+		return nil, err
+	}
+	want := map[string]bool{}
+	for _, c := range categories {
+		want[c] = true
+	}
+	for _, a := range own {
+		if !want[a.Category] {
+			continue
+		}
+		out[a.Zone] = append(out[a.Zone], mapexport.Point{
+			X: a.X, Y: a.Y, Z: a.Z, Category: a.Category, Label: a.Label,
+		})
+	}
+	return out, nil
+}
+
+// gameMapExport writes the marker files into the EQ directory.
+func (h *mapsHandler) gameMapExport(w http.ResponseWriter, r *http.Request) {
+	eq := h.cfg.Get().EQPath
+	if eq == "" {
+		writeError(w, http.StatusBadRequest, "EQ folder is not set in Settings")
+		return
+	}
+	var body gameMapExportRequest
+	// An empty body is a valid request meaning "use the defaults".
+	_ = json.NewDecoder(r.Body).Decode(&body)
+
+	points, err := h.collectPoints(body.Categories)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	res, err := mapexport.Write(eq, h.mapExportManifest(), points)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+// gameMapRemove deletes the files we wrote, and only those.
+func (h *mapsHandler) gameMapRemove(w http.ResponseWriter, r *http.Request) {
+	eq := h.cfg.Get().EQPath
+	if eq == "" {
+		writeError(w, http.StatusBadRequest, "EQ folder is not set in Settings")
+		return
+	}
+	removed, kept, err := mapexport.Remove(eq, h.mapExportManifest())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"removed": removed, "kept": kept})
 }
