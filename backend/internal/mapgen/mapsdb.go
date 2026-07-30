@@ -105,13 +105,24 @@ func WriteMapsDB(path string, zones []ZoneOutput, pois []POI) error {
 				return fmt.Errorf("insert %s outline layer: %w", z.Zone, err)
 			}
 		}
-		// Z bounds come from the drawn segments across every layer, not from the
-		// raw mesh: the depth slider filters what is on screen, so its range has
-		// to match what is on screen.
+		// Bounds come from the drawn segments across every layer, not from the raw
+		// mesh, for the same reason in both axes: these numbers drive what the
+		// renderer fits to screen and what the depth slider can reach, so they
+		// have to describe what is actually on screen.
+		//
+		// The XY case is not hypothetical. Plane of Sky's mesh includes a skybox
+		// and a death plane spanning the whole zone; those are dropped from the
+		// drawn output (see dropShellPlanes), but a mesh-derived bound would
+		// still stretch to them and squeeze the actual islands into the middle of
+		// the canvas.
 		minZ, maxZ := segmentZRange(z.Segments, z.Detail, z.Outline)
+		minX, minY, maxX, maxY := z.MinX, z.MinY, z.MaxX, z.MaxY
+		if bx0, by0, bx1, by1, ok := segmentXYRange(z.Segments, z.Detail, z.Outline); ok {
+			minX, minY, maxX, maxY = bx0, by0, bx1, by1
+		}
 		if _, err := insZone.Exec(z.Zone,
-			clampCoord(z.MinX), clampCoord(z.MinY),
-			clampCoord(z.MaxX), clampCoord(z.MaxY),
+			clampCoord(minX), clampCoord(minY),
+			clampCoord(maxX), clampCoord(maxY),
 			string(z.Technique), z.Occupancy, z.BoundaryDensity, z.ZSpan,
 			clampCoord(minZ), clampCoord(maxZ),
 		); err != nil {
@@ -266,6 +277,25 @@ func UnpackSegments(blob []byte) ([]Segment, error) {
 		})
 	}
 	return segs, nil
+}
+
+// segmentXYRange returns the footprint spanned by every given layer, and
+// whether there was anything to measure.
+func segmentXYRange(layers ...[]Segment) (minX, minY, maxX, maxY float64, ok bool) {
+	minX, minY = math.Inf(1), math.Inf(1)
+	maxX, maxY = math.Inf(-1), math.Inf(-1)
+	for _, segs := range layers {
+		for _, s := range segs {
+			minX = math.Min(minX, math.Min(s.A.X, s.B.X))
+			minY = math.Min(minY, math.Min(s.A.Y, s.B.Y))
+			maxX = math.Max(maxX, math.Max(s.A.X, s.B.X))
+			maxY = math.Max(maxY, math.Max(s.A.Y, s.B.Y))
+		}
+	}
+	if math.IsInf(minX, 1) {
+		return 0, 0, 0, 0, false
+	}
+	return minX, minY, maxX, maxY, true
 }
 
 // segmentZRange returns the height range spanned by every given layer.

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -119,8 +120,23 @@ func (w *welder) add(v Vec3) int {
 	return i
 }
 
+// Shell-plane detection. See dropShellPlanes for what this is and why.
+const (
+	// shellCoverage is the share of the zone footprint a candidate plane must
+	// cover. Real ground is never this flat across a whole zone.
+	shellCoverage = 0.85
+	// shellGap is how far the plane must sit from any other walkable surface.
+	// This is the condition doing the real work: a genuine floor has things
+	// resting on it at nearby heights — ramps, objects, the bottom edges of
+	// walls — while a skybox has nothing near it at all.
+	shellGap = 250.0
+	// shellTolerance groups faces into one plane. These are flat by
+	// construction, so this only absorbs float noise.
+	shellTolerance = 5.0
+)
+
 // WalkableFaces returns the indices of triangles a player could stand on:
-// collidable, and facing far enough upward.
+// collidable, facing far enough upward, and not part of a shell plane.
 func (z *Zone) WalkableFaces() []int {
 	out := make([]int, 0, len(z.Triangles)/2)
 	for i, t := range z.Triangles {
@@ -131,6 +147,101 @@ func (z *Zone) WalkableFaces() []int {
 			continue
 		}
 		out = append(out, i)
+	}
+	return z.dropShellPlanes(out)
+}
+
+// dropShellPlanes removes the flat planes that bound a zone rather than floor
+// it — a skybox ceiling, a death plane, an ocean floor.
+//
+// These are collidable and face upward, so nothing about the geometry marks
+// them as different, and in Plane of Sky they wrecked the map three ways at
+// once: 578 faces at z=-2848 and 578 at z=+1847 each covered 100% of the
+// footprint, which stretched the zone bounds so the actual islands were squeezed
+// into the middle of the canvas, drove occupancy to 0.99 so the classifier chose
+// boundary extraction over the banded silhouette that separates the islands, and
+// drew a distracting rectangle around everything.
+//
+// Deliberately narrow. Loosening either threshold to 0.5/100 catches 39 planes
+// across the corpus, including ocean surfaces and sky planes in outdoor zones
+// where they may well be legitimate walkable geometry; at 0.85/250 it catches
+// three, in Plane of Sky and Erud's Crossing, all unambiguous. Removing real
+// floor would be a far worse failure than leaving a stray rectangle, so this
+// errs at the strict end and the numbers were measured before they were picked.
+func (z *Zone) dropShellPlanes(faces []int) []int {
+	if len(faces) < 2 {
+		return faces
+	}
+	minX, minY, maxX, maxY := z.Bounds()
+	bbox := (maxX - minX) * (maxY - minY)
+	if bbox <= 0 {
+		return faces
+	}
+
+	type entry struct {
+		idx  int
+		z    float64
+		area float64
+	}
+	fs := make([]entry, 0, len(faces))
+	for _, i := range faces {
+		t := z.Triangles[i]
+		a, b, c := z.Vertices[t.A], z.Vertices[t.B], z.Vertices[t.C]
+		fs = append(fs, entry{
+			idx:  i,
+			z:    (a.Z + b.Z + c.Z) / 3,
+			area: math.Abs((b.X-a.X)*(c.Y-a.Y)-(b.Y-a.Y)*(c.X-a.X)) / 2,
+		})
+	}
+	sort.Slice(fs, func(i, j int) bool { return fs[i].z < fs[j].z })
+
+	drop := map[int]bool{}
+	// shell walks inward from one end, accumulating the outermost plane, and
+	// marks it for removal if it is both broad enough and isolated enough.
+	shell := func(fromBottom bool) {
+		var acc, gap float64
+		var members []int
+		if fromBottom {
+			planeZ := fs[0].z
+			for _, f := range fs {
+				if f.z-planeZ > shellTolerance {
+					gap = f.z - planeZ
+					break
+				}
+				acc += f.area
+				members = append(members, f.idx)
+			}
+		} else {
+			planeZ := fs[len(fs)-1].z
+			for i := len(fs) - 1; i >= 0; i-- {
+				if planeZ-fs[i].z > shellTolerance {
+					gap = planeZ - fs[i].z
+					break
+				}
+				acc += fs[i].area
+				members = append(members, fs[i].idx)
+			}
+		}
+		// A zero gap means the plane is the entire zone; leave it alone rather
+		// than delete every face.
+		if gap < shellGap || acc/bbox < shellCoverage || len(members) == len(fs) {
+			return
+		}
+		for _, i := range members {
+			drop[i] = true
+		}
+	}
+	shell(true)
+	shell(false)
+	if len(drop) == 0 {
+		return faces
+	}
+
+	out := faces[:0:0]
+	for _, i := range faces {
+		if !drop[i] {
+			out = append(out, i)
+		}
 	}
 	return out
 }
