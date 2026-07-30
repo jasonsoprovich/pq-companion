@@ -969,7 +969,44 @@ Note the interaction with 13.2: depth filtering is much finer in Detailed mode
 (up to 14 bands) than Outline (4). Outline trades depth granularity for
 legibility, which is the right trade for its purpose but worth knowing.
 
-### 13.4 On borrowing from Brewall
+### 13.4 Height colouring
+
+Brewall colours lines by level — the tunnels beneath Fungus Grove and the temple
+above them are different colours, which is why two lines crossing on his map are
+obviously not at the same place. Confirmed from the PQDI screenshots: the purple
+network appears and disappears as the Z slider moves while the black lines stay.
+
+We can derive this rather than hand-author it, since every segment carries its
+height. Three decisions that mattered:
+
+1. **Sequential ramp, never a rainbow.** Elevation is ordered data and a hue
+   cycle destroys the ordering — nothing about magenta says "above green". Cool
+   → neutral → warm, desaturated so the POI pins stay dominant.
+2. **Anchored on the modal height, not min/max.** Stretching the ramp between
+   the extremes sounds more principled and looks far worse: Fungus Grove spans
+   −495..66 but nearly all of it sits near the top, so a linear stretch painted
+   most of the zone one hot colour and spent the cool half of the ramp on a
+   handful of segments — a thermal camera, not a map. Anchoring the neutral stop
+   to where the zone actually is makes colour mean "unusually high or low *for
+   this zone*", which is both more useful and what the hand-drawn maps say.
+3. **Dim by distance from the main level.** Colour alone gave every level equal
+   visual weight, so Necropolis — whose cavern shell sits well above its
+   tunnels — came out mostly orange with the tunnels lost inside it. Fading with
+   distance from the modal band makes prominence track usefulness: the floor
+   you are most likely standing on is brightest, everything else is context.
+
+The legend is not decoration — a ramp with no key is just decoration. Its stops
+are drawn at the width of the height range that actually maps to them, so it
+describes the anchored scale rather than implying a plain min-max gradient.
+
+Cost is flat: opacity bucket and height band are both derived from the same Z, so
+one pass assigns each segment to its pair. Total work is unchanged from before
+colour existed rather than one extra full scan per ramp step.
+
+Side benefit: in Detailed mode this turns contour zones into genuine hypsometric
+topographic maps, which is what contour lines want to be.
+
+### 13.5 On borrowing from Brewall
 
 Still no reply to the permission request (§5.4), so nothing of his is used. The
 outline results suggest that for *geometry* we do not need to: the shapes come

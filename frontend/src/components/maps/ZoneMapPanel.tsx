@@ -62,6 +62,10 @@ export function ZoneMapPanel({
   )
   const [selected, setSelected] = useState<MapPOI | null>(null)
   const [showDetail, setShowDetail] = useCachedState('maps.detail', true)
+  // On by default: in a multi-level zone it is the difference between two lines
+  // crossing and two lines at different heights, which a flat rendering cannot
+  // express at all.
+  const [heightColor, setHeightColor] = useCachedState('maps.heightColor', true)
   const [copied, setCopied] = useState<string | null>(null)
 
   const visible = useMemo(() => new Set(enabled), [enabled])
@@ -166,6 +170,20 @@ export function ZoneMapPanel({
             Detail <span className="opacity-60">{detail.count}</span>
           </button>
         )}
+        {zone.z_span >= 40 && (
+          <button
+            onClick={() => setHeightColor((v) => !v)}
+            title="Tint lines by height — cool below, warm above, so stacked levels are distinguishable"
+            className="rounded border px-1.5 py-0.5 text-[10px] font-medium"
+            style={{
+              backgroundColor: heightColor ? 'var(--color-surface-2)' : 'transparent',
+              borderColor: heightColor ? 'var(--color-primary)' : 'var(--color-border)',
+              color: heightColor ? 'var(--color-primary)' : 'var(--color-muted)',
+            }}
+          >
+            Height colours
+          </button>
+        )}
         {showZoneButton && (
           <button
             onClick={() => copy('showzone', mapShowZoneCommand(zone.zone))}
@@ -196,6 +214,7 @@ export function ZoneMapPanel({
             showDetail={showDetail}
             outline={outline}
             mode={mode}
+            colorByHeight={heightColor}
             pois={pois}
             visibleCategories={visible}
             highlights={selected ? [{ x: selected.x, y: selected.y, z: selected.z }] : []}

@@ -34,6 +34,9 @@ export interface ZoneMapProps {
   // outline is the clean layer; drawn instead of geometry+detail in outline mode.
   outline?: MapGeometry | null
   mode?: MapRenderMode
+  // colorByHeight tints geometry along an elevation ramp instead of drawing it
+  // in one colour.
+  colorByHeight?: boolean
   pois: MapPOI[]
   // visibleCategories gates POI layers; undefined shows all.
   visibleCategories?: Set<MapPOICategory>
@@ -77,6 +80,96 @@ const GEOMETRY_COLOR: Record<MapZone['technique'], string> = {
 // there — and looking the same everywhere is the whole point of the mode.
 const OUTLINE_COLOR = '#cbd5e1'
 
+// HEIGHT_RAMP tints geometry by elevation — low to high.
+//
+// This is the one thing hand-drawn EQ maps do that a single-colour rendering
+// cannot: Brewall draws the tunnels beneath Fungus Grove and the temple above
+// them in different colours, so you can tell at a glance that two lines
+// crossing on screen are nowhere near each other in the world. Since every
+// segment already carries its height, we can derive that instead of hand-
+// authoring it.
+//
+// Sequential (cool -> neutral -> warm), never a rainbow: elevation is ordered
+// data, and a hue cycle destroys the ordering — nothing about magenta says
+// "above green". Deliberately desaturated so the saturated POI pins stay the
+// most prominent thing on the canvas; the geometry is context, the pins are the
+// answer to a question.
+const HEIGHT_RAMP = [
+  '#4c6ef5', // deepest — under everything
+  '#3aa8c1',
+  '#5eead4',
+  '#cbd5e1', // mid — the level most zones are mostly at
+  '#e8c88a',
+  '#e8a04c',
+  '#e2703a', // highest — rooftops, upper platforms
+]
+
+// HEIGHT_BANDS is how many steps the ramp is quantised into. Matched to the
+// ramp length: more bands than colours would repeat hues at different heights,
+// which is worse than no colour at all.
+const HEIGHT_BANDS = HEIGHT_RAMP.length
+
+// NEUTRAL_BAND is the index of the uncoloured stop in the ramp.
+const NEUTRAL_BAND = 3
+
+// bandAlpha dims geometry the further it sits from the zone's main level.
+//
+// Colour alone told you which level a line was on but gave every level the same
+// visual weight, so a zone whose cavern shell sits well above its tunnels came
+// out mostly hot orange with the tunnels lost inside it. Fading by distance from
+// the main level makes prominence track usefulness: the floor you are most
+// likely standing on is the brightest thing, and the rest reads as context
+// without losing its colour.
+const bandAlpha = (band: number): number => 1 - 0.13 * Math.abs(band - NEUTRAL_BAND)
+
+// heightScale maps a segment height to a ramp index.
+//
+// Anchored on the zone's *modal* height rather than stretched between its
+// extremes. Anchoring to min/max sounds more principled and looks far worse:
+// Fungus Grove spans -495..66 but nearly all of it sits near the top, so a
+// linear stretch painted most of the zone in one hot colour and reserved the
+// cool half of the ramp for a handful of segments. The map came out looking
+// like a thermal camera.
+//
+// Anchoring the neutral stop to where the zone actually is makes colour mean
+// "unusually high or low for this zone" instead of "height", which is both the
+// more useful statement and what hand-drawn maps effectively say — a neutral
+// base with the tunnels beneath and structures above called out.
+//
+// Steps stay uniform in world units, so equal colour steps are equal height
+// steps; only the ends saturate.
+interface HeightScale {
+  bandWidth: number
+  offset: number
+  zLo: number
+  zHi: number
+  indexOf: (z: number) => number
+}
+
+function heightScale(zLo: number, zHi: number, coords: Int16Array, count: number): HeightScale {
+  const bandWidth = Math.max(1, (zHi - zLo) / HEIGHT_BANDS)
+  const rawBand = (z: number): number => Math.floor((z - zLo) / bandWidth)
+
+  // Histogram of raw bands, so the busiest one can take the neutral colour.
+  const hist = new Array(HEIGHT_BANDS + 2).fill(0)
+  for (let i = 0; i < count; i++) {
+    const o = i * 6
+    const b = rawBand((coords[o + 2] + coords[o + 5]) / 2)
+    hist[Math.max(0, Math.min(HEIGHT_BANDS + 1, b))]++
+  }
+  let modal = 0
+  for (let b = 1; b < hist.length; b++) if (hist[b] > hist[modal]) modal = b
+
+  const offset = NEUTRAL_BAND - modal
+  return {
+    bandWidth,
+    offset,
+    zLo,
+    zHi,
+    indexOf: (z) => Math.max(0, Math.min(HEIGHT_BANDS - 1, rawBand(z) + offset)),
+  }
+}
+
 export function ZoneMap({
   zone,
   geometry,
@@ -84,6 +177,7 @@ export function ZoneMap({
   showDetail = true,
   outline,
   mode = 'outline',
+  colorByHeight = true,
   pois,
   visibleCategories,
   highlights,
@@ -113,6 +207,22 @@ export function ZoneMap({
     () => pois.filter((p) => !visibleCategories || visibleCategories.has(p.category)),
     [pois, visibleCategories],
   )
+
+  // Height tinting is only meaningful where there is vertical range to describe.
+  const tinted = colorByHeight && zone.z_span >= 40
+  // Built from the layer actually being drawn, since the modal height depends on
+  // which segments are on screen.
+  const primaryLayer = mode === 'outline' ? outline : geometry
+  const zScale = useMemo(() => {
+    if (!tinted || !primaryLayer || primaryLayer.count === 0) return null
+    return heightScale(
+      zone.min_z,
+      Math.max(zone.max_z, zone.min_z + 1),
+      primaryLayer.coords,
+      primaryLayer.count,
+    )
+  }, [tinted, primaryLayer, zone.min_z, zone.max_z])
+
 
   useEffect(() => {
     const el = wrapRef.current
@@ -185,7 +295,12 @@ export function ZoneMap({
     // map from a wireframe dump. The primary layer defines the zone and gets
     // full weight; the detail layer is texture and gets a hairline, so it adds
     // information without competing.
-    const drawLayer = (g: MapGeometry, color: string, width: number, scale: number): void => {
+    const drawLayer = (
+      g: MapGeometry,
+      color: string,
+      width: number,
+      alphaScale: number,
+    ): void => {
       const c = g.coords
       ctx.lineWidth = width
       ctx.lineCap = 'round'
@@ -201,7 +316,7 @@ export function ZoneMap({
       // Bucketed rather than per-segment alpha because globalAlpha cannot vary
       // within a path: a continuous ramp would force one stroke() per segment,
       // and these zones run to tens of thousands.
-      const ALPHAS = (depth ? [1, 0.5, 0.25, 0.1] : [1]).map((a) => a * scale)
+      const ALPHAS = (depth ? [1, 0.5, 0.25, 0.1] : [1]).map((a) => a * alphaScale)
       // Fade steps are sized relative to the window, so a narrow window fades
       // off sharply and a wide one trails away gently.
       const step = Math.max(1, (depth ? depth.hi - depth.lo : 0) / 2)
@@ -212,22 +327,38 @@ export function ZoneMap({
         return Math.min(ALPHAS.length - 1, 1 + Math.floor(d / step))
       }
 
-      // Draw faintest first so in-focus lines land on top.
+      // One path per (opacity bucket, height band). Both are derived from the
+      // same Z, so a single pass assigns each segment to its pair and the total
+      // work stays one visit per segment per bucket — the same as before colour
+      // was added, rather than one extra full scan per ramp step.
+      const nBands = zScale ? HEIGHT_BANDS : 1
+      const paths: number[][] = Array.from({ length: ALPHAS.length * nBands }, () => [])
+      for (let i = 0; i < g.count; i++) {
+        const o = i * 6
+        const zMid = (c[o + 2] + c[o + 5]) / 2
+        const band = zScale ? zScale.indexOf(zMid) : 0
+        paths[bucketOf(zMid) * nBands + band].push(i)
+      }
+
+      // Draw faintest first so in-focus lines land on top, and within an
+      // opacity bucket draw low bands first so upper structures read as being
+      // on top of what they sit above.
       for (let b = ALPHAS.length - 1; b >= 0; b--) {
-        ctx.beginPath()
-        ctx.strokeStyle = color
-        ctx.globalAlpha = ALPHAS[b]
-        let any = false
-        for (let i = 0; i < g.count; i++) {
-          const o = i * 6
-          if (bucketOf((c[o + 2] + c[o + 5]) / 2) !== b) continue
-          any = true
-          const [x1, y1] = toScreen(c[o], c[o + 1])
-          const [x2, y2] = toScreen(c[o + 3], c[o + 4])
-          ctx.moveTo(x1, y1)
-          ctx.lineTo(x2, y2)
+        for (let band = 0; band < nBands; band++) {
+          const idx = paths[b * nBands + band]
+          if (idx.length === 0) continue
+          ctx.beginPath()
+          ctx.strokeStyle = zScale ? HEIGHT_RAMP[band] : color
+          ctx.globalAlpha = ALPHAS[b] * (zScale ? bandAlpha(band) : 1)
+          for (const i of idx) {
+            const o = i * 6
+            const [x1, y1] = toScreen(c[o], c[o + 1])
+            const [x2, y2] = toScreen(c[o + 3], c[o + 4])
+            ctx.moveTo(x1, y1)
+            ctx.lineTo(x2, y2)
+          }
+          ctx.stroke()
         }
-        if (any) ctx.stroke()
       }
       ctx.globalAlpha = 1
     }
@@ -328,7 +459,7 @@ export function ZoneMap({
       ctx.fill()
       ctx.restore()
     }
-  }, [geometry, shown, zone, size, toScreen, view.zoom, depth, highlights, playerPos, showLabels, detail, showDetail, outline, mode])
+  }, [geometry, shown, zone, size, toScreen, view.zoom, depth, highlights, playerPos, showLabels, detail, showDetail, outline, mode, zScale])
 
   // Wheel zoom is attached natively with passive:false. React registers wheel
   // as a passive listener, so preventDefault() there is ignored — it never
@@ -435,7 +566,57 @@ export function ZoneMap({
         </button>
       </div>
 
+      {zScale && <HeightLegend scale={zScale} />}
       <DepthControl zone={zone} depth={depth} onChange={setDepth} />
+    </div>
+  )
+}
+
+// HeightLegend keys the elevation ramp to actual world heights.
+//
+// Not optional decoration: a colour ramp with no key is just decoration. The
+// point of tinting by height is to know that an orange line is above a blue one
+// and roughly by how much, and the numbers are what make that readable rather
+// than merely pretty. Values are z as EQ reports it, so they can be compared
+// against /loc directly.
+function HeightLegend({ scale }: { scale: HeightScale }): React.ReactElement {
+  // Each stop is shown at the width of the height range that actually maps to
+  // it, so the legend describes the anchored scale rather than a plain min-max
+  // gradient. The two end stops absorb everything past the ramp and so come out
+  // wider; drawing them all equal would misstate the mapping.
+  const { zLo, zHi, bandWidth, offset } = scale
+  const cells = HEIGHT_RAMP.map((color, ci) => {
+    // Raw band ci - offset maps here; the first and last stops also absorb
+    // everything beyond the ramp in their direction.
+    const from = ci === 0 ? zLo : zLo + (ci - offset) * bandWidth
+    const to = ci === HEIGHT_RAMP.length - 1 ? zHi : zLo + (ci - offset + 1) * bandWidth
+    const lo = Math.max(zLo, Math.min(zHi, from))
+    const hi = Math.max(zLo, Math.min(zHi, to))
+    return { color, span: Math.max(0, hi - lo) }
+  }).filter((c) => c.span > 0)
+
+  const total = cells.reduce((a, c) => a + c.span, 0) || 1
+
+  return (
+    <div
+      className="absolute right-2 bottom-2 flex items-center gap-1.5 rounded px-2 py-1"
+      style={{ backgroundColor: 'var(--color-surface-2)' }}
+      title="Line colour is height: cool below the zone's main level, warm above it"
+    >
+      <span className="text-[10px] tabular-nums" style={{ color: 'var(--color-muted)' }}>
+        {Math.round(zLo)}
+      </span>
+      <div className="flex overflow-hidden rounded" style={{ height: 5, width: 90 }}>
+        {cells.map((c) => (
+          <div
+            key={c.color}
+            style={{ backgroundColor: c.color, width: `${(c.span / total) * 100}%` }}
+          />
+        ))}
+      </div>
+      <span className="text-[10px] tabular-nums" style={{ color: 'var(--color-muted)' }}>
+        {Math.round(zHi)}
+      </span>
     </div>
   )
 }
