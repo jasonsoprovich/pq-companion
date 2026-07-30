@@ -22,6 +22,13 @@ const LAYERS: { key: MapPOICategory; label: string; on: boolean }[] = [
   { key: 'raid_target', label: 'Raid targets', on: true },
   { key: 'zone_line', label: 'Zone lines', on: true },
   { key: 'trap', label: 'Traps', on: true },
+  // All three default on despite adding to the default set: they are low-count
+  // by nature (173 locked, 387 teleports and 29 switches across all 178 zones),
+  // so they cannot clutter a zone the way doors or ground spawns do, and each
+  // answers a question you would otherwise have to leave the app for.
+  { key: 'locked', label: 'Locked', on: true },
+  { key: 'teleport', label: 'Teleports', on: true },
+  { key: 'switch', label: 'Switches', on: true },
   { key: 'succor', label: 'Succor', on: false },
   { key: 'door', label: 'Doors', on: false },
   { key: 'ground_spawn', label: 'Ground spawns', on: false },
@@ -248,7 +255,9 @@ export function ZoneMapPanel({
               <button
                 onClick={() =>
                   navigate(
-                    selected.category === 'ground_spawn'
+                    // ground_spawn ref_id is the item that spawns; a locked
+                    // door's is the key that opens it. Everything else is an NPC.
+                    selected.category === 'ground_spawn' || selected.category === 'locked'
                       ? `/items?select=${selected.ref_id}`
                       : `/npcs?select=${selected.ref_id}`,
                   )

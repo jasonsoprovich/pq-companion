@@ -21,6 +21,17 @@ const (
 	CategoryVendor      = "vendor"
 	CategoryRaidTarget  = "raid_target"
 	CategoryDoor        = "door"
+	// CategoryLocked is a door that needs a key or a lockpick. Split from
+	// CategoryDoor because it answers a different question — not "where can I
+	// go" but "what do I need to get in", which is the thing worth a layer of
+	// its own and worth naming the actual key for.
+	CategoryLocked = "locked"
+	// CategorySwitch is something to operate: a lever, a plate, an elevator.
+	CategorySwitch = "switch"
+	// CategoryTeleport is a door whose destination is inside the same zone —
+	// the unmarked ports that make zones like Sanctus Seru and Plane of Justice
+	// navigable, and which no static map set records.
+	CategoryTeleport = "teleport"
 )
 
 // POI is one labelled point on a zone map.
@@ -312,42 +323,124 @@ func scanNPCPOIs(rows *sql.Rows, category, source string) ([]POI, error) {
 	return out, rows.Err()
 }
 
+// switchNamePattern matches door names that are controls rather than doors.
+//
+// Needed because `triggerdoor` is not the signal it looks like. 667 doors carry
+// it, but it only means "opening this opens that", and the overwhelming majority
+// are ordinary double doors wired to their own other half — Paineel's PADOOR101
+// and PADOOR102 account for 372 rows between them. Pinning those would bury the
+// ~15 genuine levers and plates in door-pair noise. Names are crude but they are
+// the only thing that separates a lever from a hinge here.
+const switchNamePattern = `(
+	   upper(d.name) LIKE '%SWITCH%' OR upper(d.name) LIKE '%SWTCH%'
+	OR upper(d.name) LIKE '%LEVER%'  OR upper(d.name) LIKE '%LEVR%'
+	OR upper(d.name) LIKE '%PULL%'   OR upper(d.name) LIKE '%CHAIN%'
+	OR upper(d.name) LIKE '%BUTTON%' OR upper(d.name) LIKE '%PLATE%'
+	OR upper(d.name) LIKE '%HANDLE%' OR upper(d.name) LIKE '%CRANK%'
+	OR upper(d.name) LIKE '%WHEEL%'
+)`
+
+// poiDoors turns the doors table into annotations.
+//
+// Of 8,205 doors, most are ordinary interior doors a player walks through
+// without thinking, and pinning them all would be pure noise. What is worth a
+// pin is a door that stops you or moves you: one that needs a key or a pick, one
+// that leads somewhere, one that is really a lever or a lift.
+//
+// This is the derive-first half of the annotation layer (§10 phase 4a). The same
+// facts that hand-drawn maps mark by hand — locked doors, hidden ports, levers —
+// are sitting in the server's own data, and derived beats hand-entered: it is
+// verifiable, it regenerates with a data release, and it carries detail an
+// annotation cannot. A hand-marked map says "locked"; this says which key, and
+// links to it.
 func poiDoors(qdb *sql.DB, _ map[int]string) ([]POI, error) {
-	// Only doors worth pinning: ones that need a key, or that lead somewhere.
-	// All 8,205 doors would be noise — most are ordinary interior doors a
-	// player walks through without thinking.
 	rows, err := qdb.Query(`
-		SELECT zone, pos_x, pos_y, pos_z, COALESCE(dest_zone, ''), keyitem, id
-		FROM doors
-		WHERE keyitem > 0
-		   OR (dest_zone IS NOT NULL AND dest_zone != '' AND dest_zone != 'NONE')`)
+		SELECT d.zone, d.pos_x, d.pos_y, d.pos_z,
+		       COALESCE(d.dest_zone, ''), d.dest_x, d.dest_y, d.dest_z,
+		       d.keyitem, d.altkeyitem, d.lockpick, d.islift,
+		       COALESCE(k.Name, ''), COALESCE(a.Name, ''), d.id
+		FROM doors d
+		LEFT JOIN items k ON k.id = d.keyitem
+		LEFT JOIN items a ON a.id = d.altkeyitem
+		WHERE d.keyitem > 0
+		   OR d.altkeyitem > 0
+		   OR d.lockpick > 0
+		   OR d.islift = 1
+		   OR (d.dest_zone IS NOT NULL AND d.dest_zone != '' AND d.dest_zone != 'NONE')
+		   OR (d.triggerdoor > 0 AND ` + switchNamePattern + `)`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var out []POI
 	for rows.Next() {
-		var zone, dest string
-		var gx, gy, gz float64
-		var keyItem, id int
-		if err := rows.Scan(&zone, &gx, &gy, &gz, &dest, &keyItem, &id); err != nil {
+		var zone, dest, keyName, altKeyName string
+		var gx, gy, gz, dx, dy, dz float64
+		var keyItem, altKeyItem, lockpick, islift, id int
+		if err := rows.Scan(&zone, &gx, &gy, &gz, &dest, &dx, &dy, &dz,
+			&keyItem, &altKeyItem, &lockpick, &islift,
+			&keyName, &altKeyName, &id); err != nil {
 			return nil, err
 		}
 		x, y, z, ok := toMapPoint(gx, gy, gz)
 		if !ok || zone == "" {
 			continue
 		}
-		label := "Door"
+
+		// A destination equal to the zone itself is an in-zone port, not an exit.
+		// Guarded on a non-zero destination because plenty of rows name their own
+		// zone with no coordinates, which means nothing.
+		inZonePort := dest == zone && (dx != 0 || dy != 0 || dz != 0)
+		leadsAway := dest != "" && dest != "NONE" && !inZonePort
+
+		// Most specific wins. A locked door to another zone is filed under what
+		// blocks you, since that is the part you have to solve.
+		var category, label, source string
+		var refID int
 		switch {
-		case keyItem > 0 && dest != "" && dest != "NONE":
-			label = "Locked door to " + dest
-		case keyItem > 0:
-			label = "Locked door"
-		case dest != "" && dest != "NONE":
+		case keyItem > 0 || altKeyItem > 0:
+			category, source = CategoryLocked, "db:doors-locked"
+			label = "Locked"
+			if leadsAway {
+				label = "Locked door to " + dest
+			}
+			switch {
+			case keyName != "" && altKeyName != "":
+				label += " — needs " + keyName + " or " + altKeyName
+			case keyName != "":
+				label += " — needs " + keyName
+			case altKeyName != "":
+				label += " — needs " + altKeyName
+			}
+			// Point at the key, not the door: the useful next click from "what do
+			// I need to get in" is the key's own page.
+			refID = keyItem
+			if refID == 0 {
+				refID = altKeyItem
+			}
+		case lockpick > 0:
+			category, source = CategoryLocked, "db:doors-locked"
+			label = fmt.Sprintf("Pickable — lockpicking %d", lockpick)
+			if leadsAway {
+				label = fmt.Sprintf("Pickable door to %s — lockpicking %d", dest, lockpick)
+			}
+		case islift == 1:
+			category, source = CategorySwitch, "db:doors-switch"
+			label = "Elevator"
+		case inZonePort:
+			category, source = CategoryTeleport, "db:doors-teleport"
+			label = "Teleport within zone"
+		case leadsAway:
+			category, source = CategoryDoor, "db:doors"
 			label = "Door to " + dest
+		default:
+			// Reached only via the switch-name clause.
+			category, source = CategorySwitch, "db:doors-switch"
+			label = "Switch or lever"
 		}
+
 		out = append(out, POI{Zone: zone, X: x, Y: y, Z: z,
-			Category: CategoryDoor, Label: label, Source: "db:doors", RefID: id})
+			Category: category, Label: label, Source: source, RefID: refID})
 	}
 	return out, rows.Err()
 }

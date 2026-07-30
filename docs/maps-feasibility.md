@@ -855,7 +855,7 @@ rather than discrete storeys, so any floor list is arbitrary cuts. The `levels`
 column was never added and is not wanted. See §13 for the readability iteration
 that followed (outline mode, height tinting, real Z bounds).
 
-### Phase 3c — Release plumbing (**must land before the first maps release**)
+### Phase 3c — Release plumbing ✅ Done, except the first upload
 
 Not a feature. `maps.db` is gitignored and exists only on the machine that ran
 `cmd/mapgen`, and unlike `quarm.db` nothing gates on its presence:
@@ -869,14 +869,19 @@ Not a feature. `maps.db` is gitignored and exists only on the machine that ran
   is sitting there, but nothing verifies it is present or current.
 
 Work:
-- Publish `maps.db` as a release asset alongside `quarm.db`. Its own cadence, so
-  either its own tag or a distinct asset on `data-latest` — a `quarm.db`
-  regeneration must never imply a `maps.db` rebuild or vice versa.
-- `release.yml`: download it with the same hard-fail as `quarm.db`.
-- Local guard in the `dist` script (beside `verify-backend-fresh.cjs`): fail the
-  build if `maps.db` is absent, zero-length, or older than
-  `internal/mapgen/`, so a pipeline change without a regen cannot ship stale
-  geometry.
+- ✅ `scripts/verify-maps-db.cjs`, wired into `dist`/`dist:win`: fails the build
+  if `maps.db` is absent, under 1 MB (a truncated file passes an existence check
+  and fails at runtime), or older than `internal/mapgen/`.
+- ✅ `release.yml` downloads `maps.db` from `data-latest` with the same hard-fail
+  as `quarm.db`; `data-release.yml` documents why it clobbers `quarm.db` by name
+  rather than by wildcard.
+- ⬜ **The first upload still has to happen** — it is the one step that cannot be
+  done from a machine without an EQ client, and it publishes a ~14 MB asset:
+
+      gh release upload data-latest backend/data/maps.db --clobber
+
+  Only needed before `release.yml` is ever used. The local `/newrelease` path
+  works without it, because the file is already on the machine that generates it.
 
 Auto-update needs no work — verified by reading the path rather than assuming:
 `extraResources` land in the install dir's `resources/`, electron-updater runs
@@ -903,10 +908,18 @@ under `source='brewall'`. Two things changed:
    annotation file as a dataset, but entering facts verified against the game or
    multiple public sources. Same standing as the traps already shipped.
 
-- **4a — Derive from `doors`.** New POI categories: locked door (with key item
-  name and a link to the item page), pick-only door (with skill requirement),
-  trigger/switch door, lift, in-zone teleport. `source='db:doors-*'`, so a
-  `quarm.db` release regenerates them.
+- **4a — Derive from `doors`. ✅ Done.** Three new categories out of 8,205 door
+  rows: `locked` (173 — key doors name the actual key and link to its item page;
+  pick-only doors state the lockpicking skill), `teleport` (387 in-zone ports,
+  which no static map set records), `switch` (29 levers and lifts). `door` itself
+  narrows to 356 cross-zone exits from 885.
+
+  The one trap here was `triggerdoor`, which looks like the signal for "hidden
+  lever" and is not: 667 rows carry it, but it only means "opening this opens
+  that", and Paineel's `PADOOR101`/`PADOOR102` alone account for 372 of them as
+  ordinary double doors wired to their own other half. Only ~15 are named like
+  actual controls. Pinning all 667 would have buried the real levers in
+  door-pair noise, so switches are name-filtered plus `islift`.
 - **4b — Hand-researched set.** Fake walls, one-way walls, invisible walls,
   jump-downs, safe spots, named camps, hazards. Needs an **authoring format**,
   which does not exist yet: a version-controlled JSON in the repo that `mapgen`

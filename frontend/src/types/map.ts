@@ -19,6 +19,9 @@ export interface MapZone {
 
 export type MapPOICategory =
   | 'zone_line'
+  | 'locked'
+  | 'switch'
+  | 'teleport'
   | 'ground_spawn'
   | 'trap'
   | 'tradeskill'

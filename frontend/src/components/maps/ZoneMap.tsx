@@ -62,6 +62,13 @@ const CATEGORY_STYLE: Record<MapPOICategory, { color: string; short: string }> =
   tradeskill: { color: '#a78bfa', short: 'T' },
   succor: { color: '#5eead4', short: 'S' },
   door: { color: '#94a3b8', short: 'D' },
+  // Hues chosen against the height ramp (#4c6ef5 through #e2703a) as well as
+  // the other categories, since geometry and pins share the canvas. Pins are
+  // filled discs and geometry is hairlines, which buys some tolerance, but not
+  // enough to reuse a hue outright.
+  locked: { color: '#fb7185', short: 'L' },   // rose — blocked
+  switch: { color: '#a3e635', short: 'S' },   // lime — operate this
+  teleport: { color: '#22d3ee', short: 'T' }, // cyan — movement
 }
 
 // Geometry colour by technique, in detailed mode. Contours are elevation lines,

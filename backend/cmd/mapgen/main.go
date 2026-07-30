@@ -143,6 +143,7 @@ func main() {
 		mapgen.CategoryVendor, mapgen.CategoryDoor, mapgen.CategoryGroundSpawn,
 		mapgen.CategoryZoneLine, mapgen.CategoryRaidTarget, mapgen.CategoryTradeskill,
 		mapgen.CategorySuccor, mapgen.CategoryTrap,
+		mapgen.CategoryLocked, mapgen.CategorySwitch, mapgen.CategoryTeleport,
 	} {
 		fmt.Printf("   %-14s %5d\n", c, byCategory[c])
 	}
