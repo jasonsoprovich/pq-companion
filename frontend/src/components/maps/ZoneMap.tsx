@@ -104,6 +104,14 @@ const HEIGHT_RAMP = [
   '#e2703a', // highest — rooftops, upper platforms
 ]
 
+// HIGHLIGHT_COLOR marks "the thing you asked about" — an NPC's spawn point, or
+// the POI just clicked.
+//
+// Magenta on purpose: it is the one hue not used by the height ramp (blue
+// through orange) or any POI category, so a highlight can never be mistaken for
+// map data no matter what it lands on top of.
+const HIGHLIGHT_COLOR = '#ff4fd8'
+
 // HEIGHT_BANDS is how many steps the ramp is quantised into. Matched to the
 // ramp length: more bands than colours would repeat hues at different heights,
 // which is worse than no colour at all.
@@ -424,20 +432,36 @@ export function ZoneMap({
     // ── highlights ──
     for (const h of highlights ?? []) {
       const [px, py] = toScreen(h.x, h.y)
-      ctx.strokeStyle = '#f8fafc'
+      // Drawn twice: a dark casing first, then the marker on top.
+      //
+      // A single stroke cannot be relied on to contrast with anything, and the
+      // white it used to be became invisible the moment outline mode started
+      // drawing the geometry in near-white — the crosshairs vanished into the
+      // walls in exactly the view where "where is this NPC" matters most.
+      // Casing-then-stroke is how map symbols stay legible over arbitrary
+      // background, and it costs one extra pass over a handful of markers.
+      const ring = (): void => {
+        ctx.beginPath()
+        ctx.arc(px, py, 9, 0, Math.PI * 2)
+        ctx.moveTo(px - 14, py); ctx.lineTo(px - 6, py)
+        ctx.moveTo(px + 6, py); ctx.lineTo(px + 14, py)
+        ctx.moveTo(px, py - 14); ctx.lineTo(px, py - 6)
+        ctx.moveTo(px, py + 6); ctx.lineTo(px, py + 14)
+        ctx.stroke()
+      }
+      ctx.lineWidth = 4.5
+      ctx.strokeStyle = 'rgba(0,0,0,0.75)'
+      ring()
       ctx.lineWidth = 2
-      ctx.beginPath()
-      ctx.arc(px, py, 9, 0, Math.PI * 2)
-      ctx.stroke()
-      ctx.beginPath()
-      ctx.moveTo(px - 14, py); ctx.lineTo(px - 6, py)
-      ctx.moveTo(px + 6, py); ctx.lineTo(px + 14, py)
-      ctx.moveTo(px, py - 14); ctx.lineTo(px, py - 6)
-      ctx.moveTo(px, py + 6); ctx.lineTo(px, py + 14)
-      ctx.stroke()
+      ctx.strokeStyle = HIGHLIGHT_COLOR
+      ring()
+
       if (h.label) {
         ctx.font = '11px ui-monospace, monospace'
-        ctx.fillStyle = '#f8fafc'
+        ctx.lineWidth = 3
+        ctx.strokeStyle = 'rgba(0,0,0,0.75)'
+        ctx.strokeText(h.label, px + 13, py - 10)
+        ctx.fillStyle = HIGHLIGHT_COLOR
         ctx.fillText(h.label, px + 13, py - 10)
       }
     }
@@ -449,13 +473,18 @@ export function ZoneMap({
       ctx.translate(px, py)
       // EQ heading is 0-512 counter-clockwise with 0 = north.
       ctx.rotate(-((playerPos.heading ?? 0) / 512) * Math.PI * 2)
-      ctx.fillStyle = '#f8fafc'
       ctx.beginPath()
       ctx.moveTo(0, -7)
       ctx.lineTo(4.5, 6)
       ctx.lineTo(0, 3)
       ctx.lineTo(-4.5, 6)
       ctx.closePath()
+      // Cased like the highlights, for the same reason: white-on-white in
+      // outline mode is invisible.
+      ctx.lineWidth = 3
+      ctx.strokeStyle = 'rgba(0,0,0,0.75)'
+      ctx.stroke()
+      ctx.fillStyle = '#f8fafc'
       ctx.fill()
       ctx.restore()
     }
