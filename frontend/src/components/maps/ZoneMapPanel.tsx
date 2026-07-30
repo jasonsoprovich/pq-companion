@@ -72,6 +72,32 @@ const LAYERS: { key: MapPOICategory; label: string; on: boolean }[] = [
   { key: 'tradeskill', label: 'Tradeskills', on: false },
 ]
 
+// entityRoute maps a POI to the database page its ref_id opens, or null when
+// ref_id points at nothing a user can be sent to.
+//
+// ref_id is a foreign key into whichever table generated the POI, and those are
+// not all entities: a zone line's is a zoneidnumber, a tradeskill container's is
+// a bagtype enum, and a traps-table trap's is a row id in a table with no page.
+// Routing those to /npcs lands on an unrelated NPC, so they get no link at all.
+function entityRoute(poi: MapPOI): string | null {
+  if (!poi.ref_id) return null
+  switch (poi.category) {
+    // The item that spawns, and the key that opens the door.
+    case 'ground_spawn':
+    case 'locked':
+      return `/items?select=${poi.ref_id}`
+    // Traps come from two places. The spawn2-derived ones are NPCs with a real
+    // page; the traps-table ones are not.
+    case 'trap':
+      return poi.source === 'db:spawn2-trap' ? `/npcs?select=${poi.ref_id}` : null
+    case 'zone_line':
+    case 'tradeskill':
+      return null
+    default:
+      return `/npcs?select=${poi.ref_id}`
+  }
+}
+
 export interface ZoneMapPanelProps {
   zoneShortName: string | null
   // 'fill' takes the parent's full height, which is what both full-page
@@ -116,6 +142,10 @@ export function ZoneMapPanel({
     LAYERS.filter((l) => l.on).map((l) => l.key),
   )
   const [selected, setSelected] = useState<MapPOI | null>(null)
+  // User markers are never links: they carry no ref_id, and their actions are
+  // Edit and Delete rather than "go look at this".
+  const selectedRoute =
+    selected && selected.source !== USER_SOURCE ? entityRoute(selected) : null
   const [showDetail, setShowDetail] = useCachedState('maps.detail', true)
   // On by default: in a multi-level zone it is the difference between two lines
   // crossing and two lines at different heights, which a flat rendering cannot
@@ -499,9 +529,19 @@ export function ZoneMapPanel({
           >
             {selected.category.replace('_', ' ')}
           </span>
-          <span className="truncate" style={{ color: 'var(--color-foreground)' }}>
-            {selected.label}
-          </span>
+          {selectedRoute ? (
+            <button
+              onClick={() => navigate(selectedRoute)}
+              className="truncate text-left underline decoration-dotted"
+              style={{ color: 'var(--color-primary)' }}
+            >
+              {selected.label}
+            </button>
+          ) : (
+            <span className="truncate" style={{ color: 'var(--color-foreground)' }}>
+              {selected.label}
+            </span>
+          )}
           <span className="shrink-0 font-mono text-xs" style={{ color: 'var(--color-muted)' }}>
             {/* Shown in /loc order and game sign, matching what EQ prints, so it
                 can be read straight across to the game. */}
@@ -528,22 +568,6 @@ export function ZoneMapPanel({
                   Delete
                 </button>
               </>
-            ) : selected.ref_id ? (
-              <button
-                onClick={() =>
-                  navigate(
-                    // ground_spawn ref_id is the item that spawns; a locked
-                    // door's is the key that opens it. Everything else is an NPC.
-                    selected.category === 'ground_spawn' || selected.category === 'locked'
-                      ? `/items?select=${selected.ref_id}`
-                      : `/npcs?select=${selected.ref_id}`,
-                  )
-                }
-                className="rounded border px-1.5 py-0.5 text-[10px]"
-                style={{ borderColor: 'var(--color-border)', color: 'var(--color-primary)' }}
-              >
-                Open
-              </button>
             ) : null}
             <button
               onClick={() =>
