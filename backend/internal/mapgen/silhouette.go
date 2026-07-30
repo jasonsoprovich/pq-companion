@@ -278,8 +278,9 @@ const (
 
 type zBand struct{ lo, hi, mid float64 }
 
-// zBands divides a zone's walkable heights into bands.
-func (z *Zone) zBands(faces []int) []zBand {
+// zBands divides a zone's walkable heights into bands of roughly bandTarget
+// height, capped at maxBands.
+func (z *Zone) zBands(faces []int, bandTarget float64, maxBands int) []zBand {
 	lo, hi := math.Inf(1), math.Inf(-1)
 	for _, i := range faces {
 		t := z.Triangles[i]
@@ -291,9 +292,9 @@ func (z *Zone) zBands(faces []int) []zBand {
 	if !(span > silMinBandedSpan) {
 		return []zBand{{lo: lo, hi: hi, mid: (lo + hi) / 2}}
 	}
-	n := int(math.Ceil(span / silBandTarget))
-	if n > silMaxBands {
-		n = silMaxBands
+	n := int(math.Ceil(span / bandTarget))
+	if n > maxBands {
+		n = maxBands
 	}
 	if n < 2 {
 		n = 2
@@ -320,12 +321,18 @@ func (z *Zone) zBands(faces []int) []zBand {
 //
 // Bands share one grid frame, so they line up exactly when composited.
 func (z *Zone) Silhouette() []Segment {
+	return z.silhouette(silBandTarget, silMaxBands, silRDPEpsilon, 0)
+}
+
+// silhouette is the parameterised implementation shared by the detailed layer
+// and the coarse outline layer. minExtent of 0 disables small-chain culling.
+func (z *Zone) silhouette(bandTarget float64, maxBands int, rdpEps, minExtent float64) []Segment {
 	faces := z.WalkableFaces()
 	if len(faces) == 0 {
 		return nil
 	}
 	frame := z.gridFrame(faces)
-	bands := z.zBands(faces)
+	bands := z.zBands(faces, bandTarget, maxBands)
 
 	var out []Segment
 	for _, b := range bands {
@@ -345,7 +352,11 @@ func (z *Zone) Silhouette() []Segment {
 			continue
 		}
 		g := z.rasterizeInto(frame, sub)
-		segs := SimplifyRDP(Chain(g.March()), silRDPEpsilon)
+		chains := Chain(g.March())
+		if minExtent > 0 {
+			chains = dropSmallChains(chains, minExtent)
+		}
+		segs := SimplifyRDP(chains, rdpEps)
 		for i := range segs {
 			segs[i].A.Z = b.mid
 			segs[i].B.Z = b.mid

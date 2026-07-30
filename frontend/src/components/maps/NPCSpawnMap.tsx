@@ -76,7 +76,10 @@ function SpawnMapBody({
   active: string
   onZone: (z: string) => void
 }): React.ReactElement {
-  const { zone, geometry, detail, pois, loading, error } = useZoneMap(active)
+  // Always outline mode: this map is 300px tall and exists to answer "where in
+  // the zone", so legibility at a glance beats detail that would be illegible
+  // at this size anyway.
+  const { zone, outline, pois, loading, error } = useZoneMap(active, 'outline')
 
   // Spawn points arrive in game coordinates; the map works in map space, which
   // is the same negation the geometry pipeline applies.
@@ -128,8 +131,9 @@ function SpawnMapBody({
           <ErrorBoundary label="Spawn map">
             <ZoneMap
               zone={zone}
-              geometry={geometry}
-              detail={detail}
+              geometry={null}
+              outline={outline}
+              mode="outline"
               pois={pois}
               visibleCategories={visible}
               highlights={highlights}

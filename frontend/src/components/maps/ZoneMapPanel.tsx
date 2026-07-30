@@ -6,7 +6,7 @@ import { useZoneMap } from '../../hooks/useZoneMap'
 import { ZoneMap } from './ZoneMap'
 import { ErrorBoundary } from '../ErrorBoundary'
 import { mapMarkerCommand, mapShowZoneCommand } from '../../lib/zealMap'
-import type { MapPOI, MapPOICategory } from '../../types/map'
+import type { MapPOI, MapPOICategory, MapRenderMode } from '../../types/map'
 
 // ZoneMapPanel is the full-zone map with layer toggles and a POI inspector.
 //
@@ -45,7 +45,15 @@ export function ZoneMapPanel({
   showZoneButton = true,
 }: ZoneMapPanelProps): React.ReactElement {
   const navigate = useNavigate()
-  const { zone, geometry, detail, pois, loading, error } = useZoneMap(zoneShortName)
+  // Outline is the default: one clean line drawing, the same in every zone.
+  // Detailed carries far more information but reads as a stack of overlapping
+  // levels in tall zones, which is a deliberate trade rather than the everyday
+  // view.
+  const [mode, setMode] = useCachedState<MapRenderMode>('maps.mode', 'outline')
+  const { zone, outline, geometry, detail, pois, loading, error } = useZoneMap(
+    zoneShortName,
+    mode,
+  )
   // Layer choices persist across zones and across the two surfaces, so a player
   // who turns doors on keeps them on.
   const [enabled, setEnabled] = useCachedState<MapPOICategory[]>(
@@ -90,6 +98,37 @@ export function ZoneMapPanel({
   return (
     <div className={`flex flex-col gap-2${fill ? ' h-full' : ''}`}>
       <div className="flex shrink-0 flex-wrap items-center gap-1">
+        {/* Mode first, and set apart: it changes what the other controls mean,
+            so it does not belong in the run of POI toggles. */}
+        <div
+          className="mr-1.5 flex overflow-hidden rounded border"
+          style={{ borderColor: 'var(--color-border)' }}
+        >
+          {(
+            [
+              ['outline', 'Outline', 'Clean single-line map — the same style in every zone'],
+              [
+                'detailed',
+                'Detailed',
+                'Full extracted geometry: elevation contours or every floor edge. ' +
+                  'Far more information, and busier in multi-level zones.',
+              ],
+            ] as [MapRenderMode, string, string][]
+          ).map(([key, label, title]) => (
+            <button
+              key={key}
+              onClick={() => setMode(key)}
+              title={title}
+              className="px-2 py-0.5 text-[10px] font-medium"
+              style={{
+                backgroundColor: mode === key ? 'var(--color-primary)' : 'transparent',
+                color: mode === key ? 'var(--color-background)' : 'var(--color-muted)',
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         {LAYERS.map((l) => {
           const n = counts[l.key] ?? 0
           const active = visible.has(l.key)
@@ -113,7 +152,7 @@ export function ZoneMapPanel({
             </button>
           )
         })}
-        {detail && detail.count > 0 && (
+        {mode === 'detailed' && detail && detail.count > 0 && (
           <button
             onClick={() => setShowDetail((v) => !v)}
             title="Fine boundary detail drawn under the main map"
@@ -155,6 +194,8 @@ export function ZoneMapPanel({
             geometry={geometry}
             detail={detail}
             showDetail={showDetail}
+            outline={outline}
+            mode={mode}
             pois={pois}
             visibleCategories={visible}
             highlights={selected ? [{ x: selected.x, y: selected.y, z: selected.z }] : []}

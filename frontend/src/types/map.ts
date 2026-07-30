@@ -11,6 +11,10 @@ export interface MapZone {
   // be read — contour lines are elevation, not walls.
   technique: 'boundary' | 'contours' | 'silhouette'
   z_span: number
+  // min_z/max_z are the heights actually present in the drawn segments, which is
+  // what the depth control's range must span. z_span is only a width.
+  min_z: number
+  max_z: number
 }
 
 export type MapPOICategory =
@@ -55,3 +59,12 @@ export interface MapGeometry {
   // 6 entries per segment: x1, y1, z1, x2, y2, z2
   coords: Int16Array
 }
+
+// MapRenderMode selects which geometry layers to draw.
+//
+//   outline  — the clean layer: one simplified line drawing, the same visual
+//              language in every zone. Best for reading a route.
+//   detailed — whatever the classifier chose for this zone, plus the fine
+//              boundary layer. Far more information, and in tall zones it
+//              reads as a stack of overlapping levels.
+export type MapRenderMode = 'outline' | 'detailed'

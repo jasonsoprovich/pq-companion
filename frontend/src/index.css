@@ -77,6 +77,58 @@ input[type="range"] {
   cursor: pointer;
 }
 
+/* Dual-thumb range: two stacked native sliders sharing one visible track, used
+   by the zone map's depth control to pick a floor and a ceiling height.
+
+   Two natives rather than a hand-rolled drag implementation because the natives
+   bring keyboard support, focus rings and accessibility for free. The trick is
+   that the upper input must not swallow clicks meant for the lower one, so its
+   track is transparent to pointers and only the thumbs accept them. Safe to
+   rely on -webkit- pseudo-elements here: the renderer is always Chromium. */
+.range-dual {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.range-dual input[type="range"] {
+  position: absolute;
+  width: 100%;
+  margin: 0;
+  background: none;
+  pointer-events: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.range-dual input[type="range"]::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 2px;
+  background: transparent;
+}
+.range-dual input[type="range"]::-webkit-slider-thumb {
+  pointer-events: auto;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 12px;
+  width: 12px;
+  margin-top: -4.5px;
+  border-radius: 50%;
+  border: none;
+  background: var(--color-primary);
+}
+/* The visible track and the filled span between the thumbs. */
+.range-dual .range-dual-track {
+  height: 3px;
+  width: 100%;
+  border-radius: 2px;
+  background: var(--color-surface-2);
+}
+.range-dual .range-dual-fill {
+  position: absolute;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--color-primary);
+}
+
 body {
   background-color: var(--color-background);
   color: var(--color-foreground);

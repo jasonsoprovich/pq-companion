@@ -16,6 +16,10 @@ const (
 	LayerGeometry = 0
 )
 
+// LayerOutline is the clean single-language outline drawn in Outline mode.
+// See outline.go for why it exists alongside the classifier's own output.
+const LayerOutline = 2
+
 // segmentBytes is the packed width of one segment: six int16 coordinates plus
 // three colour bytes.
 const segmentBytes = 6*2 + 3
@@ -67,8 +71,9 @@ func WriteMapsDB(path string, zones []ZoneOutput, pois []POI) error {
 	defer insLayer.Close()
 
 	insZone, err := tx.Prepare(`INSERT INTO map_zone
-		(zone, min_x, min_y, max_x, max_y, technique, occupancy, bnd_density, z_span)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+		(zone, min_x, min_y, max_x, max_y, technique, occupancy, bnd_density,
+		 z_span, min_z, max_z)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return fmt.Errorf("prepare map_zone: %w", err)
 	}
@@ -91,10 +96,24 @@ func WriteMapsDB(path string, zones []ZoneOutput, pois []POI) error {
 				return fmt.Errorf("insert %s detail layer: %w", z.Zone, err)
 			}
 		}
+		if len(z.Outline) > 0 {
+			ob, err := packSegments(z.Outline)
+			if err != nil {
+				return fmt.Errorf("%s outline: %w", z.Zone, err)
+			}
+			if _, err := insLayer.Exec(z.Zone, LayerOutline, len(z.Outline), ob); err != nil {
+				return fmt.Errorf("insert %s outline layer: %w", z.Zone, err)
+			}
+		}
+		// Z bounds come from the drawn segments across every layer, not from the
+		// raw mesh: the depth slider filters what is on screen, so its range has
+		// to match what is on screen.
+		minZ, maxZ := segmentZRange(z.Segments, z.Detail, z.Outline)
 		if _, err := insZone.Exec(z.Zone,
 			clampCoord(z.MinX), clampCoord(z.MinY),
 			clampCoord(z.MaxX), clampCoord(z.MaxY),
 			string(z.Technique), z.Occupancy, z.BoundaryDensity, z.ZSpan,
+			clampCoord(minZ), clampCoord(maxZ),
 		); err != nil {
 			return fmt.Errorf("insert %s zone: %w", z.Zone, err)
 		}
@@ -145,7 +164,9 @@ CREATE TABLE map_zone (
   technique   TEXT    NOT NULL,
   occupancy   REAL    NOT NULL,
   bnd_density REAL    NOT NULL,
-  z_span      REAL    NOT NULL
+  z_span      REAL    NOT NULL,
+  min_z       INTEGER NOT NULL,
+  max_z       INTEGER NOT NULL
 ) WITHOUT ROWID;
 
 CREATE TABLE map_poi (
@@ -173,7 +194,9 @@ type ZoneOutput struct {
 	Zone     string
 	Segments []Segment
 	// Detail is the optional boundary layer drawn under/over the primary one.
-	Detail          []Segment
+	Detail []Segment
+	// Outline is the clean layer shown in Outline mode. Present for every zone.
+	Outline         []Segment
 	MinX, MinY      float64
 	MaxX, MaxY      float64
 	Technique       Technique
@@ -243,6 +266,21 @@ func UnpackSegments(blob []byte) ([]Segment, error) {
 		})
 	}
 	return segs, nil
+}
+
+// segmentZRange returns the height range spanned by every given layer.
+func segmentZRange(layers ...[]Segment) (float64, float64) {
+	lo, hi := math.Inf(1), math.Inf(-1)
+	for _, segs := range layers {
+		for _, s := range segs {
+			lo = math.Min(lo, math.Min(s.A.Z, s.B.Z))
+			hi = math.Max(hi, math.Max(s.A.Z, s.B.Z))
+		}
+	}
+	if math.IsInf(lo, 1) {
+		return 0, 0
+	}
+	return lo, hi
 }
 
 func clampCoord(v float64) int {

@@ -41,6 +41,13 @@ type Zone struct {
 	MaxY      int     `json:"max_y"`
 	Technique string  `json:"technique"`
 	ZSpan     float64 `json:"z_span"`
+	// MinZ/MaxZ bound the heights actually present in this zone's drawn
+	// segments. Needed because the depth control has to offer a range that
+	// overlaps the data: z_span alone is only a width, and a slider guessing a
+	// range symmetric about zero missed the geometry entirely in every zone whose
+	// heights do not happen to straddle 0.
+	MinZ int `json:"min_z"`
+	MaxZ int `json:"max_z"`
 }
 
 // Segment is one drawn line, in map space.
@@ -96,7 +103,8 @@ func (s *Store) Close() error {
 func (s *Store) loadZones() error {
 	s.once.Do(func() {
 		rows, err := s.db.Query(
-			`SELECT zone, min_x, min_y, max_x, max_y, technique, z_span FROM map_zone`)
+			`SELECT zone, min_x, min_y, max_x, max_y, technique, z_span, min_z, max_z
+			   FROM map_zone`)
 		if err != nil {
 			s.err = fmt.Errorf("list map zones: %w", err)
 			return
@@ -106,7 +114,7 @@ func (s *Store) loadZones() error {
 		for rows.Next() {
 			var z Zone
 			if err := rows.Scan(&z.Zone, &z.MinX, &z.MinY, &z.MaxX, &z.MaxY,
-				&z.Technique, &z.ZSpan); err != nil {
+				&z.Technique, &z.ZSpan, &z.MinZ, &z.MaxZ); err != nil {
 				s.err = fmt.Errorf("scan map zone: %w", err)
 				return
 			}

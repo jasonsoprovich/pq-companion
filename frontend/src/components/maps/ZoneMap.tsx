@@ -1,5 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { MapGeometry, MapPOI, MapPOICategory, MapZone } from '../../types/map'
+import type {
+  MapGeometry,
+  MapPOI,
+  MapPOICategory,
+  MapRenderMode,
+  MapZone,
+} from '../../types/map'
 
 // MapHighlight is a prominent marker drawn over the map, independent of the
 // generated POI set — an NPC's spawn point, or the POI the user just clicked.
@@ -25,6 +31,9 @@ export interface ZoneMapProps {
   // the structure that defines the zone.
   detail?: MapGeometry | null
   showDetail?: boolean
+  // outline is the clean layer; drawn instead of geometry+detail in outline mode.
+  outline?: MapGeometry | null
+  mode?: MapRenderMode
   pois: MapPOI[]
   // visibleCategories gates POI layers; undefined shows all.
   visibleCategories?: Set<MapPOICategory>
@@ -52,19 +61,29 @@ const CATEGORY_STYLE: Record<MapPOICategory, { color: string; short: string }> =
   door: { color: '#94a3b8', short: 'D' },
 }
 
-// Geometry colour by technique. Contours are elevation lines, not walls, so
-// they get a distinct hue — reading them as structure would be misleading.
+// Geometry colour by technique, in detailed mode. Contours are elevation lines,
+// not walls, so they get a distinct hue — reading them as structure would be
+// misleading, and the colour is the only cue that distinguishes them.
 const GEOMETRY_COLOR: Record<MapZone['technique'], string> = {
   boundary: '#7dd3fc',
   contours: '#5eead4',
   silhouette: '#a78bfa',
 }
 
+// Outline mode uses one neutral colour for every zone. Colour-coding by
+// technique is meaningful in detailed mode, where the lines genuinely mean
+// different things; in outline mode they all mean "edge you cannot walk
+// through", so varying the hue per zone would signal a difference that is not
+// there — and looking the same everywhere is the whole point of the mode.
+const OUTLINE_COLOR = '#cbd5e1'
+
 export function ZoneMap({
   zone,
   geometry,
   detail,
   showDetail = true,
+  outline,
+  mode = 'outline',
   pois,
   visibleCategories,
   highlights,
@@ -80,10 +99,15 @@ export function ZoneMap({
   const [size, setSize] = useState({ w: 800, h: fill ? 520 : height })
   const drag = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null)
 
-  // Depth window. null means "show everything"; otherwise geometry outside
-  // ±range of the focus height fades, which is the only workable way to read
-  // zones whose floors are continuous ramps rather than discrete storeys.
-  const [depth, setDepth] = useState<{ focus: number; range: number } | null>(null)
+  // Depth window, as an explicit floor and ceiling height. null means "show
+  // everything".
+  //
+  // A floor/ceiling pair rather than the focus±thickness pair this started as:
+  // two independent ends is how the in-game and PQDI sliders work, it reads
+  // directly as "show me between these two heights", and it can express an
+  // asymmetric window — the whole zone below a ledge but nothing above it —
+  // which a centre-and-width control cannot.
+  const [depth, setDepth] = useState<{ lo: number; hi: number } | null>(null)
 
   const shown = useMemo(
     () => pois.filter((p) => !visibleCategories || visibleCategories.has(p.category)),
@@ -178,12 +202,14 @@ export function ZoneMap({
       // within a path: a continuous ramp would force one stroke() per segment,
       // and these zones run to tens of thousands.
       const ALPHAS = (depth ? [1, 0.5, 0.25, 0.1] : [1]).map((a) => a * scale)
+      // Fade steps are sized relative to the window, so a narrow window fades
+      // off sharply and a wide one trails away gently.
+      const step = Math.max(1, (depth ? depth.hi - depth.lo : 0) / 2)
       const bucketOf = (zMid: number): number => {
         if (!depth) return 0
-        const d = Math.abs(zMid - depth.focus)
-        if (d <= depth.range) return 0
-        // Each further band out steps down one bucket.
-        return Math.min(ALPHAS.length - 1, 1 + Math.floor((d - depth.range) / depth.range))
+        const d = zMid < depth.lo ? depth.lo - zMid : zMid > depth.hi ? zMid - depth.hi : 0
+        if (d === 0) return 0
+        return Math.min(ALPHAS.length - 1, 1 + Math.floor(d / step))
       }
 
       // Draw faintest first so in-focus lines land on top.
@@ -206,13 +232,19 @@ export function ZoneMap({
       ctx.globalAlpha = 1
     }
 
-    const primaryColor = GEOMETRY_COLOR[zone.technique] ?? '#7dd3fc'
-    // Detail underneath, so primary structure always reads on top.
-    if (showDetail && detail && detail.count > 0) {
-      drawLayer(detail, primaryColor, 0.55, 0.45)
-    }
-    if (geometry && geometry.count > 0) {
-      drawLayer(geometry, primaryColor, 1.15, 1)
+    if (mode === 'outline') {
+      // A touch heavier than the detailed primary: it is the only layer, so it
+      // carries the whole drawing.
+      if (outline && outline.count > 0) drawLayer(outline, OUTLINE_COLOR, 1.3, 1)
+    } else {
+      const primaryColor = GEOMETRY_COLOR[zone.technique] ?? '#7dd3fc'
+      // Detail underneath, so primary structure always reads on top.
+      if (showDetail && detail && detail.count > 0) {
+        drawLayer(detail, primaryColor, 0.55, 0.45)
+      }
+      if (geometry && geometry.count > 0) {
+        drawLayer(geometry, primaryColor, 1.15, 1)
+      }
     }
 
     // ── POIs ──
@@ -241,7 +273,7 @@ export function ZoneMap({
       const [px, py] = toScreen(p.x, p.y)
       if (px < -20 || py < -20 || px > size.w + 20 || py > size.h + 20) continue
 
-      const dimmed = depth ? Math.abs(p.z - depth.focus) > depth.range : false
+      const dimmed = depth ? p.z < depth.lo || p.z > depth.hi : false
       ctx.globalAlpha = dimmed ? 0.2 : 1
       ctx.fillStyle = style.color
       ctx.beginPath()
@@ -296,7 +328,7 @@ export function ZoneMap({
       ctx.fill()
       ctx.restore()
     }
-  }, [geometry, shown, zone, size, toScreen, view.zoom, depth, highlights, playerPos, showLabels, detail, showDetail])
+  }, [geometry, shown, zone, size, toScreen, view.zoom, depth, highlights, playerPos, showLabels, detail, showDetail, outline, mode])
 
   // Wheel zoom is attached natively with passive:false. React registers wheel
   // as a passive listener, so preventDefault() there is ignored — it never
@@ -383,7 +415,12 @@ export function ZoneMap({
           className="rounded px-1.5 py-0.5 text-[10px]"
           style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted)' }}
         >
-          {zone.technique === 'contours' ? 'elevation contours' : zone.technique} · {view.zoom.toFixed(1)}×
+          {mode === 'outline'
+            ? 'outline'
+            : zone.technique === 'contours'
+              ? 'elevation contours'
+              : zone.technique}{' '}
+          · {view.zoom.toFixed(1)}×
         </span>
         <button
           onClick={() => setView({ zoom: 1, panX: 0, panY: 0 })}
@@ -403,14 +440,15 @@ export function ZoneMap({
   )
 }
 
-// DepthControl fades geometry outside a height window.
+// DepthControl fades geometry outside a height window, set by dragging a floor
+// and a ceiling along one track.
 //
-// The slider is always visible rather than hidden behind a toggle: in a zone
-// with stacked tunnels the flattened view is the one that needs explaining, so
-// the control that fixes it should not need discovering first.
+// Always visible rather than hidden behind a toggle: in a zone with stacked
+// tunnels the flattened view is the one that needs explaining, so the control
+// that fixes it should not need discovering first.
 //
-// A sliding window rather than a floor picker because only some zones have
-// discrete storeys — akheva's floors are continuous ramps, so any level list
+// A continuous window rather than a list of floors because only some zones have
+// discrete storeys — Akheva's levels are continuous ramps, so any level list
 // would be arbitrary cuts.
 function DepthControl({
   zone,
@@ -418,68 +456,73 @@ function DepthControl({
   onChange,
 }: {
   zone: MapZone
-  depth: { focus: number; range: number } | null
-  onChange: (d: { focus: number; range: number } | null) => void
+  depth: { lo: number; hi: number } | null
+  onChange: (d: { lo: number; hi: number } | null) => void
 }): React.ReactElement | null {
   // Flat zones have nothing to disambiguate.
   if (zone.z_span < 120) return null
-  const lo = Math.round(-zone.z_span / 2)
-  const hi = Math.round(zone.z_span / 2)
+
+  const floor = zone.min_z
+  const ceil = Math.max(zone.max_z, zone.min_z + 1)
   const active = depth !== null
-  const cur = depth ?? { focus: 0, range: Math.round(zone.z_span / 8) }
+  const cur = depth ?? { lo: floor, hi: ceil }
+
+  // Thumbs cannot cross: dragging one past the other pushes it instead, which is
+  // what every dual-range control does and avoids an inverted, empty window.
+  // Step proportional to the zone, not 1 unit: a 560-unit zone would otherwise
+  // take 560 arrow presses to cross, and single-unit precision is meaningless
+  // against geometry banded tens of units apart.
+  const step = Math.max(1, Math.round((ceil - floor) / 120))
+  const pct = (v: number): number => ((v - floor) / (ceil - floor)) * 100
+  const setLo = (v: number): void => onChange({ lo: Math.min(v, cur.hi - 1), hi: cur.hi })
+  const setHi = (v: number): void => onChange({ lo: cur.lo, hi: Math.max(v, cur.lo + 1) })
 
   return (
     <div
-      className="absolute bottom-2 left-2 flex items-center gap-2 rounded px-2 py-1"
+      className="absolute bottom-2 left-2 flex items-center gap-2.5 rounded px-2.5 py-1.5"
       style={{ backgroundColor: 'var(--color-surface-2)' }}
     >
       <span
         className="text-[10px] font-semibold uppercase tracking-widest"
         style={{ color: active ? 'var(--color-primary)' : 'var(--color-muted)' }}
+        title="Fade everything outside a height range, to read one level of a multi-level zone"
       >
-        Depth
+        Height
       </span>
 
-      {/* Each slider carries its own caption. Two bare sliders side by side
-          gave no clue which was which without hovering for a tooltip. */}
-      <label className="flex items-center gap-1.5">
-        <span className="text-[10px]" style={{ color: 'var(--color-muted)' }}>
-          Height
-        </span>
+      <div className="range-dual w-44">
+        <div className="range-dual-track" />
+        <div
+          className="range-dual-fill"
+          style={{ left: `${pct(cur.lo)}%`, width: `${pct(cur.hi) - pct(cur.lo)}%` }}
+        />
+        {/* Dragging either thumb engages the filter, so there is no separate
+            "enable" step to find. */}
         <input
           type="range"
-          min={lo}
-          max={hi}
-          value={cur.focus}
-          // Dragging the slider engages the filter, so there is no separate
-          // "enable" step to find.
-          onChange={(e) => onChange({ ...cur, focus: Number(e.target.value) })}
-          className="w-36"
-          title="Which height to bring into focus — drag to move up and down through the zone"
+          min={floor}
+          max={ceil}
+          step={step}
+          value={cur.lo}
+          onChange={(e) => setLo(Number(e.target.value))}
+          title="Floor — hide everything below this height"
         />
-      </label>
-
-      <label className="flex items-center gap-1.5">
-        <span className="text-[10px]" style={{ color: 'var(--color-muted)' }}>
-          Thickness
-        </span>
         <input
           type="range"
-          min={Math.max(10, Math.round(zone.z_span / 40))}
-          max={Math.round(zone.z_span / 2)}
-          value={cur.range}
-          onChange={(e) => onChange({ ...cur, range: Number(e.target.value) })}
-          className="w-20"
-          title="How thick a slice stays in focus — widen to see more levels at once"
+          min={floor}
+          max={ceil}
+          step={step}
+          value={cur.hi}
+          onChange={(e) => setHi(Number(e.target.value))}
+          title="Ceiling — hide everything above this height"
         />
-      </label>
+      </div>
 
       <span
-        className="w-28 text-right text-[10px] tabular-nums"
+        className="w-24 text-right text-[10px] tabular-nums"
         style={{ color: 'var(--color-muted)' }}
-        title={active ? `Showing z ${cur.focus - cur.range} to ${cur.focus + cur.range}` : undefined}
       >
-        {active ? `z ${cur.focus} ±${cur.range}` : 'all levels'}
+        {active ? `${cur.lo} → ${cur.hi}` : 'all levels'}
       </span>
       <button
         onClick={() => onChange(null)}

@@ -55,6 +55,7 @@ func main() {
 	start := time.Now()
 	outputs := make([]mapgen.ZoneOutput, 0, len(zones))
 	var failed []string
+	outlineSegs := 0
 
 	fmt.Printf("%-16s %9s %9s %7s %7s  %-11s %9s\n",
 		"zone", "tris", "walkable", "occ%", "bnd_d", "technique", "segments")
@@ -68,6 +69,7 @@ func main() {
 		c := mapgen.Classify(z)
 		segs := mapgen.Extract(z, c)
 		detail := mapgen.ExtractDetail(z, c)
+		outline := mapgen.ExtractOutline(z, c)
 		minX, minY, maxX, maxY := z.Bounds()
 
 		if *compareDir != "" {
@@ -89,9 +91,10 @@ func main() {
 		fmt.Printf("%-16s %9d %9d %6.1f%% %7.2f  %-11s %9d%s\n",
 			name, c.Triangles, c.WalkableFaces, 100*c.Occupancy, c.BoundaryDensit,
 			c.Technique, len(segs), note)
+		outlineSegs += len(outline)
 
 		outputs = append(outputs, mapgen.ZoneOutput{
-			Zone: name, Segments: segs, Detail: detail,
+			Zone: name, Segments: segs, Detail: detail, Outline: outline,
 			MinX: minX, MinY: minY, MaxX: maxX, MaxY: maxY,
 			Technique: c.Technique, Occupancy: c.Occupancy,
 			BoundaryDensity: c.BoundaryDensit, ZSpan: c.ZSpan,
@@ -104,8 +107,9 @@ func main() {
 		byTechnique[o.Technique]++
 		totalSegs += len(o.Segments)
 	}
-	fmt.Printf("\n%d zones, %d failed, %d segments, %s\n",
-		len(outputs), len(failed), totalSegs, time.Since(start).Round(time.Second))
+	fmt.Printf("\n%d zones, %d failed, %d segments (+%d outline), %s\n",
+		len(outputs), len(failed), totalSegs, outlineSegs,
+		time.Since(start).Round(time.Second))
 	for _, t := range []mapgen.Technique{
 		mapgen.TechniqueContours, mapgen.TechniqueSilhouette, mapgen.TechniqueBoundary,
 	} {

@@ -1,9 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { getMapGeometry, getMapZone } from '../services/api'
-import type { MapGeometry, MapPOI, MapZone } from '../types/map'
+import type { MapGeometry, MapPOI, MapRenderMode, MapZone } from '../types/map'
+
+// Layer numbers, mirroring backend/internal/mapgen/mapsdb.go.
+const LAYER_GEOMETRY = 0
+const LAYER_DETAIL = 1
+const LAYER_OUTLINE = 2
 
 interface ZoneMapData {
   zone: MapZone | null
+  // outline is the clean layer, drawn in outline mode.
+  outline: MapGeometry | null
+  // geometry and detail are the classifier's own layers, drawn in detailed mode.
   geometry: MapGeometry | null
   detail: MapGeometry | null
   pois: MapPOI[]
@@ -17,17 +25,30 @@ interface ZoneMapData {
 // geometry is the big payload and arrives after. Both are discarded if the
 // zone changes mid-flight, so fast switching can't paint one zone's lines over
 // another's.
-export function useZoneMap(zone: string | null): ZoneMapData {
+//
+// Layers are fetched on demand rather than all at once. Outline mode is the
+// default and needs only layer 2; the detailed layers together run several
+// times larger, and most sessions never ask for them. Once fetched a layer is
+// kept, so toggling back and forth costs nothing.
+export function useZoneMap(zone: string | null, mode: MapRenderMode): ZoneMapData {
   const [data, setData] = useState<ZoneMapData>({
-    zone: null, geometry: null, detail: null, pois: [], loading: false, error: null,
+    zone: null, outline: null, geometry: null, detail: null,
+    pois: [], loading: false, error: null,
   })
+  // Tracks which (zone, mode) geometry fetches have been started, so a re-render
+  // does not refetch what is already in hand.
+  const fetched = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     if (!zone) {
-      setData({ zone: null, geometry: null, detail: null, pois: [], loading: false, error: null })
+      setData({
+        zone: null, outline: null, geometry: null, detail: null,
+        pois: [], loading: false, error: null,
+      })
       return
     }
     let cancelled = false
+    fetched.current = new Set()
     setData((d) => ({ ...d, loading: true, error: null }))
 
     getMapZone(zone)
@@ -35,32 +56,57 @@ export function useZoneMap(zone: string | null): ZoneMapData {
         if (cancelled) return
         setData({
           zone: detail.zone, pois: detail.pois ?? [],
-          geometry: null, detail: null, loading: true, error: null,
+          outline: null, geometry: null, detail: null, loading: true, error: null,
         })
-        // Base layer first so something draws immediately; the optional
-        // boundary-detail layer follows and refines it.
-        return getMapGeometry(zone, 0)
-      })
-      .then((geom) => {
-        if (cancelled || !geom) return
-        setData((d) => ({ ...d, geometry: geom, loading: false }))
-        return getMapGeometry(zone, 1)
-      })
-      .then((det) => {
-        // A zone with no detail layer returns zero segments, not an error.
-        if (cancelled || !det || det.count === 0) return
-        setData((d) => ({ ...d, detail: det }))
       })
       .catch((err: Error) => {
         if (cancelled) return
         setData({
-          zone: null, geometry: null, detail: null, pois: [], loading: false,
-          error: err.message,
+          zone: null, outline: null, geometry: null, detail: null,
+          pois: [], loading: false, error: err.message,
         })
       })
 
     return () => { cancelled = true }
   }, [zone])
+
+  // Geometry for the active mode, fetched once the zone metadata is in.
+  useEffect(() => {
+    if (!zone || !data.zone) return
+    const tag = `${zone}:${mode}`
+    if (fetched.current.has(tag)) return
+    fetched.current.add(tag)
+
+    let cancelled = false
+    setData((d) => ({ ...d, loading: true }))
+
+    const load =
+      mode === 'outline'
+        ? getMapGeometry(zone, LAYER_OUTLINE).then((outline) => {
+            if (!cancelled) setData((d) => ({ ...d, outline, loading: false }))
+          })
+        : getMapGeometry(zone, LAYER_GEOMETRY)
+            .then((geometry) => {
+              if (cancelled) return
+              setData((d) => ({ ...d, geometry, loading: false }))
+              return getMapGeometry(zone, LAYER_DETAIL)
+            })
+            .then((det) => {
+              // A zone with no detail layer returns zero segments, not an error.
+              if (cancelled || !det || det.count === 0) return
+              setData((d) => ({ ...d, detail: det }))
+            })
+
+    load.catch((err: Error) => {
+      if (cancelled) return
+      // Geometry failing is not fatal — metadata and POIs are already drawn, so
+      // degrade to pins on an empty canvas rather than blanking the panel.
+      fetched.current.delete(tag)
+      setData((d) => ({ ...d, loading: false, error: err.message }))
+    })
+
+    return () => { cancelled = true }
+  }, [zone, mode, data.zone])
 
   return data
 }

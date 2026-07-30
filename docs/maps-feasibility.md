@@ -896,6 +896,88 @@ Offline, build-time. The largest single chunk of work.
    only gets more useful.
 5. Phases 3–6 in order.
 
+## 13. Outline mode — the readability pass (2026-07-29)
+
+First real user reaction to the shipped renderer: some zones read well (Sanctus
+Seru, North Qeynos) and others read as an "MRI echolocation depth map" that is
+interesting but not usable for pathing (Fungus Grove, Maiden's Eye, Akheva).
+Brewall's equivalents are less detailed and far easier to read.
+
+### 13.1 Diagnosis
+
+Two distinct causes, and neither is data quality:
+
+1. **Three techniques means three visual languages.** The classifier picks
+   whichever extractor describes a zone's shape best, which is right for
+   fidelity and wrong for consistency. Contour zones look like a topographic
+   survey, silhouette zones like a stack of tracings, boundary zones like a
+   floor plan. Moving between zones feels like moving between three apps.
+2. **Every Z level is drawn at once.** The detailed layers band at ~40 units
+   (one storey) and composite all of them. Fungus Grove is 14 bands
+   superimposed. Brewall draws essentially one plan with a couple of annotated
+   upper levels, which is why his stays legible at full Z range.
+
+Brewall's advantage is **abstraction, not information**. He drew what a player
+needs — the walls that constrain movement, at the level you walk on — and left
+out everything else. Nothing about that requires his data.
+
+### 13.2 The outline layer (layer 2)
+
+A third layer per zone, in one visual language for every zone in the game:
+
+- **Never contours.** Elevation hatching is the single largest source of noise;
+  those lines are not walls and cannot be walked along.
+- **Coarse Z bands** — 160 units, max 4, against the detailed layer's 40/14.
+- **Harder simplification** — RDP ε=4.0 vs 0.5–2.0, which removes the
+  marching-squares ripple that made our lines look furry next to a drawn map.
+- **Small-chain culling** — any chain whose bounding-box diagonal is under 24
+  world units is dropped. These are the confetti (single ledges, mesh slivers,
+  one-cell islands) a cartographer would not draw.
+- **One neutral colour** for every zone, since in this mode every line means the
+  same thing: an edge you cannot walk through.
+
+Technique split is by occupancy alone — does a flat footprint of the walkable
+area mean anything? Below 0.50, yes (caves, dungeons): coarse silhouette. Above,
+no (open terrain, built interiors): boundary extraction.
+
+Measured over the corpus: +495k segments, `maps.db` 10.2 → 13.5 MB. Per zone,
+outline is far smaller than the layer it replaces on screen — Fungus Grove
+5,315 → 2,487, Necropolis 15,080 → 1,743, Akheva 6,423 → 1,300.
+
+Outline is the **default**; Detailed is one toggle away and unchanged, because
+the dense view is genuinely liked and does carry more information. Layers are
+fetched on demand, so the common path downloads only layer 2.
+
+### 13.3 Depth control: a real Z range
+
+Reworked from focus±thickness to an explicit floor/ceiling pair on a dual-thumb
+track, matching PQDI and the in-game slider. It reads directly as "show me
+between these heights" and can express an asymmetric window, which a
+centre-and-width control cannot.
+
+This surfaced a **latent bug that made the control useless in most zones**:
+`map_zone` stored only `z_span` (a width), so the slider synthesised its range
+as symmetric about zero. Real Z ranges are nowhere near symmetric — Fungus Grove
+is −495..66, Necropolis −309..369, South Qeynos −308..84. In Fungus Grove the
+old slider offered −298..298, so most of the zone was unreachable by the control
+and its default focus of 0 sat above the zone's ceiling. Fixed by storing
+`min_z`/`max_z`, computed from the drawn segments across every layer rather than
+from the raw mesh — the slider filters what is on screen, so its range must
+match what is on screen.
+
+Note the interaction with 13.2: depth filtering is much finer in Detailed mode
+(up to 14 bands) than Outline (4). Outline trades depth granularity for
+legibility, which is the right trade for its purpose but worth knowing.
+
+### 13.4 On borrowing from Brewall
+
+Still no reply to the permission request (§5.4), so nothing of his is used. The
+outline results suggest that for *geometry* we do not need to: the shapes come
+out matching his topology because both derive from the same client meshes. What
+he has that we cannot derive is **judgement** — which wall matters, where a
+fake wall is, which route is the safe one. That is the gap worth asking about,
+and it is annotation, not geometry.
+
 ## References
 - [Zeal — CoastalRedwood/Zeal](https://github.com/CoastalRedwood/Zeal) (MIT)
 - [Brewall EQ Maps](https://www.eqmaps.info/eq-map-files/) · [RedGuides mirror](https://github.com/RedGuides/brewall-maps)
