@@ -843,21 +843,133 @@ Offline, build-time. The largest single chunk of work.
   label density, layer toggles.
 - Zones tab (§8.1), NPC tab (§8.2), Maps tab (§8.3).
 
-### Phase 4 — Gap-fill POI pass
-- Import the hand-researched annotations of §7.2 with `source='brewall'`.
-- Add `source='community'` submission path.
-- Attribution in UI + About page.
+### Phases 1a–3 — status
 
-### Phase 5 — Live position + map overlay
-- "You are here" arrow with heading from ZealPipes.
-- Transparent always-on-top map overlay using existing overlay infra — needs a
-  dashboard card *and* a popped-out window (`feedback_overlay_dashboard_pattern`).
-- Auto-switch zone on zone change; follow-mode.
+Done. 1b shipped without the Zeal map-config sync: that config turned out to
+live in `zeal.ini [Zeal]`, which is already global, so Grokii's per-character
+ask was unnecessary (`project_zeal_map_settings_are_global`).
 
-### Phase 6 — Generated `map_files/` export (Grokii's ask, fully realised)
-- Emit `map_files/<zone>_N.txt` from our POI set as toggleable packs.
-- Write into `config.EQPath`, prompt `/map data_mode both`.
-- Patrol routes from `grid_entries`.
+Phase 3 deliberately substituted the **Z-fade window** for the `map_zone.levels`
+floor picker, per the §11 fallback. Zones like Akheva have continuous ramps
+rather than discrete storeys, so any floor list is arbitrary cuts. The `levels`
+column was never added and is not wanted. See §13 for the readability iteration
+that followed (outline mode, height tinting, real Z bounds).
+
+### Phase 3c — Release plumbing (**must land before the first maps release**)
+
+Not a feature. `maps.db` is gitignored and exists only on the machine that ran
+`cmd/mapgen`, and unlike `quarm.db` nothing gates on its presence:
+
+- `release.yml` downloads `quarm.db` from the `data-latest` release and
+  **hard-fails** if it is missing. It says nothing about `maps.db`, so that path
+  would build and publish a mapless installer with no error — and the app
+  degrades silently, hiding the Map tab rather than complaining.
+- The local `npm run dist:win` path (the real one — `/newrelease` publishes
+  locally, `project_newrelease_ci_publishes`) happens to work because the file
+  is sitting there, but nothing verifies it is present or current.
+
+Work:
+- Publish `maps.db` as a release asset alongside `quarm.db`. Its own cadence, so
+  either its own tag or a distinct asset on `data-latest` — a `quarm.db`
+  regeneration must never imply a `maps.db` rebuild or vice versa.
+- `release.yml`: download it with the same hard-fail as `quarm.db`.
+- Local guard in the `dist` script (beside `verify-backend-fresh.cjs`): fail the
+  build if `maps.db` is absent, zero-length, or older than
+  `internal/mapgen/`, so a pipeline change without a regen cannot ship stale
+  geometry.
+
+Auto-update needs no work — verified by reading the path rather than assuming:
+`extraResources` land in the install dir's `resources/`, electron-updater runs
+the full NSIS installer, and `installer.nsh`'s cleanup is gated on
+`${isUpdated}` so it touches user data only on a real uninstall, never app
+files. An updating user gets the new `maps.db` the same way they get the new
+`.exe`.
+
+### Phase 4 — Annotation layer (traps, walls, doors, hazards)
+
+The gap-fill pass, reframed. Original plan was to import Brewall's annotations
+under `source='brewall'`. Two things changed:
+
+1. **Far more is derivable than assumed.** The trap pass already produced 819
+   markers from `spawn2` invisible NPCs — annotations *no existing map set
+   carries*, including Brewall's. The `doors` table has more of the same waiting:
+   `keyitem`/`altkeyitem`, `lockpick`, `triggerdoor`/`triggertype`, `islift`,
+   `dest_*`. Deriving beats importing — it is verifiable, regenerable, and
+   carries detail a hand annotation cannot (the actual *name* of the key).
+2. **The facts are not the drawing.** "There is a floor trap here" and "this wall
+   is fake" are observations about the game, published across Brewall, PQDI and
+   several map packs. The map *drawing* is Brewall's work; the facts are not. So
+   these are safe to record — the line to stay on is not bulk-lifting his
+   annotation file as a dataset, but entering facts verified against the game or
+   multiple public sources. Same standing as the traps already shipped.
+
+- **4a — Derive from `doors`.** New POI categories: locked door (with key item
+  name and a link to the item page), pick-only door (with skill requirement),
+  trigger/switch door, lift, in-zone teleport. `source='db:doors-*'`, so a
+  `quarm.db` release regenerates them.
+- **4b — Hand-researched set.** Fake walls, one-way walls, invisible walls,
+  jump-downs, safe spots, named camps, hazards. Needs an **authoring format**,
+  which does not exist yet: a version-controlled JSON in the repo that `mapgen`
+  compiles in with `source='research'`, following the `quest_sources.json`
+  precedent. Without it there is nowhere to put this that survives a regen.
+- **4c — Community submissions** under `source='community'`, plus an attribution
+  page crediting every source consulted.
+
+The provenance guarantee is already built and is what makes all of this safe:
+regeneration rewrites `db:*` rows only (§7.3), so research and community rows
+survive a data release untouched.
+
+### Phase 5 — Live position
+
+"You are here" on our maps. `ZealPipes` already sends what is needed —
+`Player{Location{X,Y,Z}, Heading}` per tick (`internal/zealpipe/events.go`) — and
+`ZoneMap` already draws a cased heading arrow from a `playerPos` prop that
+nothing currently passes. The work is wiring, not new capability.
+
+- **5a — In-app.** Arrow on the Zones Map tab, the Maps page and the NPC spawn
+  map. Auto-switch to the zone you are standing in. Follow mode (keep the arrow
+  centred), toggleable — it fights manual panning.
+- **5b — Auto-depth.** Drive the Z window from the player's own Z. This is the
+  payoff of the §13.3 work: standing in a Necropolis tunnel, the map shows *your*
+  level without touching a slider. Must be overridable, and must not fight a
+  manually set window.
+- **5c — Map overlay window.** Transparent, always-on-top, frameless, on the
+  existing overlay infrastructure. Needs a dashboard card **and** a popped-out
+  window (`feedback_overlay_dashboard_pattern`), the per-overlay zoom slider
+  (`project_overlay_font_zoom` — use the `config:updated` WS path, not
+  `applyZoom`), and locked-state hover (`project_overlay_lock_hover`).
+
+Constraint: Windows + Zeal only, and the pipe has no staleness detection
+(`project_npc_overlay_pipe_stall_no_fallback`), so a dead pipe must read as "no
+position" rather than freezing the arrow somewhere misleading.
+
+### Phase 6 — Export our POIs to the in-game map
+
+Grokii's original ask, fully realised, and a different thing from the existing
+"Pin in game" button — worth being precise, because they look similar:
+
+| | Pin in game (shipped) | Phase 6 |
+|---|---|---|
+| Scope | one marker | every marker we have for the zone |
+| Effort | copy, alt-tab, paste, repeat | write files once |
+| Lifetime | until you clear the map | persists, toggleable in game |
+| Limit | one command per paste (`project_eq_clipboard_cap`) | none |
+
+So: Akheva's 129 trap markers become 129 pins on the in-game map instead of 129
+copy-paste cycles.
+
+- **6a — Emit `map_files/<zone>_N.txt`** from `map_poi`, grouped into packs the
+  player chooses (traps only / vendors / everything).
+- **6b — Write into `config.EQPath`**, then prompt `/map data_mode both`.
+- **6c — Patrol routes** from `grid_entries` as line data — something no static
+  map pack has, since patrol paths are server data.
+
+**Open risk, needs investigation first:** most players already have Brewall's
+packs in `map_files/`, and Zeal's overlay slots are a fixed set
+(`<zone>.txt`, `_1`, `_2`, `_3`). Writing ours could clobber theirs. Resolve
+before writing a byte into anyone's EQ directory: confirm how many slots Zeal
+reads, whether appending to an existing file works, and back up via the existing
+config backup manager first. Nothing here ships until that is answered.
 
 ---
 
