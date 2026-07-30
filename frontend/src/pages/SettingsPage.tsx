@@ -3868,6 +3868,7 @@ const OVERLAY_POPOUT_TOGGLE: Record<OverlayName, () => void> = {
   threat:       () => { window.electron?.overlay?.toggleThreat() },
   rollTracker:  () => { window.electron?.overlay?.toggleRollTracker() },
   respawnTimer: () => { window.electron?.overlay?.toggleRespawnTimer() },
+  liveMap: () => { window.electron?.overlay?.toggleLiveMap() },
   chChain:      () => { window.electron?.overlay?.toggleCHChain() },
   chMetronome:  () => { window.electron?.overlay?.toggleCHMetronome() },
   discordVoice: () => { window.electron?.overlay?.toggleDiscordVoice() },

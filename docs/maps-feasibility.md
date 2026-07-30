@@ -932,7 +932,7 @@ The provenance guarantee is already built and is what makes all of this safe:
 regeneration rewrites `db:*` rows only (§7.3), so research and community rows
 survive a data release untouched.
 
-### Phase 5 — Live position (5a/5b done, 5c pending)
+### Phase 5 — Live position (done)
 
 "You are here" on our maps. `ZealPipes` already sends what is needed —
 `Player{Location{X,Y,Z}, Heading}` per tick (`internal/zealpipe/events.go`) — and
@@ -966,11 +966,41 @@ nothing currently passes. The work is wiring, not new capability.
   situation (the followed window with a live position, all levels without one).
   Making the badge dismissible turned out to require Reset being enabled in that
   state too, or dismissing auto was a one-way door.
-- **5c — Map overlay window.** Transparent, always-on-top, frameless, on the
-  existing overlay infrastructure. Needs a dashboard card **and** a popped-out
-  window (`feedback_overlay_dashboard_pattern`), the per-overlay zoom slider
-  (`project_overlay_font_zoom` — use the `config:updated` WS path, not
-  `applyZoom`), and locked-state hover (`project_overlay_lock_hover`).
+- **5c — Map overlay window. Done.** Transparent, always-on-top, frameless, on
+  the existing overlay infrastructure — dashboard panel *and* popped-out window
+  per `feedback_overlay_dashboard_pattern`, registered in `OVERLAY_DEFS`,
+  `dashboardLayout`, Settings and the popout-selection paths like every other
+  overlay. Defaults to `clickthrough` locked mode: it follows the player, so
+  there is nothing to scroll or clear and no reason for the map body to capture
+  the mouse mid-fight.
+
+  Both overlay surfaces render `chromeless`, which strips the technique badge,
+  Reset view, height legend and depth control. At 384px square that chrome costs
+  a third of the width and clips at the edges, and it is redundant on a surface
+  that follows the player automatically — there is nothing to reset and no window
+  to set by hand. Full controls stay on the Live Map tab.
+
+### Phase 5d — Live Map tab (added 2026-07-30)
+
+Not in the original plan; asked for once live position existed, and it earns its
+own nav entry for a reason that is not cosmetic.
+
+The Zones tab and the Maps page are **browsing** surfaces, and a browsing surface
+must not move under you — so they deliberately do *not* follow the player between
+zones. The Maps page offers a "You are in \<zone\>" button and leaves the choice
+to you. On a live map, following is the entire point.
+
+So `/live-map` (under Parsing, not Database — it is a pipe-driven real-time
+surface like Log Feed): zone tracks the game, follow-me and auto-depth default
+on, and POI search is enabled so "where is the vendor / the key door / the traps"
+is one query away from a pin. Search results feed the existing POI inspector
+rather than growing a second path to the same actions.
+
+`useLiveZone` makes the zone **sticky**: once seen it is held even after the
+position goes away, because zoning takes several seconds during which the pipe is
+silent, and a live map that blanked itself on every zone would spend those
+seconds showing nothing and then rebuild from scratch. A Live/Last known badge
+says which state it is in, so a stale map never passes for a live one.
 
 Constraint: Windows + Zeal only, and the pipe has no staleness detection
 (`project_npc_overlay_pipe_stall_no_fallback`), so a dead pipe must read as "no

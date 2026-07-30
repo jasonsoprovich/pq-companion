@@ -277,7 +277,7 @@ function audioMimeType(ext: string): string {
 
 // ── Overlay bounds persistence ────────────────────────────────────────────────
 
-type OverlayName = 'dps' | 'hps' | 'buffTimer' | 'detrimTimer' | 'customTimer' | 'trigger' | 'npc' | 'threat' | 'rollTracker' | 'respawnTimer' | 'chChain' | 'chMetronome' | 'discordVoice'
+type OverlayName = 'dps' | 'hps' | 'buffTimer' | 'detrimTimer' | 'customTimer' | 'trigger' | 'npc' | 'threat' | 'rollTracker' | 'respawnTimer' | 'chChain' | 'chMetronome' | 'discordVoice' | 'liveMap'
 type Bounds = { x: number; y: number; width: number; height: number }
 
 // A window's identity for bounds/lock persistence and the generic per-window
@@ -311,6 +311,9 @@ const OVERLAY_DEFAULTS: Record<Exclude<OverlayName, 'trigger'>, Bounds> = {
   respawnTimer: { x: 0, y: 0, width: 300, height: 320 },
   chChain: { x: 0, y: 0, width: 260, height: 320 },
   chMetronome: { x: 0, y: 0, width: 220, height: 220 },
+  // Squarer and larger than the other overlays: this one draws a map, and a
+  // narrow strip of a zone footprint is unreadable.
+  liveMap: { x: 0, y: 0, width: 380, height: 380 },
   discordVoice: { x: 0, y: 0, width: 220, height: 340 },
 }
 
@@ -627,6 +630,7 @@ let hpsOverlayWindow: BrowserWindow | null = null
 let buffTimerWindow: BrowserWindow | null = null
 let chChainWindow: BrowserWindow | null = null
 let chMetronomeWindow: BrowserWindow | null = null
+let liveMapWindow: BrowserWindow | null = null
 let detrimTimerWindow: BrowserWindow | null = null
 let customTimerWindow: BrowserWindow | null = null
 // Named Custom Timers windows (one per user-created timer group), keyed by
@@ -1033,7 +1037,7 @@ function closeAllOverlays(): void {
   // Capture the open set for "restore on launch" before we tear the windows
   // down — once destroyed, currentlyOpenAutoOpenEntries() would report nothing.
   snapshotAutoOpenOverlays()
-  for (const win of [dpsOverlayWindow, hpsOverlayWindow, buffTimerWindow, detrimTimerWindow, customTimerWindow, triggerOverlayWindow, npcOverlayWindow, threatOverlayWindow, rollTrackerWindow, respawnTimerWindow, chChainWindow, chMetronomeWindow]) {
+  for (const win of [dpsOverlayWindow, hpsOverlayWindow, buffTimerWindow, detrimTimerWindow, customTimerWindow, triggerOverlayWindow, npcOverlayWindow, threatOverlayWindow, rollTrackerWindow, respawnTimerWindow, chChainWindow, chMetronomeWindow, liveMapWindow]) {
     if (win && !win.isDestroyed()) win.destroy()
   }
   for (const win of customTimerGroupWindows.values()) {
@@ -1566,6 +1570,63 @@ function createCustomTimerGroupOverlay(groupId: string, groupName: string): void
     // work on closed overlays too (matching every other overlay type), and
     // a closed-but-still-in-the-auto-open-snapshot group needs its name to
     // survive until the next explicit open/snapshot overwrites it.
+  })
+}
+
+// ── Live Map overlay window ──────────────────────────────────────────────────
+
+function createLiveMapOverlay(): void {
+  if (liveMapWindow && !liveMapWindow.isDestroyed()) {
+    liveMapWindow.focus()
+    return
+  }
+
+  const { x, y, width, height } = getRestoredBounds('liveMap', OVERLAY_DEFAULTS.liveMap)
+  liveMapWindow = new BrowserWindow({
+    x,
+    y,
+    width,
+    height,
+    // Higher floor than the list overlays: below roughly this size the zone
+    // outline stops being recognisable and the window is just noise.
+    minWidth: 220,
+    minHeight: 220,
+    transparent: true,
+    backgroundColor: '#00000000',
+    frame: false,
+    resizable: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    hasShadow: false,
+    show: false, // show after ready-to-show to avoid blank-frame flash
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    },
+  })
+
+  liveMapWindow.once('ready-to-show', () => {
+    liveMapWindow?.show()
+  })
+
+  liveMapWindow.setAlwaysOnTop(true, 'screen-saver')
+  liveMapWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  windowToOverlayName.set(liveMapWindow, 'liveMap')
+  applyInitialOverlayInput(liveMapWindow, 'liveMap')
+  trackOverlayBounds('liveMap', liveMapWindow)
+
+  if (isDev) {
+    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
+    liveMapWindow.loadURL(`${rendererUrl}/#/live-map-window`)
+  } else {
+    liveMapWindow.loadFile(join(__dirname, '../renderer/index.html'), {
+      hash: '/live-map-window',
+    })
+  }
+
+  liveMapWindow.on('closed', () => {
+    liveMapWindow = null
   })
 }
 
@@ -2230,6 +2291,24 @@ ipcMain.handle('overlay:chchain:toggle', () => {
   }
 })
 
+ipcMain.handle('overlay:livemap:open', () => {
+  createLiveMapOverlay()
+})
+
+ipcMain.handle('overlay:livemap:close', () => {
+  if (liveMapWindow && !liveMapWindow.isDestroyed()) {
+    liveMapWindow.close()
+  }
+})
+
+ipcMain.handle('overlay:livemap:toggle', () => {
+  if (liveMapWindow && !liveMapWindow.isDestroyed()) {
+    liveMapWindow.close()
+  } else {
+    createLiveMapOverlay()
+  }
+})
+
 ipcMain.handle('overlay:chmetronome:open', () => {
   createCHMetronomeOverlay()
 })
@@ -2519,6 +2598,7 @@ function userPopoutWindows(): BrowserWindow[] {
     respawnTimerWindow,
     chChainWindow,
     chMetronomeWindow,
+    liveMapWindow,
     discordVoiceOverlayWindow,
   ].filter((w): w is BrowserWindow => !!w && !w.isDestroyed())
   return [...fixed, ...customTimerGroupWindows.values()].filter((w) => !w.isDestroyed())
@@ -2559,6 +2639,7 @@ ipcMain.handle('overlay:popouts:open-all', (_event, panels?: PopoutRequestEntry[
   if (wants('respawn') && (!respawnTimerWindow || respawnTimerWindow.isDestroyed())) createRespawnTimerOverlay()
   if (wants('chChain') && (!chChainWindow || chChainWindow.isDestroyed())) createCHChainOverlay()
   if (wants('chMetronome') && (!chMetronomeWindow || chMetronomeWindow.isDestroyed())) createCHMetronomeOverlay()
+  if (wants('liveMap') && (!liveMapWindow || liveMapWindow.isDestroyed())) createLiveMapOverlay()
   if (wants('discordVoice') && (!discordVoiceOverlayWindow || discordVoiceOverlayWindow.isDestroyed())) createDiscordVoiceOverlay()
   for (const g of groupWants) {
     const win = customTimerGroupWindows.get(g.id)
@@ -2651,6 +2732,7 @@ function overlayWindowByName(name: WindowKey): BrowserWindow | null {
     case 'respawnTimer': return respawnTimerWindow
     case 'chChain': return chChainWindow
     case 'chMetronome': return chMetronomeWindow
+    case 'liveMap': return liveMapWindow
     case 'discordVoice': return discordVoiceOverlayWindow
     default: return null
   }
@@ -2671,6 +2753,7 @@ function createOverlayByName(name: OverlayName): void {
     case 'respawnTimer': createRespawnTimerOverlay(); break
     case 'chChain': createCHChainOverlay(); break
     case 'chMetronome': createCHMetronomeOverlay(); break
+    case 'liveMap': createLiveMapOverlay(); break
     case 'discordVoice': createDiscordVoiceOverlay(); break
     default: break
   }

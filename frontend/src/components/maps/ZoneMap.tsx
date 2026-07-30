@@ -59,6 +59,15 @@ export interface ZoneMapProps {
   // which needs the parent to have a definite height of its own.
   height?: number | 'fill'
   showLabels?: boolean
+  // chromeless strips the technique badge, Reset view, height legend and depth
+  // control, leaving only the map.
+  //
+  // For the overlay surfaces, where the window can be 384px square: that chrome
+  // costs a third of the width, clips at the edges, and is redundant there
+  // anyway — an overlay follows the player automatically, so there is nothing to
+  // reset and no window to set by hand. The full controls live on the Live Map
+  // tab, which has room for them.
+  chromeless?: boolean
 }
 
 const CATEGORY_STYLE: Record<MapPOICategory, { color: string; short: string }> = {
@@ -210,6 +219,7 @@ export function ZoneMap({
   onPOIClick,
   height = 520,
   showLabels = true,
+  chromeless = false,
 }: ZoneMapProps): React.ReactElement {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const wrapRef = useRef<HTMLDivElement | null>(null)
@@ -636,6 +646,7 @@ export function ZoneMap({
         }}
       />
 
+      {!chromeless && (
       <div className="absolute right-2 top-2 flex flex-col items-end gap-1">
         <span
           className="rounded px-1.5 py-0.5 text-[10px]"
@@ -660,8 +671,10 @@ export function ZoneMap({
           Reset view
         </button>
       </div>
+      )}
 
-      {zScale && <HeightLegend scale={zScale} />}
+      {!chromeless && zScale && <HeightLegend scale={zScale} />}
+      {!chromeless && (
       <DepthControl
         zone={zone}
         depth={depth}
@@ -678,6 +691,7 @@ export function ZoneMap({
           setAutoOff(false)
         }}
       />
+      )}
     </div>
   )
 }

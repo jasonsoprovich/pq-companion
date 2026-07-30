@@ -49,6 +49,11 @@ export interface ZoneMapPanelProps {
   // whichever one the player is standing in. Only surfaces when the live
   // position says they are somewhere else, so it never appears without a reason.
   onJumpToZone?: (zone: string) => void
+  // live marks the surface as "the zone I am standing in" rather than "a zone I
+  // looked up". It adds POI search and defaults follow-me on, and keeps its own
+  // follow preference — the right default differs by surface, and sharing one
+  // key would make turning it on for the live map hijack the Zones tab too.
+  live?: boolean
 }
 
 export function ZoneMapPanel({
@@ -56,6 +61,7 @@ export function ZoneMapPanel({
   height = 'fill',
   showZoneButton = true,
   onJumpToZone,
+  live = false,
 }: ZoneMapPanelProps): React.ReactElement {
   const navigate = useNavigate()
   // Outline is the default: one clean line drawing, the same in every zone.
@@ -84,7 +90,11 @@ export function ZoneMapPanel({
   const playerPos = usePlayerPosition()
   // Follow the view to the player. Off by default: it takes pan away from you,
   // which is the wrong default while browsing a map you are not standing in.
-  const [followPlayer, setFollowPlayer] = useCachedState('maps.followPlayer', false)
+  const [followPlayer, setFollowPlayer] = useCachedState(
+    live ? 'liveMap.followPlayer' : 'maps.followPlayer',
+    live,
+  )
+  const [query, setQuery] = useState('')
   const [copied, setCopied] = useState<string | null>(null)
 
   const visible = useMemo(() => new Set(enabled), [enabled])
@@ -93,6 +103,14 @@ export function ZoneMapPanel({
     for (const p of pois) m[p.category] = (m[p.category] ?? 0) + 1
     return m
   }, [pois])
+
+  // POI search, live surface only. Matches on the label, which is what a player
+  // would type — "key", "trap", a vendor's name — rather than on category.
+  const matches = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!live || q.length < 2) return []
+    return pois.filter((p) => p.label.toLowerCase().includes(q)).slice(0, 40)
+  }, [live, query, pois])
 
   const copy = (key: string, text: string): void => {
     navigator.clipboard.writeText(text).then(() => {
@@ -249,6 +267,63 @@ export function ZoneMapPanel({
           </button>
         )}
       </div>
+
+      {live && (
+        <div className="relative shrink-0">
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Find in this zone — a vendor, a key, a trap…"
+            className="w-full rounded border px-2 py-1 text-xs outline-none"
+            style={{
+              backgroundColor: 'var(--color-surface)',
+              borderColor: 'var(--color-border)',
+              color: 'var(--color-foreground)',
+            }}
+          />
+          {matches.length > 0 && (
+            // Absolute so the results float over the map rather than shoving it
+            // down and rescaling the canvas on every keystroke.
+            <div
+              className="absolute inset-x-0 top-full z-10 mt-0.5 max-h-56 overflow-y-auto rounded border"
+              style={{
+                backgroundColor: 'var(--color-surface)',
+                borderColor: 'var(--color-border)',
+              }}
+            >
+              {matches.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => {
+                    // Selecting highlights it on the map and opens the inspector,
+                    // which already carries "Pin in game" — so search lands in the
+                    // same place a map click does rather than growing a second
+                    // path to the same actions.
+                    setSelected(p)
+                    setQuery('')
+                    // A hidden layer would highlight something invisible.
+                    if (!visible.has(p.category)) {
+                      setEnabled((prev) => [...prev, p.category])
+                    }
+                  }}
+                  className="flex w-full items-center gap-2 border-b px-2 py-1 text-left text-xs last:border-b-0"
+                  style={{ borderColor: 'var(--color-border)' }}
+                >
+                  <span
+                    className="shrink-0 text-[9px] uppercase tracking-wider"
+                    style={{ color: 'var(--color-muted)' }}
+                  >
+                    {p.category.replace('_', ' ')}
+                  </span>
+                  <span className="truncate" style={{ color: 'var(--color-foreground)' }}>
+                    {p.label}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* A render fault in the canvas must not unmount the app. One did:
           a null deref in the drag handler blanked the whole window.

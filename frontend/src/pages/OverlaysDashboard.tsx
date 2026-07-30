@@ -25,6 +25,7 @@ import CHChainPanel from '../components/overlays/CHChainPanel'
 import CHMetronomePanel from '../components/overlays/CHMetronomePanel'
 import CustomTimerPanel from '../components/overlays/CustomTimerPanel'
 import DiscordVoicePanel from '../components/overlays/DiscordVoicePanel'
+import LiveMapPanel from '../components/overlays/LiveMapPanel'
 import { ConfirmModal } from '../components/ConfirmModal'
 import TimerGroupsModal from '../components/TimerGroupsModal'
 import { clearTimers, listTimerGroups, getConfig } from '../services/api'
@@ -77,6 +78,7 @@ const PANEL_POPOUT: Record<DashboardPanelKey, { name: OverlayName; toggle: () =>
   chMetronome: { name: 'chMetronome',  toggle: () => { window.electron?.overlay?.toggleCHMetronome() } },
   custom:      { name: 'customTimer',  toggle: () => { window.electron?.overlay?.toggleCustomTimer() } },
   discordVoice: { name: 'discordVoice', toggle: () => { window.electron?.overlay?.toggleDiscordVoice() } },
+  liveMap:     { name: 'liveMap',      toggle: () => { window.electron?.overlay?.toggleLiveMap() } },
 }
 
 // Compact square icon button for the manager's per-overlay rows.
@@ -928,6 +930,17 @@ export default function OverlaysDashboard(): React.ReactElement {
             defaultHeight={layout.discordVoice.height}
             snapGridSize={SNAP_GRID}
             onLayoutChange={handleLayoutChange('discordVoice')}
+          />
+        )}
+        {layout.liveMap.visible && (
+          <LiveMapPanel
+            key={`liveMap-${layoutVersion}`}
+            defaultX={layout.liveMap.x}
+            defaultY={layout.liveMap.y}
+            defaultWidth={layout.liveMap.width}
+            defaultHeight={layout.liveMap.height}
+            snapGridSize={SNAP_GRID}
+            onLayoutChange={handleLayoutChange('liveMap')}
           />
         )}
         {timerGroups.map((g) => {

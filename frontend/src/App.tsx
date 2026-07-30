@@ -36,6 +36,8 @@ const CharmPetFinderPage = lazy(() => import('./pages/CharmPetFinderPage'))
 const PoPFlaggingPage = lazy(() => import('./pages/PoPFlaggingPage'))
 const ZonesPage = lazy(() => import('./pages/ZonesPage'))
 const MapsPage = lazy(() => import('./pages/MapsPage'))
+const LiveMapPage = lazy(() => import('./pages/LiveMapPage'))
+const LiveMapWindowPage = lazy(() => import('./pages/LiveMapWindowPage'))
 const RecipesPage = lazy(() => import('./pages/RecipesPage'))
 const TradeskillLevelingPage = lazy(() => import('./pages/TradeskillLevelingPage'))
 const QuestsPage = lazy(() => import('./pages/QuestsPage'))
@@ -270,6 +272,7 @@ export default function App(): React.ReactElement {
         <Route path="threat-overlay-window" element={<OverlayPage overlayKey="threat"><ThreatOverlayWindowPage /></OverlayPage>} />
         <Route path="roll-tracker-window" element={<OverlayPage overlayKey="rollTracker"><RollTrackerWindowPage /></OverlayPage>} />
         <Route path="respawn-timer-window" element={<OverlayPage overlayKey="respawnTimer"><RespawnTimerWindowPage /></OverlayPage>} />
+        <Route path="live-map-window" element={<OverlayPage overlayKey="liveMap"><LiveMapWindowPage /></OverlayPage>} />
         <Route path="ch-chain-window" element={<OverlayPage overlayKey="chChain"><CHChainOverlayWindowPage /></OverlayPage>} />
         <Route path="ch-metronome-window" element={<OverlayPage overlayKey="chMetronome"><CHMetronomeOverlayWindowPage /></OverlayPage>} />
 
@@ -285,6 +288,7 @@ export default function App(): React.ReactElement {
           <Route path="pop-flags" element={<PoPFlaggingPage />} />
           <Route path="zones" element={<ZonesPage />} />
           <Route path="maps" element={<MapsPage />} />
+          <Route path="live-map" element={<LiveMapPage />} />
           <Route path="recipes" element={<RecipesPage />} />
           <Route path="tradeskill-leveling" element={<TradeskillLevelingPage />} />
           <Route path="quests" element={<QuestsPage />} />

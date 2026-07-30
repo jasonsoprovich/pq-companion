@@ -43,6 +43,9 @@ export interface ElectronAPI {
     openCHChain: () => Promise<void>
     closeCHChain: () => Promise<void>
     toggleCHChain: () => Promise<void>
+    openLiveMap: () => Promise<void>
+    closeLiveMap: () => Promise<void>
+    toggleLiveMap: () => Promise<void>
     openCHMetronome: () => Promise<void>
     closeCHMetronome: () => Promise<void>
     toggleCHMetronome: () => Promise<void>

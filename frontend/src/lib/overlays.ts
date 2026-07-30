@@ -24,6 +24,7 @@ export type OverlayName =
   | 'chChain'
   | 'chMetronome'
   | 'discordVoice'
+  | 'liveMap'
 
 /**
  * How an overlay behaves while locked.
@@ -48,6 +49,10 @@ export const DEFAULT_LOCKED_MODE: LockedMode = 'interactive'
 // Users can still change it in Settings → Overlays like any other overlay.
 const OVERLAY_DEFAULT_LOCKED_MODE: Partial<Record<OverlayName, LockedMode>> = {
   discordVoice: 'clickthrough',
+  // The live map is a HUD: it follows the player, so there is nothing to scroll
+  // or clear and no reason for the map body to capture the mouse while playing.
+  // Only the header responds to hover, as with Discord Voice.
+  liveMap: 'clickthrough',
 }
 
 export const OVERLAY_DEFS: { name: OverlayName; label: string }[] = [
@@ -63,6 +68,7 @@ export const OVERLAY_DEFS: { name: OverlayName; label: string }[] = [
   { name: 'chChain', label: 'CH Chain' },
   { name: 'chMetronome', label: 'CH Metronome' },
   { name: 'discordVoice', label: 'Discord Voice' },
+  { name: 'liveMap', label: 'Live Map' },
 ]
 
 // Matches a StreamKit voice-overlay URL, e.g.
