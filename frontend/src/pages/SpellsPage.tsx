@@ -343,6 +343,32 @@ interface DetailPanelProps {
   spell: Spell | null
 }
 
+// Sub-tabs, matching the Items, Zones and NPCs detail panels. A spell was one
+// long scroll with "how to acquire" — the reason most lookups happen — below the
+// fold past casting, targeting, classes, effects and every emote string.
+//
+// Hidden when empty, so a spell with no scroll and no proc items shows a single
+// Overview tab and reads exactly as it did before.
+type SpellTabKey = 'overview' | 'acquire' | 'items'
+
+const SPELL_TABS: { key: SpellTabKey; label: string }[] = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'acquire', label: 'How to Acquire' },
+  { key: 'items', label: 'Items with Effect' },
+]
+
+function visibleSpellTabs(
+  crossRefs: SpellCrossRefs | null,
+): { key: SpellTabKey; label: string }[] {
+  return SPELL_TABS.filter((tab) => {
+    switch (tab.key) {
+      case 'overview': return true
+      case 'acquire': return (crossRefs?.scroll_items?.length ?? 0) > 0
+      case 'items': return (crossRefs?.effect_items?.length ?? 0) > 0
+    }
+  })
+}
+
 function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
   const navigate = useNavigate()
   const levelCap = eraMaxLevel(usePoPEnabled())
@@ -350,6 +376,7 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
   const [crossRefs, setCrossRefs] = useState<SpellCrossRefs | null>(null)
   const [showTriggerModal, setShowTriggerModal] = useState(false)
   const [rawOpen, setRawOpen] = useState(false)
+  const [activeTab, setActiveTab] = useState<SpellTabKey>('overview')
   const rawFetcher = useCallback(() => getSpellRaw(spell!.id), [spell?.id])
   const refNames = useSpellRefNames(spell)
   const itemNames = useItemRefNames(spell)
@@ -403,9 +430,13 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
   if (spell.no_dispell) flags.push('NO DISPELL')
 
   return (
-    <div className="flex-1 overflow-y-auto px-5 py-4">
-      {/* Header */}
-      <div className="mb-4 flex items-start justify-between gap-3">
+    <div className="flex flex-1 flex-col overflow-hidden">
+      {/* Header — stays put while the tab content scrolls under it. */}
+      <div
+        className="shrink-0 border-b px-5 pt-4 pb-0"
+        style={{ borderColor: 'var(--color-border)' }}
+      >
+      <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3">
           <SpellIcon id={spell.new_icon} name={spell.name} size={40} />
           <div>
@@ -468,6 +499,27 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
         </div>
       </div>
 
+        {/* Tabs */}
+        <div className="mt-3 flex gap-0 overflow-x-auto">
+          {visibleSpellTabs(crossRefs).map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className="shrink-0 px-3 py-1.5 text-xs font-medium transition-colors"
+              style={{
+                color: activeTab === tab.key ? 'var(--color-primary)' : 'var(--color-muted)',
+                borderBottom:
+                  activeTab === tab.key
+                    ? '2px solid var(--color-primary)'
+                    : '2px solid transparent',
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <RawDataModal
         open={rawOpen}
         title={spell.name}
@@ -482,6 +534,9 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
         />
       )}
 
+      {/* Tab content */}
+      <div className="flex-1 overflow-y-auto px-5 py-4">
+      {activeTab === 'overview' && (
       <div className="flex flex-col gap-3">
         {/* Casting */}
         <Section title="Casting">
@@ -586,6 +641,17 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
           )
         )}
 
+        {/* Info */}
+        <Section title="Info">
+          <StatRow label="Spell ID" value={spell.id} />
+        </Section>
+
+        <VariantLinks base="/spells" variantIds={spell.variant_ids} canonicalId={spell.canonical_id} />
+      </div>
+      )}
+
+      {activeTab === 'acquire' && (
+      <div className="flex flex-col gap-3">
         {/* Taught by */}
         {crossRefs && crossRefs.scroll_items.length > 0 && (
           <Section title="Taught by">
@@ -608,19 +674,24 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
           </Section>
         )}
 
-        {/* How to acquire — vendors, drops, tradeskill, etc. for the scroll */}
+        {/* Where the scroll itself comes from — vendors, drops, tradeskill */}
         {crossRefs && crossRefs.scroll_items.length > 0 && (
           <div>
             <div
               className="mb-1 text-[10px] font-semibold uppercase tracking-widest"
               style={{ color: 'var(--color-muted)' }}
             >
-              How to acquire
+              Scroll sources
             </div>
             <SpellAcquisition spellId={spell.id} />
           </div>
         )}
 
+      </div>
+      )}
+
+      {activeTab === 'items' && (
+      <div className="flex flex-col gap-3">
         {/* Items with this effect */}
         {crossRefs && crossRefs.effect_items.length > 0 && (
           <Section title="Items with this effect">
@@ -657,12 +728,8 @@ function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
           </Section>
         )}
 
-        {/* Info */}
-        <Section title="Info">
-          <StatRow label="Spell ID" value={spell.id} />
-        </Section>
-
-        <VariantLinks base="/spells" variantIds={spell.variant_ids} canonicalId={spell.canonical_id} />
+      </div>
+      )}
       </div>
     </div>
   )

@@ -22,9 +22,18 @@ const CONTEXT_LAYERS: MapPOICategory[] = ['zone_line', 'succor']
 interface NPCSpawnMapProps {
   npcName: string
   spawns: NPCSpawnPoint[]
+  height?: number
+  // collapsible adds the disclosure header. Off when this already has a tab of
+  // its own, where a collapse toggle would only let you hide the tab's content.
+  collapsible?: boolean
 }
 
-export function NPCSpawnMap({ npcName, spawns }: NPCSpawnMapProps): React.ReactElement | null {
+export function NPCSpawnMap({
+  npcName,
+  spawns,
+  height = 300,
+  collapsible = true,
+}: NPCSpawnMapProps): React.ReactElement | null {
   const [open, setOpen] = useCachedState('npcs.mapOpen', true)
 
   // An NPC can spawn in several zones; each needs its own map.
@@ -38,6 +47,19 @@ export function NPCSpawnMap({ npcName, spawns }: NPCSpawnMapProps): React.ReactE
 
   const [active, setActive] = useState(zones[0]?.zone ?? null)
   if (zones.length === 0) return null
+
+  if (!collapsible) {
+    return (
+      <SpawnMapBody
+        npcName={npcName}
+        spawns={spawns}
+        zones={zones}
+        active={active ?? zones[0].zone}
+        onZone={setActive}
+        height={height}
+      />
+    )
+  }
 
   return (
     <div>
@@ -57,6 +79,7 @@ export function NPCSpawnMap({ npcName, spawns }: NPCSpawnMapProps): React.ReactE
           zones={zones}
           active={active ?? zones[0].zone}
           onZone={setActive}
+          height={height}
         />
       )}
     </div>
@@ -69,16 +92,17 @@ function SpawnMapBody({
   zones,
   active,
   onZone,
+  height,
 }: {
   npcName: string
   spawns: NPCSpawnPoint[]
   zones: { zone: string; label: string }[]
   active: string
   onZone: (z: string) => void
+  height: number
 }): React.ReactElement {
-  // Always outline mode: this map is 300px tall and exists to answer "where in
-  // the zone", so legibility at a glance beats detail that would be illegible
-  // at this size anyway.
+  // Always outline mode: this map exists to answer "where in the zone", at a
+  // size where the detailed layers would be illegible anyway.
   const { zone, outline, pois, loading, error } = useZoneMap(active, 'outline')
 
   // Spawn points arrive in game coordinates; the map works in map space, which
@@ -137,7 +161,7 @@ function SpawnMapBody({
               pois={pois}
               visibleCategories={visible}
               highlights={highlights}
-              height={300}
+              height={height}
               showLabels={false}
             />
           </ErrorBoundary>

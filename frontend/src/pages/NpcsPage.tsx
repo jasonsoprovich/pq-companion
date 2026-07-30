@@ -754,6 +754,49 @@ interface DetailPanelProps {
   npc: NPC | null
 }
 
+// Sub-tabs, matching the Items and Zones detail panels. An NPC page was one
+// long scroll where the loot table and the spawn map — the two things anyone
+// actually opens an NPC for — sat below several screens of stats.
+//
+// Tabs are hidden when they would be empty, as on the Items page, so the common
+// NPC shows Overview / Loot / Map rather than five tabs of which three say
+// "nothing here".
+type NPCTabKey = 'overview' | 'loot' | 'sells' | 'spells' | 'map'
+
+const NPC_TABS: { key: NPCTabKey; label: string }[] = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'loot', label: 'Loot' },
+  { key: 'sells', label: 'Sells' },
+  { key: 'spells', label: 'Spells' },
+  { key: 'map', label: 'Map' },
+]
+
+function visibleNPCTabs(
+  loot: NPCLootTable | null,
+  merchant: NPCMerchant | null,
+  spells: NPCSpells | null,
+  spawns: NPCSpawns | null,
+): { key: NPCTabKey; label: string }[] {
+  const hasSpells =
+    !!spells &&
+    (spells.entries.length > 0 ||
+      !!spells.attack_proc ||
+      !!spells.range_proc ||
+      !!spells.defensive_proc)
+  return NPC_TABS.filter((tab) => {
+    switch (tab.key) {
+      case 'overview': return true
+      case 'loot':
+        return (loot?.drops?.length ?? 0) > 0 || (loot?.zone_wide_drops?.length ?? 0) > 0
+      case 'sells': return (merchant?.items?.length ?? 0) > 0
+      case 'spells': return hasSpells
+      case 'map':
+        return (spawns?.spawn_points?.length ?? 0) > 0 ||
+          (spawns?.spawn_groups?.length ?? 0) > 0
+    }
+  })
+}
+
 function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
   const navigate = useNavigate()
   const [spawns, setSpawns] = useState<NPCSpawns | null>(null)
@@ -764,6 +807,7 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
   const [zealCopied, setZealCopied] = useState<string | null>(null)
   const [bulkCopied, setBulkCopied] = useState<number | null>(null)
   const [rawOpen, setRawOpen] = useState(false)
+  const [activeTab, setActiveTab] = useState<NPCTabKey>('overview')
   const rawFetcher = useCallback(() => getNPCRaw(npc!.id), [npc?.id])
   const charLevel = useActiveCharacterLevel()
 
@@ -889,9 +933,12 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
   const pbaoe = charLevel != null ? pbaoeReduction(charLevel, pbaoeMobLevel) : null
 
   return (
-    <div className="flex-1 overflow-y-auto px-5 py-4">
-      {/* Header */}
-      <div className="mb-4">
+    <div className="flex flex-1 flex-col overflow-hidden">
+      {/* Header — stays put while the tab content scrolls under it. */}
+      <div
+        className="shrink-0 border-b px-5 pt-4 pb-0"
+        style={{ borderColor: 'var(--color-border)' }}
+      >
         <div className="flex items-start justify-between gap-3">
           <h2
             className="text-xl font-bold leading-tight"
@@ -933,8 +980,31 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
         <div className="mt-0.5 text-xs" style={{ color: 'var(--color-muted)' }}>
           {bodyTypeName(npc.body_type)}
         </div>
+
+        {/* Tabs */}
+        <div className="mt-3 flex gap-0 overflow-x-auto">
+          {visibleNPCTabs(loot, merchant, spells, spawns).map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className="shrink-0 px-3 py-1.5 text-xs font-medium transition-colors"
+              style={{
+                color: activeTab === tab.key ? 'var(--color-primary)' : 'var(--color-muted)',
+                borderBottom:
+                  activeTab === tab.key
+                    ? '2px solid var(--color-primary)'
+                    : '2px solid transparent',
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </div>
 
+      {/* Tab content */}
+      <div className="flex-1 overflow-y-auto px-5 py-4">
+      {activeTab === 'overview' && (
       <div className="flex flex-col gap-3">
         {/* Combat */}
         <Section title="Combat">
@@ -981,13 +1051,6 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
         {specialAbilities.length > 0 && (
           <Section title="Special Abilities">
             <SpecialAbilitiesList abilities={specialAbilities} />
-          </Section>
-        )}
-
-        {/* Spells & Procs */}
-        {spells && (spells.entries.length > 0 || spells.attack_proc || spells.range_proc || spells.defensive_proc) && (
-          <Section title="Spells & Procs">
-            <NPCSpellsSection spells={spells} onSpellClick={(id) => navigate(`/spells?select=${id}`)} />
           </Section>
         )}
 
@@ -1053,13 +1116,19 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
           </Section>
         )}
 
-        {/* Vendor inventory */}
-        {merchant && merchant.items.length > 0 && (
-          <Section title={`Sells (${merchant.items.length})`}>
-            <MerchantInventory merchant={merchant} onItemClick={(id) => navigate(`/items?select=${id}`)} />
-          </Section>
-        )}
+      </div>
+      )}
 
+      {activeTab === 'spells' && spells && (
+        <NPCSpellsSection spells={spells} onSpellClick={(id) => navigate(`/spells?select=${id}`)} />
+      )}
+
+      {activeTab === 'sells' && merchant && (
+        <MerchantInventory merchant={merchant} onItemClick={(id) => navigate(`/items?select=${id}`)} />
+      )}
+
+      {activeTab === 'loot' && (
+      <div className="flex flex-col gap-3">
         {/* Loot Table */}
         {loot && loot.drops.length > 0 && (
           <Section title="Loot Table">{renderDrops(loot.drops)}</Section>
@@ -1070,6 +1139,21 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
           <Section title={loot.zone_wide_label || 'Zone-wide loot'}>
             {renderDrops(loot.zone_wide_drops)}
           </Section>
+        )}
+      </div>
+      )}
+
+      {activeTab === 'map' && (
+      <div className="flex flex-col gap-3">
+        {/* The map leads: it is the reason to open this tab, and the coordinate
+            table below is the same information for pasting into Zeal. */}
+        {spawns && (spawns.spawn_points?.length ?? 0) > 0 && (
+          <NPCSpawnMap
+            npcName={npc.name}
+            spawns={spawns.spawn_points}
+            height={430}
+            collapsible={false}
+          />
         )}
 
         {/* Spawns */}
@@ -1126,7 +1210,6 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
             <p className="pt-1 text-[10px]" style={{ color: 'var(--color-muted)' }}>
               Paste one command at a time — EQ collapses a multi-line paste into a single line.
             </p>
-            <NPCSpawnMap npcName={npc.name} spawns={spawns.spawn_points} />
           </Section>
         )}
 
@@ -1182,6 +1265,8 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
             ))}
           </Section>
         )}
+      </div>
+      )}
       </div>
 
       <RawDataModal
