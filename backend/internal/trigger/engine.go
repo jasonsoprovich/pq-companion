@@ -745,7 +745,17 @@ func (e *Engine) fire(c compiled, matchedLine string, firedAt time.Time, match [
 		if durationSecs := resolveTimerDuration(t, extra, match, names); durationSecs > 0 {
 			alertJSON := marshalTimerAlerts(t.TimerAlerts, match, names, builtins)
 			key := resolveTimerKey(t, c.timerKey, match, names)
+			// Prefer the trigger's own capture group; when it has none (a
+			// literal boss-name pattern has nothing to capture), fall back to
+			// the inferred combat target so the timer still binds to a real
+			// mob instead of going out target-less. A target-less detrimental
+			// is swept by removeOnKill on ANY kill in the zone/raid (see its
+			// doc comment) — without this fallback, an unrelated add or pet
+			// dying clears a boss debuff timer that has nothing to do with it.
 			target := resolveTimerTarget(t, match, names)
+			if target == "" {
+				target = builtins["target"]
+			}
 			spellID := t.SpellID
 			if extra != nil && extra.SpellID > 0 {
 				spellID = extra.SpellID

@@ -1511,18 +1511,23 @@ func (e *Engine) removeSelfTimers() {
 // killed mob (exact TargetName match) AND drop any orphan target-less
 // detrimental timers.
 //
-// Triggers (StartExternal) create detrimental timers without a target —
-// the regex match line carries the target text, but the trigger engine
-// hasn't been wired to capture and forward it. When the spell-landed
-// pipeline doesn't ALSO fire on the same line (because the spell's
-// cast_on_other DB text doesn't match, or the cast-by-me gate filters
-// it), only the target-less trigger timer exists. An exact target match
-// alone would never clear it because TargetName is empty.
+// Triggers (StartExternal) usually bind a real TargetName now — the trigger
+// engine fills it from the trigger's own capture group when configured, or
+// falls back to the inferred combat target (see trigger.Engine.fire) — but
+// neither source is guaranteed: a literal-name trigger with no live target
+// selected still creates a target-less timer, as does the spell-landed
+// pipeline's own dedup gap when it doesn't fire on the same line (stale
+// cast_on_other DB text, or the cast-by-me gate). An exact target match
+// alone would never clear those because TargetName is empty.
 //
-// In practice the active player almost always debuffs the mob they're
-// killing, so wiping orphan detrimentals on any kill matches user
-// expectations ("I killed it, the debuff is gone"). Buffs are left
-// alone — a target-less buff is usually a self-buff or a raid-wide
+// Orphan sweeping is therefore a safety net, not the primary path: EVERY
+// target-less detrimental is dropped on ANY kill in the zone/raid, whether
+// or not it has anything to do with the mob that just died (an add, a pet,
+// a groupmate's kill). That's a real cost — see the "death causing timers
+// to be removed" report where an unrelated Eye/pet kill wiped a boss debuff
+// timer — so the fire()-side fallback above should be the thing that keeps
+// this path from firing in the common case. Buffs are left alone
+// regardless — a target-less buff is usually a self-buff or a raid-wide
 // effect that survives a single mob's death.
 //
 // Charm is the one detrimental excluded from the orphan sweep: a charmed

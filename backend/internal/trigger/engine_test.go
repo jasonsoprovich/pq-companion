@@ -1250,6 +1250,43 @@ func TestEngine_TimerTargetCapture(t *testing.T) {
 	}
 }
 
+// TestEngine_TimerTargetFallsBackToCombatTarget verifies that a trigger with
+// no TimerTargetCapture (a literal boss-name pattern has nothing to capture)
+// still binds its StartExternal call to the inferred combat target rather
+// than leaving TargetName empty. This is the fix for the Discord report
+// "Death's Causing Timers to be removed": an orphan (target-less)
+// detrimental timer is swept by spelltimer's removeOnKill on ANY kill in the
+// zone/raid, so an unrelated add or pet dying was wiping a boss debuff timer
+// that had nothing to do with it. Binding the real target here means only
+// that boss's own death clears the timer.
+func TestEngine_TimerTargetFallsBackToCombatTarget(t *testing.T) {
+	s := openTestStore(t)
+	hub := ws.NewHub()
+	sink := &captureSink{}
+	e := NewEngine(s, hub, sink, nil)
+	e.SetTargetProvider(func() string { return "Lord Inquisitor Seru" })
+
+	tr := &Trigger{
+		ID:                "seru-torturing-winds",
+		Name:              "Lord Inquisitor Seru - Torturing Winds",
+		Enabled:           true,
+		Pattern:           `^.+ is stricken by torturing winds\.$`,
+		TimerType:         TimerTypeDetrimental,
+		TimerDurationSecs: 30,
+		Actions:           []Action{},
+		CreatedAt:         time.Now().UTC(),
+	}
+	if err := s.Insert(tr); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	e.Reload()
+
+	e.Handle(time.Now(), "Larcen is stricken by torturing winds.")
+	if sink.calls != 1 || sink.target != "Lord Inquisitor Seru" {
+		t.Errorf("StartExternal target = %+v, want target Lord Inquisitor Seru", sink)
+	}
+}
+
 // TestEngine_ExtraPatterns verifies any-pattern semantics: a trigger fires
 // when the primary OR any enabled extra pattern matches, the matching
 // pattern's captures feed the actions, disabled extras are ignored, and
