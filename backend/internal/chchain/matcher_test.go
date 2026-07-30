@@ -23,9 +23,10 @@ type manaCall struct {
 }
 
 type fakeSink struct {
-	calls     []capture
-	confirmed []capture
-	manas     []manaCall
+	calls       []capture
+	confirmed   []capture
+	unconfirmed []string
+	manas       []manaCall
 }
 
 func (f *fakeSink) StartExternal(name, category string, dur, _ float64, _ time.Time, _ json.RawMessage, _ int, targetName, _ string, _ bool, _ string) {
@@ -34,6 +35,10 @@ func (f *fakeSink) StartExternal(name, category string, dur, _ float64, _ time.T
 
 func (f *fakeSink) ConfirmCast(name, targetName string) {
 	f.confirmed = append(f.confirmed, capture{name: name, target: targetName})
+}
+
+func (f *fakeSink) UnconfirmCast(caster string, _ time.Time) {
+	f.unconfirmed = append(f.unconfirmed, caster)
 }
 
 func (f *fakeSink) SetCasterMana(name, targetName string, pct int) {
@@ -517,5 +522,25 @@ func TestMatcher_MultiClericChainPrecisionAndRecall(t *testing.T) {
 	}
 	if len(wantMissed) != 1 {
 		t.Fatalf("test setup: expected exactly 1 injected miss, got %d", len(wantMissed))
+	}
+}
+
+// TestMatcher_NoteCastInterruptedForwardsToSink confirms Matcher's interrupt
+// path needs no callout bookkeeping of its own (unlike NoteCastBegin) — it
+// just forwards the caster straight to the sink, which has enough identity
+// (the timer's caster-suffixed label) to find and un-confirm the right timer
+// itself.
+func TestMatcher_NoteCastInterruptedForwardsToSink(t *testing.T) {
+	s := &fakeSink{}
+	m := newMatcher(s, true, "", 0)
+
+	m.NoteCastInterrupted("Soandso", time.Unix(5, 0))
+	if len(s.unconfirmed) != 1 || s.unconfirmed[0] != "Soandso" {
+		t.Fatalf("unconfirmed = %v, want [Soandso]", s.unconfirmed)
+	}
+
+	m.NoteCastInterrupted("", time.Unix(6, 0))
+	if len(s.unconfirmed) != 1 {
+		t.Errorf("empty caster should be a no-op, got %v", s.unconfirmed)
 	}
 }

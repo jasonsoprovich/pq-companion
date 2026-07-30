@@ -822,6 +822,22 @@ type CHChainSettings struct {
 	// PossibleMissMigrated is a one-time migration marker (see applyDefaults)
 	// — not surfaced in the UI.
 	PossibleMissMigrated bool `yaml:"possible_miss_migrated" json:"-"`
+
+	// InterruptDetectionEnabled turns on a refinement of PossibleMissEnabled:
+	// a chain timer already confirmed by a "begins to cast" line is
+	// un-confirmed and re-flagged a possible miss if that same caster is then
+	// observed being interrupted ("<Name>'s casting is interrupted!" for a
+	// bystander, "Your spell is interrupted." for the local player) before
+	// the cast would have landed. Without this, an interrupted cast quietly
+	// expires looking identical to a landed one, since confirmation only
+	// ever checked that a cast STARTED, not that it finished.
+	//
+	// Off by default, independently of PossibleMissEnabled: this only takes
+	// effect when PossibleMissEnabled is also true, and only adds a second,
+	// narrower way to flag a possible miss — it never changes existing
+	// confirm/expiry behavior for anyone who leaves it off, so guilds already
+	// happy with the current chain overlay are entirely unaffected.
+	InterruptDetectionEnabled bool `yaml:"interrupt_detection_enabled" json:"interrupt_detection_enabled"`
 }
 
 // CHCastSecs is Complete Heal's cast time in seconds. Each ch_chain countdown

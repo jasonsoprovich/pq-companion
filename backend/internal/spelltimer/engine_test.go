@@ -348,6 +348,71 @@ func TestConfirmCast_ClearsAnAlreadySetMissFlag(t *testing.T) {
 	}
 }
 
+// TestUnconfirmCast_FlagsAnInterruptedConfirmedTimer is the core of the
+// interrupt-detection refinement: a timer already confirmed by a cast-begin
+// line must be un-confirmed and flagged PossibleMiss when that same caster's
+// cast is then observed being interrupted, instead of quietly expiring as if
+// the heal landed.
+func TestUnconfirmCast_FlagsAnInterruptedConfirmedTimer(t *testing.T) {
+	e := newTestEngine()
+	started := time.Now().Add(-3 * time.Second)
+	e.StartExternal("#1  Tank  ← Alice", "ch_chain", 10, 0, started, nil, 0, "Tank", "", false, "")
+	e.ConfirmCast("#1  Tank  ← Alice", "Tank")
+
+	e.UnconfirmCast("Alice", time.Now())
+
+	tm := e.timers[timerKey("#1  Tank  ← Alice", "Tank")]
+	if tm.castConfirmed {
+		t.Error("interrupted cast should be un-confirmed")
+	}
+	if !tm.PossibleMiss {
+		t.Error("interrupted cast should be flagged PossibleMiss immediately")
+	}
+}
+
+// TestUnconfirmCast_IgnoresUnrelatedOrUnconfirmedTimers guards the same
+// no-leak properties as TestConfirmCast_IgnoresUnknownAndOtherCategories: an
+// interrupt for a caster with no matching confirmed timer, a caster whose row
+// was never confirmed in the first place, and a non-CH-chain category must
+// all be no-ops.
+func TestUnconfirmCast_IgnoresUnrelatedOrUnconfirmedTimers(t *testing.T) {
+	e := newTestEngine()
+	now := time.Now()
+	e.StartExternal("#1  Tank  ← Alice", "ch_chain", 10, 0, now, nil, 0, "Tank", "", false, "")
+	e.StartExternal("Some Buff", "buff", 10, 0, now, nil, 0, "Tank", "", false, "")
+	// Bob's timer is deliberately left unconfirmed.
+	e.StartExternal("#2  Tank  ← Bob", "ch_chain", 10, 0, now, nil, 0, "Tank", "", false, "")
+
+	e.UnconfirmCast("Nobody", now) // no matching caster
+	e.UnconfirmCast("Bob", now)    // matching caster, but never confirmed
+	e.UnconfirmCast("", now)       // empty caster is a no-op
+
+	if e.timers[timerKey("#1  Tank  ← Alice", "Tank")].PossibleMiss {
+		t.Error("Alice's timer was never confirmed and should be untouched by an unrelated interrupt")
+	}
+	if e.timers[timerKey("#2  Tank  ← Bob", "Tank")].PossibleMiss {
+		t.Error("un-confirming a never-confirmed timer must not flag it")
+	}
+}
+
+// TestUnconfirmCast_IgnoresInterruptOutsideCastWindow guards against a stale
+// or out-of-order interrupt line reversing a timer that has already fully
+// resolved — the interrupt timestamp must fall within the timer's own cast
+// window (StartsAt..ExpiresAt).
+func TestUnconfirmCast_IgnoresInterruptOutsideCastWindow(t *testing.T) {
+	e := newTestEngine()
+	started := time.Now().Add(-20 * time.Second)
+	e.StartExternal("#1  Tank  ← Alice", "ch_chain", 10, 0, started, nil, 0, "Tank", "", false, "")
+	e.ConfirmCast("#1  Tank  ← Alice", "Tank")
+
+	e.UnconfirmCast("Alice", time.Now()) // 20s after start, well past the 10s window
+
+	tm := e.timers[timerKey("#1  Tank  ← Alice", "Tank")]
+	if !tm.castConfirmed || tm.PossibleMiss {
+		t.Error("an interrupt timestamp outside the cast window must not reverse confirmation")
+	}
+}
+
 // TestPruneExpired_FlagsUnconfirmedCHChainTimerEarly is the core of the
 // possible-miss feature: a CH-chain callout whose caster was never seen
 // starting a cast is flagged chChainMissCheckDelay in — well before the 10s

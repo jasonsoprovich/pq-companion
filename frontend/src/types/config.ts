@@ -373,6 +373,12 @@ export interface CHChainSettings {
   // was cast, so it covers Cleric Complete Healing and Druid Tunare's/
   // Karana's Renewal identically.
   possible_miss_enabled?: boolean
+  // Refines possible_miss_enabled: un-confirms an already-confirmed chain
+  // bar (and re-flags it red) if that caster is then observed being
+  // interrupted before the cast would have landed. Off by default — only
+  // takes effect when possible_miss_enabled is also true, and never changes
+  // existing confirm/expiry behavior when left off.
+  interrupt_detection_enabled?: boolean
 }
 
 // DPSClassColors stores the user's per-class bar colour for the DPS meter

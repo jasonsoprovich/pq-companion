@@ -1889,6 +1889,45 @@ func (e *Engine) ConfirmCast(name, targetName string) {
 	}
 }
 
+// UnconfirmCast reverses ConfirmCast for the CH-chain timer whose caster is
+// caster, if one is currently confirmed and its cast window (StartsAt to
+// ExpiresAt) still covers ts. Called via chchain.Matcher.NoteCastInterrupted
+// when that caster's cast is observed being interrupted after having already
+// begun — without this, a confirmed timer whose cast is subsequently broken
+// quietly runs out and disappears looking identical to a landed heal, since
+// ConfirmCast only ever checked that a cast STARTED. Sets PossibleMiss
+// immediately rather than waiting for pruneExpired's chChainMissCheckDelay:
+// an interrupt is positive evidence of failure, not just an absence of
+// confirmation.
+//
+// There's no separate per-cast identity to key off — chain timers are
+// addressed by (label, target) throughout — so this matches the same
+// caster suffix the label was built with at creation time ("#2  Larzek  ←
+// Eruna"; see Matcher.matchAndStart) rather than an exact (name, target)
+// pair like ConfirmCast, since the caller here only knows the caster.
+func (e *Engine) UnconfirmCast(caster string, ts time.Time) {
+	if caster == "" {
+		return
+	}
+	suffix := "← " + caster
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for _, t := range e.timers {
+		if !isCHChainCategory(t.Category) || !t.castConfirmed {
+			continue
+		}
+		if ts.Before(t.StartsAt) || ts.After(t.ExpiresAt) {
+			continue
+		}
+		if !strings.HasSuffix(t.SpellName, suffix) {
+			continue
+		}
+		t.castConfirmed = false
+		t.PossibleMiss = true
+		return
+	}
+}
+
 // SetCasterMana updates the CH-chain timer keyed by (name, targetName) with
 // the caster's self-reported remaining mana percentage, parsed by
 // chchain.Matcher from the callout's trailing free-text note (e.g. "94%

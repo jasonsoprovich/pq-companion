@@ -24,6 +24,10 @@ import (
 type Sink interface {
 	StartExternal(name string, category string, durationSecs, displayThresholdSecs float64, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string, pinned bool, customGroup string)
 	ConfirmCast(name, targetName string)
+	// UnconfirmCast reverses ConfirmCast for the chain timer whose caster is
+	// caster, if one is currently confirmed and still within its cast
+	// window at ts — see InterruptWatcher / Matcher.NoteCastInterrupted.
+	UnconfirmCast(caster string, ts time.Time)
 	// SetCasterMana updates the (name, targetName)-keyed timer with the
 	// caster's self-reported remaining mana percentage, without touching its
 	// identity, duration, or countdown. Called right after StartExternal for
@@ -153,6 +157,17 @@ func (m *Matcher) NoteCastBegin(caster string, ts time.Time) {
 	}
 	m.pendingCasts[caster] = ts
 	m.callsMu.Unlock()
+}
+
+// NoteCastInterrupted records that caster's cast was interrupted at ts (see
+// InterruptWatcher). Unlike NoteCastBegin, this needs no callout bookkeeping
+// of its own — the sink already has enough identity (the chain timer's
+// caster-suffixed label) to find and un-confirm the right timer directly.
+func (m *Matcher) NoteCastInterrupted(caster string, ts time.Time) {
+	if caster == "" {
+		return
+	}
+	m.sink.UnconfirmCast(caster, ts)
 }
 
 // noteCall records a fresh callout for cast-begin correlation and reports

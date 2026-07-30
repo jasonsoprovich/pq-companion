@@ -2789,6 +2789,33 @@ export default function SettingsPage(): React.ReactElement {
               </span>
             </label>
 
+            <label className="mb-3 flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={config.ch_chain?.interrupt_detection_enabled ?? false}
+                disabled={!(config.ch_chain?.possible_miss_enabled ?? true)}
+                onChange={(e) =>
+                  setConfig({
+                    ...config,
+                    ch_chain: { ...config.ch_chain, interrupt_detection_enabled: e.target.checked },
+                  })
+                }
+                style={{ marginTop: 3 }}
+              />
+              <span>
+                <span className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+                  Also flag a miss on interrupt
+                </span>
+                <span className="block text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                  Extends "Flag possible misses" above: if a caster's cast was confirmed starting
+                  but then gets interrupted (a melee hit, stun, etc.) before it would have landed,
+                  the bar is un-confirmed and flagged red instead of quietly expiring as if the
+                  heal went out. Off by default — enable if your chain relies on catching
+                  interrupts specifically, not just no-casts.
+                </span>
+              </span>
+            </label>
+
             <label className="mb-3 flex flex-col gap-1">
               <span className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>Chain-call pattern (regex)</span>
               <input

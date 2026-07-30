@@ -685,6 +685,16 @@ func main() {
 		return cfgMgr.Get().CHChain
 	})
 
+	// CH-chain interrupt watcher: un-confirms an already-confirmed chain
+	// timer if that caster's cast is then observed being interrupted before
+	// it would have landed, so it's correctly flagged a possible miss
+	// instead of quietly expiring as if the heal landed. Off by default via
+	// CHChainSettings.InterruptDetectionEnabled — see
+	// internal/chchain/interrupt_watcher.go.
+	chChainInterruptWatcher := chchain.NewInterruptWatcher(chChainMatcher, func() config.CHChainSettings {
+		return cfgMgr.Get().CHChain
+	})
+
 	// CH Metronome self-cast watcher: broadcasts a confirmation event when the
 	// local player begins casting a recognized CH-chain heal, so the metronome
 	// can show a confirmed "cast sent" state instead of just assuming it once
@@ -1411,6 +1421,7 @@ func main() {
 		wishlistWatcher.HandleLine(msg)
 		chChainMatcher.HandleLine(ts, msg)
 		chChainCastWatcher.HandleLine(ts, msg)
+		chChainInterruptWatcher.HandleLine(ts, msg)
 		chMetronomeSelfCastWatcher.HandleLine(ts, msg)
 		rollTracker.HandleLine(ts, msg)
 		if keyringConsumer != nil {
