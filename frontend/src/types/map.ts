@@ -22,6 +22,9 @@ export type MapPOICategory =
   | 'locked'
   | 'switch'
   | 'teleport'
+  | 'wall'
+  | 'hazard'
+  | 'note'
   | 'ground_spawn'
   | 'trap'
   | 'tradeskill'
@@ -71,3 +74,20 @@ export interface MapGeometry {
 //              boundary layer. Far more information, and in tall zones it
 //              reads as a stack of overlapping levels.
 export type MapRenderMode = 'outline' | 'detailed'
+
+// UserAnnotation is a marker the user placed themselves, from user.db.
+//
+// Kept separate from MapPOI even though both draw as pins: these are editable
+// and deletable, MapPOIs are not, and merging the two would mean every pin
+// needing an is-it-mine check at every call site.
+export interface UserAnnotation {
+  id: number
+  zone: string
+  x: number
+  y: number
+  z: number
+  category: 'wall' | 'hazard' | 'note'
+  label: string
+  created_at: number
+  updated_at: number
+}

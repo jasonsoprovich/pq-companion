@@ -85,6 +85,20 @@ func GeneratePOIs(qdb *sql.DB) ([]POI, error) {
 		}
 		all = append(all, got...)
 	}
+
+	// Hand-researched annotations last, so a reader of this function sees the
+	// derive-first ordering, and their source tag is the only thing that
+	// distinguishes them downstream.
+	known := make(map[string]bool, len(zoneByID))
+	for _, z := range zoneByID {
+		known[z] = true
+	}
+	research, err := LoadAnnotations(known)
+	if err != nil {
+		return nil, err
+	}
+	all = append(all, research...)
+
 	return all, nil
 }
 

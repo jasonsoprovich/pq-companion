@@ -890,7 +890,7 @@ the full NSIS installer, and `installer.nsh`'s cleanup is gated on
 files. An updating user gets the new `maps.db` the same way they get the new
 `.exe`.
 
-### Phase 4 — Annotation layer (traps, walls, doors, hazards)
+### Phase 4 — Annotation layer (4a/4b/4c done; research corpus awaiting content)
 
 The gap-fill pass, reframed. Original plan was to import Brewall's annotations
 under `source='brewall'`. Two things changed:
@@ -920,13 +920,39 @@ under `source='brewall'`. Two things changed:
   ordinary double doors wired to their own other half. Only ~15 are named like
   actual controls. Pinning all 667 would have buried the real levers in
   door-pair noise, so switches are name-filtered plus `islift`.
-- **4b — Hand-researched set.** Fake walls, one-way walls, invisible walls,
-  jump-downs, safe spots, named camps, hazards. Needs an **authoring format**,
-  which does not exist yet: a version-controlled JSON in the repo that `mapgen`
-  compiles in with `source='research'`, following the `quest_sources.json`
-  precedent. Without it there is nowhere to put this that survives a regen.
-- **4c — Community submissions** under `source='community'`, plus an attribution
-  page crediting every source consulted.
+- **4b — Hand-researched set. Pipeline done, corpus empty.**
+  `internal/mapgen/annotations.json` is the authoring format — game coordinates,
+  three categories (`wall`, `hazard`, `note`), compiled in with
+  `source='research'`. Zone names are checked against `quarm.db`, because a typo
+  would otherwise silently drop rows somebody researched by hand, which is the
+  worst possible failure for this data. Every row **requires** an `evidence`
+  string and the loader errors without one, so the standard — verified in game,
+  or corroborated by two independent public sources — is enforced rather than
+  merely documented.
+
+  Before writing it I checked whether any of this was derivable after all: no
+  door name in `quarm.db` contains WALL, SECRET, HIDDEN or ILLUS, and
+  `zone.underworld` is a plane rather than a point. So fake walls genuinely are
+  not in the data, which is exactly why they are worth recording.
+
+  **The corpus itself is empty on purpose.** Populating it is research, and
+  inventing coordinates from memory would produce confident-looking markers that
+  send people into walls that are not there — worse than a blank map.
+- **4c — User annotations + submission path. Done.** Markers the user places
+  themselves, in `user.db` (never `maps.db`, which every app update replaces
+  wholesale). Placed by clicking the map, edited and deleted through the same POI
+  inspector every other pin uses, and drawn through the normal pin pipeline so
+  layer toggles, depth fade, labels and search all work on them for free.
+
+  The submission path is the export: it emits the **exact shape**
+  `annotations.json` reads, so the distance between "I marked this on my map" and
+  "every player gets this marked" is a pull request rather than a conversion. Two
+  properties make that safe, both tested:
+  - Coordinates negate back to game space. The two halves live in different
+    packages with no shared code, which is where a sign error hides — and it
+    would hide quietly, since a mirrored submission still parses and still draws.
+  - `evidence` exports **blank**, and the loader rejects blank. A raw export
+    cannot be merged without a human writing down where the fact came from.
 
 The provenance guarantee is already built and is what makes all of this safe:
 regeneration rewrites `db:*` rows only (§7.3), so research and community rows

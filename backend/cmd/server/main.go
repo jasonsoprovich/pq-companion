@@ -333,6 +333,16 @@ func main() {
 
 	// Lockout tracker: persists per-character /sll loot & legacy-item lockout
 	// snapshots. Non-fatal — failing here only disables the Lockouts page.
+	// User-authored map markers (phase 4c). In user.db, not maps.db: maps.db is a
+	// shipped read-only artifact replaced by every app update, so markers written
+	// there would be destroyed on the next release.
+	mapAnnotations, err := maps.OpenAnnotationStore(filepath.Join(home, ".pq-companion", "user.db"))
+	if err != nil {
+		slog.Error("open map annotation store", "err", err)
+		os.Exit(1)
+	}
+	defer mapAnnotations.Close()
+
 	lockoutStore, err := lockout.OpenStore(filepath.Join(home, ".pq-companion", "user.db"))
 	var lockoutConsumer *lockout.Consumer
 	var popflagConsumer *popflag.Consumer
@@ -1619,7 +1629,7 @@ func main() {
 	}
 	defer mapStore.Close()
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, replayer, npcTracker, combatTracker, historyStore, threatTracker, raidThreatAssembler, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, sb, savedQueryStore, skillsStore, traderStore, traderCapturer, popflagStore, wishlistWatcher, changelogEntries, factionEngine, emoteService, mapStore, actualPort)
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, replayer, npcTracker, combatTracker, historyStore, threatTracker, raidThreatAssembler, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, sb, savedQueryStore, skillsStore, traderStore, traderCapturer, popflagStore, wishlistWatcher, changelogEntries, factionEngine, emoteService, mapStore, mapAnnotations, actualPort)
 
 	slog.Info("server starting", "addr", listener.Addr().String(), "db", *dbPath)
 	if err := http.Serve(listener, router); err != nil {

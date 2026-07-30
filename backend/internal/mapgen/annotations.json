@@ -1,0 +1,30 @@
+{
+  "_readme": [
+    "Hand-researched map annotations — the facts no table in quarm.db carries.",
+    "",
+    "COORDINATES are game coordinates, the same convention as spawn2.x/y/z.",
+    "Note that EQ's /loc prints them in the order y, x, z — so a /loc reading of",
+    "'Your Location is -200.00, 100.00, 12.00' becomes x: 100, y: -200, z: 12.",
+    "The in-app annotation editor captures coordinates from a map click, so this",
+    "only matters when hand-editing.",
+    "",
+    "CATEGORY is one of: wall, hazard, note. Kept deliberately small — a category",
+    "earns its own map layer, and a layer nobody toggles is worse than a clear",
+    "label. Put the specifics in the label: 'Fake wall — ...', 'One-way wall — ...'.",
+    "",
+    "EVIDENCE is required and is the point of this file. These facts are safe to",
+    "record because a fact about the game is not anyone's creative work — 'there",
+    "is a fake wall here' is an observation, published across Brewall, PQDI and",
+    "several map packs. What is not safe is lifting one map set's annotation file",
+    "wholesale as a dataset. So every row states where the fact was confirmed, and",
+    "the standard is: verified in game, or corroborated by two independent public",
+    "sources. A row without real evidence should not be here; mapgen rejects an",
+    "empty evidence string rather than letting one through quietly.",
+    "",
+    "This file is intentionally near-empty. The pipeline is built; the corpus is",
+    "human research and cannot be invented from memory without producing",
+    "confident-looking coordinates that send people into walls that are not there."
+  ],
+
+  "zones": {}
+}

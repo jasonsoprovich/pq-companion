@@ -55,6 +55,14 @@ export interface ZoneMapProps {
   // followPlayer keeps the view centred on the player.
   followPlayer?: boolean
   onPOIClick?: (poi: MapPOI) => void
+  // onEmptyClick fires for a click that hit no pin, with the map coordinates and
+  // a suggested height. Used to place a new marker.
+  //
+  // A 2D click cannot know its own Z, so the caller gets the best guess this
+  // component can make — see the call site for the order of preference. Guessing
+  // here rather than in the caller keeps the depth window and player position,
+  // which only this component tracks, out of the panel's business.
+  onEmptyClick?: (x: number, y: number, z: number) => void
   // height is a pixel height, or 'fill' to take whatever the parent gives —
   // which needs the parent to have a definite height of its own.
   height?: number | 'fill'
@@ -86,6 +94,12 @@ const CATEGORY_STYLE: Record<MapPOICategory, { color: string; short: string }> =
   locked: { color: '#fb7185', short: 'L' },   // rose — blocked
   switch: { color: '#a3e635', short: 'S' },   // lime — operate this
   teleport: { color: '#22d3ee', short: 'T' }, // cyan — movement
+  // Hand-researched and user annotations. Warmer and heavier than the derived
+  // categories on purpose: these are the facts a person had to go and find, and
+  // they are the ones worth noticing first.
+  wall: { color: '#f472b6', short: 'W' },   // pink — the wall that lies
+  hazard: { color: '#dc2626', short: 'H' }, // deep red — this hurts
+  note: { color: '#facc15', short: 'N' },   // yellow — someone wrote this down
 }
 
 // Geometry colour by technique, in detailed mode. Contours are elevation lines,
@@ -217,6 +231,7 @@ export function ZoneMap({
   followDepth = true,
   followPlayer = false,
   onPOIClick,
+  onEmptyClick,
   height = 520,
   showLabels = true,
   chromeless = false,
@@ -638,11 +653,29 @@ export function ZoneMap({
           const moved =
             drag.current && Math.hypot(e.clientX - drag.current.x, e.clientY - drag.current.y) > 3
           drag.current = null
-          if (moved || !onPOIClick) return
+          if (moved) return
           const rect = canvasRef.current?.getBoundingClientRect()
           if (!rect) return
-          const hit = hitTest(e.clientX - rect.left, e.clientY - rect.top)
-          if (hit) onPOIClick(hit)
+          const mx = e.clientX - rect.left
+          const my = e.clientY - rect.top
+          const hit = hitTest(mx, my)
+          if (hit) {
+            onPOIClick?.(hit)
+            return
+          }
+          if (!onEmptyClick) return
+          // Invert the fit-to-zone transform back to map space.
+          const wx = ((mx - view.panX) / view.zoom - base.offX) / base.scale
+          const wy = ((my - view.panY) / view.zoom - base.offY) / base.scale
+          // Height, best guess first: where the player actually is, else the
+          // middle of the focused depth window, else the middle of the zone.
+          const z =
+            playerPos && playerPos.zone === zone.zone
+              ? playerPos.z
+              : depth
+                ? (depth.lo + depth.hi) / 2
+                : (zone.min_z + zone.max_z) / 2
+          onEmptyClick(Math.round(wx), Math.round(wy), Math.round(z))
         }}
       />
 

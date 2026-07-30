@@ -1,7 +1,7 @@
 import type { Config } from '../types/config'
 import type { Item, ItemSources, ItemQuests, QuestSummary, SearchResult, ItemShoppingRoute, ItemShoppingRouteOptions } from '../types/item'
 import type { NPC, NPCSpawns, NPCLootTable, NPCFaction, NPCSpells, NPCMerchant } from '../types/npc'
-import type { MapStatus, MapZone, MapZoneDetail, MapGeometry } from '../types/map'
+import type { MapStatus, MapZone, MapZoneDetail, MapGeometry, UserAnnotation } from '../types/map'
 import type { BuffStatDelta, Spell, SpellCrossRefs, ShoppingRoute, ShoppingRouteOptions } from '../types/spell'
 import type { EmoteColumnsPatch, EmoteStatus, SpellEmote, SpellEmoteDiff } from '../types/emote'
 import type { Zone, ZoneConnection, ZoneGroundSpawn, ZoneForageItem, ZoneDropItem } from '../types/zone'
@@ -454,6 +454,41 @@ export async function getMapGeometry(zone: string, layer = 0): Promise<MapGeomet
   if (!res.ok) throw new Error(`geometry ${zone}: ${res.statusText}`)
   const buf = await res.arrayBuffer()
   return { count: buf.byteLength / 12, coords: new Int16Array(buf) }
+}
+
+// ── User map annotations (phase 4c) ───────────────────────────────────────────
+// These live in user.db, not the shipped maps.db, so they survive app updates.
+
+export function listMapAnnotations(zone: string): Promise<{ annotations: UserAnnotation[] }> {
+  return get<{ annotations: UserAnnotation[] }>(
+    `/api/maps/zone/${encodeURIComponent(zone)}/annotations`,
+  )
+}
+
+export function createMapAnnotation(
+  zone: string,
+  body: { x: number; y: number; z: number; category: string; label: string },
+): Promise<UserAnnotation> {
+  return post<UserAnnotation>(`/api/maps/zone/${encodeURIComponent(zone)}/annotations`, body)
+}
+
+export function updateMapAnnotation(
+  id: number,
+  body: { category: string; label: string },
+): Promise<UserAnnotation> {
+  return put<UserAnnotation>(`/api/maps/annotations/${id}`, body)
+}
+
+export async function deleteMapAnnotation(id: number): Promise<void> {
+  const baseUrl = await getBackendBaseUrl()
+  const res = await fetch(`${baseUrl}/api/maps/annotations/${id}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`delete annotation ${id}: ${res.statusText}`)
+}
+
+// getMapAnnotationExport returns every marker in the same shape
+// internal/mapgen/annotations.json reads, so a submission needs no conversion.
+export function getMapAnnotationExport(): Promise<unknown> {
+  return get<unknown>('/api/maps/annotations/export')
 }
 
 export function getNPCMerchant(id: number): Promise<NPCMerchant> {

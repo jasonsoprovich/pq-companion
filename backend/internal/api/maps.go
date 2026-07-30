@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"net/http"
 	"strconv"
 
@@ -11,6 +12,10 @@ import (
 
 type mapsHandler struct {
 	store *maps.Store
+	// annotations is the user's own markers, in user.db. Separate store because
+	// maps.db is a shipped read-only artifact replaced by every app update —
+	// anything written there would be destroyed on the next release.
+	annotations *maps.AnnotationStore
 }
 
 // status reports whether map data is present, so the UI can hide map features
@@ -97,4 +102,77 @@ func (h *mapsHandler) geometry(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	w.WriteHeader(http.StatusOK)
 	w.Write(buf)
+}
+
+// listAnnotations returns the user's own markers for one zone.
+func (h *mapsHandler) listAnnotations(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.annotations.List(chi.URLParam(r, "zone"))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"annotations": rows})
+}
+
+func (h *mapsHandler) createAnnotation(w http.ResponseWriter, r *http.Request) {
+	var body maps.UserAnnotation
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	body.Zone = chi.URLParam(r, "zone")
+	created, err := h.annotations.Create(body)
+	if err != nil {
+		// Validation failures are the caller's fault, not the server's.
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, created)
+}
+
+func (h *mapsHandler) updateAnnotation(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "bad annotation id")
+		return
+	}
+	var body struct {
+		Category string `json:"category"`
+		Label    string `json:"label"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	updated, err := h.annotations.Update(id, body.Category, body.Label)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, updated)
+}
+
+func (h *mapsHandler) deleteAnnotation(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "bad annotation id")
+		return
+	}
+	if err := h.annotations.Delete(id); err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// exportAnnotations serves every user marker in the same shape
+// internal/mapgen/annotations.json reads, so a submission needs no conversion —
+// see maps.BuildExport for why that matters and why evidence comes out blank.
+func (h *mapsHandler) exportAnnotations(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.annotations.All()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, maps.BuildExport(rows))
 }

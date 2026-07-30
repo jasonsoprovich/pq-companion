@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Check, Copy, X } from 'lucide-react'
 import { useCachedState } from '../../hooks/useCachedState'
@@ -7,7 +7,37 @@ import { useZoneMap } from '../../hooks/useZoneMap'
 import { ZoneMap } from './ZoneMap'
 import { ErrorBoundary } from '../ErrorBoundary'
 import { mapMarkerCommand, mapShowZoneCommand } from '../../lib/zealMap'
-import type { MapPOI, MapPOICategory, MapRenderMode } from '../../types/map'
+import {
+  createMapAnnotation,
+  deleteMapAnnotation,
+  getMapAnnotationExport,
+  listMapAnnotations,
+  updateMapAnnotation,
+} from '../../services/api'
+import type { MapPOI, MapPOICategory, MapRenderMode, UserAnnotation } from '../../types/map'
+
+// USER_SOURCE marks a pin as the user's own, so the inspector can offer edit and
+// delete on exactly those. Annotations ride through the normal MapPOI pipeline —
+// drawing, hit-testing, layer toggles, depth fade, search — rather than getting a
+// parallel path that would have to reimplement all of it.
+const USER_SOURCE = 'user'
+
+// Annotation categories a user can choose. Mirrors mapgen's set; the backend
+// rejects anything else, so this list is convenience rather than the gate.
+const ANNOTATION_CATEGORIES: { key: UserAnnotation['category']; label: string }[] = [
+  { key: 'wall', label: 'Wall' },
+  { key: 'hazard', label: 'Hazard' },
+  { key: 'note', label: 'Note' },
+]
+
+// Negative ids keep user annotations from colliding with map_poi ids in the same
+// list, and make "is this mine" checkable without a second lookup.
+function annotationToPOI(a: UserAnnotation): MapPOI {
+  return {
+    id: -a.id, x: a.x, y: a.y, z: a.z,
+    category: a.category, label: a.label, source: USER_SOURCE,
+  }
+}
 
 // ZoneMapPanel is the full-zone map with layer toggles and a POI inspector.
 //
@@ -30,6 +60,12 @@ const LAYERS: { key: MapPOICategory; label: string; on: boolean }[] = [
   { key: 'locked', label: 'Locked', on: true },
   { key: 'teleport', label: 'Teleports', on: true },
   { key: 'switch', label: 'Switches', on: true },
+  // Annotation layers, shipped (source=research) and the user's own. On by
+  // default: someone deliberately recorded these, which is a stronger signal
+  // than anything derived, and there are few of them.
+  { key: 'wall', label: 'Walls', on: true },
+  { key: 'hazard', label: 'Hazards', on: true },
+  { key: 'note', label: 'Notes', on: true },
   { key: 'succor', label: 'Succor', on: false },
   { key: 'door', label: 'Doors', on: false },
   { key: 'ground_spawn', label: 'Ground spawns', on: false },
@@ -95,22 +131,83 @@ export function ZoneMapPanel({
     live,
   )
   const [query, setQuery] = useState('')
+  const [annotations, setAnnotations] = useState<UserAnnotation[]>([])
+  // adding is the "place a marker" mode: the next click on empty map creates one.
+  const [adding, setAdding] = useState(false)
+  const [draft, setDraft] = useState<{ x: number; y: number; z: number } | null>(null)
+  const [editing, setEditing] = useState<UserAnnotation | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!zoneShortName) {
+      setAnnotations([])
+      return
+    }
+    let cancelled = false
+    listMapAnnotations(zoneShortName)
+      .then((r) => { if (!cancelled) setAnnotations(r.annotations ?? []) })
+      // A failure here must not take the map with it: annotations are additive.
+      .catch(() => { if (!cancelled) setAnnotations([]) })
+    return () => { cancelled = true }
+  }, [zoneShortName])
+
+  const allPois = useMemo(
+    () => [...pois, ...annotations.map(annotationToPOI)],
+    [pois, annotations],
+  )
 
   const visible = useMemo(() => new Set(enabled), [enabled])
   const counts = useMemo(() => {
     const m: Partial<Record<MapPOICategory, number>> = {}
-    for (const p of pois) m[p.category] = (m[p.category] ?? 0) + 1
+    for (const p of allPois) m[p.category] = (m[p.category] ?? 0) + 1
     return m
-  }, [pois])
+  }, [allPois])
 
   // POI search, live surface only. Matches on the label, which is what a player
   // would type — "key", "trap", a vendor's name — rather than on category.
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!live || q.length < 2) return []
-    return pois.filter((p) => p.label.toLowerCase().includes(q)).slice(0, 40)
-  }, [live, query, pois])
+    return allPois.filter((p) => p.label.toLowerCase().includes(q)).slice(0, 40)
+  }, [live, query, allPois])
+
+  const saveDraft = (category: string, label: string): void => {
+    if (!draft || !zoneShortName) return
+    createMapAnnotation(zoneShortName, { ...draft, category, label })
+      .then((a) => {
+        setAnnotations((prev) => [...prev, a])
+        setDraft(null)
+        // Make sure the layer it landed in is on, or it saves invisibly.
+        if (!visible.has(a.category)) setEnabled((prev) => [...prev, a.category])
+      })
+      .catch(() => setDraft(null))
+  }
+
+  const saveEdit = (category: string, label: string): void => {
+    if (!editing) return
+    updateMapAnnotation(editing.id, { category, label })
+      .then((a) => {
+        setAnnotations((prev) => prev.map((x) => (x.id === a.id ? a : x)))
+        setEditing(null)
+        setSelected(null)
+      })
+      .catch(() => setEditing(null))
+  }
+
+  const removeAnnotation = (id: number): void => {
+    deleteMapAnnotation(id)
+      .then(() => {
+        setAnnotations((prev) => prev.filter((x) => x.id !== id))
+        setSelected(null)
+      })
+      .catch(() => {/* leave it on screen rather than lying about the delete */})
+  }
+
+  const exportAnnotations = (): void => {
+    getMapAnnotationExport()
+      .then((doc) => copy('export', JSON.stringify(doc, null, 2)))
+      .catch(() => {/* nothing to copy */})
+  }
 
   const copy = (key: string, text: string): void => {
     navigator.clipboard.writeText(text).then(() => {
@@ -205,6 +302,35 @@ export function ZoneMapPanel({
             }}
           >
             Detail <span className="opacity-60">{detail.count}</span>
+          </button>
+        )}
+        <button
+          onClick={() => { setAdding((v) => !v); setDraft(null) }}
+          title={
+            adding
+              ? 'Click the map to place a marker, or press again to cancel'
+              : 'Add your own marker — click here, then click the map'
+          }
+          className="rounded border px-1.5 py-0.5 text-[10px] font-medium"
+          style={{
+            backgroundColor: adding ? 'var(--color-primary)' : 'transparent',
+            borderColor: adding ? 'var(--color-primary)' : 'var(--color-border)',
+            color: adding ? 'var(--color-background)' : 'var(--color-muted)',
+          }}
+        >
+          {adding ? 'Click the map…' : '+ Marker'}
+        </button>
+        {annotations.length > 0 && (
+          <button
+            onClick={exportAnnotations}
+            title="Copy your markers as JSON, in the format the shipped annotation file uses — for sharing or submitting"
+            className="rounded border px-1.5 py-0.5 text-[10px] font-medium"
+            style={{
+              borderColor: copied === 'export' ? 'var(--color-primary)' : 'var(--color-border)',
+              color: copied === 'export' ? 'var(--color-primary)' : 'var(--color-muted)',
+            }}
+          >
+            {copied === 'export' ? 'Copied' : `Export ${annotations.length}`}
           </button>
         )}
         {zone.z_span >= 40 && (
@@ -341,14 +467,26 @@ export function ZoneMapPanel({
             colorByHeight={heightColor}
             playerPos={playerPos}
             followPlayer={followPlayer}
-            pois={pois}
+            pois={allPois}
             visibleCategories={visible}
             highlights={selected ? [{ x: selected.x, y: selected.y, z: selected.z }] : []}
             onPOIClick={setSelected}
+            onEmptyClick={
+              adding ? (x, y, z) => { setDraft({ x, y, z }); setAdding(false) } : undefined
+            }
             height={height}
           />
         </ErrorBoundary>
       </div>
+
+      {(draft || editing) && (
+        <AnnotationForm
+          key={editing ? `edit-${editing.id}` : 'new'}
+          initial={editing ?? undefined}
+          onCancel={() => { setDraft(null); setEditing(null) }}
+          onSave={editing ? saveEdit : saveDraft}
+        />
+      )}
 
       {selected && (
         <div
@@ -370,7 +508,27 @@ export function ZoneMapPanel({
             {-selected.y}, {-selected.x}, {selected.z}
           </span>
           <div className="ml-auto flex shrink-0 items-center gap-1">
-            {selected.ref_id ? (
+            {selected.source === USER_SOURCE ? (
+              <>
+                <button
+                  onClick={() => {
+                    const a = annotations.find((x) => x.id === -selected.id)
+                    if (a) setEditing(a)
+                  }}
+                  className="rounded border px-1.5 py-0.5 text-[10px]"
+                  style={{ borderColor: 'var(--color-border)', color: 'var(--color-primary)' }}
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() => removeAnnotation(-selected.id)}
+                  className="rounded border px-1.5 py-0.5 text-[10px]"
+                  style={{ borderColor: 'var(--color-border)', color: '#f87171' }}
+                >
+                  Delete
+                </button>
+              </>
+            ) : selected.ref_id ? (
               <button
                 onClick={() =>
                   navigate(
@@ -408,6 +566,84 @@ export function ZoneMapPanel({
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// AnnotationForm edits a new or existing user marker.
+//
+// Inline rather than a modal: the map stays visible, so you can see the pin you
+// are naming. A modal would cover the one thing that gives the label meaning.
+function AnnotationForm({
+  initial,
+  onSave,
+  onCancel,
+}: {
+  initial?: UserAnnotation
+  onSave: (category: string, label: string) => void
+  onCancel: () => void
+}): React.ReactElement {
+  const [category, setCategory] = useState<string>(initial?.category ?? 'note')
+  const [label, setLabel] = useState(initial?.label ?? '')
+
+  return (
+    <div
+      className="flex shrink-0 items-center gap-2 rounded border px-2 py-1.5"
+      style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-primary)' }}
+    >
+      <span
+        className="shrink-0 text-[10px] uppercase tracking-widest"
+        style={{ color: 'var(--color-muted)' }}
+      >
+        {initial ? 'Edit marker' : 'New marker'}
+      </span>
+      <select
+        value={category}
+        onChange={(e) => setCategory(e.target.value)}
+        className="rounded border px-1 py-0.5 text-xs"
+        style={{
+          backgroundColor: 'var(--color-surface-2)',
+          borderColor: 'var(--color-border)',
+          color: 'var(--color-foreground)',
+        }}
+      >
+        {ANNOTATION_CATEGORIES.map((c) => (
+          <option key={c.key} value={c.key}>{c.label}</option>
+        ))}
+      </select>
+      <input
+        autoFocus
+        value={label}
+        onChange={(e) => setLabel(e.target.value)}
+        // Enter saves, Escape cancels — this sits between a map click and the
+        // next one, so reaching for the mouse again is the wrong rhythm.
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && label.trim()) onSave(category, label.trim())
+          if (e.key === 'Escape') onCancel()
+        }}
+        placeholder="What is here? e.g. Fake wall — walk through to the ledge"
+        className="flex-1 rounded border px-2 py-0.5 text-xs outline-none"
+        style={{
+          backgroundColor: 'var(--color-surface-2)',
+          borderColor: 'var(--color-border)',
+          color: 'var(--color-foreground)',
+        }}
+      />
+      <button
+        onClick={() => label.trim() && onSave(category, label.trim())}
+        disabled={!label.trim()}
+        className="rounded px-2 py-0.5 text-[10px] font-medium disabled:opacity-40"
+        style={{ backgroundColor: 'var(--color-primary)', color: 'var(--color-background)' }}
+      >
+        Save
+      </button>
+      <button
+        onClick={onCancel}
+        className="text-[10px]"
+        style={{ color: 'var(--color-muted)' }}
+      >
+        Cancel
+      </button>
     </div>
   )
 }
