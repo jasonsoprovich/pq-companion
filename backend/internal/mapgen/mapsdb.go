@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"sort"
 )
 
 // Layer numbers within a zone. Layer 0 is the geometry the classifier chose;
@@ -279,23 +280,84 @@ func UnpackSegments(blob []byte) ([]Segment, error) {
 	return segs, nil
 }
 
-// segmentXYRange returns the footprint spanned by every given layer, and
-// whether there was anything to measure.
+// View-fit trimming. See segmentXYRange.
+const (
+	// viewTrimPercentile is how much of the endpoint distribution to ignore at
+	// each end. Density-based on purpose: a long corridor is drawn with many
+	// endpoints along its length and never lands in the tail, while a single
+	// enormous water quad contributes only a handful of corners and always does.
+	viewTrimPercentile = 0.005
+	// viewTrimPadding re-expands the trimmed box, so content just outside the
+	// percentile is still on screen rather than sitting one pixel past the edge.
+	viewTrimPadding = 0.10
+	// viewTrimMinGain is how much canvas area trimming must reclaim before it is
+	// worth doing. Below this the untouched bounds are kept, because moving the
+	// default view is only justified when it buys something obvious.
+	viewTrimMinGain = 1.5
+)
+
+// segmentXYRange returns the footprint to fit the view to, and whether there was
+// anything to measure.
+//
+// Not simply min/max. Several zones include large areas nothing can reach —
+// South Qeynos and East Freeport are ringed by open water that is part of the
+// zone mesh — and fitting to the extremes shrinks the part anyone cares about
+// into a corner. East Freeport spends 6.6x more canvas on ocean than on the city.
+//
+// This trims to a percentile of the endpoint distribution instead, which is
+// safe for the usual reason a density measure is: geometry people walk through
+// is drawn with many endpoints, and a big empty quad has four corners.
+//
+// Crucially this changes *only the default view*, never the data. Every segment
+// is still written and still drawn; trimmed content sits outside the initial
+// fit and is reached by panning, so a mistake here costs a scroll rather than
+// information.
 func segmentXYRange(layers ...[]Segment) (minX, minY, maxX, maxY float64, ok bool) {
-	minX, minY = math.Inf(1), math.Inf(1)
-	maxX, maxY = math.Inf(-1), math.Inf(-1)
+	var xs, ys []float64
 	for _, segs := range layers {
 		for _, s := range segs {
-			minX = math.Min(minX, math.Min(s.A.X, s.B.X))
-			minY = math.Min(minY, math.Min(s.A.Y, s.B.Y))
-			maxX = math.Max(maxX, math.Max(s.A.X, s.B.X))
-			maxY = math.Max(maxY, math.Max(s.A.Y, s.B.Y))
+			xs = append(xs, s.A.X, s.B.X)
+			ys = append(ys, s.A.Y, s.B.Y)
 		}
 	}
-	if math.IsInf(minX, 1) {
+	if len(xs) == 0 {
 		return 0, 0, 0, 0, false
 	}
-	return minX, minY, maxX, maxY, true
+	sort.Float64s(xs)
+	sort.Float64s(ys)
+
+	fullMinX, fullMaxX := xs[0], xs[len(xs)-1]
+	fullMinY, fullMaxY := ys[0], ys[len(ys)-1]
+
+	// Too few segments for a percentile to mean anything.
+	if len(xs) < 200 {
+		return fullMinX, fullMinY, fullMaxX, fullMaxY, true
+	}
+
+	at := func(v []float64, p float64) float64 {
+		i := int(float64(len(v)) * p)
+		if i >= len(v) {
+			i = len(v) - 1
+		}
+		return v[i]
+	}
+	tMinX, tMaxX := at(xs, viewTrimPercentile), at(xs, 1-viewTrimPercentile)
+	tMinY, tMaxY := at(ys, viewTrimPercentile), at(ys, 1-viewTrimPercentile)
+
+	padX := (tMaxX - tMinX) * viewTrimPadding
+	padY := (tMaxY - tMinY) * viewTrimPadding
+	tMinX, tMaxX = tMinX-padX, tMaxX+padX
+	tMinY, tMaxY = tMinY-padY, tMaxY+padY
+
+	fullArea := (fullMaxX - fullMinX) * (fullMaxY - fullMinY)
+	trimArea := (tMaxX - tMinX) * (tMaxY - tMinY)
+	if trimArea <= 0 || fullArea/trimArea < viewTrimMinGain {
+		return fullMinX, fullMinY, fullMaxX, fullMaxY, true
+	}
+	// Never expand past the real extent — padding could otherwise push the view
+	// out into empty space it was meant to remove.
+	return math.Max(tMinX, fullMinX), math.Max(tMinY, fullMinY),
+		math.Min(tMaxX, fullMaxX), math.Min(tMaxY, fullMaxY), true
 }
 
 // segmentZRange returns the height range spanned by every given layer.

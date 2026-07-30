@@ -1,6 +1,6 @@
 import type { Config } from '../types/config'
 import type { Item, ItemSources, ItemQuests, QuestSummary, SearchResult, ItemShoppingRoute, ItemShoppingRouteOptions } from '../types/item'
-import type { NPC, NPCSpawns, NPCLootTable, NPCFaction, NPCSpells, NPCMerchant } from '../types/npc'
+import type { NPC, NPCSpawns, NPCLootTable, NPCFaction, NPCSpells, NPCMerchant, PatrolRoute } from '../types/npc'
 import type {
   MapStatus, MapZone, MapZoneDetail, MapGeometry, UserAnnotation,
   GameMapExportStatus, GameMapExportResult,
@@ -509,6 +509,12 @@ export async function removeGameMapExport(): Promise<{ removed: number; kept: nu
   const res = await fetch(`${baseUrl}/api/maps/game-export`, { method: 'DELETE' })
   if (!res.ok) throw new Error(`remove map export: ${res.statusText}`)
   return res.json() as Promise<{ removed: number; kept: number }>
+}
+
+// getNPCPatrols returns an NPC's waypoint paths. Server data — no static map
+// pack has these, because patrol grids are not in the client files.
+export function getNPCPatrols(id: number): Promise<{ routes: PatrolRoute[] }> {
+  return get<{ routes: PatrolRoute[] }>(`/api/npcs/${id}/patrol`)
 }
 
 export function getNPCMerchant(id: number): Promise<NPCMerchant> {

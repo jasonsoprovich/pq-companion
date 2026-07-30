@@ -54,6 +54,14 @@ export interface ZoneMapProps {
   followDepth?: boolean
   // followPlayer keeps the view centred on the player.
   followPlayer?: boolean
+  // paths are ordered polylines drawn over the map — an NPC's patrol route.
+  paths?: {
+    points: { x: number; y: number; z: number }[]
+    // ordered false draws loose waypoints instead of a route: the NPC picks
+    // among them rather than walking them in sequence.
+    ordered?: boolean
+    closed?: boolean
+  }[]
   onPOIClick?: (poi: MapPOI) => void
   // onEmptyClick fires for a click that hit no pin, with the map coordinates and
   // a suggested height. Used to place a new marker.
@@ -150,6 +158,11 @@ const HEIGHT_RAMP = [
 // map data no matter what it lands on top of.
 const HIGHLIGHT_COLOR = '#ff4fd8'
 
+// PATROL_COLOR marks an NPC's waypoint path. Green: unused by the height ramp,
+// unused by any POI category, and distinct from the magenta that means "the
+// thing you asked about" — a route is context for that thing, not the thing.
+const PATROL_COLOR = '#4ade80'
+
 // HEIGHT_BANDS is how many steps the ramp is quantised into. Matched to the
 // ramp length: more bands than colours would repeat hues at different heights,
 // which is worse than no colour at all.
@@ -230,6 +243,7 @@ export function ZoneMap({
   playerPos,
   followDepth = true,
   followPlayer = false,
+  paths,
   onPOIClick,
   onEmptyClick,
   height = 520,
@@ -520,6 +534,51 @@ export function ZoneMap({
       ctx.globalAlpha = 1
     }
 
+    // ── patrol paths ──
+    //
+    // Dashed and drawn over the geometry: a route is not a wall, and a solid
+    // line would read as one. Direction markers every few waypoints because a
+    // closed loop otherwise says where the mob goes but not which way round.
+    for (const path of paths ?? []) {
+      if (path.points.length < 2) continue
+
+      // Ordered grids get a line; random ones get their waypoints and nothing
+      // joining them, because there is no sequence to join.
+      if (path.ordered !== false) {
+        ctx.save()
+        ctx.setLineDash([5, 4])
+        ctx.lineWidth = 1.6
+        ctx.strokeStyle = PATROL_COLOR
+        ctx.beginPath()
+        path.points.forEach((p, i) => {
+          const [px, py] = toScreen(p.x, p.y)
+          if (i === 0) ctx.moveTo(px, py)
+          else ctx.lineTo(px, py)
+        })
+        // Only circular grids return to their start. A patrol grid reverses back
+        // along the same waypoints and a one-way grid simply ends, so closing
+        // either would draw a leg the NPC never walks.
+        if (path.closed) {
+          const [fx, fy] = toScreen(path.points[0].x, path.points[0].y)
+          ctx.lineTo(fx, fy)
+        }
+        ctx.stroke()
+        ctx.restore()
+      }
+
+      // Waypoints themselves. On a random grid these are the whole story, so
+      // draw all of them; on a long ordered route they are just tick marks.
+      ctx.fillStyle = PATROL_COLOR
+      const step =
+        path.ordered === false ? 1 : Math.max(1, Math.floor(path.points.length / 12))
+      for (let i = 0; i < path.points.length; i += step) {
+        const [px, py] = toScreen(path.points[i].x, path.points[i].y)
+        ctx.beginPath()
+        ctx.arc(px, py, path.ordered === false ? 2.4 : 1.8, 0, Math.PI * 2)
+        ctx.fill()
+      }
+    }
+
     // ── highlights ──
     for (const h of highlights ?? []) {
       const [px, py] = toScreen(h.x, h.y)
@@ -579,7 +638,7 @@ export function ZoneMap({
       ctx.fill()
       ctx.restore()
     }
-  }, [geometry, shown, zone, size, toScreen, view.zoom, depth, highlights, playerPos, showLabels, detail, showDetail, outline, mode, zScale])
+  }, [geometry, shown, zone, size, toScreen, view.zoom, depth, highlights, playerPos, showLabels, detail, showDetail, outline, mode, zScale, paths])
 
   // Wheel zoom is attached natively with passive:false. React registers wheel
   // as a passive listener, so preventDefault() there is ignored — it never

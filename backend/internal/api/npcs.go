@@ -145,3 +145,18 @@ func (h *npcsHandler) loot(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, loot)
 }
+
+// patrols returns an NPC's waypoint paths, for drawing on its spawn map.
+func (h *npcsHandler) patrols(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "bad npc id")
+		return
+	}
+	routes, err := h.db.GetNPCPatrols(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"routes": routes})
+}

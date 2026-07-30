@@ -1150,6 +1150,7 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
         {spawns && (spawns.spawn_points?.length ?? 0) > 0 && (
           <NPCSpawnMap
             npcName={npc.name}
+            npcId={npc.id}
             spawns={spawns.spawn_points}
             height={430}
             collapsible={false}

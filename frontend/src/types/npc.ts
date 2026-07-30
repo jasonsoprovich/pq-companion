@@ -229,3 +229,26 @@ export interface NPCMerchantItem {
   level_required: number
   classes_required: number
 }
+
+// PatrolPoint is one waypoint of an NPC's path, already in map space.
+export interface PatrolPoint {
+  x: number
+  y: number
+  z: number
+  // pause is seconds spent here — where a roamer is actually findable.
+  pause: number
+}
+
+// PatrolRoute is one spawn point's path. One per spawn point rather than per
+// NPC: the same mob placed at several points can walk different grids.
+export interface PatrolRoute {
+  zone: string
+  grid_id: number
+  points: PatrolPoint[]
+  // ordered is false for random grid types, where the NPC picks a waypoint
+  // rather than following the list — joining those with a line would draw a
+  // route it never walks.
+  ordered: boolean
+  // closed is true only for circular grids, which return to their start.
+  closed: boolean
+}

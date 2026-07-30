@@ -197,6 +197,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/", npcs.search)
 			r.Get("/{id}", npcs.get)
 			r.Get("/{id}/spawns", npcs.spawns)
+			r.Get("/{id}/patrol", npcs.patrols)
 			r.Get("/{id}/loot", npcs.loot)
 			r.Get("/{id}/merchant", npcs.merchant)
 			r.Get("/{id}/faction", npcs.faction)
