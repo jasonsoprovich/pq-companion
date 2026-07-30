@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // TestParseChunkParksUnterminatedLine confirms a final line with no trailing
@@ -100,6 +101,45 @@ func TestReadLinesReopensOnFileReplacement(t *testing.T) {
 	events, _ = readLinesLocked(tl, path)
 	if len(events) != 1 || events[0].Type != EventZone {
 		t.Fatalf("expected the post-swap zone event to be picked up, got %+v", events)
+	}
+}
+
+// TestClockGuardPassesThroughInSyncTimestamp confirms a log timestamp close
+// to the system clock (normal single-machine operation) is left untouched.
+func TestClockGuardPassesThroughInSyncTimestamp(t *testing.T) {
+	tl := &Tailer{}
+	ts := time.Now().Add(-2 * time.Second)
+	if got := tl.clockGuard(ts); !got.Equal(ts) {
+		t.Fatalf("expected in-sync timestamp to pass through unchanged, got %v want %v", got, ts)
+	}
+}
+
+// TestClockGuardOverridesSkewedTimestamp confirms a timestamp that disagrees
+// with the system clock by more than maxLogClockSkew (e.g. the log file was
+// written by a different machine with a mismatched clock — Larcen's report,
+// a ~5hr/300min skew) falls back to receipt time instead of wedging every
+// downstream timer at a wildly wrong expiry.
+func TestClockGuardOverridesSkewedTimestamp(t *testing.T) {
+	tl := &Tailer{}
+	skewed := time.Now().Add(-5 * time.Hour)
+	before := time.Now()
+	got := tl.clockGuard(skewed)
+	after := time.Now()
+	if got.Before(before) || got.After(after) {
+		t.Fatalf("expected skewed timestamp to be replaced with receipt time, got %v (want between %v and %v)", got, before, after)
+	}
+}
+
+// TestClockGuardHandlesFutureSkew confirms the guard catches skew in either
+// direction, not just a log timestamp lagging behind the system clock.
+func TestClockGuardHandlesFutureSkew(t *testing.T) {
+	tl := &Tailer{}
+	skewed := time.Now().Add(5 * time.Hour)
+	before := time.Now()
+	got := tl.clockGuard(skewed)
+	after := time.Now()
+	if got.Before(before) || got.After(after) {
+		t.Fatalf("expected future-skewed timestamp to be replaced with receipt time, got %v", got)
 	}
 }
 

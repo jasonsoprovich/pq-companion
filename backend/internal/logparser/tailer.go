@@ -20,6 +20,16 @@ const (
 	// maxReadPerTick caps how many bytes are consumed in a single poll cycle to
 	// avoid blocking the goroutine when the file is very large on first open.
 	maxReadPerTick = 1 << 20 // 1 MiB
+	// maxLogClockSkew bounds how far a log line's embedded timestamp may drift
+	// from this machine's own clock before it's distrusted. EQ stamps each line
+	// with whatever system clock the game client is running under; when the log
+	// file is read from a network share (a different PC or NAS), that clock can
+	// disagree with the machine running PQ Companion. Since timers compute
+	// expiry as timestamp+duration, an undetected multi-hour skew wedges every
+	// buff/debuff/trigger timer at a wildly wrong remaining time. Real single-
+	// machine skew is sub-second, so this threshold only ever trips on an
+	// actual clock mismatch.
+	maxLogClockSkew = 5 * time.Minute
 )
 
 // Status describes the current state of the Tailer.
@@ -62,6 +72,10 @@ type Tailer struct {
 	// so they can be searched there. Opt-in: off by default to keep the feed
 	// to recognised combat/spell events. Read on the hot path, so atomic.
 	rawFeed atomic.Bool
+
+	// skewWarned tracks whether we've already logged the current clock-skew
+	// state, so a stuck mismatch doesn't spam the log every poll tick.
+	skewWarned atomic.Bool
 }
 
 // SetRawFeed toggles whether unrecognised log lines are broadcast to the live
@@ -241,12 +255,40 @@ func (t *Tailer) tick() {
 	// Deliver raw lines first so trigger handlers see every line.
 	if t.lineHandler != nil {
 		for _, rl := range rawLines {
-			t.lineHandler(rl.ts, rl.msg)
+			t.lineHandler(t.clockGuard(rl.ts), rl.msg)
 		}
 	}
 	for _, ev := range events {
+		ev.Timestamp = t.clockGuard(ev.Timestamp)
 		t.handler(ev)
 	}
+}
+
+// clockGuard returns ts unchanged unless it diverges from this machine's own
+// clock by more than maxLogClockSkew, in which case it returns the receipt
+// time (time.Now()) instead. This only affects what's forwarded to timer/
+// trigger/combat consumers — parsing, offsets, and file-position bookkeeping
+// are untouched. Deliberately not applied inside ParseRawLine/ParseLine
+// themselves: the log replayer also calls those directly with genuinely
+// historical timestamps (by design), which this guard would otherwise
+// clobber.
+func (t *Tailer) clockGuard(ts time.Time) time.Time {
+	now := time.Now()
+	skew := now.Sub(ts)
+	if skew < 0 {
+		skew = -skew
+	}
+	if skew <= maxLogClockSkew {
+		if t.skewWarned.CompareAndSwap(true, false) {
+			slog.Info("logparser: log timestamp back in sync with system clock")
+		}
+		return ts
+	}
+	if t.skewWarned.CompareAndSwap(false, true) {
+		slog.Warn("logparser: log timestamp diverges from system clock, using receipt time instead",
+			"log_ts", ts, "system_now", now, "skew", skew)
+	}
+	return now
 }
 
 // readLines opens/maintains the file handle and returns any new events and
