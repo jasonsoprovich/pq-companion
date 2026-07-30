@@ -932,20 +932,40 @@ The provenance guarantee is already built and is what makes all of this safe:
 regeneration rewrites `db:*` rows only (§7.3), so research and community rows
 survive a data release untouched.
 
-### Phase 5 — Live position
+### Phase 5 — Live position (5a/5b done, 5c pending)
 
 "You are here" on our maps. `ZealPipes` already sends what is needed —
 `Player{Location{X,Y,Z}, Heading}` per tick (`internal/zealpipe/events.go`) — and
 `ZoneMap` already draws a cased heading arrow from a `playerPos` prop that
 nothing currently passes. The work is wiring, not new capability.
 
-- **5a — In-app.** Arrow on the Zones Map tab, the Maps page and the NPC spawn
-  map. Auto-switch to the zone you are standing in. Follow mode (keep the arrow
-  centred), toggleable — it fights manual panning.
-- **5b — Auto-depth.** Drive the Z window from the player's own Z. This is the
-  payoff of the §13.3 work: standing in a Necropolis tunnel, the map shows *your*
-  level without touching a slider. Must be overridable, and must not fight a
-  manually set window.
+- **5a — In-app. Done.** `internal/playerpos` broadcasts `player:position` on the
+  WebSocket; `usePlayerPosition` consumes it. The arrow draws only when the
+  position's zone matches the map on screen — a position from elsewhere would
+  land at plausible coordinates on the wrong map, which is worse than nothing.
+  "Follow me" recentres the view, off by default since it takes pan away from
+  you. Rather than auto-switching zones, the Maps page offers a "You are in
+  &lt;zone&gt;" button when the player is elsewhere: switching the zone out from
+  under someone reading a map is not an improvement.
+
+  Two things decided the design:
+  - **The heartbeat is load-bearing.** Broadcasting only on movement makes
+    standing still indistinguishable from a dead pipe, and the renderer's
+    staleness timeout would blank the arrow exactly when a player stops to fight
+    something. The tracker re-sends every 2s regardless; the renderer trusts a
+    position for 6s.
+  - **Staleness lives in the renderer**, because the pipe-connected gate has none
+    of its own (`project_npc_overlay_pipe_stall_no_fallback`), and a frozen arrow
+    is worse than no arrow — it still looks authoritative.
+- **5b — Auto-depth. Done.** The Z window centres on the player's own height,
+  ±max(50, z_span/12). This is the payoff of the §13.3 work: standing in a
+  Necropolis tunnel, the map shows your level with no input at all.
+
+  Manual always wins and never silently — dragging a thumb takes over, the AUTO
+  badge dismisses it, and Reset returns to whatever the default is for the
+  situation (the followed window with a live position, all levels without one).
+  Making the badge dismissible turned out to require Reset being enabled in that
+  state too, or dismissing auto was a one-way door.
 - **5c — Map overlay window.** Transparent, always-on-top, frameless, on the
   existing overlay infrastructure. Needs a dashboard card **and** a popped-out
   window (`feedback_overlay_dashboard_pattern`), the per-overlay zoom slider

@@ -6,6 +6,7 @@ import type {
   MapRenderMode,
   MapZone,
 } from '../../types/map'
+import type { PlayerPosition } from '../../hooks/usePlayerPosition'
 
 // MapHighlight is a prominent marker drawn over the map, independent of the
 // generated POI set — an NPC's spawn point, or the POI the user just clicked.
@@ -44,8 +45,15 @@ export interface ZoneMapProps {
   // than a single pin because an NPC routinely has several spawn points, and
   // showing only one would quietly imply it is the only place it appears.
   highlights?: MapHighlight[]
-  // playerPos is the live position from ZealPipes, when connected.
-  playerPos?: { x: number; y: number; z: number; heading?: number } | null
+  // playerPos is the live position from ZealPipes, when connected. Carries its
+  // own zone, because a position from a zone other than the one on screen must
+  // not be drawn — it would put the arrow at plausible-looking coordinates on
+  // the wrong map, which is worse than showing nothing.
+  playerPos?: PlayerPosition | null
+  // followDepth drives the depth window from the player's height (5b).
+  followDepth?: boolean
+  // followPlayer keeps the view centred on the player.
+  followPlayer?: boolean
   onPOIClick?: (poi: MapPOI) => void
   // height is a pixel height, or 'fill' to take whatever the parent gives —
   // which needs the parent to have a definite height of its own.
@@ -197,6 +205,8 @@ export function ZoneMap({
   visibleCategories,
   highlights,
   playerPos,
+  followDepth = true,
+  followPlayer = false,
   onPOIClick,
   height = 520,
   showLabels = true,
@@ -216,7 +226,32 @@ export function ZoneMap({
   // directly as "show me between these two heights", and it can express an
   // asymmetric window — the whole zone below a ledge but nothing above it —
   // which a centre-and-width control cannot.
-  const [depth, setDepth] = useState<{ lo: number; hi: number } | null>(null)
+  const [manualDepth, setManualDepth] = useState<{ lo: number; hi: number } | null>(null)
+
+  // Auto-depth: when the player's live position is on this map and no window has
+  // been set by hand, centre one on their own height.
+  //
+  // This is what the Z-window work was for. Standing in a Necropolis tunnel, the
+  // map shows the level you are on without touching a slider — the single most
+  // useful thing the depth data can do, and it needs no input at all.
+  //
+  // Manual always wins, and never silently: dragging a thumb sets manualDepth,
+  // Reset clears it and hands control back to auto. A window that moved under
+  // you while you were reading it would be worse than no automation.
+  // autoOff lets the auto window be dismissed outright. Without it the only
+  // escape from a followed window was to drag both thumbs to the extremes, which
+  // works but is not something anyone would guess.
+  const [autoOff, setAutoOff] = useState(false)
+  const autoWindow = useMemo(() => {
+    if (autoOff || !followDepth || !playerPos || playerPos.zone !== zone.zone) return null
+    // Wide enough to hold the floor you are on plus its walls, and scaled a
+    // little by how tall the zone is.
+    const half = Math.max(50, Math.round(zone.z_span / 12))
+    return { lo: Math.round(playerPos.z - half), hi: Math.round(playerPos.z + half) }
+  }, [autoOff, followDepth, playerPos, zone.zone, zone.z_span])
+
+  const depth = manualDepth ?? autoWindow
+  const setDepth = setManualDepth
 
   const shown = useMemo(
     () => pois.filter((p) => !visibleCategories || visibleCategories.has(p.category)),
@@ -256,7 +291,8 @@ export function ZoneMap({
   // you panned off into empty space.
   useEffect(() => {
     setView({ zoom: 1, panX: 0, panY: 0 })
-    setDepth(null)
+    setManualDepth(null)
+    setAutoOff(false)
   }, [zone.zone])
 
   // Fit-to-zone transform: map units -> screen pixels.
@@ -284,6 +320,29 @@ export function ZoneMap({
       offY: (size.h - h * scale) / 2 - zone.min_y * scale,
     }
   }, [zone, size])
+
+  // Follow mode: keep the player centred.
+  //
+  // Written as a pan correction rather than by deriving the transform from the
+  // player each frame, so zoom and the fit-to-zone maths stay untouched and
+  // switching follow off leaves the view exactly where it was rather than
+  // snapping.
+  //
+  // Deliberately not in the same effect as the canvas draw: this sets state, and
+  // running it from the draw effect would make every frame schedule a re-render.
+  useEffect(() => {
+    if (!followPlayer || !playerPos || playerPos.zone !== zone.zone) return
+    const cx = playerPos.x * base.scale + base.offX
+    const cy = playerPos.y * base.scale + base.offY
+    setView((v) => {
+      const panX = size.w / 2 - cx * v.zoom
+      const panY = size.h / 2 - cy * v.zoom
+      // Skip sub-pixel corrections, or a stationary player re-renders forever on
+      // every heartbeat.
+      if (Math.abs(panX - v.panX) < 0.5 && Math.abs(panY - v.panY) < 0.5) return v
+      return { ...v, panX, panY }
+    })
+  }, [followPlayer, playerPos, zone.zone, base, size.w, size.h])
 
   const toScreen = useCallback(
     (x: number, y: number): [number, number] => [
@@ -474,7 +533,7 @@ export function ZoneMap({
     }
 
     // ── player ──
-    if (playerPos) {
+    if (playerPos && playerPos.zone === zone.zone) {
       const [px, py] = toScreen(playerPos.x, playerPos.y)
       ctx.save()
       ctx.translate(px, py)
@@ -603,7 +662,22 @@ export function ZoneMap({
       </div>
 
       {zScale && <HeightLegend scale={zScale} />}
-      <DepthControl zone={zone} depth={depth} onChange={setDepth} />
+      <DepthControl
+        zone={zone}
+        depth={depth}
+        onChange={setDepth}
+        auto={manualDepth === null && autoWindow !== null}
+        onDisableAuto={() => setAutoOff(true)}
+        // Reset means "back to the default for this situation": the followed
+        // window when a live position is available, all levels otherwise. It has
+        // to be enabled after auto is dismissed too, or dismissing it would be a
+        // one-way door.
+        canReset={manualDepth !== null || autoOff}
+        onReset={() => {
+          setManualDepth(null)
+          setAutoOff(false)
+        }}
+      />
     </div>
   )
 }
@@ -671,10 +745,21 @@ function DepthControl({
   zone,
   depth,
   onChange,
+  auto = false,
+  onDisableAuto,
+  canReset = false,
+  onReset,
 }: {
   zone: MapZone
   depth: { lo: number; hi: number } | null
   onChange: (d: { lo: number; hi: number } | null) => void
+  onDisableAuto?: () => void
+  canReset?: boolean
+  onReset?: () => void
+  // auto reports that the window is tracking the player's height rather than
+  // having been set by hand. Surfaced because a control that moves on its own
+  // has to say so — otherwise it reads as a bug.
+  auto?: boolean
 }): React.ReactElement | null {
   // Flat zones have nothing to disambiguate.
   if (zone.z_span < 120) return null
@@ -702,7 +787,11 @@ function DepthControl({
       <span
         className="text-[10px] font-semibold uppercase tracking-widest"
         style={{ color: active ? 'var(--color-primary)' : 'var(--color-muted)' }}
-        title="Fade everything outside a height range, to read one level of a multi-level zone"
+        title={
+          auto
+            ? 'Following your height in game — drag either end to take over'
+            : 'Fade everything outside a height range, to read one level of a multi-level zone'
+        }
       >
         Height
       </span>
@@ -741,12 +830,22 @@ function DepthControl({
       >
         {active ? `${cur.lo} → ${cur.hi}` : 'all levels'}
       </span>
+      {auto && (
+        <button
+          onClick={onDisableAuto}
+          className="rounded px-1 text-[9px] font-semibold uppercase tracking-wider"
+          style={{ backgroundColor: 'var(--color-primary)', color: 'var(--color-background)' }}
+          title="Following your height in game — click to stop and show all levels"
+        >
+          Auto
+        </button>
+      )}
       <button
-        onClick={() => onChange(null)}
-        disabled={!active}
+        onClick={() => (onReset ? onReset() : onChange(null))}
+        disabled={!active && !canReset}
         className="text-[10px] font-medium disabled:opacity-30"
         style={{ color: 'var(--color-primary)' }}
-        title="Show all levels again"
+        title="Back to the default — your own height when in this zone, all levels otherwise"
       >
         Reset
       </button>

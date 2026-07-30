@@ -37,6 +37,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/loot"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/maps"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/overlay"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/playerpos"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/players"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/popflag"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/raidthreat"
@@ -1196,6 +1197,12 @@ func main() {
 	//   Stage C: target + player pet name -> combatTracker
 	//   Stage D: casting name + buff slots -> timerEngine (observability)
 	//   Stage E: target + buff transitions + /pipe -> triggerEngine
+	// Live player position for the map renderer. Rate-limited inside the tracker;
+	// see internal/playerpos for why a heartbeat is load-bearing.
+	posTracker := playerpos.New(func(s playerpos.State) {
+		hub.Broadcast(ws.Event{Type: "player:position", Data: s})
+	})
+
 	pipeSupervisor := zealpipe.NewSupervisor(func(env zealpipe.Envelope) {
 		switch env.Type {
 		case zealpipe.MsgCmd:
@@ -1222,6 +1229,16 @@ func main() {
 			}
 			npcTracker.SetPipePlayerSnapshot(p.Zone, p.Location.X, p.Location.Y, p.Location.Z)
 			respawnEngine.SetPipeZone(p.Zone)
+			// Maps need the short name, and heading, which the trackers above
+			// discard. An unresolved zone yields "" and the tracker declines to
+			// broadcast rather than place the arrow on whatever map is open.
+			zoneShort := ""
+			if p.Zone > 0 {
+				if z, err := database.GetZoneByZoneIDNumber(p.Zone); err == nil && z != nil {
+					zoneShort = z.ShortName
+				}
+			}
+			posTracker.Update(zoneShort, p.Location.X, p.Location.Y, p.Location.Z, p.Heading)
 			return
 		case zealpipe.MsgLabel:
 			// Fall through to the label aggregator below.
@@ -1309,6 +1326,8 @@ func main() {
 		npcTracker.ResetPipeFields()
 		combatTracker.ResetPipeState()
 		respawnEngine.ResetPipeZone()
+		posTracker.Reset()
+		hub.Broadcast(ws.Event{Type: "player:position", Data: nil})
 		timerEngine.SetPipeCasting("")
 		timerEngine.SetPipeBuffSlots(nil)
 		triggerEngine.HandlePipeReset()

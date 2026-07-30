@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Check, Copy, X } from 'lucide-react'
 import { useCachedState } from '../../hooks/useCachedState'
+import { usePlayerPosition } from '../../hooks/usePlayerPosition'
 import { useZoneMap } from '../../hooks/useZoneMap'
 import { ZoneMap } from './ZoneMap'
 import { ErrorBoundary } from '../ErrorBoundary'
@@ -44,12 +45,17 @@ export interface ZoneMapPanelProps {
   // showZoneButton adds the "Show in game" clipboard action. The Maps page puts
   // it in its own header instead.
   showZoneButton?: boolean
+  // onJumpToZone, when given, adds a button to switch the displayed zone to
+  // whichever one the player is standing in. Only surfaces when the live
+  // position says they are somewhere else, so it never appears without a reason.
+  onJumpToZone?: (zone: string) => void
 }
 
 export function ZoneMapPanel({
   zoneShortName,
   height = 'fill',
   showZoneButton = true,
+  onJumpToZone,
 }: ZoneMapPanelProps): React.ReactElement {
   const navigate = useNavigate()
   // Outline is the default: one clean line drawing, the same in every zone.
@@ -73,6 +79,12 @@ export function ZoneMapPanel({
   // crossing and two lines at different heights, which a flat rendering cannot
   // express at all.
   const [heightColor, setHeightColor] = useCachedState('maps.heightColor', true)
+  // Live position from Zeal. Null whenever we don't know — Zeal not running,
+  // pipe stalled, not on Windows — so every consumer has one thing to check.
+  const playerPos = usePlayerPosition()
+  // Follow the view to the player. Off by default: it takes pan away from you,
+  // which is the wrong default while browsing a map you are not standing in.
+  const [followPlayer, setFollowPlayer] = useCachedState('maps.followPlayer', false)
   const [copied, setCopied] = useState<string | null>(null)
 
   const visible = useMemo(() => new Set(enabled), [enabled])
@@ -191,6 +203,36 @@ export function ZoneMapPanel({
             Height colours
           </button>
         )}
+        {/* Both of these appear only with a live position, so they are absent
+            entirely rather than disabled when Zeal is not running — a greyed
+            control invites a question we cannot answer from here. */}
+        {playerPos && playerPos.zone === zone.zone && (
+          <button
+            onClick={() => setFollowPlayer((v) => !v)}
+            title="Keep the view centred on you as you move"
+            className="rounded border px-1.5 py-0.5 text-[10px] font-medium"
+            style={{
+              backgroundColor: followPlayer ? 'var(--color-surface-2)' : 'transparent',
+              borderColor: followPlayer ? 'var(--color-primary)' : 'var(--color-border)',
+              color: followPlayer ? 'var(--color-primary)' : 'var(--color-muted)',
+            }}
+          >
+            Follow me
+          </button>
+        )}
+        {onJumpToZone && playerPos && playerPos.zone !== zone.zone && (
+          <button
+            onClick={() => onJumpToZone(playerPos.zone)}
+            title="Show the zone you are standing in"
+            className="rounded border px-1.5 py-0.5 text-[10px] font-medium"
+            style={{
+              borderColor: 'var(--color-primary)',
+              color: 'var(--color-primary)',
+            }}
+          >
+            You are in {playerPos.zone}
+          </button>
+        )}
         {showZoneButton && (
           <button
             onClick={() => copy('showzone', mapShowZoneCommand(zone.zone))}
@@ -222,6 +264,8 @@ export function ZoneMapPanel({
             outline={outline}
             mode={mode}
             colorByHeight={heightColor}
+            playerPos={playerPos}
+            followPlayer={followPlayer}
             pois={pois}
             visibleCategories={visible}
             highlights={selected ? [{ x: selected.x, y: selected.y, z: selected.z }] : []}
