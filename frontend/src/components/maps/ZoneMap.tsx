@@ -54,6 +54,14 @@ export interface ZoneMapProps {
   followDepth?: boolean
   // followPlayer keeps the view centred on the player.
   followPlayer?: boolean
+  // onUserPan fires when the user drags the map while follow is on.
+  //
+  // Follow has to be released by whoever owns it, because panning and following
+  // are the same piece of state pulled in two directions: without this the
+  // recentre effect reasserted itself on the next position frame — up to five a
+  // second, plus a 2s heartbeat while standing still — so the map snapped back
+  // before a drag could finish and panning appeared broken outright.
+  onUserPan?: () => void
   // paths are ordered polylines drawn over the map — an NPC's patrol route.
   paths?: {
     points: { x: number; y: number; z: number }[]
@@ -84,6 +92,16 @@ export interface ZoneMapProps {
   // reset and no window to set by hand. The full controls live on the Live Map
   // tab, which has room for them.
   chromeless?: boolean
+  // transparent drops the canvas's own background so whatever is behind it
+  // shows through.
+  //
+  // Overlay windows are translucent by design and take their alpha from the
+  // global overlay opacity setting, but the canvas painted an opaque
+  // --color-background across the whole client area, so the Live Map window
+  // came out solid black while every other overlay was see-through. Not the
+  // default: in-app maps sit on a lighter surface and want the darker canvas
+  // behind the lines.
+  transparent?: boolean
 }
 
 const CATEGORY_STYLE: Record<MapPOICategory, { color: string; short: string }> = {
@@ -243,12 +261,14 @@ export function ZoneMap({
   playerPos,
   followDepth = true,
   followPlayer = false,
+  onUserPan,
   paths,
   onPOIClick,
   onEmptyClick,
   height = 520,
   showLabels = true,
   chromeless = false,
+  transparent = false,
 }: ZoneMapProps): React.ReactElement {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const wrapRef = useRef<HTMLDivElement | null>(null)
@@ -281,13 +301,24 @@ export function ZoneMap({
   // escape from a followed window was to drag both thumbs to the extremes, which
   // works but is not something anyone would guess.
   const [autoOff, setAutoOff] = useState(false)
+  // Map coordinates under the cursor, for the readout. Null when not hovering,
+  // which is when the readout falls back to the player's own position.
+  const [hover, setHover] = useState<{ x: number; y: number } | null>(null)
   const autoWindow = useMemo(() => {
     if (autoOff || !followDepth || !playerPos || playerPos.zone !== zone.zone) return null
     // Wide enough to hold the floor you are on plus its walls, and scaled a
     // little by how tall the zone is.
     const half = Math.max(50, Math.round(zone.z_span / 12))
-    return { lo: Math.round(playerPos.z - half), hi: Math.round(playerPos.z + half) }
-  }, [autoOff, followDepth, playerPos, zone.zone, zone.z_span])
+    // Clamped to the zone's own range. The player's height plus a margin
+    // routinely falls outside it — standing on the floor of a 46-unit-deep zone
+    // puts the floor of the window 60 units below anything that exists — and an
+    // out-of-range end drove the slider's fill to a negative percentage, which
+    // rendered as a bar escaping the control and striking through its label.
+    return {
+      lo: Math.max(zone.min_z, Math.round(playerPos.z - half)),
+      hi: Math.min(zone.max_z, Math.round(playerPos.z + half)),
+    }
+  }, [autoOff, followDepth, playerPos, zone.zone, zone.z_span, zone.min_z, zone.max_z])
 
   const depth = manualDepth ?? autoWindow
   const setDepth = setManualDepth
@@ -388,6 +419,15 @@ export function ZoneMap({
       (x * base.scale + base.offX) * view.zoom + view.panX,
       (y * base.scale + base.offY) * view.zoom + view.panY,
     ],
+    [base, view],
+  )
+
+  // The exact inverse of toScreen: canvas pixels back to map space.
+  const toMap = useCallback(
+    (px: number, py: number): { x: number; y: number } => ({
+      x: ((px - view.panX) / view.zoom - base.offX) / base.scale,
+      y: ((py - view.panY) / view.zoom - base.offY) / base.scale,
+    }),
     [base, view],
   )
 
@@ -688,7 +728,7 @@ export function ZoneMap({
           // Canvas is inline by default, so without this the baseline gap
           // leaves a few stray pixels under it in fill mode.
           display: 'block',
-          background: 'var(--color-background)',
+          background: transparent ? 'transparent' : 'var(--color-background)',
           cursor: drag.current ? 'grabbing' : 'grab',
           borderRadius: 6,
         }}
@@ -697,6 +737,8 @@ export function ZoneMap({
           drag.current = { x: e.clientX, y: e.clientY, panX: view.panX, panY: view.panY }
         }}
         onPointerMove={(e) => {
+          const rect = canvasRef.current?.getBoundingClientRect()
+          if (rect) setHover(toMap(e.clientX - rect.left, e.clientY - rect.top))
           // Snapshot the drag origin before calling setView. The updater runs
           // during a later render pass, by which time onPointerUp may already
           // have cleared drag.current — dereferencing it in there threw and,
@@ -706,8 +748,12 @@ export function ZoneMap({
           if (!d) return
           const dx = e.clientX - d.x
           const dy = e.clientY - d.y
+          // Release follow before moving, or the recentre effect undoes this
+          // pan on the very next position frame.
+          if (followPlayer && Math.hypot(dx, dy) > 3) onUserPan?.()
           setView((v) => ({ ...v, panX: d.panX + dx, panY: d.panY + dy }))
         }}
+        onPointerLeave={() => setHover(null)}
         onPointerUp={(e) => {
           const moved =
             drag.current && Math.hypot(e.clientX - drag.current.x, e.clientY - drag.current.y) > 3
@@ -723,9 +769,7 @@ export function ZoneMap({
             return
           }
           if (!onEmptyClick) return
-          // Invert the fit-to-zone transform back to map space.
-          const wx = ((mx - view.panX) / view.zoom - base.offX) / base.scale
-          const wy = ((my - view.panY) / view.zoom - base.offY) / base.scale
+          const { x: wx, y: wy } = toMap(mx, my)
           // Height, best guess first: where the player actually is, else the
           // middle of the focused depth window, else the middle of the zone.
           const z =
@@ -736,6 +780,11 @@ export function ZoneMap({
                 : (zone.min_z + zone.max_z) / 2
           onEmptyClick(Math.round(wx), Math.round(wy), Math.round(z))
         }}
+      />
+
+      <CoordReadout
+        hover={hover}
+        player={playerPos && playerPos.zone === zone.zone ? playerPos : null}
       />
 
       {!chromeless && (
@@ -784,6 +833,43 @@ export function ZoneMap({
         }}
       />
       )}
+    </div>
+  )
+}
+
+// CoordReadout shows a position in the top-left corner, where EQ's own map
+// prints it.
+//
+// Two sources, one line: the point under the cursor while you hover, and your
+// own position otherwise. Hover wins because it is the deliberate act — you
+// moved the mouse somewhere to ask what is there — whereas the live position is
+// the standing answer when you are not asking anything.
+//
+// Printed in /loc order and sign (Y before X, game coordinates), matching the
+// game, the inspector row, and the clipboard commands. Map space is the
+// negation of game space, so both sources are negated on the way out. Shown on
+// every surface including the overlays, which is why it is outside the
+// chromeless gate — a coordinate is the one piece of chrome you want most while
+// actually playing.
+function CoordReadout({
+  hover,
+  player,
+}: {
+  hover: { x: number; y: number } | null
+  player: PlayerPosition | null
+}): React.ReactElement | null {
+  const src = hover ?? player
+  if (!src) return null
+  return (
+    <div
+      className="pointer-events-none absolute left-2 top-2 rounded px-1.5 py-0.5 font-mono text-[10px] tabular-nums"
+      style={{
+        backgroundColor: 'var(--color-surface-2)',
+        color: hover ? 'var(--color-foreground)' : 'var(--color-primary)',
+      }}
+      title={hover ? 'Position under the cursor' : 'Your position in game'}
+    >
+      {Math.round(-src.y)}, {Math.round(-src.x)}
     </div>
   )
 }
@@ -881,7 +967,11 @@ function DepthControl({
   // take 560 arrow presses to cross, and single-unit precision is meaningless
   // against geometry banded tens of units apart.
   const step = Math.max(1, Math.round((ceil - floor) / 120))
-  const pct = (v: number): number => ((v - floor) / (ceil - floor)) * 100
+  // Clamped as well as computed: the fill is absolutely positioned, so any value
+  // outside the zone's range would place it outside the control entirely rather
+  // than merely mis-sizing it.
+  const pct = (v: number): number =>
+    Math.max(0, Math.min(100, ((v - floor) / (ceil - floor)) * 100))
   const setLo = (v: number): void => onChange({ lo: Math.min(v, cur.hi - 1), hi: cur.hi })
   const setHi = (v: number): void => onChange({ lo: cur.lo, hi: Math.max(v, cur.lo + 1) })
 

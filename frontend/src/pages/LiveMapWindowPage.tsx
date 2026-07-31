@@ -130,6 +130,7 @@ export default function LiveMapWindowPage(): React.ReactElement {
               height="fill"
               showLabels={false}
               chromeless
+              transparent
             />
           </ErrorBoundary>
         ) : (

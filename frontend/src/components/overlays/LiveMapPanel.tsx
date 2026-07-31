@@ -76,6 +76,7 @@ export default function LiveMapPanel({
             height="fill"
             showLabels={false}
             chromeless
+            transparent
           />
         </ErrorBoundary>
       ) : (
