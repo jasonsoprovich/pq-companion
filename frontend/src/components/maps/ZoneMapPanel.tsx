@@ -202,6 +202,9 @@ export function ZoneMapPanel({
   const [draft, setDraft] = useState<{ x: number; y: number; z: number } | null>(null)
   const [editing, setEditing] = useState<UserAnnotation | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
+  // Container the map's height control is portalled into, so it spans the full
+  // panel width below the rail instead of being indented by it.
+  const [depthHost, setDepthHost] = useState<HTMLDivElement | null>(null)
 
   useEffect(() => {
     if (!zoneShortName) {
@@ -661,10 +664,15 @@ export function ZoneMapPanel({
               adding ? (x, y, z) => { setDraft({ x, y, z }); setAdding(false) } : undefined
             }
             height={height}
+            depthSlot={depthHost}
           />
         </ErrorBoundary>
         </div>
       </div>
+
+      {/* Full width, under both the rail and the canvas. Empty and zero-height
+          for flat zones, where the map has no depth control to dock. */}
+      <div ref={setDepthHost} className="flex shrink-0 items-center gap-2 empty:hidden" />
 
       {(draft || editing) && (
         <AnnotationForm

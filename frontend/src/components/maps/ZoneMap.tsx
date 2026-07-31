@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { LocateFixed } from 'lucide-react'
 import type {
   MapGeometry,
@@ -112,6 +113,15 @@ export interface ZoneMapProps {
   // default: in-app maps sit on a lighter surface and want the darker canvas
   // behind the lines.
   transparent?: boolean
+  // depthSlot, when given, is a container the height control and its legend are
+  // rendered into instead of floating over the canvas corners.
+  //
+  // Exists because the layer rail put a column to the left of the canvas, so a
+  // control anchored to the canvas's bottom-left no longer lined up with the
+  // panel's left edge. Docking it below both makes it span the full width, with
+  // the rail sitting above it. Undefined keeps the floating placement, which is
+  // what the surfaces without a rail want.
+  depthSlot?: HTMLElement | null
 }
 
 const CATEGORY_STYLE: Record<MapPOICategory, { color: string; short: string }> = {
@@ -281,6 +291,7 @@ export function ZoneMap({
   showLabels = true,
   chromeless = false,
   transparent = false,
+  depthSlot,
 }: ZoneMapProps): React.ReactElement {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const wrapRef = useRef<HTMLDivElement | null>(null)
@@ -882,27 +893,48 @@ export function ZoneMap({
         )}
       </div>
 
-      {!chromeless && zScale && <HeightLegend scale={zScale} />}
-      {!chromeless && (
-      <DepthControl
-        zone={zone}
-        depth={depth}
-        onChange={setDepth}
-        auto={manualDepth === null && autoWindow !== null}
-        onDisableAuto={() => setAutoOff(true)}
-        // Reset means "back to the default for this situation": the followed
-        // window when a live position is available, all levels otherwise. It has
-        // to be enabled after auto is dismissed too, or dismissing it would be a
-        // one-way door.
-        canReset={manualDepth !== null || autoOff}
-        onReset={() => {
-          setManualDepth(null)
-          setAutoOff(false)
-        }}
-      />
-      )}
+      {!chromeless && bottomBar(depthSlot === undefined ? null : depthSlot)}
     </div>
   )
+
+  // The height control and its legend, either floating over the canvas corners
+  // or docked into a container the caller supplies.
+  //
+  // Portalled rather than lifted: the depth window is derived from state only
+  // this component holds (the manual window, the auto window from the player's
+  // height, whether auto was dismissed), and hoisting all of that into every
+  // caller to move one control would spread the logic across four surfaces. The
+  // portal moves the pixels and leaves the state where it belongs.
+  function bottomBar(host: HTMLElement | null): React.ReactNode {
+    const docked = host !== null
+    const content = (
+      <>
+        <DepthControl
+          zone={zone}
+          depth={depth}
+          onChange={setDepth}
+          docked={docked}
+          auto={manualDepth === null && autoWindow !== null}
+          onDisableAuto={() => setAutoOff(true)}
+          // Reset means "back to the default for this situation": the followed
+          // window when a live position is available, all levels otherwise. It
+          // has to be enabled after auto is dismissed too, or dismissing it
+          // would be a one-way door.
+          canReset={manualDepth !== null || autoOff}
+          onReset={() => {
+            setManualDepth(null)
+            setAutoOff(false)
+          }}
+        />
+        {zScale && <HeightLegend scale={zScale} docked={docked} />}
+      </>
+    )
+    if (!docked) return content
+    return createPortal(
+      <div className="flex w-full items-center justify-between gap-2">{content}</div>,
+      host,
+    )
+  }
 }
 
 // packColors interns an external pack's per-segment RGB into a small palette,
@@ -995,7 +1027,13 @@ function CoordReadout({
 // and roughly by how much, and the numbers are what make that readable rather
 // than merely pretty. Values are z as EQ reports it, so they can be compared
 // against /loc directly.
-function HeightLegend({ scale }: { scale: HeightScale }): React.ReactElement {
+function HeightLegend({
+  scale,
+  docked = false,
+}: {
+  scale: HeightScale
+  docked?: boolean
+}): React.ReactElement {
   // Each stop is shown at the width of the height range that actually maps to
   // it, so the legend describes the anchored scale rather than a plain min-max
   // gradient. The two end stops absorb everything past the ramp and so come out
@@ -1015,7 +1053,9 @@ function HeightLegend({ scale }: { scale: HeightScale }): React.ReactElement {
 
   return (
     <div
-      className="absolute right-2 bottom-2 flex items-center gap-1.5 rounded px-2 py-1"
+      className={`flex items-center gap-1.5 rounded px-2 py-1${
+        docked ? '' : ' absolute right-2 bottom-2'
+      }`}
       style={{ backgroundColor: 'var(--color-surface-2)' }}
       title="Line colour is height: cool below the zone's main level, warm above it"
     >
@@ -1055,6 +1095,7 @@ function DepthControl({
   onDisableAuto,
   canReset = false,
   onReset,
+  docked = false,
 }: {
   zone: MapZone
   depth: { lo: number; hi: number } | null
@@ -1062,6 +1103,8 @@ function DepthControl({
   onDisableAuto?: () => void
   canReset?: boolean
   onReset?: () => void
+  // docked renders in normal flow rather than floating over the canvas corner.
+  docked?: boolean
   // auto reports that the window is tracking the player's height rather than
   // having been set by hand. Surfaced because a control that moves on its own
   // has to say so — otherwise it reads as a bug.
@@ -1091,7 +1134,9 @@ function DepthControl({
 
   return (
     <div
-      className="absolute bottom-2 left-2 flex items-center gap-2.5 rounded px-2.5 py-1.5"
+      className={`flex items-center gap-2.5 rounded px-2.5 py-1.5${
+        docked ? ' flex-1' : ' absolute bottom-2 left-2'
+      }`}
       style={{ backgroundColor: 'var(--color-surface-2)' }}
     >
       <span
