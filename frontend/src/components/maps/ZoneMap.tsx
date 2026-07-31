@@ -35,6 +35,11 @@ export interface ZoneMapProps {
   showDetail?: boolean
   // outline is the clean layer; drawn instead of geometry+detail in outline mode.
   outline?: MapGeometry | null
+  // external is a user-installed map pack, drawn in its own colours. Kept
+  // distinct from outline rather than sharing the slot — they are different
+  // data with different lifetimes, and sharing one caused outline mode to keep
+  // drawing the pack after a single visit to it.
+  external?: MapGeometry | null
   mode?: MapRenderMode
   // colorByHeight tints geometry along an elevation ramp instead of drawing it
   // in one colour.
@@ -258,6 +263,7 @@ export function ZoneMap({
   detail,
   showDetail = true,
   outline,
+  external,
   mode = 'outline',
   colorByHeight = true,
   pois,
@@ -338,9 +344,9 @@ export function ZoneMap({
   const tinted = colorByHeight && zone.z_span >= 40
   // Built from the layer actually being drawn, since the modal height depends on
   // which segments are on screen.
-  // External packs also land in the outline slot — one flat layer, no detail
-  // companion.
-  const primaryLayer = mode === 'detailed' ? geometry : outline
+  // Whichever single layer carries the drawing in this mode.
+  const primaryLayer =
+    mode === 'detailed' ? geometry : mode === 'external' ? external : outline
   const zScale = useMemo(() => {
     if (!tinted || !primaryLayer || primaryLayer.count === 0) return null
     return heightScale(
@@ -550,7 +556,8 @@ export function ZoneMap({
       // Both are a single flat layer that carries the whole drawing, so a touch
       // heavier than the detailed primary. External packs bring their own
       // colours; drawLayer picks those up from the geometry.
-      if (outline && outline.count > 0) drawLayer(outline, OUTLINE_COLOR, 1.3, 1)
+      const layer = mode === 'external' ? external : outline
+      if (layer && layer.count > 0) drawLayer(layer, OUTLINE_COLOR, 1.3, 1)
     } else {
       const primaryColor = GEOMETRY_COLOR[zone.technique] ?? '#7dd3fc'
       // Detail underneath, so primary structure always reads on top.
@@ -709,7 +716,7 @@ export function ZoneMap({
       ctx.fill()
       ctx.restore()
     }
-  }, [geometry, shown, zone, size, toScreen, view.zoom, depth, highlights, playerPos, showLabels, detail, showDetail, outline, mode, zScale, paths])
+  }, [geometry, shown, zone, size, toScreen, view.zoom, depth, highlights, playerPos, showLabels, detail, showDetail, outline, external, mode, zScale, paths])
 
   // Wheel zoom is attached natively with passive:false. React registers wheel
   // as a passive listener, so preventDefault() there is ignored — it never

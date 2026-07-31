@@ -14,6 +14,14 @@ interface ZoneMapData {
   // geometry and detail are the classifier's own layers, drawn in detailed mode.
   geometry: MapGeometry | null
   detail: MapGeometry | null
+  // external is the user-installed map pack.
+  //
+  // Its own slot, not a reuse of `outline`. Sharing one was a real bug: the
+  // fetch cache is keyed by (zone, mode) and assumes each mode owns its slot,
+  // so loading the pack overwrote the outline layer and the outline tag then
+  // reported "already fetched" — outline mode kept drawing the pack until the
+  // zone changed.
+  external: MapGeometry | null
   pois: MapPOI[]
   loading: boolean
   error: string | null
@@ -32,7 +40,7 @@ interface ZoneMapData {
 // kept, so toggling back and forth costs nothing.
 export function useZoneMap(zone: string | null, mode: MapRenderMode): ZoneMapData {
   const [data, setData] = useState<ZoneMapData>({
-    zone: null, outline: null, geometry: null, detail: null,
+    zone: null, outline: null, geometry: null, detail: null, external: null,
     pois: [], loading: false, error: null,
   })
   // Tracks which (zone, mode) geometry fetches have been started, so a re-render
@@ -42,7 +50,7 @@ export function useZoneMap(zone: string | null, mode: MapRenderMode): ZoneMapDat
   useEffect(() => {
     if (!zone) {
       setData({
-        zone: null, outline: null, geometry: null, detail: null,
+        zone: null, outline: null, geometry: null, detail: null, external: null,
         pois: [], loading: false, error: null,
       })
       return
@@ -56,13 +64,14 @@ export function useZoneMap(zone: string | null, mode: MapRenderMode): ZoneMapDat
         if (cancelled) return
         setData({
           zone: detail.zone, pois: detail.pois ?? [],
-          outline: null, geometry: null, detail: null, loading: true, error: null,
+          outline: null, geometry: null, detail: null, external: null,
+          loading: true, error: null,
         })
       })
       .catch((err: Error) => {
         if (cancelled) return
         setData({
-          zone: null, outline: null, geometry: null, detail: null,
+          zone: null, outline: null, geometry: null, detail: null, external: null,
           pois: [], loading: false, error: err.message,
         })
       })
@@ -92,11 +101,8 @@ export function useZoneMap(zone: string | null, mode: MapRenderMode): ZoneMapDat
 
     const load =
       mode === 'external'
-        ? // A user-installed pack. Stored in `outline` because it is drawn the
-          // same way — one flat layer, no detail companion — so the renderer
-          // needs no third slot.
-          getExternalMapGeometry(zone).then((outline) => {
-            if (!cancelled) setData((d) => ({ ...d, outline, loading: false }))
+        ? getExternalMapGeometry(zone).then((external) => {
+            if (!cancelled) setData((d) => ({ ...d, external, loading: false }))
           })
         : mode === 'outline'
         ? getMapGeometry(zone, LAYER_OUTLINE).then((outline) => {

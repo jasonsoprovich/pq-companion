@@ -174,10 +174,8 @@ export function ZoneMapPanel({
   useEffect(() => {
     if (mode === 'external' && pack && !pack.available) setMode('detailed')
   }, [mode, pack, setMode])
-  const { zone, outline, geometry, detail, pois, loading, error } = useZoneMap(
-    zoneShortName,
-    mode,
-  )
+  const { zone, outline, geometry, detail, external, pois, loading, error } =
+    useZoneMap(zoneShortName, mode)
   // Layer choices persist across zones and across the two surfaces, so a player
   // who turns doors on keeps them on.
   const [enabled, setEnabled] = useCachedState<MapPOICategory[]>(
@@ -634,6 +632,7 @@ export function ZoneMapPanel({
             detail={detail}
             showDetail={showDetail}
             outline={outline}
+            external={external}
             mode={mode}
             colorByHeight={heightColor}
             playerPos={playerPos}
