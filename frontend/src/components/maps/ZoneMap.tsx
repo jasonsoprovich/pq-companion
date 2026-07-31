@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { LocateFixed } from 'lucide-react'
 import type {
   MapGeometry,
   MapPOI,
@@ -62,6 +63,10 @@ export interface ZoneMapProps {
   // second, plus a 2s heartbeat while standing still — so the map snapped back
   // before a drag could finish and panning appeared broken outright.
   onUserPan?: () => void
+  // onFollowRequest fires when the user asks to be centred again, via the
+  // reticle button. Paired with onUserPan: one releases follow, the other
+  // restores it, so panning is never a one-way door.
+  onFollowRequest?: () => void
   // paths are ordered polylines drawn over the map — an NPC's patrol route.
   paths?: {
     points: { x: number; y: number; z: number }[]
@@ -262,6 +267,7 @@ export function ZoneMap({
   followDepth = true,
   followPlayer = false,
   onUserPan,
+  onFollowRequest,
   paths,
   onPOIClick,
   onEmptyClick,
@@ -400,10 +406,17 @@ export function ZoneMap({
   //
   // Deliberately not in the same effect as the canvas draw: this sets state, and
   // running it from the draw effect would make every frame schedule a re-render.
-  useEffect(() => {
-    if (!followPlayer || !playerPos || playerPos.zone !== zone.zone) return
-    const cx = playerPos.x * base.scale + base.offX
-    const cy = playerPos.y * base.scale + base.offY
+  // onThisMap is the live position, but only when it belongs to the zone being
+  // drawn. Everything that places the player has to check this.
+  const onThisMap = playerPos && playerPos.zone === zone.zone ? playerPos : null
+
+  // centreOnPlayer pans the view so the player sits in the middle, leaving zoom
+  // alone. Shared by follow mode and the manual recentre so the two can never
+  // disagree about where "centred" is.
+  const centreOnPlayer = useCallback(() => {
+    if (!onThisMap) return
+    const cx = onThisMap.x * base.scale + base.offX
+    const cy = onThisMap.y * base.scale + base.offY
     setView((v) => {
       const panX = size.w / 2 - cx * v.zoom
       const panY = size.h / 2 - cy * v.zoom
@@ -412,7 +425,12 @@ export function ZoneMap({
       if (Math.abs(panX - v.panX) < 0.5 && Math.abs(panY - v.panY) < 0.5) return v
       return { ...v, panX, panY }
     })
-  }, [followPlayer, playerPos, zone.zone, base, size.w, size.h])
+  }, [onThisMap, base, size.w, size.h])
+
+  useEffect(() => {
+    if (!followPlayer) return
+    centreOnPlayer()
+  }, [followPlayer, centreOnPlayer])
 
   const toScreen = useCallback(
     (x: number, y: number): [number, number] => [
@@ -754,6 +772,14 @@ export function ZoneMap({
           setView((v) => ({ ...v, panX: d.panX + dx, panY: d.panY + dy }))
         }}
         onPointerLeave={() => setHover(null)}
+        onContextMenu={(e) => {
+          // Right-click recentres on you, which is what the in-game map does.
+          // Deliberately does not re-engage follow: this is "show me where I
+          // am", a one-shot, and leaving follow off keeps the view where the
+          // next drag puts it. The reticle button is the one that resumes.
+          e.preventDefault()
+          centreOnPlayer()
+        }}
         onPointerUp={(e) => {
           const moved =
             drag.current && Math.hypot(e.clientX - drag.current.x, e.clientY - drag.current.y) > 3
@@ -773,8 +799,8 @@ export function ZoneMap({
           // Height, best guess first: where the player actually is, else the
           // middle of the focused depth window, else the middle of the zone.
           const z =
-            playerPos && playerPos.zone === zone.zone
-              ? playerPos.z
+            onThisMap
+              ? onThisMap.z
               : depth
                 ? (depth.lo + depth.hi) / 2
                 : (zone.min_z + zone.max_z) / 2
@@ -784,35 +810,55 @@ export function ZoneMap({
 
       <CoordReadout
         hover={hover}
-        player={playerPos && playerPos.zone === zone.zone ? playerPos : null}
+        player={onThisMap}
       />
 
-      {!chromeless && (
       <div className="absolute right-2 top-2 flex flex-col items-end gap-1">
-        <span
-          className="rounded px-1.5 py-0.5 text-[10px]"
-          style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted)' }}
-        >
-          {mode === 'outline'
-            ? 'outline'
-            : zone.technique === 'contours'
-              ? 'elevation contours'
-              : zone.technique}{' '}
-          · {view.zoom.toFixed(1)}×
-        </span>
-        <button
-          onClick={() => setView({ zoom: 1, panX: 0, panY: 0 })}
-          className="rounded border px-1.5 py-0.5 text-[10px]"
-          style={{
-            backgroundColor: 'var(--color-surface)',
-            borderColor: 'var(--color-border)',
-            color: 'var(--color-muted-foreground)',
-          }}
-        >
-          Reset view
-        </button>
+        {/* Centre on me. Always rendered when there is a position on this map,
+            overlays included — it is what makes panning safe there, since an
+            overlay has no Follow toggle to find and a stranded view would
+            otherwise need the window closed and reopened. */}
+        {onThisMap && (
+          <button
+            onClick={() => { centreOnPlayer(); onFollowRequest?.() }}
+            title="Centre on me and follow (right-click the map to centre once)"
+            className="rounded border p-1"
+            style={{
+              backgroundColor: followPlayer ? 'var(--color-primary)' : 'var(--color-surface)',
+              borderColor: followPlayer ? 'var(--color-primary)' : 'var(--color-border)',
+              color: followPlayer ? 'var(--color-background)' : 'var(--color-muted-foreground)',
+            }}
+          >
+            <LocateFixed size={12} />
+          </button>
+        )}
+        {!chromeless && (
+          <>
+            <span
+              className="rounded px-1.5 py-0.5 text-[10px]"
+              style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted)' }}
+            >
+              {mode === 'outline'
+                ? 'outline'
+                : zone.technique === 'contours'
+                  ? 'elevation contours'
+                  : zone.technique}{' '}
+              · {view.zoom.toFixed(1)}×
+            </span>
+            <button
+              onClick={() => setView({ zoom: 1, panX: 0, panY: 0 })}
+              className="rounded border px-1.5 py-0.5 text-[10px]"
+              style={{
+                backgroundColor: 'var(--color-surface)',
+                borderColor: 'var(--color-border)',
+                color: 'var(--color-muted-foreground)',
+              }}
+            >
+              Reset view
+            </button>
+          </>
+        )}
       </div>
-      )}
 
       {!chromeless && zScale && <HeightLegend scale={zScale} />}
       {!chromeless && (

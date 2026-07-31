@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react'
+import React, { useMemo, useState } from 'react'
 import { Navigation } from 'lucide-react'
 import OverlayWindow from '../OverlayWindow'
 import { useCachedState } from '../../hooks/useCachedState'
@@ -45,6 +45,9 @@ export default function LiveMapPanel({
   const [enabled] = useCachedState<MapPOICategory[]>('maps.layers', DEFAULT_LAYERS)
   const { zone, outline, pois } = useZoneMap(zoneName, 'outline')
   const visible = useMemo(() => new Set(enabled), [enabled])
+  // Same as the popped-out window: follows by default, pans when you drag it,
+  // and the reticle puts it back.
+  const [follow, setFollow] = useState(true)
 
   return (
     <OverlayWindow
@@ -71,7 +74,9 @@ export default function LiveMapPanel({
             pois={pois}
             visibleCategories={visible}
             playerPos={playerPos}
-            followPlayer
+            followPlayer={follow}
+            onUserPan={() => setFollow(false)}
+            onFollowRequest={() => setFollow(true)}
             followDepth
             height="fill"
             showLabels={false}

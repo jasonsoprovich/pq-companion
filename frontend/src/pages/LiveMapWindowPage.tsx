@@ -44,6 +44,9 @@ export default function LiveMapWindowPage(): React.ReactElement {
   // this is the surface where legibility at a glance matters most.
   const { zone, outline, pois } = useZoneMap(zoneName, 'outline')
   const visible = React.useMemo(() => new Set(enabled), [enabled])
+  // Not cached: an overlay should come back following you, whatever you last
+  // dragged it to. Panning is for a look around, not a setting.
+  const [follow, setFollow] = React.useState(true)
 
   return (
     <div
@@ -123,9 +126,13 @@ export default function LiveMapWindowPage(): React.ReactElement {
               pois={pois}
               visibleCategories={visible}
               playerPos={playerPos}
-              // Follow and auto-depth both on: an overlay you have to pan by hand
-              // while playing is worse than no overlay.
-              followPlayer
+              // Follow starts on — an overlay you have to pan by hand every time
+              // you move is worse than no overlay — but it is not forced. The
+              // in-game map pans, so this one has to as well; dragging releases
+              // follow and the reticle button puts it back.
+              followPlayer={follow}
+              onUserPan={() => setFollow(false)}
+              onFollowRequest={() => setFollow(true)}
               followDepth
               height="fill"
               showLabels={false}

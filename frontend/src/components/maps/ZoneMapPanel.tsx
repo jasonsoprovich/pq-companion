@@ -614,6 +614,7 @@ export function ZoneMapPanel({
             // somewhere else" and stop following. The Follow me toggle above is
             // right there to turn it back on.
             onUserPan={() => setFollowPlayer(false)}
+            onFollowRequest={() => setFollowPlayer(true)}
             pois={allPois}
             visibleCategories={visible}
             highlights={inspect ? [{ x: inspect.x, y: inspect.y, z: inspect.z }] : []}
