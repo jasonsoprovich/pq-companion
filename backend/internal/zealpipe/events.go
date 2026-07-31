@@ -44,12 +44,32 @@ type Player struct {
 	AutoAttack bool     `json:"autoattack"`
 }
 
-// Location is a 3D world position.
+// Location is a 3D world position, with Zeal's field names.
+//
+// Read GameX/GameY rather than these fields directly — see the methods below.
 type Location struct {
 	X float64 `json:"x"`
 	Y float64 `json:"y"`
 	Z float64 `json:"z"`
 }
+
+// GameX and GameY return the position in the convention quarm.db uses for
+// spawn2.x / spawn2.y, which is what every other coordinate in this codebase
+// means by x and y.
+//
+// Zeal reports position in EQ's internal struct order, which is (y, x, z) —
+// the same order /loc prints, and the same order zealMap.ts already encodes for
+// `/map marker`. So the JSON key "x" carries the game's Y and vice versa. Using
+// the fields positionally transposes the coordinates, which is subtle rather
+// than obvious: the values stay in range and track the player correctly, they
+// are simply reflected about the diagonal.
+//
+// MEASURED 2026-07-30, standing in the Bazaar at /loc -784, -102: the arrow
+// drew at map (803, 108) where the transposed reading predicts (784, 102) and
+// the direct reading predicts (102, 784) — 43% of a map-width outside the
+// zone's right edge. Netherbian Lair agreed.
+func (l Location) GameX() float64 { return l.Y }
+func (l Location) GameY() float64 { return l.X }
 
 // PipeCmd carries a custom string sent via in-game /pipe <text>.
 type PipeCmd struct {

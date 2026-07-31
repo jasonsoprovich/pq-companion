@@ -104,3 +104,20 @@ func TestUnknownLabelTypeAccepted(t *testing.T) {
 		t.Errorf("unknown label type lost: %v", labels[0].Type)
 	}
 }
+
+func TestLocationGameAccessorsTranspose(t *testing.T) {
+	// Zeal's JSON "x" carries the game's Y. Verified in game 2026-07-30 by
+	// standing in the Bazaar at /loc -784, -102 and measuring where the arrow
+	// drew; see the Location doc comment.
+	//
+	// This test exists because the raw fields are named exactly what a reader
+	// expects them to mean, so the bug reappears the moment someone "tidies"
+	// GameX() away.
+	l := Location{X: -784, Y: -102, Z: 5}
+	if got := l.GameX(); got != -102 {
+		t.Errorf("GameX() = %v, want -102 (Zeal's y)", got)
+	}
+	if got := l.GameY(); got != -784 {
+		t.Errorf("GameY() = %v, want -784 (Zeal's x)", got)
+	}
+}

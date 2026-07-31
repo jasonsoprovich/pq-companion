@@ -1237,7 +1237,12 @@ func main() {
 				slog.Debug("zealpipe: decode player failed", "err", err)
 				return
 			}
-			npcTracker.SetPipePlayerSnapshot(p.Zone, p.Location.X, p.Location.Y, p.Location.Z)
+			// GameX/GameY, not the raw fields: Zeal's location is (y, x, z).
+			// This one feeds spawn-point proximity, which compares against
+			// spawn2.x/y, so a transposed reading silently picked the wrong
+			// same-name NPC variant rather than failing visibly.
+			npcTracker.SetPipePlayerSnapshot(
+				p.Zone, p.Location.GameX(), p.Location.GameY(), p.Location.Z)
 			respawnEngine.SetPipeZone(p.Zone)
 			// Maps need the short name, and heading, which the trackers above
 			// discard. An unresolved zone yields "" and the tracker declines to
@@ -1248,7 +1253,8 @@ func main() {
 					zoneShort = z.ShortName
 				}
 			}
-			posTracker.Update(zoneShort, p.Location.X, p.Location.Y, p.Location.Z, p.Heading)
+			posTracker.Update(
+				zoneShort, p.Location.GameX(), p.Location.GameY(), p.Location.Z, p.Heading)
 			return
 		case zealpipe.MsgLabel:
 			// Fall through to the label aggregator below.
