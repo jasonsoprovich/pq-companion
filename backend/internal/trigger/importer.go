@@ -63,10 +63,26 @@ var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
 // (.gtp GINA packages and EQNag backup zips).
 var zipMagic = []byte{0x50, 0x4B, 0x03, 0x04}
 
+// maxZipMemberSize bounds how many decompressed bytes unwrapZip will pull out
+// of a single archive member. Real GINA/EQNag exports are at most a few MB;
+// this is generous headroom while still capping the classic zip-bomb case
+// (a tiny archive whose member claims/produces gigabytes of output).
+const maxZipMemberSize = 128 << 20 // 128 MiB
+
+// maxZipUnwrapDepth caps zip-in-zip recursion in DetectAndParse. Real GINA/
+// EQNag exports never nest archives; this just stops a hostile "archive
+// containing an archive containing an archive..." file from recursing
+// unbounded.
+const maxZipUnwrapDepth = 4
+
 // DetectAndParse identifies the source app of an import file and parses it into
 // a normalized preview. filename is used only to suggest a default category
 // name and as a weak hint; detection is driven by the bytes.
 func DetectAndParse(filename string, data []byte) (ImportPreview, error) {
+	return detectAndParse(filename, data, 0)
+}
+
+func detectAndParse(filename string, data []byte, depth int) (ImportPreview, error) {
 	if len(data) == 0 {
 		return ImportPreview{}, fmt.Errorf("empty file")
 	}
@@ -76,13 +92,16 @@ func DetectAndParse(filename string, data []byte) (ImportPreview, error) {
 	// Zip container: GINA .gtp (ShareData.xml inside) or EQNag backup .zip
 	// (a triggers JSON inside).
 	if bytes.HasPrefix(data, zipMagic) {
+		if depth >= maxZipUnwrapDepth {
+			return ImportPreview{}, fmt.Errorf("archive nested too deeply")
+		}
 		inner, innerName, err := unwrapZip(data)
 		if err != nil {
 			return ImportPreview{}, err
 		}
 		// Recurse on the extracted member, but keep the outer archive's name as
 		// the suggested category (more meaningful than "ShareData").
-		prev, err := DetectAndParse(innerName, inner)
+		prev, err := detectAndParse(innerName, inner, depth+1)
 		if err != nil {
 			return ImportPreview{}, err
 		}
@@ -143,14 +162,23 @@ func unwrapZip(data []byte) ([]byte, string, error) {
 	if pick == nil {
 		return nil, "", fmt.Errorf("zip contains no ShareData.xml or triggers JSON")
 	}
+	if pick.UncompressedSize64 > maxZipMemberSize {
+		return nil, "", fmt.Errorf("%s in zip is too large (%d bytes, max %d)", pick.Name, pick.UncompressedSize64, maxZipMemberSize)
+	}
 	rc, err := pick.Open()
 	if err != nil {
 		return nil, "", fmt.Errorf("open %s in zip: %w", pick.Name, err)
 	}
 	defer rc.Close()
-	b, err := io.ReadAll(rc)
+	// Read one byte past the cap so a member whose declared UncompressedSize64
+	// understates its real output (a malformed/hostile header) still gets
+	// caught instead of silently reading unbounded data into memory.
+	b, err := io.ReadAll(io.LimitReader(rc, maxZipMemberSize+1))
 	if err != nil {
 		return nil, "", fmt.Errorf("read %s in zip: %w", pick.Name, err)
+	}
+	if len(b) > maxZipMemberSize {
+		return nil, "", fmt.Errorf("%s in zip is too large (max %d bytes)", pick.Name, maxZipMemberSize)
 	}
 	return b, filepath.Base(pick.Name), nil
 }
@@ -238,6 +266,15 @@ func validatePattern(pattern string) bool {
 	}
 	_, err := regexp.Compile(normalizePattern(pattern, ""))
 	return err == nil
+}
+
+// ValidatePattern is the exported form of validatePattern, for callers (e.g.
+// the API's import-commit handler) that need to re-check a pattern outside
+// this package's own preview/parse path — a client can submit a commit
+// request built by hand rather than via the preview wizard, so the same
+// check that gates preview should gate commit too.
+func ValidatePattern(pattern string) bool {
+	return validatePattern(pattern)
 }
 
 // applySoundFallback handles a source trigger whose only-or-additional feedback

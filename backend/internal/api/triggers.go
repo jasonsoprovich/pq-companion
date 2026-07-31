@@ -499,10 +499,18 @@ func (h *triggerHandler) exportCategory(w http.ResponseWriter, r *http.Request) 
 // and returns it WITHOUT persisting anything. The wizard reviews/selects from
 // the preview and then calls importCommit. The ?filename= query supplies the
 // original name (used to suggest a category and as a weak format hint).
+// maxImportUploadBytes caps the raw upload accepted by importPreview. Real
+// GINA/EQNag/EQLogParser/PQC export files are at most a few MB; this is
+// generous headroom while still bounding memory use against an oversized or
+// hostile upload (the archive itself is further capped post-unzip in
+// trigger.DetectAndParse).
+const maxImportUploadBytes = 128 << 20 // 128 MiB
+
 func (h *triggerHandler) importPreview(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxImportUploadBytes)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "read body: "+err.Error())
+		writeError(w, http.StatusBadRequest, "read body (max 128 MiB): "+err.Error())
 		return
 	}
 	if len(body) == 0 {
@@ -576,6 +584,14 @@ func (h *triggerHandler) importCommit(w http.ResponseWriter, r *http.Request) {
 		t.PackName = category
 		t.SourcePack = "" // user-owned: removal is via the category, not a pack
 		t.TimerType = normalizeTimerType(t.TimerType)
+		// Re-validate the pattern here rather than trusting the earlier
+		// /preview step: this endpoint accepts client-submitted trigger JSON
+		// directly, so a hand-built commit request (bypassing the wizard)
+		// could otherwise install a trigger with an uncompilable pattern that
+		// silently never fires while still showing as enabled.
+		if t.Source != trigger.SourcePipe && t.Pattern != "" && !trigger.ValidatePattern(t.Pattern) {
+			t.Enabled = false
+		}
 		id, err := trigger.NewID()
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())

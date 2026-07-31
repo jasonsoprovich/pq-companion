@@ -1053,7 +1053,9 @@ function HeightLegend({
 
   return (
     <div
-      className={`flex items-center gap-1.5 rounded px-2 py-1${
+      // py matches DepthControl's so the two plates are the same height where
+      // they sit side by side, and at the same corners where they do not.
+      className={`flex items-center gap-1.5 rounded px-2 py-1.5${
         docked ? '' : ' absolute right-2 bottom-2'
       }`}
       style={{ backgroundColor: 'var(--color-surface-2)' }}
@@ -1135,7 +1137,7 @@ function DepthControl({
   return (
     <div
       className={`flex items-center gap-2.5 rounded px-2.5 py-1.5${
-        docked ? ' flex-1' : ' absolute bottom-2 left-2'
+        docked ? '' : ' absolute bottom-2 left-2'
       }`}
       style={{ backgroundColor: 'var(--color-surface-2)' }}
     >
