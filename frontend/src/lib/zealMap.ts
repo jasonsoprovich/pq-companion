@@ -27,11 +27,24 @@ function markerArgs(x: number, y: number): string {
   return `${Math.round(y)} ${Math.round(x)}`
 }
 
-// Zeal centres the label above the pin. Collapse whitespace so a name with
-// spaces can't be mistaken for extra arguments, and keep it short — the label
-// is drawn on the map, not in chat.
+// Zeal centres the label above the pin.
+//
+// Spaces MUST become underscores, not the other way round. Zeal parses the
+// label with `%s`, which stops at the first whitespace, so "Ward Pungill"
+// silently became a marker named "Ward" — and quoting does not help, because
+// `%s` has no notion of quotes and would keep the opening one. Underscores are
+// what the in-game map draws for every built-in label anyway, so this reads
+// native rather than escaped.
+//
+// This is the same rule as the map-file exporter's sanitizeLabel
+// (backend/internal/mapexport/format.go); both write labels Zeal must parse.
+// Commas go too — anything reading the line as fields would split on them.
 function markerLabel(name: string): string {
-  return name.replace(/_/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40)
+  return name
+    .trim()
+    .replace(/\s+/g, '_')
+    .replace(/,/g, ';')
+    .slice(0, 40)
 }
 
 // mapMarkerCommand pins a location on the player's own map.
