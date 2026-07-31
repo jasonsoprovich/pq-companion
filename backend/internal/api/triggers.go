@@ -543,6 +543,7 @@ type importCommitRequest struct {
 // category's Delete-all. Characters default to all known characters (imports
 // are class-agnostic).
 func (h *triggerHandler) importCommit(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxImportUploadBytes)
 	var req importCommitRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
@@ -589,7 +590,7 @@ func (h *triggerHandler) importCommit(w http.ResponseWriter, r *http.Request) {
 		// directly, so a hand-built commit request (bypassing the wizard)
 		// could otherwise install a trigger with an uncompilable pattern that
 		// silently never fires while still showing as enabled.
-		if t.Source != trigger.SourcePipe && t.Pattern != "" && !trigger.ValidatePattern(t.Pattern) {
+		if t.Pattern != "" && !trigger.ValidatePattern(t.Pattern) {
 			t.Enabled = false
 		}
 		id, err := trigger.NewID()

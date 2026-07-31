@@ -417,7 +417,16 @@ func extractZip(src, destDir string) error {
 	return nil
 }
 
+// maxRestoreEntrySize bounds how many decompressed bytes a single backup-zip
+// entry may expand to. These zips only ever hold EQ .ini files (KB-scale);
+// the cap is generous headroom while still stopping a corrupted/tampered
+// backup zip from filling disk on restore.
+const maxRestoreEntrySize = 256 << 20 // 256 MiB
+
 func writeZipEntry(f *zip.File, dest string) error {
+	if f.UncompressedSize64 > maxRestoreEntrySize {
+		return fmt.Errorf("entry %q is too large (%d bytes, max %d)", f.Name, f.UncompressedSize64, maxRestoreEntrySize)
+	}
 	rc, err := f.Open()
 	if err != nil {
 		return err
@@ -430,6 +439,12 @@ func writeZipEntry(f *zip.File, dest string) error {
 	}
 	defer out.Close()
 
-	_, err = io.Copy(out, rc)
-	return err
+	n, err := io.Copy(out, io.LimitReader(rc, maxRestoreEntrySize+1))
+	if err != nil {
+		return err
+	}
+	if n > maxRestoreEntrySize {
+		return fmt.Errorf("entry %q exceeded max size %d during extraction", f.Name, maxRestoreEntrySize)
+	}
+	return nil
 }

@@ -152,6 +152,7 @@ func (h *savedQueryHandler) importPack(w http.ResponseWriter, r *http.Request) {
 	if !h.guarded(w) {
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxImportUploadBytes)
 	var pack savedquery.Pack
 	if err := json.NewDecoder(r.Body).Decode(&pack); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")

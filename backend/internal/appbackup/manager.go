@@ -444,6 +444,13 @@ func readManifest(reader *zip.Reader) (*Manifest, error) {
 	return nil, fmt.Errorf("manifest.json missing — not a valid %s bundle", BundleExt)
 }
 
+// maxBundleEntrySize bounds how many decompressed bytes a single .pqcb entry
+// may expand to. A bundle only ever holds one user.db snapshot plus the
+// EQ-config backup zips; several hundred MB is far beyond any real install,
+// but the cap still stops a hostile/corrupted bundle from exhausting disk
+// during staging (classic zip-bomb).
+const maxBundleEntrySize = 1 << 30 // 1 GiB
+
 // extractEntry writes a single zip entry under destRoot, refusing any path
 // traversal attempts (e.g. "../../etc/passwd").
 func extractEntry(f *zip.File, destRoot string) error {
@@ -451,6 +458,9 @@ func extractEntry(f *zip.File, destRoot string) error {
 	clean := filepath.Clean(f.Name)
 	if strings.HasPrefix(clean, "..") || strings.Contains(clean, string(filepath.Separator)+"..") || filepath.IsAbs(clean) {
 		return fmt.Errorf("unsafe bundle entry %q", f.Name)
+	}
+	if f.UncompressedSize64 > maxBundleEntrySize {
+		return fmt.Errorf("bundle entry %q is too large (%d bytes, max %d)", f.Name, f.UncompressedSize64, maxBundleEntrySize)
 	}
 	dest := filepath.Join(destRoot, clean)
 	if f.FileInfo().IsDir() {
@@ -469,6 +479,15 @@ func extractEntry(f *zip.File, destRoot string) error {
 		return err
 	}
 	defer out.Close()
-	_, err = io.Copy(out, rc)
-	return err
+	// Copy one byte past the cap so an entry whose declared UncompressedSize64
+	// understates its real output still gets caught rather than silently
+	// filling disk.
+	n, err := io.Copy(out, io.LimitReader(rc, maxBundleEntrySize+1))
+	if err != nil {
+		return err
+	}
+	if n > maxBundleEntrySize {
+		return fmt.Errorf("bundle entry %q exceeded max size %d during extraction", f.Name, maxBundleEntrySize)
+	}
+	return nil
 }
