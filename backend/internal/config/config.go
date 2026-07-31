@@ -259,10 +259,30 @@ const (
 	TrackingModeTriggersOnly = "triggers_only"
 )
 
+// Map styles, mirrored by MapRenderMode in the renderer.
+const (
+	MapStyleOutline  = "outline"
+	MapStyleDetailed = "detailed"
+	// MapStyleExternal is a map pack in the player's own EQ folder. Stored like
+	// any other choice, but the renderer falls back when no pack is installed —
+	// a pack can be deleted between launches, and the setting must not strand
+	// the map on a source that is gone.
+	MapStyleExternal = "external"
+)
+
 // Preferences holds optional UI and overlay settings.
 type Preferences struct {
 	// OverlayOpacity is the transparency of overlay windows (0.0–1.0).
 	OverlayOpacity float64 `yaml:"overlay_opacity" json:"overlay_opacity"`
+
+	// MapStyle is the map drawing every surface opens in: "outline",
+	// "detailed", or "external" for a map pack installed in the EQ folder.
+	//
+	// A stored preference rather than session state, because the right answer
+	// is a matter of taste that does not change from zone to zone, and having
+	// to reselect it on every launch is the kind of small friction that makes
+	// a feature feel unfinished. Empty means the built-in default.
+	MapStyle string `yaml:"map_style,omitempty" json:"map_style"`
 
 	// OverlayFadeEnabled fades overlay chrome (background, border, title
 	// bar) to fully transparent a few seconds after the cursor leaves an
@@ -972,7 +992,11 @@ func defaults() Config {
 		ServerAddr:     ":17654",
 		CharacterClass: -1,
 		Preferences: Preferences{
-			OverlayOpacity:              0.25,
+			OverlayOpacity: 0.25,
+			// Detailed carries the most information and is the better default
+			// in the large majority of zones; outline omits anything that is
+			// not a wall, which loses features like Oasis of Marr's lake.
+			MapStyle:                    MapStyleDetailed,
 			OverlayFadeDelaySecs:        2.5,
 			MinimizeToTray:              true,
 			ParseCombatLog:              true,

@@ -101,6 +101,10 @@ export interface DiscordWebhook {
 
 export interface Preferences {
   overlay_opacity: number
+  // The map drawing every surface opens in. 'external' is a map pack installed
+  // in the EQ folder; the renderer falls back if one is not there, since a pack
+  // can be removed between launches.
+  map_style?: 'outline' | 'detailed' | 'external'
   // Fade overlay chrome (background, border, title bar) to transparent a few
   // seconds after the cursor leaves an overlay window; content stays visible.
   // Hovering restores overlay_opacity. Off by default.

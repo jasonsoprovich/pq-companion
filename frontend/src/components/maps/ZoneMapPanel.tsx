@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Check, Copy, X } from 'lucide-react'
+import { Check, Copy, Plus, X } from 'lucide-react'
 import { useCachedState } from '../../hooks/useCachedState'
 import { usePlayerPosition } from '../../hooks/usePlayerPosition'
+import { useMapStyle } from '../../hooks/useMapStyle'
 import { useZoneMap } from '../../hooks/useZoneMap'
 import { ZoneMap } from './ZoneMap'
 import { ErrorBoundary } from '../ErrorBoundary'
@@ -11,15 +12,13 @@ import { formatNPCName } from '../SourceNPCLink'
 import {
   createMapAnnotation,
   deleteMapAnnotation,
-  getExternalMapStatus,
   getMapAnnotationExport,
   getZoneNPCLocations,
   listMapAnnotations,
   updateMapAnnotation,
 } from '../../services/api'
 import type {
-  ExternalMapStatus, MapPOI, MapPOICategory, MapRenderMode, UserAnnotation,
-  ZoneNPCLocation,
+  MapPOI, MapPOICategory, MapRenderMode, UserAnnotation, ZoneNPCLocation,
 } from '../../types/map'
 
 // USER_SOURCE marks a pin as the user's own, so the inspector can offer edit and
@@ -159,21 +158,16 @@ export function ZoneMapPanel({
   // outline and plainly there in the detail. In-game testing across many zones
   // put detailed ahead in the large majority of them; outline remains one click
   // away for the multi-level zones where the extra lines stack up.
-  const [mode, setMode] = useCachedState<MapRenderMode>('maps.mode', 'detailed')
-  // A map pack the user installed in their own EQ folder. Nothing of anyone
-  // else's ships with the app — this only ever reads files already on disk, so
-  // the mode appears when a pack is present and vanishes with it.
-  const [pack, setPack] = useState<ExternalMapStatus | null>(null)
-  useEffect(() => {
-    getExternalMapStatus()
-      .then(setPack)
-      .catch(() => setPack(null))
-  }, [])
-  // Never leave the mode pointing at a pack that is not there — a removed pack
-  // would otherwise render an empty canvas with no way to tell why.
-  useEffect(() => {
-    if (mode === 'external' && pack && !pack.available) setMode('detailed')
-  }, [mode, pack, setMode])
+  // The saved default from Settings, plus whether a map pack is installed.
+  // `style` is already resolved — it falls back when a stored 'external'
+  // outlives the files it names.
+  const { style, pack, ready } = useMapStyle()
+  // Session override. Starts unset so the saved default wins; switching the
+  // mode here is for a look, not a preference change, so it lasts the session
+  // and Settings stays the one place a default is decided.
+  const [override, setOverride] = useCachedState<MapRenderMode | null>('maps.mode', null)
+  const mode = override ?? style
+  const setMode = setOverride
   const { zone, outline, geometry, detail, external, pois, loading, error } =
     useZoneMap(zoneShortName, mode)
   // Layer choices persist across zones and across the two surfaces, so a player
@@ -351,7 +345,10 @@ export function ZoneMapPanel({
       </p>
     )
   }
-  if (!zone) {
+  // Wait for the saved style before drawing. Without this the panel mounts in
+  // the built-in default, then switches when the preference lands — a visible
+  // flicker plus a wasted geometry fetch for a layer nobody asked for.
+  if (!zone || !ready) {
     return (
       <p className="py-4 text-sm" style={{ color: 'var(--color-muted)' }}>
         {loading ? 'Loading map…' : 'Select a zone.'}
@@ -363,17 +360,13 @@ export function ZoneMapPanel({
 
   return (
     <div className={`flex flex-col gap-2${fill ? ' h-full' : ''}`}>
-      {/* Two columns, not one wrapping row. "Show in game" used ml-auto inside
-          the wrapping row, which pins it to the right of whichever line it
-          happens to land on — so it drifted to a different place as the toggle
-          count changed per zone and sat level with nothing. Its own column
-          keeps it in the top-right corner regardless of how the toggles wrap. */}
-      <div className="flex shrink-0 items-start gap-2">
-      <div className="flex flex-1 flex-wrap items-center gap-1">
-        {/* Mode first, and set apart: it changes what the other controls mean,
-            so it does not belong in the run of POI toggles. */}
+      {/* Top bar: what the map IS drawn from, and actions on the whole map.
+          Kept apart from the layer toggles on the left rail, which are about
+          what is drawn ON it — mixing the two in one wrapping row is what made
+          this hard to scan and left "Show in game" adrift mid-row. */}
+      <div className="flex shrink-0 flex-wrap items-center gap-2">
         <div
-          className="mr-1.5 flex overflow-hidden rounded border"
+          className="flex overflow-hidden rounded border"
           style={{ borderColor: 'var(--color-border)' }}
         >
           {(
@@ -413,29 +406,23 @@ export function ZoneMapPanel({
             </button>
           ))}
         </div>
-        {LAYERS.map((l) => {
-          const n = counts[l.key] ?? 0
-          const active = visible.has(l.key)
-          return (
-            <button
-              key={l.key}
-              disabled={n === 0}
-              onClick={() =>
-                setEnabled((prev) =>
-                  prev.includes(l.key) ? prev.filter((k) => k !== l.key) : [...prev, l.key],
-                )
-              }
-              className="rounded border px-1.5 py-0.5 text-[10px] font-medium disabled:opacity-30"
-              style={{
-                backgroundColor: active ? 'var(--color-surface-2)' : 'transparent',
-                borderColor: active ? 'var(--color-primary)' : 'var(--color-border)',
-                color: active ? 'var(--color-primary)' : 'var(--color-muted)',
-              }}
-            >
-              {l.label} {n > 0 && <span className="opacity-60">{n}</span>}
-            </button>
-          )
-        })}
+
+        {/* Also about how the map is drawn, so it belongs up here with the
+            style switch rather than among the pin layers. */}
+        {zone.z_span >= 40 && mode !== 'external' && (
+          <button
+            onClick={() => setHeightColor((v) => !v)}
+            title="Tint lines by height — cool below, warm above, so stacked levels are distinguishable"
+            className="rounded border px-1.5 py-0.5 text-[10px] font-medium"
+            style={{
+              backgroundColor: heightColor ? 'var(--color-surface-2)' : 'transparent',
+              borderColor: heightColor ? 'var(--color-primary)' : 'var(--color-border)',
+              color: heightColor ? 'var(--color-primary)' : 'var(--color-muted)',
+            }}
+          >
+            Height colours
+          </button>
+        )}
         {mode === 'detailed' && detail && detail.count > 0 && (
           <button
             onClick={() => setShowDetail((v) => !v)}
@@ -450,49 +437,7 @@ export function ZoneMapPanel({
             Detail <span className="opacity-60">{detail.count}</span>
           </button>
         )}
-        <button
-          onClick={() => { setAdding((v) => !v); setDraft(null) }}
-          title={
-            adding
-              ? 'Click the map to place a marker, or press again to cancel'
-              : 'Add your own marker — click here, then click the map'
-          }
-          className="rounded border px-1.5 py-0.5 text-[10px] font-medium"
-          style={{
-            backgroundColor: adding ? 'var(--color-primary)' : 'transparent',
-            borderColor: adding ? 'var(--color-primary)' : 'var(--color-border)',
-            color: adding ? 'var(--color-background)' : 'var(--color-muted)',
-          }}
-        >
-          {adding ? 'Click the map…' : '+ Marker'}
-        </button>
-        {annotations.length > 0 && (
-          <button
-            onClick={exportAnnotations}
-            title="Copy your markers as JSON, in the format the shipped annotation file uses — for sharing or submitting"
-            className="rounded border px-1.5 py-0.5 text-[10px] font-medium"
-            style={{
-              borderColor: copied === 'export' ? 'var(--color-primary)' : 'var(--color-border)',
-              color: copied === 'export' ? 'var(--color-primary)' : 'var(--color-muted)',
-            }}
-          >
-            {copied === 'export' ? 'Copied' : `Export ${annotations.length}`}
-          </button>
-        )}
-        {zone.z_span >= 40 && (
-          <button
-            onClick={() => setHeightColor((v) => !v)}
-            title="Tint lines by height — cool below, warm above, so stacked levels are distinguishable"
-            className="rounded border px-1.5 py-0.5 text-[10px] font-medium"
-            style={{
-              backgroundColor: heightColor ? 'var(--color-surface-2)' : 'transparent',
-              borderColor: heightColor ? 'var(--color-primary)' : 'var(--color-border)',
-              color: heightColor ? 'var(--color-primary)' : 'var(--color-muted)',
-            }}
-          >
-            Height colours
-          </button>
-        )}
+
         {/* Both of these appear only with a live position, so they are absent
             entirely rather than disabled when Zeal is not running — a greyed
             control invites a question we cannot answer from here. */}
@@ -515,20 +460,17 @@ export function ZoneMapPanel({
             onClick={() => onJumpToZone(playerPos.zone)}
             title="Show the zone you are standing in"
             className="rounded border px-1.5 py-0.5 text-[10px] font-medium"
-            style={{
-              borderColor: 'var(--color-primary)',
-              color: 'var(--color-primary)',
-            }}
+            style={{ borderColor: 'var(--color-primary)', color: 'var(--color-primary)' }}
           >
             You are in {playerPos.zone}
           </button>
         )}
-        </div>
+
         {showZoneButton && (
           <button
             onClick={() => copy('showzone', mapShowZoneCommand(zone.zone))}
             title="Copy /map show_zone — preview this zone on your in-game map"
-            className="flex shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 text-[10px]"
+            className="ml-auto flex shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 text-[10px]"
             style={{
               backgroundColor: 'var(--color-surface)',
               borderColor: copied === 'showzone' ? 'var(--color-primary)' : 'var(--color-border)',
@@ -620,11 +562,80 @@ export function ZoneMapPanel({
         </div>
       )}
 
-      {/* A render fault in the canvas must not unmount the app. One did:
-          a null deref in the drag handler blanked the whole window.
-          min-h-0 is what lets this shrink inside the flex column instead of
-          forcing the toggles and inspector off the bottom. */}
-      <div className={fill ? 'min-h-0 flex-1' : undefined}>
+      <div className={`flex gap-2${fill ? ' min-h-0 flex-1' : ''}`}>
+        {/* Layer rail. Vertical rather than a wrapping row above the map: the
+            list is fixed and long, and as a row its height changed per zone —
+            which moved the map itself every time you switched. A column of the
+            same width keeps the canvas anchored. */}
+        <div className="flex w-32 shrink-0 flex-col gap-1 overflow-y-auto">
+          {LAYERS.map((l) => {
+            const n = counts[l.key] ?? 0
+            const active = visible.has(l.key)
+            return (
+              <button
+                key={l.key}
+                disabled={n === 0}
+                onClick={() =>
+                  setEnabled((prev) =>
+                    prev.includes(l.key) ? prev.filter((k) => k !== l.key) : [...prev, l.key],
+                  )
+                }
+                className="flex items-center justify-between rounded border px-1.5 py-0.5 text-[10px] font-medium disabled:opacity-30"
+                style={{
+                  backgroundColor: active ? 'var(--color-surface-2)' : 'transparent',
+                  borderColor: active ? 'var(--color-primary)' : 'var(--color-border)',
+                  color: active ? 'var(--color-primary)' : 'var(--color-muted)',
+                }}
+              >
+                <span>{l.label}</span>
+                {n > 0 && <span className="opacity-60 tabular-nums">{n}</span>}
+              </button>
+            )
+          })}
+
+          {/* Set apart deliberately: everything above toggles markers that
+              already exist, this one creates one. A dashed border and its own
+              spacing say "different kind of thing" without needing a label to
+              explain it. */}
+          <div className="mt-1 border-t pt-1.5" style={{ borderColor: 'var(--color-border)' }}>
+            <button
+              onClick={() => { setAdding((v) => !v); setDraft(null) }}
+              title={
+                adding
+                  ? 'Click the map to place a marker, or press again to cancel'
+                  : 'Add your own marker — click here, then click the map'
+              }
+              className="flex w-full items-center justify-center gap-1 rounded border border-dashed px-1.5 py-1 text-[10px] font-semibold"
+              style={{
+                backgroundColor: adding ? 'var(--color-primary)' : 'transparent',
+                borderColor: adding ? 'var(--color-primary)' : 'var(--color-muted)',
+                color: adding ? 'var(--color-background)' : 'var(--color-muted-foreground)',
+              }}
+            >
+              <Plus size={10} />
+              {adding ? 'Click map…' : 'Add marker'}
+            </button>
+            {annotations.length > 0 && (
+              <button
+                onClick={exportAnnotations}
+                title="Copy your markers as JSON, in the format the shipped annotation file uses — for sharing or submitting"
+                className="mt-1 w-full rounded border px-1.5 py-0.5 text-[10px] font-medium"
+                style={{
+                  borderColor: copied === 'export' ? 'var(--color-primary)' : 'var(--color-border)',
+                  color: copied === 'export' ? 'var(--color-primary)' : 'var(--color-muted)',
+                }}
+              >
+                {copied === 'export' ? 'Copied' : `Export ${annotations.length}`}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* A render fault in the canvas must not unmount the app. One did:
+            a null deref in the drag handler blanked the whole window.
+            min-w-0/min-h-0 are what let this shrink inside the flex parents
+            instead of forcing the rail and inspector off the edge. */}
+        <div className={`min-w-0 flex-1${fill ? ' min-h-0' : ''}`}>
         <ErrorBoundary label="Zone map">
           <ZoneMap
             zone={zone}
@@ -652,6 +663,7 @@ export function ZoneMapPanel({
             height={height}
           />
         </ErrorBoundary>
+        </div>
       </div>
 
       {(draft || editing) && (

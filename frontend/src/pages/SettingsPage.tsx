@@ -57,12 +57,13 @@ function formatManifestDate(d: string): string {
 
 import BackupManagerPage from './BackupManagerPage'
 import GameMapExportPanel from '../components/maps/GameMapExportPanel'
+import MapSettingsPanel from '../components/settings/MapSettingsPanel'
 import DeveloperTab from './DeveloperTab'
 
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'discarded' | 'error'
 type UpdateState = 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'downloaded' | 'error'
-type Tab = 'general' | 'audio' | 'accessibility' | 'navigation' | 'overlays' | 'spelltimers' | 'dpscolors' | 'discord' | 'logs' | 'backups' | 'gamemaps' | 'advanced' | 'about' | 'changelog' | 'developer'
+type Tab = 'general' | 'audio' | 'accessibility' | 'navigation' | 'overlays' | 'spelltimers' | 'dpscolors' | 'discord' | 'logs' | 'backups' | 'maps' | 'gamemaps' | 'advanced' | 'about' | 'changelog' | 'developer'
 
 interface TabBarProps {
   tabs: { id: Tab; label: string; icon: React.ReactNode }[]
@@ -77,7 +78,7 @@ interface TabBarProps {
 const TAB_GROUPS: { label: string; ids: Tab[] }[] = [
   { label: 'General', ids: ['general', 'audio', 'accessibility'] },
   { label: 'Interface', ids: ['navigation', 'overlays', 'spelltimers', 'dpscolors', 'discord'] },
-  { label: 'System', ids: ['logs', 'backups', 'gamemaps', 'advanced'] },
+  { label: 'System', ids: ['logs', 'backups', 'maps', 'gamemaps', 'advanced'] },
   { label: 'About', ids: ['about', 'changelog', 'developer'] },
 ]
 
@@ -715,6 +716,7 @@ export default function SettingsPage(): React.ReactElement {
     { id: 'discord', label: 'Discord', icon: <Headphones size={13} /> },
     { id: 'logs', label: 'Logs', icon: <FileText size={13} /> },
     { id: 'backups', label: 'EQ Config Backups', icon: <HardDrive size={13} /> },
+    { id: 'maps', label: 'Maps', icon: <MapIcon size={13} /> },
     { id: 'gamemaps', label: 'In-Game Map Markers', icon: <MapIcon size={13} /> },
     { id: 'advanced', label: 'Advanced', icon: <Wifi size={13} /> },
     { id: 'about', label: 'About', icon: <Info size={13} /> },
@@ -836,6 +838,17 @@ export default function SettingsPage(): React.ReactElement {
           <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
             Loading settings…
           </p>
+        </div>
+      </div>
+    )
+  }
+
+  if (tab === 'maps') {
+    return (
+      <div className="flex h-full">
+        <TabBar tabs={tabs} active={tab} onChange={setTab} />
+        <div className="min-h-0 flex-1">
+          <MapSettingsPanel />
         </div>
       </div>
     )
