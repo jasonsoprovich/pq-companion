@@ -338,7 +338,9 @@ export function ZoneMap({
   const tinted = colorByHeight && zone.z_span >= 40
   // Built from the layer actually being drawn, since the modal height depends on
   // which segments are on screen.
-  const primaryLayer = mode === 'outline' ? outline : geometry
+  // External packs also land in the outline slot — one flat layer, no detail
+  // companion.
+  const primaryLayer = mode === 'detailed' ? geometry : outline
   const zScale = useMemo(() => {
     if (!tinted || !primaryLayer || primaryLayer.count === 0) return null
     return heightScale(
@@ -498,16 +500,22 @@ export function ZoneMap({
         return Math.min(ALPHAS.length - 1, 1 + Math.floor(d / step))
       }
 
-      // One path per (opacity bucket, height band). Both are derived from the
-      // same Z, so a single pass assigns each segment to its pair and the total
-      // work stays one visit per segment per bucket — the same as before colour
-      // was added, rather than one extra full scan per ramp step.
-      const nBands = zScale ? HEIGHT_BANDS : 1
+      // A pack's own palette replaces the height ramp entirely. The colours in
+      // a hand-drawn map are load-bearing — blue is water, and Oasis of Marr's
+      // lake is 261 blue lines that carry no other marking — so tinting them by
+      // height would overwrite the only thing that distinguishes them.
+      const packPalette = g.colors
+      const bandsOf = packPalette ? packColors(g) : null
+      const nBands = bandsOf ? bandsOf.colors.length : zScale ? HEIGHT_BANDS : 1
+
+      // One path per (opacity bucket, colour), where colour is either a height
+      // band or a palette entry. Both are resolved in a single pass, so the
+      // work stays one visit per segment.
       const paths: number[][] = Array.from({ length: ALPHAS.length * nBands }, () => [])
       for (let i = 0; i < g.count; i++) {
         const o = i * 6
         const zMid = (c[o + 2] + c[o + 5]) / 2
-        const band = zScale ? zScale.indexOf(zMid) : 0
+        const band = bandsOf ? bandsOf.index[i] : zScale ? zScale.indexOf(zMid) : 0
         paths[bucketOf(zMid) * nBands + band].push(i)
       }
 
@@ -519,8 +527,12 @@ export function ZoneMap({
           const idx = paths[b * nBands + band]
           if (idx.length === 0) continue
           ctx.beginPath()
-          ctx.strokeStyle = zScale ? HEIGHT_RAMP[band] : color
-          ctx.globalAlpha = ALPHAS[b] * (zScale ? bandAlpha(band) : 1)
+          ctx.strokeStyle = bandsOf
+            ? bandsOf.colors[band]
+            : zScale
+              ? HEIGHT_RAMP[band]
+              : color
+          ctx.globalAlpha = ALPHAS[b] * (zScale && !bandsOf ? bandAlpha(band) : 1)
           for (const i of idx) {
             const o = i * 6
             const [x1, y1] = toScreen(c[o], c[o + 1])
@@ -534,9 +546,10 @@ export function ZoneMap({
       ctx.globalAlpha = 1
     }
 
-    if (mode === 'outline') {
-      // A touch heavier than the detailed primary: it is the only layer, so it
-      // carries the whole drawing.
+    if (mode === 'outline' || mode === 'external') {
+      // Both are a single flat layer that carries the whole drawing, so a touch
+      // heavier than the detailed primary. External packs bring their own
+      // colours; drawLayer picks those up from the geometry.
       if (outline && outline.count > 0) drawLayer(outline, OUTLINE_COLOR, 1.3, 1)
     } else {
       const primaryColor = GEOMETRY_COLOR[zone.technique] ?? '#7dd3fc'
@@ -838,11 +851,13 @@ export function ZoneMap({
               className="rounded px-1.5 py-0.5 text-[10px]"
               style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted)' }}
             >
-              {mode === 'outline'
-                ? 'outline'
-                : zone.technique === 'contours'
-                  ? 'elevation contours'
-                  : zone.technique}{' '}
+              {mode === 'external'
+                ? 'map pack'
+                : mode === 'outline'
+                  ? 'outline'
+                  : zone.technique === 'contours'
+                    ? 'elevation contours'
+                    : zone.technique}{' '}
               · {view.zoom.toFixed(1)}×
             </span>
             <button
@@ -881,6 +896,52 @@ export function ZoneMap({
       )}
     </div>
   )
+}
+
+// packColors interns an external pack's per-segment RGB into a small palette,
+// returning the palette plus each segment's index into it.
+//
+// Interning rather than styling per segment because globalAlpha and strokeStyle
+// cannot vary within a path: a colour per segment would force one stroke() per
+// line, and a zone runs to tens of thousands. Real packs use a handful of
+// colours — Brewall's Bazaar is 8818 lines across about a dozen — so the
+// grouped draw stays a dozen strokes.
+function packColors(g: MapGeometry): { colors: string[]; index: Int32Array } {
+  const rgb = g.colors as Uint8Array
+  const seen = new Map<number, number>()
+  const colors: string[] = []
+  const index = new Int32Array(g.count)
+  for (let i = 0; i < g.count; i++) {
+    const r = rgb[i * 3]
+    const gg = rgb[i * 3 + 1]
+    const b = rgb[i * 3 + 2]
+    const key = (r << 16) | (gg << 8) | b
+    let at = seen.get(key)
+    if (at === undefined) {
+      at = colors.length
+      seen.set(key, at)
+      colors.push(readableOnDark(r, gg, b))
+    }
+    index[i] = at
+  }
+  return { colors, index }
+}
+
+// PACK_DARK_LIMIT is the brightness below which a pack colour is redrawn.
+//
+// These packs are drawn for a client that renders them on a light map window,
+// so their structural lines are usually pure black — 7984 of the Bazaar's 8818.
+// Black on this canvas is invisible, which would show an empty map and look
+// like a failed parse. Anything this dark is redrawn in the neutral outline
+// colour; everything else, including every colour that carries meaning, is left
+// exactly as the author set it.
+const PACK_DARK_LIMIT = 40
+
+function readableOnDark(r: number, g: number, b: number): string {
+  if (r < PACK_DARK_LIMIT && g < PACK_DARK_LIMIT && b < PACK_DARK_LIMIT) {
+    return OUTLINE_COLOR
+  }
+  return `rgb(${r},${g},${b})`
 }
 
 // CoordReadout shows a position in the top-left corner, where EQ's own map

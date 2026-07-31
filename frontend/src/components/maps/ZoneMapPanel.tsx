@@ -11,13 +11,15 @@ import { formatNPCName } from '../SourceNPCLink'
 import {
   createMapAnnotation,
   deleteMapAnnotation,
+  getExternalMapStatus,
   getMapAnnotationExport,
   getZoneNPCLocations,
   listMapAnnotations,
   updateMapAnnotation,
 } from '../../services/api'
 import type {
-  MapPOI, MapPOICategory, MapRenderMode, UserAnnotation, ZoneNPCLocation,
+  ExternalMapStatus, MapPOI, MapPOICategory, MapRenderMode, UserAnnotation,
+  ZoneNPCLocation,
 } from '../../types/map'
 
 // USER_SOURCE marks a pin as the user's own, so the inspector can offer edit and
@@ -158,6 +160,20 @@ export function ZoneMapPanel({
   // put detailed ahead in the large majority of them; outline remains one click
   // away for the multi-level zones where the extra lines stack up.
   const [mode, setMode] = useCachedState<MapRenderMode>('maps.mode', 'detailed')
+  // A map pack the user installed in their own EQ folder. Nothing of anyone
+  // else's ships with the app — this only ever reads files already on disk, so
+  // the mode appears when a pack is present and vanishes with it.
+  const [pack, setPack] = useState<ExternalMapStatus | null>(null)
+  useEffect(() => {
+    getExternalMapStatus()
+      .then(setPack)
+      .catch(() => setPack(null))
+  }, [])
+  // Never leave the mode pointing at a pack that is not there — a removed pack
+  // would otherwise render an empty canvas with no way to tell why.
+  useEffect(() => {
+    if (mode === 'external' && pack && !pack.available) setMode('detailed')
+  }, [mode, pack, setMode])
   const { zone, outline, geometry, detail, pois, loading, error } = useZoneMap(
     zoneShortName,
     mode,
@@ -371,6 +387,18 @@ export function ZoneMapPanel({
                 'Full extracted geometry: elevation contours or every floor edge. ' +
                   'Far more information, and busier in multi-level zones.',
               ],
+              // Only offered when a pack is actually installed. Labelled with
+              // the pack's own folder name, which is the only attribution these
+              // files carry — better to credit what is on disk than to guess.
+              ...(pack?.available
+                ? ([[
+                    'external',
+                    pack.name ?? 'Map pack',
+                    `Drawn from the map pack in your own EQ folder (${pack.dir}), ` +
+                      `in its own colours. ${pack.zones} zones. Nothing is bundled ` +
+                      `with PQ Companion — these are your files, read in place.`,
+                  ]] as [MapRenderMode, string, string][])
+                : []),
             ] as [MapRenderMode, string, string][]
           ).map(([key, label, title]) => (
             <button

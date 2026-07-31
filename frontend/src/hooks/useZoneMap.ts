@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { getMapGeometry, getMapZone } from '../services/api'
+import { getExternalMapGeometry, getMapGeometry, getMapZone } from '../services/api'
 import type { MapGeometry, MapPOI, MapRenderMode, MapZone } from '../types/map'
 
 // Layer numbers, mirroring backend/internal/mapgen/mapsdb.go.
@@ -91,7 +91,14 @@ export function useZoneMap(zone: string | null, mode: MapRenderMode): ZoneMapDat
     setData((d) => ({ ...d, loading: true }))
 
     const load =
-      mode === 'outline'
+      mode === 'external'
+        ? // A user-installed pack. Stored in `outline` because it is drawn the
+          // same way — one flat layer, no detail companion — so the renderer
+          // needs no third slot.
+          getExternalMapGeometry(zone).then((outline) => {
+            if (!cancelled) setData((d) => ({ ...d, outline, loading: false }))
+          })
+        : mode === 'outline'
         ? getMapGeometry(zone, LAYER_OUTLINE).then((outline) => {
             if (!cancelled) setData((d) => ({ ...d, outline, loading: false }))
           })

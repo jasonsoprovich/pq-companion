@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/mapexport"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/mapfiles"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/maps"
 )
 
@@ -198,6 +199,68 @@ func (h *mapsHandler) mapExportManifest() string {
 }
 
 // gameMapStatus reports whether an export is possible and what is already there.
+// externalStatus reports whether a third-party .txt map pack is installed in
+// the player's own EQ folder.
+//
+// Detected fresh each call rather than cached at startup: installing a map pack
+// is a thing a user does while the app is open, and the render mode should
+// appear when they come back to it rather than after a restart. The scan is a
+// single directory listing.
+func (h *mapsHandler) externalStatus(w http.ResponseWriter, r *http.Request) {
+	pack := mapfiles.Detect(h.cfg.Get().EQPath)
+	if pack == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"available": false})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"available": true,
+		"name":      pack.Name,
+		"dir":       pack.Dir,
+		"zones":     len(pack.Zones),
+	})
+}
+
+// externalGeometry serves one zone from the installed pack.
+//
+// Same packed-binary shape as the built-in geometry endpoint, plus the three
+// colour bytes the format reserves — a pack's palette is the point of rendering
+// it, since the colours are what distinguish water from wall in a drawing that
+// has no other way to say so.
+//
+// Not cached: unlike maps.db, these files can be replaced under us at any time.
+func (h *mapsHandler) externalGeometry(w http.ResponseWriter, r *http.Request) {
+	pack := mapfiles.Detect(h.cfg.Get().EQPath)
+	if pack == nil {
+		writeError(w, http.StatusNotFound, "no map pack installed")
+		return
+	}
+	z, err := pack.Load(chi.URLParam(r, "zone"))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if z == nil {
+		// The pack simply has no file for this zone, which is ordinary — no
+		// pack covers every zone. Empty, not an error.
+		z = &mapfiles.Zone{}
+	}
+	buf := make([]byte, len(z.Segments)*externalSegmentBytes)
+	for i, s := range z.Segments {
+		o := i * externalSegmentBytes
+		for j, v := range [6]int{s.X1, s.Y1, s.Z1, s.X2, s.Y2, s.Z2} {
+			binary.LittleEndian.PutUint16(buf[o+j*2:], uint16(int16(v)))
+		}
+		buf[o+12], buf[o+13], buf[o+14] = s.R, s.G, s.B
+	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	w.Write(buf)
+}
+
+// externalSegmentBytes is 6 int16 coordinates plus one RGB triple.
+const externalSegmentBytes = 15
+
 func (h *mapsHandler) gameMapStatus(w http.ResponseWriter, r *http.Request) {
 	eq := h.cfg.Get().EQPath
 	out := map[string]any{

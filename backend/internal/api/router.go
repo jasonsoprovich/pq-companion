@@ -188,6 +188,11 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Put("/annotations/{id}", mapsH.updateAnnotation)
 			r.Delete("/annotations/{id}", mapsH.deleteAnnotation)
 			// In-game map export (phase 6): writes Zeal map_files.
+			// A third-party .txt map pack the user installed themselves. Read
+			// only, never bundled — see internal/mapfiles.
+			r.Get("/external/status", mapsH.externalStatus)
+			r.Get("/external/zone/{zone}", mapsH.externalGeometry)
+
 			r.Get("/game-export/status", mapsH.gameMapStatus)
 			r.Post("/game-export", mapsH.gameMapExport)
 			r.Delete("/game-export", mapsH.gameMapRemove)

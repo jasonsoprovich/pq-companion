@@ -1308,6 +1308,51 @@ he has that we cannot derive is **judgement** — which wall matters, where a
 fake wall is, which route is the safe one. That is the gap worth asking about,
 and it is annotation, not geometry.
 
+## 14. Reading a user-installed map pack (shipped)
+
+Resolves §5.1's blocker for the only case that ever needed resolving. The
+objection there was to *redistribution* — publishing someone else's files with
+our installer. Reading files the user chose to install is a different act:
+nothing is copied, bundled, or served, and the app renders what is already on
+the player's disk exactly as the game client does.
+
+So there is now a third render mode, `external`, which appears only when a pack
+is detected under the EQ directory and disappears with it.
+
+### 14.1 What the format actually contains
+
+Measured across Brewall's 2024-01-09 set (1707 files, 580 zones): **2,378,442
+`L` lines and 34,000 `P` points**, parsed with zero file failures. Per zone the
+layers carry different things, and the numbering is a per-zone convention rather
+than a standard — `oasis_1` is labels, `oasis_2` is the legend block — so
+`mapfiles` merges every layer instead of assigning roles by number.
+
+**60.3% of segments carry a non-black colour.** That is the reason to render a
+pack at all: `oasis.txt` draws the lake as 307 blue segments, and colour is the
+only thing marking it. Our own extraction structurally cannot produce that —
+Oasis has occupancy 0.835 so `ExtractOutline` takes the boundary branch, and the
+lake bed is continuous walkable surface with no edge at the shoreline. It is a
+depression *inside* the walkable region, not a hole in it.
+
+### 14.2 Two things worth knowing
+
+**Coordinates need no transform.** The format's space is already the renderer's
+map space (§3), so segments pass straight through.
+
+**Most structural lines are pure black** — 7984 of the Bazaar's 8818 — because
+these packs are drawn for a client that renders them on a light background.
+Black on our canvas is invisible and would look like a failed parse, so anything
+below a brightness floor is redrawn in the neutral outline colour. Every colour
+that carries meaning is left exactly as its author set it.
+
+### 14.3 Where it looks
+
+The published instructions describe the modern client's map-pack dropdown
+(`maps/Brewall`), which Project Quarm's client does not have — its external map
+data goes through Zeal's `map_files`. Both are searched, plus a bare `maps`
+folder. A directory needs 25+ zones to count, which keeps our own `map_files`
+marker exports from being mistaken for a pack.
+
 ## References
 - [Zeal — CoastalRedwood/Zeal](https://github.com/CoastalRedwood/Zeal) (MIT)
 - [Brewall EQ Maps](https://www.eqmaps.info/eq-map-files/) · [RedGuides mirror](https://github.com/RedGuides/brewall-maps)

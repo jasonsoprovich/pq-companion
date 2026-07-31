@@ -3,7 +3,7 @@ import type { Item, ItemSources, ItemQuests, QuestSummary, SearchResult, ItemSho
 import type { NPC, NPCSpawns, NPCLootTable, NPCFaction, NPCSpells, NPCMerchant, PatrolRoute } from '../types/npc'
 import type {
   MapStatus, MapZone, MapZoneDetail, MapGeometry, UserAnnotation,
-  GameMapExportStatus, GameMapExportResult, ZoneNPCLocation,
+  GameMapExportStatus, GameMapExportResult, ZoneNPCLocation, ExternalMapStatus,
 } from '../types/map'
 import type { BuffStatDelta, Spell, SpellCrossRefs, ShoppingRoute, ShoppingRouteOptions } from '../types/spell'
 import type { EmoteColumnsPatch, EmoteStatus, SpellEmote, SpellEmoteDiff } from '../types/emote'
@@ -457,6 +457,38 @@ export async function getMapGeometry(zone: string, layer = 0): Promise<MapGeomet
   if (!res.ok) throw new Error(`geometry ${zone}: ${res.statusText}`)
   const buf = await res.arrayBuffer()
   return { count: buf.byteLength / 12, coords: new Int16Array(buf) }
+}
+
+// getExternalMapStatus reports whether the user has a third-party .txt map pack
+// installed in their own EQ folder.
+export function getExternalMapStatus(): Promise<ExternalMapStatus> {
+  return get<ExternalMapStatus>('/api/maps/external/status')
+}
+
+// getExternalMapGeometry fetches one zone from the installed pack.
+//
+// 15 bytes per segment rather than the built-in endpoint's 12: six int16
+// coordinates plus the pack's RGB. The two views share the buffer, so nothing
+// is copied.
+export async function getExternalMapGeometry(zone: string): Promise<MapGeometry> {
+  const baseUrl = await getBackendBaseUrl()
+  const res = await fetch(`${baseUrl}/api/maps/external/zone/${encodeURIComponent(zone)}`)
+  if (!res.ok) throw new Error(`external geometry ${zone}: ${res.statusText}`)
+  const buf = await res.arrayBuffer()
+  const count = Math.floor(buf.byteLength / 15)
+  // Split into two flat arrays so the renderer's inner loop indexes straight
+  // into them instead of unpacking a struct per segment per frame.
+  const coords = new Int16Array(count * 6)
+  const colors = new Uint8Array(count * 3)
+  const view = new DataView(buf)
+  for (let i = 0; i < count; i++) {
+    const o = i * 15
+    for (let j = 0; j < 6; j++) coords[i * 6 + j] = view.getInt16(o + j * 2, true)
+    colors[i * 3] = view.getUint8(o + 12)
+    colors[i * 3 + 1] = view.getUint8(o + 13)
+    colors[i * 3 + 2] = view.getUint8(o + 14)
+  }
+  return { count, coords, colors }
 }
 
 // ── User map annotations (phase 4c) ───────────────────────────────────────────

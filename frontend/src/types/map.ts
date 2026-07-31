@@ -81,6 +81,21 @@ export interface MapGeometry {
   count: number
   // 6 entries per segment: x1, y1, z1, x2, y2, z2
   coords: Int16Array
+  // colors is 3 bytes per segment (r, g, b), present only for an external map
+  // pack — the pack's own palette is the reason to render it, since the colour
+  // is how a hand-drawn map says "this is water" rather than "this is a wall".
+  // Absent for our own layers, which the renderer themes itself.
+  colors?: Uint8Array
+}
+
+// ExternalMapStatus describes a third-party .txt map pack found in the player's
+// EQ folder. Never bundled — read in place, and the mode vanishes if the files
+// do.
+export interface ExternalMapStatus {
+  available: boolean
+  name?: string
+  dir?: string
+  zones?: number
 }
 
 // MapRenderMode selects which geometry layers to draw.
@@ -90,7 +105,9 @@ export interface MapGeometry {
 //   detailed — whatever the classifier chose for this zone, plus the fine
 //              boundary layer. Far more information, and in tall zones it
 //              reads as a stack of overlapping levels.
-export type MapRenderMode = 'outline' | 'detailed'
+//   external — a map pack the user installed in their own EQ folder, drawn in
+//              its own colours. Only selectable when one is detected.
+export type MapRenderMode = 'outline' | 'detailed' | 'external'
 
 // UserAnnotation is a marker the user placed themselves, from user.db.
 //
