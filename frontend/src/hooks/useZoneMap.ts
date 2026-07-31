@@ -71,8 +71,18 @@ export function useZoneMap(zone: string | null, mode: MapRenderMode): ZoneMapDat
   }, [zone])
 
   // Geometry for the active mode, fetched once the zone metadata is in.
+  //
+  // The guard must compare the loaded zone to the requested one, not merely
+  // check that some metadata exists. On a zone change both effects run in the
+  // same commit with data.zone still holding the *previous* zone, so this
+  // effect would start the new zone's geometry fetch, then be torn down and
+  // cancelled the moment the new metadata landed and changed data.zone. The
+  // tag was already recorded as fetched, so nothing ever retried: POIs drew
+  // (they come from the metadata call) and the map had no lines until the
+  // window was closed and reopened, which remounted into the no-race path.
+  const loadedZone = data.zone?.zone
   useEffect(() => {
-    if (!zone || !data.zone) return
+    if (!zone || loadedZone !== zone) return
     const tag = `${zone}:${mode}`
     if (fetched.current.has(tag)) return
     fetched.current.add(tag)
@@ -106,7 +116,7 @@ export function useZoneMap(zone: string | null, mode: MapRenderMode): ZoneMapDat
     })
 
     return () => { cancelled = true }
-  }, [zone, mode, data.zone])
+  }, [zone, mode, loadedZone])
 
   return data
 }
