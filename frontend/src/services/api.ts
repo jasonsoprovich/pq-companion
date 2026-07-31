@@ -3,7 +3,7 @@ import type { Item, ItemSources, ItemQuests, QuestSummary, SearchResult, ItemSho
 import type { NPC, NPCSpawns, NPCLootTable, NPCFaction, NPCSpells, NPCMerchant, PatrolRoute } from '../types/npc'
 import type {
   MapStatus, MapZone, MapZoneDetail, MapGeometry, UserAnnotation,
-  GameMapExportStatus, GameMapExportResult,
+  GameMapExportStatus, GameMapExportResult, ZoneNPCLocation,
 } from '../types/map'
 import type { BuffStatDelta, Spell, SpellCrossRefs, ShoppingRoute, ShoppingRouteOptions } from '../types/spell'
 import type { EmoteColumnsPatch, EmoteStatus, SpellEmote, SpellEmoteDiff } from '../types/emote'
@@ -683,6 +683,13 @@ export function getZoneConnections(shortName: string): Promise<ZoneConnection[]>
 
 export function getZoneGroundSpawns(shortName: string): Promise<ZoneGroundSpawn[]> {
   return get<ZoneGroundSpawn[]>(`/api/zones/short/${encodeURIComponent(shortName)}/ground-spawns`)
+}
+
+// getZoneNPCLocations returns every NPC spawn point in a zone, for map search.
+export function getZoneNPCLocations(shortName: string): Promise<ZoneNPCLocation[]> {
+  return get<ZoneNPCLocation[]>(
+    `/api/zones/short/${encodeURIComponent(shortName)}/npc-locations`,
+  )
 }
 
 export function getZoneForage(shortName: string): Promise<ZoneForageItem[]> {

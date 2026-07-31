@@ -122,6 +122,18 @@ func (h *zonesHandler) getGroundSpawns(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+// getNPCLocations backs map search: every NPC in the zone with a spawn point,
+// so a name that is not a POI can still be found and pinned.
+func (h *zonesHandler) getNPCLocations(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	result, err := h.db.GetZoneNPCLocations(name)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
 func (h *zonesHandler) getForage(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	result, err := h.db.GetZoneForage(name)

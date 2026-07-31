@@ -52,6 +52,23 @@ export interface MapZoneDetail {
   pois: MapPOI[]
 }
 
+// ZoneNPCLocation is one NPC spawn point, for map search.
+//
+// Separate from MapPOI rather than folded into it: a POI is a curated category
+// the map draws a layer for, and adding every NPC in the zone to that set would
+// bury the layers under thousands of pins. These are only ever shown one at a
+// time, as the answer to a search.
+export interface ZoneNPCLocation {
+  npc_id: number
+  name: string
+  // Map space, same convention as MapPOI.
+  x: number
+  y: number
+  z: number
+  level: number
+  raid_target: boolean
+}
+
 export interface MapStatus {
   available: boolean
   zones: number

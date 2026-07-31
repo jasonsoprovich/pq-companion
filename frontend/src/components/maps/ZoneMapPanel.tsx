@@ -7,14 +7,18 @@ import { useZoneMap } from '../../hooks/useZoneMap'
 import { ZoneMap } from './ZoneMap'
 import { ErrorBoundary } from '../ErrorBoundary'
 import { mapMarkerCommand, mapShowZoneCommand } from '../../lib/zealMap'
+import { formatNPCName } from '../SourceNPCLink'
 import {
   createMapAnnotation,
   deleteMapAnnotation,
   getMapAnnotationExport,
+  getZoneNPCLocations,
   listMapAnnotations,
   updateMapAnnotation,
 } from '../../services/api'
-import type { MapPOI, MapPOICategory, MapRenderMode, UserAnnotation } from '../../types/map'
+import type {
+  MapPOI, MapPOICategory, MapRenderMode, UserAnnotation, ZoneNPCLocation,
+} from '../../types/map'
 
 // USER_SOURCE marks a pin as the user's own, so the inspector can offer edit and
 // delete on exactly those. Annotations ride through the normal MapPOI pipeline —
@@ -29,6 +33,27 @@ const ANNOTATION_CATEGORIES: { key: UserAnnotation['category']; label: string }[
   { key: 'hazard', label: 'Hazard' },
   { key: 'note', label: 'Note' },
 ]
+
+// SearchHit is one row in the search dropdown: either a curated map POI or a
+// plain NPC spawn point.
+type SearchHit =
+  | { kind: 'poi'; poi: MapPOI }
+  | { kind: 'npc'; npc: ZoneNPCLocation }
+
+// Inspection is the selected thing reduced to what the inspector bar shows, so
+// a POI and an NPC render through one piece of markup instead of two that drift.
+interface Inspection {
+  category: string
+  label: string
+  x: number
+  y: number
+  z: number
+  // route is the database page for this thing, when it has one.
+  route: string | null
+  // poi is set only for map POIs, and gates the edit/delete actions that apply
+  // to the user's own markers.
+  poi: MapPOI | null
+}
 
 // Negative ids keep user annotations from colliding with map_poi ids in the same
 // list, and make "is this mine" checkable without a second lookup.
@@ -126,11 +151,13 @@ export function ZoneMapPanel({
   live = false,
 }: ZoneMapPanelProps): React.ReactElement {
   const navigate = useNavigate()
-  // Outline is the default: one clean line drawing, the same in every zone.
-  // Detailed carries far more information but reads as a stack of overlapping
-  // levels in tall zones, which is a deliberate trade rather than the everyday
-  // view.
-  const [mode, setMode] = useCachedState<MapRenderMode>('maps.mode', 'outline')
+  // Detailed is the default. Outline is the cleaner drawing and the same style
+  // in every zone, but it is built from a walkable-surface silhouette and so
+  // omits features that are not walls — Oasis of Marr's lake is absent from the
+  // outline and plainly there in the detail. In-game testing across many zones
+  // put detailed ahead in the large majority of them; outline remains one click
+  // away for the multi-level zones where the extra lines stack up.
+  const [mode, setMode] = useCachedState<MapRenderMode>('maps.mode', 'detailed')
   const { zone, outline, geometry, detail, pois, loading, error } = useZoneMap(
     zoneShortName,
     mode,
@@ -142,10 +169,10 @@ export function ZoneMapPanel({
     LAYERS.filter((l) => l.on).map((l) => l.key),
   )
   const [selected, setSelected] = useState<MapPOI | null>(null)
-  // User markers are never links: they carry no ref_id, and their actions are
-  // Edit and Delete rather than "go look at this".
-  const selectedRoute =
-    selected && selected.source !== USER_SOURCE ? entityRoute(selected) : null
+  // An NPC found by search. Held apart from `selected` because it is not a POI
+  // and must not pretend to be one — it belongs to no layer, has no category
+  // toggle, and is only ever on screen because it was asked for.
+  const [selectedNPC, setSelectedNPC] = useState<ZoneNPCLocation | null>(null)
   const [showDetail, setShowDetail] = useCachedState('maps.detail', true)
   // On by default: in a multi-level zone it is the difference between two lines
   // crossing and two lines at different heights, which a flat rendering cannot
@@ -181,10 +208,49 @@ export function ZoneMapPanel({
     return () => { cancelled = true }
   }, [zoneShortName])
 
+  // Every NPC in the zone, for search. Fetched only on the live surface, where
+  // the search box exists — browsing the Zones tab should not pull a few
+  // hundred spawn rows nobody is going to query.
+  const [npcs, setNPCs] = useState<ZoneNPCLocation[]>([])
+  useEffect(() => {
+    if (!live || !zoneShortName) {
+      setNPCs([])
+      return
+    }
+    let cancelled = false
+    getZoneNPCLocations(zoneShortName)
+      .then((r) => { if (!cancelled) setNPCs(r) })
+      // Search still works over POIs without this; degrade rather than fail.
+      .catch(() => { if (!cancelled) setNPCs([]) })
+    return () => { cancelled = true }
+  }, [live, zoneShortName])
+
   const allPois = useMemo(
     () => [...pois, ...annotations.map(annotationToPOI)],
     [pois, annotations],
   )
+
+  // User markers are never links: they carry no ref_id, and their actions are
+  // Edit and Delete rather than "go look at this".
+  const inspect: Inspection | null = selected
+    ? {
+        category: selected.category.replace('_', ' '),
+        label: selected.label,
+        x: selected.x, y: selected.y, z: selected.z,
+        route: selected.source !== USER_SOURCE ? entityRoute(selected) : null,
+        poi: selected,
+      }
+    : selectedNPC
+      ? {
+          category: selectedNPC.raid_target ? 'raid target' : 'npc',
+          label: formatNPCName(selectedNPC.name),
+          x: selectedNPC.x, y: selectedNPC.y, z: selectedNPC.z,
+          route: `/npcs?select=${selectedNPC.npc_id}`,
+          poi: null,
+        }
+      : null
+
+  const clearSelection = (): void => { setSelected(null); setSelectedNPC(null) }
 
   const visible = useMemo(() => new Set(enabled), [enabled])
   const counts = useMemo(() => {
@@ -193,13 +259,31 @@ export function ZoneMapPanel({
     return m
   }, [allPois])
 
-  // POI search, live surface only. Matches on the label, which is what a player
-  // would type — "key", "trap", a vendor's name — rather than on category.
-  const matches = useMemo(() => {
+  // Search, live surface only. Matches on the label, which is what a player
+  // would type — "key", "trap", a name — rather than on category.
+  //
+  // POIs first, then every other NPC in the zone. Ordered that way because a
+  // POI is a curated answer and an NPC row is a raw one: searching "banker"
+  // should lead with the marked banker rather than a same-named guard. NPC
+  // names are stored underscored, so both the match and the display go through
+  // formatNPCName or "Ward Pungill" would never match "Ward_Pungill".
+  const matches = useMemo((): SearchHit[] => {
     const q = query.trim().toLowerCase()
     if (!live || q.length < 2) return []
-    return allPois.filter((p) => p.label.toLowerCase().includes(q)).slice(0, 40)
-  }, [live, query, allPois])
+    const hits: SearchHit[] = allPois
+      .filter((p) => p.label.toLowerCase().includes(q))
+      .map((poi) => ({ kind: 'poi', poi }))
+    // Skip NPCs already surfaced as a POI, so a vendor is not listed twice.
+    const seen = new Set(allPois.map((p) => p.ref_id).filter(Boolean))
+    for (const npc of npcs) {
+      if (hits.length >= 40) break
+      if (seen.has(npc.npc_id)) continue
+      if (formatNPCName(npc.name).toLowerCase().includes(q)) {
+        hits.push({ kind: 'npc', npc })
+      }
+    }
+    return hits.slice(0, 40)
+  }, [live, query, allPois, npcs])
 
   const saveDraft = (category: string, label: string): void => {
     if (!draft || !zoneShortName) return
@@ -265,7 +349,13 @@ export function ZoneMapPanel({
 
   return (
     <div className={`flex flex-col gap-2${fill ? ' h-full' : ''}`}>
-      <div className="flex shrink-0 flex-wrap items-center gap-1">
+      {/* Two columns, not one wrapping row. "Show in game" used ml-auto inside
+          the wrapping row, which pins it to the right of whichever line it
+          happens to land on — so it drifted to a different place as the toggle
+          count changed per zone and sat level with nothing. Its own column
+          keeps it in the top-right corner regardless of how the toggles wrap. */}
+      <div className="flex shrink-0 items-start gap-2">
+      <div className="flex flex-1 flex-wrap items-center gap-1">
         {/* Mode first, and set apart: it changes what the other controls mean,
             so it does not belong in the run of POI toggles. */}
         <div
@@ -407,11 +497,12 @@ export function ZoneMapPanel({
             You are in {playerPos.zone}
           </button>
         )}
+        </div>
         {showZoneButton && (
           <button
             onClick={() => copy('showzone', mapShowZoneCommand(zone.zone))}
             title="Copy /map show_zone — preview this zone on your in-game map"
-            className="ml-auto flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px]"
+            className="flex shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 text-[10px]"
             style={{
               backgroundColor: 'var(--color-surface)',
               borderColor: copied === 'showzone' ? 'var(--color-primary)' : 'var(--color-border)',
@@ -429,7 +520,7 @@ export function ZoneMapPanel({
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Find in this zone — a vendor, a key, a trap…"
+            placeholder="Find in this zone — an NPC, a vendor, a key, a trap…"
             className="w-full rounded border px-2 py-1 text-xs outline-none"
             style={{
               backgroundColor: 'var(--color-surface)',
@@ -447,19 +538,27 @@ export function ZoneMapPanel({
                 borderColor: 'var(--color-border)',
               }}
             >
-              {matches.map((p) => (
+              {matches.map((hit) => (
                 <button
-                  key={p.id}
+                  key={hit.kind === 'poi' ? `p${hit.poi.id}` : `n${hit.npc.npc_id}`}
                   onClick={() => {
                     // Selecting highlights it on the map and opens the inspector,
                     // which already carries "Pin in game" — so search lands in the
                     // same place a map click does rather than growing a second
                     // path to the same actions.
-                    setSelected(p)
                     setQuery('')
-                    // A hidden layer would highlight something invisible.
-                    if (!visible.has(p.category)) {
-                      setEnabled((prev) => [...prev, p.category])
+                    if (hit.kind === 'npc') {
+                      setSelected(null)
+                      setSelectedNPC(hit.npc)
+                      return
+                    }
+                    setSelectedNPC(null)
+                    setSelected(hit.poi)
+                    // A hidden layer would highlight something invisible. NPC
+                    // hits need no equivalent — they belong to no layer, and the
+                    // highlight is drawn regardless of the toggles.
+                    if (!visible.has(hit.poi.category)) {
+                      setEnabled((prev) => [...prev, hit.poi.category])
                     }
                   }}
                   className="flex w-full items-center gap-2 border-b px-2 py-1 text-left text-xs last:border-b-0"
@@ -469,11 +568,25 @@ export function ZoneMapPanel({
                     className="shrink-0 text-[9px] uppercase tracking-wider"
                     style={{ color: 'var(--color-muted)' }}
                   >
-                    {p.category.replace('_', ' ')}
+                    {hit.kind === 'poi'
+                      ? hit.poi.category.replace('_', ' ')
+                      : hit.npc.raid_target
+                        ? 'raid'
+                        : 'npc'}
                   </span>
                   <span className="truncate" style={{ color: 'var(--color-foreground)' }}>
-                    {p.label}
+                    {hit.kind === 'poi' ? hit.poi.label : formatNPCName(hit.npc.name)}
                   </span>
+                  {hit.kind === 'npc' && (
+                    // Level disambiguates the six identically-named guards a city
+                    // zone routinely has.
+                    <span
+                      className="ml-auto shrink-0 text-[9px] tabular-nums"
+                      style={{ color: 'var(--color-muted)' }}
+                    >
+                      L{hit.npc.level}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
@@ -497,10 +610,14 @@ export function ZoneMapPanel({
             colorByHeight={heightColor}
             playerPos={playerPos}
             followPlayer={followPlayer}
+            // Panning is a deliberate act; treat it as "I want to look
+            // somewhere else" and stop following. The Follow me toggle above is
+            // right there to turn it back on.
+            onUserPan={() => setFollowPlayer(false)}
             pois={allPois}
             visibleCategories={visible}
-            highlights={selected ? [{ x: selected.x, y: selected.y, z: selected.z }] : []}
-            onPOIClick={setSelected}
+            highlights={inspect ? [{ x: inspect.x, y: inspect.y, z: inspect.z }] : []}
+            onPOIClick={(p) => { setSelectedNPC(null); setSelected(p) }}
             onEmptyClick={
               adding ? (x, y, z) => { setDraft({ x, y, z }); setAdding(false) } : undefined
             }
@@ -518,7 +635,7 @@ export function ZoneMapPanel({
         />
       )}
 
-      {selected && (
+      {inspect && (
         <div
           className="flex shrink-0 items-center gap-2 rounded border px-2 py-1.5 text-sm"
           style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
@@ -527,32 +644,32 @@ export function ZoneMapPanel({
             className="shrink-0 text-[10px] uppercase tracking-widest"
             style={{ color: 'var(--color-muted)' }}
           >
-            {selected.category.replace('_', ' ')}
+            {inspect.category}
           </span>
-          {selectedRoute ? (
+          {inspect.route ? (
             <button
-              onClick={() => navigate(selectedRoute)}
+              onClick={() => navigate(inspect.route as string)}
               className="truncate text-left underline decoration-dotted"
               style={{ color: 'var(--color-primary)' }}
             >
-              {selected.label}
+              {inspect.label}
             </button>
           ) : (
             <span className="truncate" style={{ color: 'var(--color-foreground)' }}>
-              {selected.label}
+              {inspect.label}
             </span>
           )}
           <span className="shrink-0 font-mono text-xs" style={{ color: 'var(--color-muted)' }}>
             {/* Shown in /loc order and game sign, matching what EQ prints, so it
                 can be read straight across to the game. */}
-            {-selected.y}, {-selected.x}, {selected.z}
+            {-inspect.y}, {-inspect.x}, {inspect.z}
           </span>
           <div className="ml-auto flex shrink-0 items-center gap-1">
-            {selected.source === USER_SOURCE ? (
+            {inspect.poi && inspect.poi.source === USER_SOURCE ? (
               <>
                 <button
                   onClick={() => {
-                    const a = annotations.find((x) => x.id === -selected.id)
+                    const a = annotations.find((x) => x.id === -(inspect.poi as MapPOI).id)
                     if (a) setEditing(a)
                   }}
                   className="rounded border px-1.5 py-0.5 text-[10px]"
@@ -561,7 +678,7 @@ export function ZoneMapPanel({
                   Edit
                 </button>
                 <button
-                  onClick={() => removeAnnotation(-selected.id)}
+                  onClick={() => removeAnnotation(-(inspect.poi as MapPOI).id)}
                   className="rounded border px-1.5 py-0.5 text-[10px]"
                   style={{ borderColor: 'var(--color-border)', color: '#f87171' }}
                 >
@@ -571,9 +688,8 @@ export function ZoneMapPanel({
             ) : null}
             <button
               onClick={() =>
-                // POIs live in map space; the Zeal command wants game
-                // coordinates, which is the same negation back.
-                copy('pin', mapMarkerCommand(-selected.x, -selected.y, selected.label))
+                // Map space back to game coordinates, which is the same negation.
+                copy('pin', mapMarkerCommand(-inspect.x, -inspect.y, inspect.label))
               }
               className="flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px]"
               style={{
@@ -584,7 +700,7 @@ export function ZoneMapPanel({
               {copied === 'pin' ? <Check size={9} /> : <Copy size={9} />}
               {copied === 'pin' ? 'Copied' : 'Pin in game'}
             </button>
-            <button onClick={() => setSelected(null)} title="Clear selection">
+            <button onClick={clearSelection} title="Clear selection">
               <X size={12} style={{ color: 'var(--color-muted)' }} />
             </button>
           </div>
