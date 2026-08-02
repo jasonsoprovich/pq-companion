@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import { Navigation } from 'lucide-react'
+import { ExternalLink, Navigation } from 'lucide-react'
 import OverlayWindow from '../OverlayWindow'
 import { useCachedState } from '../../hooks/useCachedState'
 import { useLiveZone } from '../../hooks/useLiveZone'
@@ -56,6 +56,25 @@ export default function LiveMapPanel({
           <Navigation size={13} style={{ color: live ? '#c9a84c' : 'rgba(255,255,255,0.35)' }} />
           {zoneName ?? 'Live Map'}
         </span>
+      }
+      headerRight={
+        window.electron?.overlay && (
+          <button
+            onClick={() => window.electron.overlay.toggleLiveMap()}
+            title="Pop out as floating overlay"
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '1px 3px',
+              color: 'var(--color-muted)',
+              display: 'flex',
+              alignItems: 'center',
+            }}
+          >
+            <ExternalLink size={12} />
+          </button>
+        )
       }
       defaultX={defaultX}
       defaultY={defaultY}

@@ -60,8 +60,13 @@ func TestRateLimitAndMovementThreshold(t *testing.T) {
 	// Past the rate limit but barely moved from the last *sent* position, which
 	// is what the threshold compares against — deliberately, so that slow drift
 	// still accumulates into a broadcast instead of never qualifying.
+	//
+	// Sized from the constant rather than written as a literal: a hard-coded
+	// value silently stops testing what it claims the moment the threshold is
+	// retuned, which is exactly what happened when it was lowered.
 	*clock = clock.Add(minInterval)
-	tr.Update("akheva", 0.4, 0.4, 0, 0)
+	sub := moveEpsilon / 4
+	tr.Update("akheva", sub, sub, 0, 0)
 	if len(*sent) != 1 {
 		t.Errorf("broadcasts = %d after a sub-epsilon move, want 1", len(*sent))
 	}

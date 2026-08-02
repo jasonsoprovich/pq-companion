@@ -893,7 +893,7 @@ export function ZoneMap({
         )}
       </div>
 
-      {!chromeless && bottomBar(depthSlot === undefined ? null : depthSlot)}
+      {bottomBar(depthSlot ?? null)}
     </div>
   )
 
@@ -910,6 +910,12 @@ export function ZoneMap({
     const content = (
       <>
         <DepthControl
+          // Compact on the overlay surfaces, where the full control is wider
+          // than the window. Present rather than hidden: auto-depth follows the
+          // player's height from the pipe, and a control that moves on its own
+          // with no way to take it over or put it back is worse than one that
+          // is merely small.
+          compact={chromeless}
           zone={zone}
           depth={depth}
           onChange={setDepth}
@@ -926,7 +932,9 @@ export function ZoneMap({
             setAutoOff(false)
           }}
         />
-        {zScale && <HeightLegend scale={zScale} docked={docked} />}
+        {/* The legend explains the height ramp, which the overlays do not
+            draw — and there is no room for it there in any case. */}
+        {!chromeless && zScale && <HeightLegend scale={zScale} docked={docked} />}
       </>
     )
     if (!docked) return content
@@ -1098,6 +1106,7 @@ function DepthControl({
   canReset = false,
   onReset,
   docked = false,
+  compact = false,
 }: {
   zone: MapZone
   depth: { lo: number; hi: number } | null
@@ -1107,6 +1116,9 @@ function DepthControl({
   onReset?: () => void
   // docked renders in normal flow rather than floating over the canvas corner.
   docked?: boolean
+  // compact drops the label and the numeric readout and narrows the track, for
+  // an overlay window that can be 384px wide.
+  compact?: boolean
   // auto reports that the window is tracking the player's height rather than
   // having been set by hand. Surfaced because a control that moves on its own
   // has to say so — otherwise it reads as a bug.
@@ -1136,24 +1148,33 @@ function DepthControl({
 
   return (
     <div
-      className={`flex items-center gap-2.5 rounded px-2.5 py-1.5${
+      className={`flex items-center rounded ${compact ? 'gap-1.5 px-1.5 py-1' : 'gap-2.5 px-2.5 py-1.5'}${
         docked ? '' : ' absolute bottom-2 left-2'
-      }`}
+      }${compact ? ' right-2' : ''}`}
       style={{ backgroundColor: 'var(--color-surface-2)' }}
     >
-      <span
-        className="text-[10px] font-semibold uppercase tracking-widest"
-        style={{ color: active ? 'var(--color-primary)' : 'var(--color-muted)' }}
+      {!compact && (
+        <span
+          className="text-[10px] font-semibold uppercase tracking-widest"
+          style={{ color: active ? 'var(--color-primary)' : 'var(--color-muted)' }}
+          title={
+            auto
+              ? 'Following your height in game — drag either end to take over'
+              : 'Fade everything outside a height range, to read one level of a multi-level zone'
+          }
+        >
+          Height
+        </span>
+      )}
+
+      <div
+        className={compact ? 'range-dual flex-1' : 'range-dual w-44'}
         title={
           auto
-            ? 'Following your height in game — drag either end to take over'
-            : 'Fade everything outside a height range, to read one level of a multi-level zone'
+            ? 'Height range — following your height in game. Drag either end to take over.'
+            : 'Height range — fades everything outside it'
         }
       >
-        Height
-      </span>
-
-      <div className="range-dual w-44">
         <div className="range-dual-track" />
         <div
           className="range-dual-fill"
@@ -1181,12 +1202,14 @@ function DepthControl({
         />
       </div>
 
-      <span
-        className="w-24 text-right text-[10px] tabular-nums"
-        style={{ color: 'var(--color-muted)' }}
-      >
-        {active ? `${cur.lo} → ${cur.hi}` : 'all levels'}
-      </span>
+      {!compact && (
+        <span
+          className="w-24 text-right text-[10px] tabular-nums"
+          style={{ color: 'var(--color-muted)' }}
+        >
+          {active ? `${cur.lo} → ${cur.hi}` : 'all levels'}
+        </span>
+      )}
       {auto && (
         <button
           onClick={onDisableAuto}

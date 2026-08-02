@@ -32,9 +32,16 @@ type State struct {
 
 // Broadcast throttling.
 const (
-	// minInterval caps the broadcast rate. At 5 Hz an arrow moves smoothly at
-	// running speed while costing a fraction of the frames the pipe offers.
-	minInterval = 200 * time.Millisecond
+	// minInterval caps the broadcast rate, matched to the pipe's own default
+	// cadence (~100 ms, /pipedelay) so we forward what arrives rather than
+	// dropping every other frame.
+	//
+	// This started at 200 ms to be frugal, but halving the source rate is
+	// exactly what made the arrow read as laggy next to the in-game one: the
+	// game redraws its own arrow every frame, so any visible stepping is ours.
+	// Going faster than the pipe would buy nothing, so this is the floor worth
+	// having.
+	minInterval = 100 * time.Millisecond
 	// heartbeat forces a broadcast even when nothing has changed.
 	//
 	// Load-bearing, not a nicety: the renderer times out a stale position and
@@ -43,10 +50,16 @@ const (
 	// arrow would vanish exactly when a player stops to fight something.
 	heartbeat = 2 * time.Second
 	// moveEpsilon and headingEpsilon are the smallest changes worth a frame.
-	// EQ jitters position slightly while standing, and a fraction of a unit is
-	// far below one screen pixel at any usable zoom.
-	moveEpsilon    = 1.5
-	headingEpsilon = 4 // of 512, i.e. ~2.8 degrees
+	// EQ jitters position slightly while standing, so some floor is needed or a
+	// stationary player streams frames forever.
+	//
+	// Small, though: these suppress updates until the change accumulates past
+	// the threshold, which converts smooth movement into a jump every few
+	// frames. The old 1.5-unit floor was over a screen pixel at the zoom the
+	// overlay actually uses, and 2.8 degrees of turn is plainly visible on an
+	// arrow. Set below perceptibility instead of below a guess at it.
+	moveEpsilon    = 0.4
+	headingEpsilon = 1.5 // of 512, i.e. ~1 degree
 )
 
 // Tracker holds the latest position and rate-limits broadcasts.
