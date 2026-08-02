@@ -244,6 +244,27 @@ func (h *mapsHandler) externalGeometry(w http.ResponseWriter, r *http.Request) {
 		// pack covers every zone. Empty, not an error.
 		z = &mapfiles.Zone{}
 	}
+	// Does this pack's map describe the same place the server does? A pack is
+	// drawn for whichever EverQuest its author plays, and a zone revamped since
+	// Luclin renders perfectly while showing a different building. Reported in
+	// a header rather than the body, which is packed binary.
+	if pois, err := h.store.POIs(chi.URLParam(r, "zone")); err == nil && len(pois) > 0 {
+		known := make([]mapfiles.Named, 0, len(pois))
+		for _, p := range pois {
+			known = append(known, mapfiles.Named{
+				Label: p.Label, X: float64(p.X), Y: float64(p.Y),
+			})
+		}
+		a := mapfiles.CheckAlignment(z, known)
+		if a.Landmarks > 0 {
+			w.Header().Set("X-Map-Landmarks", strconv.Itoa(a.Landmarks))
+			w.Header().Set("X-Map-Offset", strconv.Itoa(int(a.OffsetUnits)))
+			if a.Mismatch {
+				w.Header().Set("X-Map-Mismatch", "1")
+			}
+		}
+	}
+
 	buf := make([]byte, len(z.Segments)*externalSegmentBytes)
 	for i, s := range z.Segments {
 		o := i * externalSegmentBytes

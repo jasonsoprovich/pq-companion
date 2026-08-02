@@ -127,3 +127,60 @@ func TestLoadUnknownZoneIsNotAnError(t *testing.T) {
 		t.Errorf("Load(unknown) = %v, %v; want nil, nil", z, err)
 	}
 }
+
+func TestCheckAlignmentMatchesTheSameZone(t *testing.T) {
+	pack := &Zone{Points: []Point{
+		{X: -235, Y: -6, Label: "Priest of Discord"},
+		{X: 100, Y: 200, Label: "Guard Hargrin"},
+		{X: -40, Y: 90, Label: "Banker Fusberg"},
+	}}
+	known := []Named{
+		{Label: "Priest_of_Discord", X: -235, Y: -6},
+		{Label: "Guard_Hargrin", X: 104, Y: 197},
+		{Label: "Banker_Fusberg", X: -40, Y: 90},
+	}
+	a := CheckAlignment(pack, known)
+	if a.Landmarks != 3 || a.Mismatch {
+		t.Errorf("got %+v, want 3 landmarks and no mismatch", a)
+	}
+}
+
+func TestCheckAlignmentCatchesADifferentZoneOfTheSameName(t *testing.T) {
+	// The real case: a modern pack's Bazaar is the revamped one, so its zone
+	// lines sit hundreds of units from where this server puts them. The lines
+	// render perfectly and describe a different building, which is why this has
+	// to be detected rather than left to look right.
+	pack := &Zone{Points: []Point{
+		{X: 384, Y: 104, Label: "to_Shadow_Haven"},
+		{X: -260, Y: 115, Label: "to_The_Nexus"},
+		{X: 435, Y: 0, Label: "to_The_Plane_of_Knowledge"},
+	}}
+	known := []Named{
+		{Label: "to Shadow Haven", X: 215, Y: 875},
+		{Label: "to The Nexus", X: -140, Y: 821},
+		{Label: "to Shadow Haven", X: 135, Y: 875},
+	}
+	a := CheckAlignment(pack, known)
+	if !a.Mismatch {
+		t.Errorf("got %+v, want a mismatch", a)
+	}
+}
+
+func TestCheckAlignmentDeclinesToJudgeWithoutEnoughLandmarks(t *testing.T) {
+	// Unknown must never read as fine: two names can agree by chance, and a
+	// wrong pass leaves the user trusting a wrong map.
+	pack := &Zone{Points: []Point{{X: 0, Y: 0, Label: "Banker Smith"}}}
+	known := []Named{{Label: "Banker_Smith", X: 0, Y: 0}}
+	if a := CheckAlignment(pack, known); a.Landmarks != 0 || a.Mismatch {
+		t.Errorf("got %+v, want a no-opinion result", a)
+	}
+}
+
+func TestNormalizeLabelIgnoresSeparators(t *testing.T) {
+	if normalizeLabel("to_Shadow_Haven") != normalizeLabel("to Shadow Haven") {
+		t.Error("separator styles must match; the two sources punctuate differently")
+	}
+	if normalizeLabel("a_b") != "" {
+		t.Error("short labels identify nothing and must not be matched on")
+	}
+}

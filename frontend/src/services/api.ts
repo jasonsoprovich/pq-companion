@@ -474,6 +474,17 @@ export async function getExternalMapGeometry(zone: string): Promise<MapGeometry>
   const baseUrl = await getBackendBaseUrl()
   const res = await fetch(`${baseUrl}/api/maps/external/zone/${encodeURIComponent(zone)}`)
   if (!res.ok) throw new Error(`external geometry ${zone}: ${res.statusText}`)
+  // Whether this pack's map for the zone describes the same place the server
+  // does — see mapfiles.CheckAlignment. Absent when there were too few shared
+  // landmarks to judge, which is "unknown", not "fine".
+  const landmarks = Number(res.headers.get('X-Map-Landmarks') ?? 0)
+  const alignment = landmarks
+    ? {
+        landmarks,
+        offset: Number(res.headers.get('X-Map-Offset') ?? 0),
+        mismatch: res.headers.get('X-Map-Mismatch') === '1',
+      }
+    : undefined
   const buf = await res.arrayBuffer()
   const count = Math.floor(buf.byteLength / 15)
   // Split into two flat arrays so the renderer's inner loop indexes straight
@@ -488,7 +499,7 @@ export async function getExternalMapGeometry(zone: string): Promise<MapGeometry>
     colors[i * 3 + 1] = view.getUint8(o + 13)
     colors[i * 3 + 2] = view.getUint8(o + 14)
   }
-  return { count, coords, colors }
+  return { count, coords, colors, alignment }
 }
 
 // ── User map annotations (phase 4c) ───────────────────────────────────────────

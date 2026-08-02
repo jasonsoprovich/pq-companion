@@ -86,6 +86,10 @@ export interface MapGeometry {
   // is how a hand-drawn map says "this is water" rather than "this is a wall".
   // Absent for our own layers, which the renderer themes itself.
   colors?: Uint8Array
+  // alignment is set for an external pack: whether its map for this zone
+  // describes the same place the server does. Undefined means there were too
+  // few shared landmarks to judge — which is "unknown", never "fine".
+  alignment?: { landmarks: number; offset: number; mismatch: boolean }
 }
 
 // ExternalMapStatus describes a third-party .txt map pack found in the player's

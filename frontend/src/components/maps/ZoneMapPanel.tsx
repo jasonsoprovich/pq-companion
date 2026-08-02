@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Check, Copy, Plus, X } from 'lucide-react'
+import { AlertTriangle, Check, Copy, Plus, X } from 'lucide-react'
 import { useCachedState } from '../../hooks/useCachedState'
 import { usePlayerPosition } from '../../hooks/usePlayerPosition'
 import { useMapStyle } from '../../hooks/useMapStyle'
@@ -669,6 +669,26 @@ export function ZoneMapPanel({
         </ErrorBoundary>
         </div>
       </div>
+
+      {/* A pack drawn for a different EverQuest. Stated rather than hidden: the
+          lines render perfectly and our own pins land correctly on top, so
+          nothing about a wrong map looks wrong unless you already know the
+          zone. */}
+      {mode === 'external' && external?.alignment?.mismatch && (
+        <div
+          className="flex shrink-0 items-start gap-2 rounded border px-2 py-1.5 text-xs"
+          style={{ borderColor: '#f59e0b', color: 'var(--color-muted-foreground)' }}
+        >
+          <AlertTriangle size={13} className="mt-px shrink-0" style={{ color: '#f59e0b' }} />
+          <span>
+            This pack's map for {zone.zone} does not match Project Quarm's — its
+            landmarks sit about {external.alignment.offset} units from where the
+            server puts them. Almost certainly a zone revamped in a later
+            expansion, so the pack drew a different version of it. The pins are
+            still correct; the lines are not.
+          </span>
+        </div>
+      )}
 
       {/* Full width, under both the rail and the canvas. Empty and zero-height
           for flat zones, where the map has no depth control to dock. */}

@@ -59,6 +59,13 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, PUT, POST, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			// Response headers are invisible to the renderer unless named here:
+			// every request it makes is cross-origin, so by default it can read
+			// only the CORS-safelisted set. The map-pack alignment verdict rides
+			// on headers because that response body is packed binary with
+			// nowhere to put it.
+			w.Header().Set("Access-Control-Expose-Headers",
+				"X-Map-Landmarks, X-Map-Offset, X-Map-Mismatch")
 			if r.Method == http.MethodOptions {
 				w.WriteHeader(http.StatusNoContent)
 				return

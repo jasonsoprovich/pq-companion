@@ -1353,6 +1353,34 @@ data goes through Zeal's `map_files`. Both are searched, plus a bare `maps`
 folder. A directory needs 25+ zones to count, which keeps our own `map_files`
 marker exports from being mistaken for a pack.
 
+### 14.4 A pack is drawn for a different EverQuest
+
+The Bazaar renders cleanly from Brewall's files and shows the wrong building.
+Its layer carries `to_The_Plane_of_Knowledge`, `Blue_Dragon_Hall`,
+`Teleporter_to_Hub` and trader halls named after gems — that is the *revamped*
+Bazaar. Project Quarm is Luclin-era, where none of it exists.
+
+Measured by matching labelled points between the pack and `map_poi`, across the
+whole 2024-01-09 set:
+
+| | |
+|---|---|
+| zones with 3+ shared landmarks | 92 |
+| median per-zone offset | **14 units** (NPCs wander; small offsets are normal) |
+| zones off by >150 units | **17** |
+| worst | templeveeshan 4196, airplane 4120, westwastes 3925, vexthal 2902, bazaar 698 |
+
+Nothing lands between 150 and 600, so the threshold sits in an empty gap rather
+than splitting a distribution. The offenders are exactly the zones revamped
+after Luclin.
+
+This is the dangerous failure mode of reading someone else's pack: the drawing
+is clean, our own pins land where the server says they are, and only someone
+who knows the zone notices the two disagree. So `mapfiles.CheckAlignment`
+compares landmark names on every external fetch and the UI says so outright.
+Landmark matching rather than geometry, because names are the only thing the
+two sources share.
+
 ## References
 - [Zeal — CoastalRedwood/Zeal](https://github.com/CoastalRedwood/Zeal) (MIT)
 - [Brewall EQ Maps](https://www.eqmaps.info/eq-map-files/) · [RedGuides mirror](https://github.com/RedGuides/brewall-maps)
