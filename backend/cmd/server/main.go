@@ -1122,6 +1122,13 @@ func main() {
 			NewHandler: func(character string) backfill.Handler { return skills.NewBackfillHandler(skillsStore, character) },
 		})
 	}
+	if lockoutStore != nil {
+		backfillRegistry.Register(backfill.Section{
+			Key:        "lockouts",
+			Label:      "Lockout Tracker",
+			NewHandler: func(character string) backfill.Handler { return lockout.NewBackfillHandler(lockoutStore, character) },
+		})
+	}
 	if charStore != nil {
 		// Unlike the other trackers above (keyed by log-owning character
 		// name), the Faction Tracker's storage is keyed by charStore's

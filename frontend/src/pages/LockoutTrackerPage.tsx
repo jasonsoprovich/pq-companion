@@ -10,6 +10,10 @@
  * the game and app were closed for days between captures. When a timer
  * elapses (or the target was already "Available" at capture), the row turns
  * green and stays listed until the next update.
+ *
+ * History from before the app was tracking live can be pulled in via
+ * Settings → Log Backfill (the "lockouts" section, replaying the same two
+ * sources from the character's full log).
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -19,6 +23,7 @@ import type { LockoutEntry, LockoutSection } from '../types/lockouts'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
 import { useWebSocket } from '../hooks/useWebSocket'
 import CharacterSubTabs from '../components/CharacterSubTabs'
+import BackfillLink from '../components/BackfillLink'
 
 // ── Time formatting ─────────────────────────────────────────────────────────
 
@@ -228,21 +233,24 @@ export default function LockoutTrackerPage(): React.ReactElement {
         value={character}
         onChange={setCharacter}
         rightSlot={
-          <button
-            type="button"
-            onClick={() => void load(character)}
-            disabled={!character}
-            className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            style={{
-              backgroundColor: 'var(--color-surface-2)',
-              border: '1px solid var(--color-border)',
-              color: 'var(--color-muted-foreground)',
-            }}
-            title="Refresh lockouts for this character"
-          >
-            <RefreshCw size={11} />
-            Refresh
-          </button>
+          <div className="flex items-center gap-2">
+            <BackfillLink />
+            <button
+              type="button"
+              onClick={() => void load(character)}
+              disabled={!character}
+              className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              style={{
+                backgroundColor: 'var(--color-surface-2)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-muted-foreground)',
+              }}
+              title="Refresh lockouts for this character"
+            >
+              <RefreshCw size={11} />
+              Refresh
+            </button>
+          </div>
         }
       />
 
@@ -308,7 +316,9 @@ export default function LockoutTrackerPage(): React.ReactElement {
             No lockouts recorded for this character. Lockouts capture
             automatically as lockout bosses die, or type{' '}
             <span className="font-mono">/sll</span> in-game for a full
-            snapshot.
+            snapshot. To pull past lockouts from this character's existing
+            log, use the <span className="font-medium">Backfill</span> button
+            above (Settings → Logs).
           </p>
         ) : (
           <div className="space-y-4">

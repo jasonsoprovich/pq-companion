@@ -160,6 +160,73 @@ func (s *Store) UpsertEntry(character string, section Section, targetName string
 	return tx.Commit()
 }
 
+// UpsertEntryIfNewer is UpsertEntry's freshness-checked counterpart, used by
+// the log backfill (see BackfillHandler). Live tailing always processes lines
+// in real time, so UpsertEntry can overwrite unconditionally; backfilling can
+// replay an old or rotated log file after live data has already moved past
+// it, so writes here are skipped unless observedAt is at least as recent as
+// the row's current observed_at. Returns wrote=true when a row was inserted
+// or updated.
+func (s *Store) UpsertEntryIfNewer(character string, section Section, targetName string, expiresAt, observedAt time.Time) (wrote bool, err error) {
+	if character == "" {
+		return false, fmt.Errorf("character required")
+	}
+	if targetName == "" {
+		return false, fmt.Errorf("target name required")
+	}
+	obs := observedAt.Unix()
+	exp := expiresAt.Unix()
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	var prevObs int64
+	err = tx.QueryRow(`
+		SELECT observed_at FROM lockout_entries
+		WHERE character = ? AND section = ? AND target_name = ?
+	`, character, string(section), targetName).Scan(&prevObs)
+	switch {
+	case err == sql.ErrNoRows:
+		if _, err := tx.Exec(`
+			INSERT INTO lockout_entries (character, section, position, target_name, expires_at, observed_at)
+			VALUES (?, ?, (SELECT COALESCE(MAX(position), -1) + 1 FROM lockout_entries WHERE character = ?), ?, ?, ?)
+		`, character, string(section), character, targetName, exp, obs); err != nil {
+			return false, fmt.Errorf("insert lockout char=%q target=%q: %w", character, targetName, err)
+		}
+		return true, tx.Commit()
+	case err != nil:
+		return false, fmt.Errorf("query lockout char=%q target=%q: %w", character, targetName, err)
+	}
+	if obs < prevObs {
+		return false, nil
+	}
+	if _, err := tx.Exec(`
+		UPDATE lockout_entries SET expires_at = ?, observed_at = ?
+		WHERE character = ? AND section = ? AND target_name = ?
+	`, exp, obs, character, string(section), targetName); err != nil {
+		return false, fmt.Errorf("update lockout char=%q target=%q: %w", character, targetName, err)
+	}
+	return true, tx.Commit()
+}
+
+// MaxObservedAt returns the most recent observed_at (unix seconds) across all
+// of the character's lockout rows, and false if they have none. Used by the
+// log backfill to decide whether a replayed `/sll` block is stale relative to
+// data already on file. See BackfillHandler.
+func (s *Store) MaxObservedAt(character string) (int64, bool, error) {
+	var v sql.NullInt64
+	if err := s.db.QueryRow(`SELECT MAX(observed_at) FROM lockout_entries WHERE character = ?`, character).Scan(&v); err != nil {
+		return 0, false, fmt.Errorf("query max observed_at for %q: %w", character, err)
+	}
+	if !v.Valid {
+		return 0, false, nil
+	}
+	return v.Int64, true, nil
+}
+
 // ListByCharacter returns every lockout entry for the named character in
 // snapshot order (section, then position). Empty slice (not nil) when none.
 func (s *Store) ListByCharacter(character string) ([]Entry, error) {
