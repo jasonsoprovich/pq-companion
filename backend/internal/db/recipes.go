@@ -434,11 +434,6 @@ func (db *DB) RecipesForTradeskill(tradeskill int) ([]LevelingRecipe, error) {
 				label = enums.ContainerTypeName(itemID)
 			}
 			containers[recipeID] = append(containers[recipeID], RecipeEntry{ItemName: label})
-			// First container is the display label only; race restriction is
-			// resolved from the full OR set after the loop, below.
-			if lr.Container == "" {
-				lr.Container = label
-			}
 		case successCount > 0:
 			if lr.Yield == 0 {
 				lr.Yield = successCount // primary product's per-combine output
@@ -478,7 +473,21 @@ func (db *DB) RecipesForTradeskill(tradeskill int) ([]LevelingRecipe, error) {
 
 	result := make([]LevelingRecipe, 0, len(out))
 	for i := range out {
-		out[i].RaceRestrict = containersRaceRestrict(containers[out[i].RecipeID])
+		cs := containers[out[i].RecipeID]
+		out[i].RaceRestrict = containersRaceRestrict(cs)
+		// Display label prefers a race-open container over a cultural kit that
+		// happens to be listed first — showing "requires Fierdal Fletching Kit"
+		// would wrongly suggest the recipe needs that specific race-locked
+		// vessel when a generic alternative works for everyone.
+		for _, c := range cs {
+			if out[i].Container == "" {
+				out[i].Container = c.ItemName
+			}
+			if ContainerRaceRestrict(c.ItemName) == 0 {
+				out[i].Container = c.ItemName
+				break
+			}
+		}
 		if hasComponent[out[i].RecipeID] {
 			result = append(result, out[i])
 		}
