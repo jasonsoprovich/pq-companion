@@ -73,6 +73,26 @@ func TestGetRecipe_Mesmerization(t *testing.T) {
 	}
 }
 
+// Recipe 4102 ("Darkly Pulsing Orb", Blacksmithing) combines with a Smithing
+// Chisel (item 7052) as a tool. Its component/success rows for the chisel sort
+// (by tre.id) ahead of the real product's success row, so a naive "first
+// successcount>0 row" pick reports the chisel — not the orb (item 9794) — as
+// the recipe's canonical product/icon. productSubquery must skip success rows
+// that have a sibling componentcount row for the same item.
+func TestGetRecipeSummariesByIDs_SkipsToolAsProduct(t *testing.T) {
+	d := openTestDB(t)
+	summaries, err := d.GetRecipeSummariesByIDs([]int{4102})
+	if err != nil {
+		t.Fatalf("get recipe summaries: %v", err)
+	}
+	if len(summaries) != 1 {
+		t.Fatalf("expected 1 summary for recipe 4102, got %d", len(summaries))
+	}
+	if summaries[0].ProductItemID != 9794 {
+		t.Errorf("product item = %d, want 9794 (Darkly Pulsing Orb), not the Smithing Chisel tool", summaries[0].ProductItemID)
+	}
+}
+
 func TestGetRecipe_NotFound(t *testing.T) {
 	d := openTestDB(t)
 	if _, err := d.GetRecipe(99999999); err == nil {

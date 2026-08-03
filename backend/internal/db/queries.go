@@ -588,6 +588,16 @@ func (db *DB) GetItemSources(itemID int) (*ItemSources, error) {
 		JOIN tradeskill_recipe r ON r.id = tre.recipe_id
 		WHERE tre.item_id = ? AND tre.iscontainer = 0 AND (tre.successcount > 0 OR tre.componentcount > 0)
 		  AND r.enabled = 1
+		  -- Exclude non-consumed tools (e.g. Smithing Chisel): a successcount row
+		  -- paired with a componentcount row for the same recipe+item means the
+		  -- item is returned after being used, not actually crafted by the
+		  -- recipe. Without this guard every recipe that merely requires the
+		  -- tool floods "Produced by" alongside the (rare) recipe that actually
+		  -- makes it.
+		  AND NOT (tre.successcount > 0 AND EXISTS (
+		      SELECT 1 FROM tradeskill_recipe_entries tre2
+		      WHERE tre2.recipe_id = tre.recipe_id AND tre2.item_id = tre.item_id
+		        AND tre2.componentcount > 0))
 		ORDER BY role DESC, r.name
 		LIMIT 100`, itemID)
 	if err != nil {

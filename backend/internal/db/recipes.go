@@ -86,11 +86,20 @@ type RecipeFilter struct {
 // productSubquery resolves the canonical product (first success row) for a
 // recipe. Shared by the SELECT list so the icon and item id come from the same
 // row. col is the column to project from that row.
+//
+// A success row is excluded when the same recipe also has a componentcount
+// row for that item — that pattern means the item is a non-consumed tool
+// (e.g. a Smithing Chisel returned after the combine), not the thing the
+// recipe actually crafts, and it must not be picked as the list-view icon.
 func productSubquery(col string) string {
 	return fmt.Sprintf(`(SELECT %s
 		FROM tradeskill_recipe_entries tre
 		LEFT JOIN items pi ON pi.id = tre.item_id
 		WHERE tre.recipe_id = r.id AND tre.successcount > 0
+		  AND NOT EXISTS (
+		      SELECT 1 FROM tradeskill_recipe_entries tre2
+		      WHERE tre2.recipe_id = tre.recipe_id AND tre2.item_id = tre.item_id
+		        AND tre2.componentcount > 0)
 		ORDER BY tre.id LIMIT 1)`, col)
 }
 

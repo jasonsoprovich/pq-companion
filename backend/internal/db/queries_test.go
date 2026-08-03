@@ -110,6 +110,27 @@ func TestSearchItems_Pagination(t *testing.T) {
 	}
 }
 
+// Smithing Chisel (item 7052) is a tool: every recipe that lists it produces
+// both a componentcount row (consumed at the combine) and a successcount row
+// (returned after), never a genuine "craft a chisel" recipe. GetItemSources
+// must not surface any of those as role="product" — that flooded the
+// "Produced by" list with the 82 recipes that merely require the chisel.
+func TestGetItemSources_ExcludesToolFromProducedBy(t *testing.T) {
+	d := openTestDB(t)
+	src, err := d.GetItemSources(7052)
+	if err != nil {
+		t.Fatalf("GetItemSources(7052): %v", err)
+	}
+	if len(src.Tradeskills) == 0 {
+		t.Fatal("expected Smithing Chisel to appear in tradeskill recipes")
+	}
+	for _, ts := range src.Tradeskills {
+		if ts.Role == "product" {
+			t.Errorf("recipe %d (%s) listed Smithing Chisel as a product; it is a returned tool, not a crafted result", ts.RecipeID, ts.RecipeName)
+		}
+	}
+}
+
 // ─── NPCs ─────────────────────────────────────────────────────────────────────
 
 func TestGetNPC_Found(t *testing.T) {
