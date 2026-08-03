@@ -135,9 +135,9 @@ func TestCheckAlignmentMatchesTheSameZone(t *testing.T) {
 		{X: -40, Y: 90, Label: "Banker Fusberg"},
 	}}
 	known := []Named{
-		{Label: "Priest_of_Discord", X: -235, Y: -6},
-		{Label: "Guard_Hargrin", X: 104, Y: 197},
-		{Label: "Banker_Fusberg", X: -40, Y: 90},
+		{Label: "Priest_of_Discord", Category: "door", X: -235, Y: -6},
+		{Label: "Guard_Hargrin", Category: "zone_line", X: 104, Y: 197},
+		{Label: "Banker_Fusberg", Category: "tradeskill", X: -40, Y: 90},
 	}
 	a := CheckAlignment(pack, known)
 	if a.Landmarks != 3 || a.Mismatch {
@@ -156,9 +156,9 @@ func TestCheckAlignmentCatchesADifferentZoneOfTheSameName(t *testing.T) {
 		{X: 435, Y: 0, Label: "to_The_Plane_of_Knowledge"},
 	}}
 	known := []Named{
-		{Label: "to Shadow Haven", X: 215, Y: 875},
-		{Label: "to The Nexus", X: -140, Y: 821},
-		{Label: "to Shadow Haven", X: 135, Y: 875},
+		{Label: "to Shadow Haven", Category: "zone_line", X: 215, Y: 875},
+		{Label: "to The Nexus", Category: "zone_line", X: -140, Y: 821},
+		{Label: "to Shadow Haven", Category: "zone_line", X: 135, Y: 875},
 	}
 	a := CheckAlignment(pack, known)
 	if !a.Mismatch {
@@ -170,7 +170,7 @@ func TestCheckAlignmentDeclinesToJudgeWithoutEnoughLandmarks(t *testing.T) {
 	// Unknown must never read as fine: two names can agree by chance, and a
 	// wrong pass leaves the user trusting a wrong map.
 	pack := &Zone{Points: []Point{{X: 0, Y: 0, Label: "Banker Smith"}}}
-	known := []Named{{Label: "Banker_Smith", X: 0, Y: 0}}
+	known := []Named{{Label: "Banker_Smith", Category: "door", X: 0, Y: 0}}
 	if a := CheckAlignment(pack, known); a.Landmarks != 0 || a.Mismatch {
 		t.Errorf("got %+v, want a no-opinion result", a)
 	}
@@ -182,5 +182,25 @@ func TestNormalizeLabelIgnoresSeparators(t *testing.T) {
 	}
 	if normalizeLabel("a_b") != "" {
 		t.Error("short labels identify nothing and must not be matched on")
+	}
+}
+
+func TestCheckAlignmentIgnoresNPCLandmarks(t *testing.T) {
+	// A pack labels a named mob where its author saw it; ours comes from
+	// spawn2. Judging on that gap put Vex Thal 3024 units out and Temple of
+	// Veeshan 4474, on zones whose line work is plainly the same place — so
+	// NPC categories must not be counted at all, not merely weighted down.
+	pack := &Zone{Points: []Point{
+		{X: 0, Y: 0, Label: "Aten Ha Ra"},
+		{X: 0, Y: 0, Label: "Thall Va Kelun"},
+		{X: 0, Y: 0, Label: "Diabo Xi Va"},
+	}}
+	known := []Named{
+		{Label: "Aten_Ha_Ra", Category: "raid_target", X: 3000, Y: 3000},
+		{Label: "Thall_Va_Kelun", Category: "raid_target", X: 3000, Y: 3000},
+		{Label: "Diabo_Xi_Va", Category: "vendor", X: 3000, Y: 3000},
+	}
+	if a := CheckAlignment(pack, known); a.Landmarks != 0 || a.Mismatch {
+		t.Errorf("got %+v, want no opinion — every landmark was an NPC", a)
 	}
 }

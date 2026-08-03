@@ -1360,19 +1360,31 @@ Its layer carries `to_The_Plane_of_Knowledge`, `Blue_Dragon_Hall`,
 `Teleporter_to_Hub` and trader halls named after gems — that is the *revamped*
 Bazaar. Project Quarm is Luclin-era, where none of it exists.
 
-Measured by matching labelled points between the pack and `map_poi`, across the
-whole 2024-01-09 set:
+Detected by matching labelled points between the pack and `map_poi` — but only
+points that describe a **fixed place**. That restriction is the whole check.
+
+A first pass counted NPCs as landmarks and flagged 17 zones. Rendering them
+against our own extraction showed most were false: Vex Thal and Akheva are
+unmistakably the same zone in both, and were condemned only because a pack
+labels a named mob where its author saw it while ours comes from `spawn2`. That
+gap alone reads as 3024 units in Vex Thal and 4474 in Temple of Veeshan.
+
+Judged on doors, zone lines, succor points and tradeskill containers instead:
 
 | | |
 |---|---|
-| zones with 3+ shared landmarks | 92 |
-| median per-zone offset | **14 units** (NPCs wander; small offsets are normal) |
-| zones off by >150 units | **17** |
-| worst | templeveeshan 4196, airplane 4120, westwastes 3925, vexthal 2902, bazaar 698 |
+| zones judgeable (3+ fixed landmarks) | 73 |
+| median per-zone offset | **7 units** |
+| zones over 150 units | **2** — bazaar 698, highpass 182 |
 
-Nothing lands between 150 and 600, so the threshold sits in an empty gap rather
-than splitting a distribution. The offenders are exactly the zones revamped
-after Luclin.
+Rendered side by side, highpass is the same winding pass in both, so 182 is
+noise; the Bazaar is a different building. The threshold is 400, in the gap
+between them.
+
+Two lessons worth keeping. Landmark *category* matters more than landmark
+count — the NPC-based version had more data and was wrong. And the check has to
+be validated by looking at the maps: no statistic distinguished the false
+positives, a rendered comparison did in seconds.
 
 This is the dangerous failure mode of reading someone else's pack: the drawing
 is clean, our own pins land where the server says they are, and only someone

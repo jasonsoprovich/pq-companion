@@ -31,19 +31,37 @@ type Alignment struct {
 // Named is one labelled point from the server's data, in map space.
 type Named struct {
 	Label string
-	X, Y  float64
+	// Category decides whether this point can be trusted as a landmark; see
+	// fixedCategories.
+	Category string
+	X, Y     float64
+}
+
+// fixedCategories are the POI kinds that describe a fixed place.
+//
+// NPCs are excluded, and that exclusion is the difference between a check that
+// works and one that condemns good maps. A pack labels a named mob where its
+// author saw it — a camp, a patrol point, a spawn the server has since moved —
+// while our coordinates come from spawn2. Measured on Brewall's set, that gap
+// alone put Vex Thal 3024 units out and Temple of Veeshan 4474, on zones whose
+// line work is plainly the same place. Judged on doors, zone lines and
+// tradeskill containers instead, both agree to within a few units.
+var fixedCategories = map[string]bool{
+	"zone_line": true, "tradeskill": true, "succor": true,
+	"locked": true, "switch": true, "teleport": true, "door": true,
 }
 
 // mismatchUnits is the offset above which the two maps are calling different
 // places by the same name.
 //
-// Measured across the whole 2024-01-09 Brewall set against quarm.db: of 92
-// zones with enough shared landmarks, the median per-zone offset is 14 units —
-// NPCs wander and respawn, so small disagreements are normal and expected. The
-// zones that genuinely differ are not close to the line: bazaar is 698 units
-// out, akheva 1634, Temple of Veeshan 4196. Nothing lands between 150 and 600,
-// so the threshold sits in an empty gap rather than splitting a distribution.
-const mismatchUnits = 150
+// Measured across the whole 2024-01-09 Brewall set against quarm.db, using only
+// fixed landmarks: 73 zones are judgeable and their median offset is 7 units.
+// Exactly two exceed 150 — bazaar at 698 and highpass at 182 — and rendering
+// both side by side against our own extraction settles which is which. Highpass
+// is unmistakably the same winding pass in both, so 182 is noise; the Bazaar is
+// a different building entirely. The threshold therefore sits in the gap
+// between them rather than at the edge of the noise.
+const mismatchUnits = 400
 
 // minLandmarks is how many matched names are needed before judging.
 //
@@ -72,6 +90,9 @@ func CheckAlignment(pack *Zone, known []Named) Alignment {
 
 	var dists []float64
 	for _, n := range known {
+		if !fixedCategories[n.Category] {
+			continue
+		}
 		k := normalizeLabel(n.Label)
 		if k == "" {
 			continue

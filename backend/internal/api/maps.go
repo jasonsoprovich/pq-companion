@@ -252,7 +252,8 @@ func (h *mapsHandler) externalGeometry(w http.ResponseWriter, r *http.Request) {
 		known := make([]mapfiles.Named, 0, len(pois))
 		for _, p := range pois {
 			known = append(known, mapfiles.Named{
-				Label: p.Label, X: float64(p.X), Y: float64(p.Y),
+				Label: p.Label, Category: p.Category,
+				X: float64(p.X), Y: float64(p.Y),
 			})
 		}
 		a := mapfiles.CheckAlignment(z, known)
