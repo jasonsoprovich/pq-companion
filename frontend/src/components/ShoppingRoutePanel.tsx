@@ -206,10 +206,10 @@ function StopCard({
               <span
                 className="flex shrink-0 items-center gap-1 text-xs tabular-nums"
                 style={{ color: 'var(--color-muted)' }}
-                title="In-game location (X, Y)"
+                title="In-game location (/loc order: Y, X)"
               >
                 <MapPin size={10} />
-                {Math.round(vendor.x)}, {Math.round(vendor.y)}
+                {Math.round(vendor.y)}, {Math.round(vendor.x)}
               </span>
             </div>
             <div className="mt-1 flex flex-wrap gap-1">
