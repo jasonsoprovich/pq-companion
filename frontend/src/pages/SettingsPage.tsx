@@ -63,7 +63,7 @@ import DeveloperTab from './DeveloperTab'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'discarded' | 'error'
 type UpdateState = 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'downloaded' | 'error'
-type Tab = 'general' | 'audio' | 'accessibility' | 'navigation' | 'overlays' | 'spelltimers' | 'dpscolors' | 'discord' | 'logs' | 'backups' | 'maps' | 'gamemaps' | 'advanced' | 'about' | 'changelog' | 'developer'
+type Tab = 'general' | 'audio' | 'accessibility' | 'navigation' | 'overlays' | 'spelltimers' | 'dpscolors' | 'discord' | 'logs' | 'backups' | 'maps' | 'advanced' | 'about' | 'changelog' | 'developer'
 
 interface TabBarProps {
   tabs: { id: Tab; label: string; icon: React.ReactNode }[]
@@ -78,7 +78,7 @@ interface TabBarProps {
 const TAB_GROUPS: { label: string; ids: Tab[] }[] = [
   { label: 'General', ids: ['general', 'audio', 'accessibility'] },
   { label: 'Interface', ids: ['navigation', 'overlays', 'spelltimers', 'dpscolors', 'discord'] },
-  { label: 'System', ids: ['logs', 'backups', 'maps', 'gamemaps', 'advanced'] },
+  { label: 'System', ids: ['logs', 'backups', 'maps', 'advanced'] },
   { label: 'About', ids: ['about', 'changelog', 'developer'] },
 ]
 
@@ -319,8 +319,11 @@ export default function SettingsPage(): React.ReactElement {
   // Allow deep-linking to a specific tab via ?tab= (e.g. links to the Logs tab
   // for backfill). Falls back to General for unknown/absent values.
   const [tab, setTab] = useState<Tab>(() => {
-    const valid: Tab[] = ['general', 'audio', 'accessibility', 'navigation', 'overlays', 'spelltimers', 'dpscolors', 'discord', 'logs', 'backups', 'gamemaps', 'advanced', 'about', 'developer']
+    const valid: Tab[] = ['general', 'audio', 'accessibility', 'navigation', 'overlays', 'spelltimers', 'dpscolors', 'discord', 'logs', 'backups', 'maps', 'advanced', 'about', 'changelog', 'developer']
     const t = searchParams.get('tab') ?? ''
+    // 'gamemaps' was its own tab until the two map tabs merged. Kept as an
+    // alias so links written against the old name still land somewhere useful.
+    if (t === 'gamemaps') return 'maps'
     return (valid as string[]).includes(t) ? (t as Tab) : 'general'
   })
   const [config, setConfig] = useState<Config | null>(null)
@@ -717,7 +720,6 @@ export default function SettingsPage(): React.ReactElement {
     { id: 'logs', label: 'Logs', icon: <FileText size={13} /> },
     { id: 'backups', label: 'EQ Config Backups', icon: <HardDrive size={13} /> },
     { id: 'maps', label: 'Maps', icon: <MapIcon size={13} /> },
-    { id: 'gamemaps', label: 'In-Game Map Markers', icon: <MapIcon size={13} /> },
     { id: 'advanced', label: 'Advanced', icon: <Wifi size={13} /> },
     { id: 'about', label: 'About', icon: <Info size={13} /> },
     { id: 'changelog', label: 'Changelog', icon: <Sparkles size={13} /> },
@@ -843,22 +845,20 @@ export default function SettingsPage(): React.ReactElement {
     )
   }
 
+  // One tab for everything map-shaped. These were two tabs with near-identical
+  // names ("Maps" / "In-Game Map Markers"), which asked the user to know the
+  // difference between how we draw maps and what we write into the game's
+  // before they could find either.
   if (tab === 'maps') {
     return (
       <div className="flex h-full">
         <TabBar tabs={tabs} active={tab} onChange={setTab} />
-        <div className="min-h-0 flex-1">
+        <div className="min-h-0 flex-1 overflow-y-auto">
           <MapSettingsPanel />
-        </div>
-      </div>
-    )
-  }
-
-  if (tab === 'gamemaps') {
-    return (
-      <div className="flex h-full">
-        <TabBar tabs={tabs} active={tab} onChange={setTab} />
-        <div className="min-h-0 flex-1">
+          <div
+            className="mx-5 border-t"
+            style={{ borderColor: 'var(--color-border)' }}
+          />
           <GameMapExportPanel />
         </div>
       </div>

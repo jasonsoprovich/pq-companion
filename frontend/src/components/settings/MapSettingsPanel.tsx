@@ -85,7 +85,10 @@ export default function MapSettingsPanel(): React.ReactElement {
   ]
 
   return (
-    <div className="h-full overflow-y-auto px-5 py-4">
+    // No scroll container of its own: this shares the Maps tab's single scroll
+    // area with GameMapExportPanel, and two nested scrollers there would give
+    // the tab two scrollbars.
+    <div className="px-5 py-4">
       <div className="mb-1 flex items-center gap-2">
         <MapIcon size={16} style={{ color: 'var(--color-primary)' }} />
         <h2 className="text-lg font-semibold">Maps</h2>
@@ -179,8 +182,8 @@ export default function MapSettingsPanel(): React.ReactElement {
           </p>
           <ol className="ml-4 list-decimal space-y-1 text-xs">
             <li>
-              Download a map pack — <span className="font-mono">eqmaps.info</span>{' '}
-              is the usual one.
+              Download a map pack. Brewall's is the usual choice and the one
+              these instructions assume — <span className="font-mono">eqmaps.info</span>.
             </li>
             <li>
               Create a folder called <span className="font-mono">maps</span> inside

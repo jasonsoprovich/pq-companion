@@ -73,7 +73,9 @@ export default function GameMapExportPanel(): React.ReactElement {
   }
 
   return (
-    <div className="h-full overflow-y-auto px-5 py-4">
+    // A section of the Maps settings tab, not a tab of its own — see
+    // MapSettingsPanel for why neither half owns a scroll container.
+    <div className="px-5 py-4">
       <div className="mb-1 flex items-center gap-2">
         <MapIcon size={16} style={{ color: 'var(--color-primary)' }} />
         <h2 className="text-lg font-semibold">In-Game Map Markers</h2>

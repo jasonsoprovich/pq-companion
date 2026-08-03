@@ -385,33 +385,51 @@ export function ZoneMapPanel({
                 'Full extracted geometry: elevation contours or every floor edge. ' +
                   'Far more information, and busier in multi-level zones.',
               ],
-              // Only offered when a pack is actually installed. Labelled with
-              // the pack's own folder name, which is the only attribution these
-              // files carry — better to credit what is on disk than to guess.
-              ...(pack?.available
-                ? ([[
+              // Labelled with the pack's own folder name when one is installed,
+              // which is the only attribution these files carry — better to
+              // credit what is on disk than to guess.
+              //
+              // With no pack the button stays, greyed, and leads to the setup
+              // instructions instead of switching style. Hiding it outright was
+              // the other option, but then a third style exists that the user
+              // has no way to discover; a dead-looking button they can click to
+              // find out why is the more answerable version of the confusion.
+              pack?.available
+                ? [
                     'external',
                     pack.name ?? 'Map pack',
                     `Drawn from the map pack in your own EQ folder (${pack.dir}), ` +
                       `in its own colours. ${pack.zones} zones. Nothing is bundled ` +
                       `with PQ Companion — these are your files, read in place.`,
-                  ]] as [MapRenderMode, string, string][])
-                : []),
+                  ]
+                : [
+                    'external',
+                    'Map pack',
+                    'No map pack found in your EverQuest folder. Click to see how ' +
+                      'to install one — hand-drawn maps show things the extracted ' +
+                      'ones cannot, like water.',
+                  ],
             ] as [MapRenderMode, string, string][]
-          ).map(([key, label, title]) => (
-            <button
-              key={key}
-              onClick={() => setMode(key)}
-              title={title}
-              className="px-2 py-0.5 text-[10px] font-medium"
-              style={{
-                backgroundColor: mode === key ? 'var(--color-primary)' : 'transparent',
-                color: mode === key ? 'var(--color-background)' : 'var(--color-muted)',
-              }}
-            >
-              {label}
-            </button>
-          ))}
+          ).map(([key, label, title]) => {
+            const unavailable = key === 'external' && !pack?.available
+            return (
+              <button
+                key={key}
+                onClick={() =>
+                  unavailable ? navigate('/settings?tab=maps') : setMode(key)
+                }
+                title={title}
+                className="px-2 py-0.5 text-[10px] font-medium"
+                style={{
+                  backgroundColor: mode === key ? 'var(--color-primary)' : 'transparent',
+                  color: mode === key ? 'var(--color-background)' : 'var(--color-muted)',
+                  opacity: unavailable ? 0.45 : 1,
+                }}
+              >
+                {label}
+              </button>
+            )
+          })}
         </div>
 
         {/* Also about how the map is drawn, so it belongs up here with the
@@ -695,6 +713,25 @@ export function ZoneMapPanel({
         </ErrorBoundary>
         </div>
       </div>
+
+      {/* A pack can be installed and still not cover this zone — packs are
+          published per-expansion and the zone count on the Settings tab is a
+          total, not a guarantee. Without this the canvas just goes blank, which
+          reads as the style being broken rather than a missing file. */}
+      {mode === 'external' && !loading && external?.count === 0 && (
+        <div
+          className="flex shrink-0 items-start gap-2 rounded border px-2 py-1.5 text-xs"
+          style={{ borderColor: 'var(--color-border)', color: 'var(--color-muted-foreground)' }}
+        >
+          <AlertTriangle size={13} className="mt-px shrink-0" style={{ color: 'var(--color-muted)' }} />
+          <span>
+            Your map pack has no file for {zone.zone}. Switch to Outline or
+            Detailed for this zone, or add{' '}
+            <span className="font-mono">{zone.zone}.txt</span> to{' '}
+            <span className="font-mono">{pack?.dir ?? 'the pack folder'}</span>.
+          </span>
+        </div>
+      )}
 
       {/* A pack drawn for a different EverQuest. Stated rather than hidden: the
           lines render perfectly and our own pins land correctly on top, so
