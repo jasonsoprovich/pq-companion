@@ -382,6 +382,10 @@ func (db *DB) RecipesForTradeskill(tradeskill int) ([]LevelingRecipe, error) {
 	// a transform/recharge/degenerate row, e.g. a no-cost trivial-255 combine),
 	// and would look free to the cost optimizer. Drop such recipes at the end.
 	hasComponent := make(map[int]bool, len(out))
+	// Containers are an OR set (any one suffices), so race restriction must be
+	// computed from ALL of a recipe's containers, not just the first row seen —
+	// see containersRaceRestrict. Accumulated here and resolved after the loop.
+	containers := make(map[int][]RecipeEntry, len(out))
 
 	// The cost resolver holds the whole recipe DAG in memory so we can price a
 	// recipe by the CHEAPEST way to obtain each component (buy it, or sub-craft
@@ -423,17 +427,17 @@ func (db *DB) RecipesForTradeskill(tradeskill int) ([]LevelingRecipe, error) {
 
 		switch {
 		case isCon != 0:
-			// First container is the label; a container with no items row is a
-			// bagtype/combine-station code (e.g. Forge), resolved to its name.
+			// A container with no items row is a bagtype/combine-station code
+			// (e.g. Forge), resolved to its name.
+			label := name
+			if label == "" {
+				label = enums.ContainerTypeName(itemID)
+			}
+			containers[recipeID] = append(containers[recipeID], RecipeEntry{ItemName: label})
+			// First container is the display label only; race restriction is
+			// resolved from the full OR set after the loop, below.
 			if lr.Container == "" {
-				if name == "" {
-					lr.Container = enums.ContainerTypeName(itemID)
-				} else {
-					lr.Container = name
-				}
-				// Cultural kits (Vale/Fier`Dal/Erudite) are race-locked; quarm.db
-				// has no race data on them, so tag from the curated table.
-				lr.RaceRestrict = ContainerRaceRestrict(lr.Container)
+				lr.Container = label
 			}
 		case successCount > 0:
 			if lr.Yield == 0 {
@@ -474,6 +478,7 @@ func (db *DB) RecipesForTradeskill(tradeskill int) ([]LevelingRecipe, error) {
 
 	result := make([]LevelingRecipe, 0, len(out))
 	for i := range out {
+		out[i].RaceRestrict = containersRaceRestrict(containers[out[i].RecipeID])
 		if hasComponent[out[i].RecipeID] {
 			result = append(result, out[i])
 		}
