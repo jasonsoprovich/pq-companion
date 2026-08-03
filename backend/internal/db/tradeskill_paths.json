@@ -152,14 +152,12 @@
     ]
   },
   "64": {
-    "source": "Darchon's TAKP Tradeskill Guide (wiki.takp.info), skill 1-282, recipe ids verified against quarm.db trivials 2026-07-17. EQProgression cross-check blocked (403). EQTraders.com's guide (g1324) claimed a race-open 1-200 arrow line (Bone/Wood/Ceramic/Silver-Tip Point Arrows) — checked every one of those names directly against quarm.db and ALL of them are ALSO Fier'Dal-Fletching-Kit (Wood-Elf-only) locked, exactly like the Darchon-sourced names; there is no race-open arrow substitute anywhere in quarm.db for 1-202. So that gap is confirmed, not just suspected: other races see a real hole there under Recommended and need Custom mode (or a Wood Elf crafting mule) for 1-202. From 202 on, picked the vendor-bought bow line (race-open, no farming) over the guide's farmed Shadow Tipped Acrylia Arrows alternative, matching the guide's own default (Option 1).",
+    "source": "Darchon's TAKP Tradeskill Guide (wiki.takp.info), skill 1-282, recipe ids verified against quarm.db trivials 2026-07-17, corrected 2026-08-02 (issue reported via Discord: bow line was pricing ~350k total). EQProgression cross-check blocked (403). EQTraders.com's guide (g1324) claimed a race-open 1-200 arrow line (Bone/Wood/Ceramic/Silver-Tip Point Arrows) — checked every one of those names directly against quarm.db and ALL of them are ALSO Fier'Dal-Fletching-Kit (Wood-Elf-only) locked, exactly like the Darchon-sourced names; there is no race-open arrow substitute anywhere in quarm.db for 1-202. So that gap is confirmed, not just suspected: other races see a real hole there under Recommended and need Custom mode (or a Wood Elf crafting mule) for 1-202. From 202-268, switched to the guide's farmed Shadow Tipped Acrylia Arrow line (recipe 7440) — the guide itself labels the vendor-bought bow line 'Expensive' with a quantified 22-114pp loss per combine after sellback, and recommends the arrow line as the economical alternative; the previous source note's 'matching the guide's own default' reasoning was a misread (Option 1 being listed first isn't the same as being recommended). No farmed arrow recipe exists past trivial 268 in quarm.db, so 268-282 still closes out with one bow recipe (Rough Shadewood Compound Bow (hemp), race-open, no farming).",
     "steps": [
       { "recipe_id": 6920 },
       { "recipe_id": 7154 },
       { "recipe_id": 6953 },
-      { "recipe_id": 6802 },
-      { "recipe_id": 6786 },
-      { "recipe_id": 7434 },
+      { "recipe_id": 7440, "note": "Shadow Tipped Acrylia Arrow — farmed materials (Condensed Shadow Arrowheads, Bundled Acrylia Arrow Shafts), far cheaper than the bow line it replaces" },
       { "recipe_id": 7430 }
     ]
   },
