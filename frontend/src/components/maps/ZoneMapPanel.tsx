@@ -7,7 +7,11 @@ import { useMapStyle } from '../../hooks/useMapStyle'
 import { useZoneMap } from '../../hooks/useZoneMap'
 import { ZoneMap } from './ZoneMap'
 import { ErrorBoundary } from '../ErrorBoundary'
-import { mapMarkerCommand, mapShowZoneCommand } from '../../lib/zealMap'
+import {
+  mapMarkerCommand,
+  mapRestoreZoneCommand,
+  mapShowZoneCommand,
+} from '../../lib/zealMap'
 import { formatNPCName } from '../SourceNPCLink'
 import {
   createMapAnnotation,
@@ -470,19 +474,41 @@ export function ZoneMapPanel({
         )}
 
         {showZoneButton && (
-          <button
-            onClick={() => copy('showzone', mapShowZoneCommand(zone.zone))}
-            title="Copy /map show_zone — preview this zone on your in-game map"
-            className="ml-auto flex shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 text-[10px]"
-            style={{
-              backgroundColor: 'var(--color-surface)',
-              borderColor: copied === 'showzone' ? 'var(--color-primary)' : 'var(--color-border)',
-              color: copied === 'showzone' ? 'var(--color-primary)' : 'var(--color-muted-foreground)',
-            }}
-          >
-            {copied === 'showzone' ? <Check size={9} /> : <Copy size={9} />}
-            {copied === 'showzone' ? 'Copied' : 'Show in game'}
-          </button>
+          <>
+            <button
+              onClick={() => copy('showzone', mapShowZoneCommand(zone.zone))}
+              title="Copy /map show_zone — preview this zone on your in-game map"
+              className="ml-auto flex shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 text-[10px]"
+              style={{
+                backgroundColor: 'var(--color-surface)',
+                borderColor: copied === 'showzone' ? 'var(--color-primary)' : 'var(--color-border)',
+                color:
+                  copied === 'showzone' ? 'var(--color-primary)' : 'var(--color-muted-foreground)',
+              }}
+            >
+              {copied === 'showzone' ? <Check size={9} /> : <Copy size={9} />}
+              {copied === 'showzone' ? 'Copied' : 'Show in game'}
+            </button>
+            {/* The way back out. Preview mode sticks until it is cleared, so
+                without this the only exit is knowing the bare command. */}
+            <button
+              onClick={() => copy('restorezone', mapRestoreZoneCommand())}
+              title="Copy /map show_zone with no zone — put your own zone back on the in-game map"
+              className="flex shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 text-[10px]"
+              style={{
+                backgroundColor: 'var(--color-surface)',
+                borderColor:
+                  copied === 'restorezone' ? 'var(--color-primary)' : 'var(--color-border)',
+                color:
+                  copied === 'restorezone'
+                    ? 'var(--color-primary)'
+                    : 'var(--color-muted-foreground)',
+              }}
+            >
+              {copied === 'restorezone' ? <Check size={9} /> : <Copy size={9} />}
+              {copied === 'restorezone' ? 'Copied' : 'Restore'}
+            </button>
+          </>
         )}
       </div>
 

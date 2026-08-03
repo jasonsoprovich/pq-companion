@@ -17,7 +17,12 @@ import {
   type SpecialAbility,
 } from '../lib/npcHelpers'
 import { inGameItemLink, priceLabel } from '../lib/itemHelpers'
-import { mapMarkerCommand, mapRaidMarkerCommand, mapShowZoneCommand } from '../lib/zealMap'
+import {
+  mapMarkerCommand,
+  mapRaidMarkerCommand,
+  mapRestoreZoneCommand,
+  mapShowZoneCommand,
+} from '../lib/zealMap'
 import { NPCSpawnMap } from '../components/maps/NPCSpawnMap'
 import CreateTriggerModal, { type TriggerPrefill } from '../components/CreateTriggerModal'
 import { ItemIcon } from '../components/Icon'
@@ -77,6 +82,14 @@ function ZealMapActions({
       label: 'Zone',
       title: `Copy "/map show_zone ${spawn.zone}" — preview this zone's map without travelling there`,
       command: mapShowZoneCommand(spawn.zone),
+    },
+    // Paired with "Zone": the preview stays up until it is cleared, and the
+    // bare command is not guessable from the in-game help.
+    {
+      key: `restore-${spawn.id}`,
+      label: 'Restore',
+      title: 'Copy "/map show_zone" with no zone — put your own zone back on the map',
+      command: mapRestoreZoneCommand(),
     },
   ]
 

@@ -65,6 +65,14 @@ export function mapShowZoneCommand(shortName: string): string {
   return clampChatLine(`/map show_zone ${shortName}`)
 }
 
+// mapRestoreZoneCommand leaves show_zone preview mode and puts the player's own
+// zone back on the in-game map. Zeal keys this off the missing argument — bare
+// `/map show_zone` is the documented way out of preview, and there is no
+// separate "exit" verb to use instead.
+export function mapRestoreZoneCommand(): string {
+  return '/map show_zone'
+}
+
 // mapClearMarkersCommand clears every marker the player has placed.
 export function mapClearMarkersCommand(): string {
   return '/map marker'
