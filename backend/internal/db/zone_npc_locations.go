@@ -1,6 +1,10 @@
 package db
 
-import "fmt"
+import (
+	"fmt"
+	"sort"
+	"strings"
+)
 
 // ZoneNPCLocation is one NPC's spawn point in a zone, in map space.
 //
@@ -70,4 +74,108 @@ func (db *DB) GetZoneNPCLocations(shortName string) ([]ZoneNPCLocation, error) {
 		out = append(out, l)
 	}
 	return out, rows.Err()
+}
+
+// RaidTargetInZone is one raid-target NPC known to spawn in a zone, keyed by
+// its display name (the form the game and `/sll` print — see
+// GetNPCIDByName) so it can be matched directly against lockout entries.
+type RaidTargetInZone struct {
+	NPCID int    `json:"npc_id"`
+	Name  string `json:"name"`
+}
+
+// RaidTargetOverrides force-includes npc_types ids as raid-target bosses for
+// a zone even though they fail the normal spawn2+raid_target=1 query in
+// GetRaidTargetsByZone — either the encounter is spawned purely by quest
+// script with no spawn2 row at all (see ScriptSpawnedNPCOverrides), or
+// raid_target is 0 on the row that actually carries the loot table, both
+// confirmed gaps in the upstream Quarm dump rather than something to
+// hand-edit in quarm.db (query-side correction — see
+// project_quarm_data_corrections memory). Keyed by zone short_name. Confirm
+// future additions the same way these two were found: the boss's real
+// target_name appears in a captured `/sll` snapshot (lockout_entries) but
+// GetRaidTargetsByZone doesn't surface it.
+//
+// ssratemple: Emperor Ssraeshza's real encounter row (162491,
+// "Emperor_Ssraeshza_") has raid_target=0 and no spawn2 row (see
+// ScriptSpawnedNPCOverrides, npc 162065 "#Emperor_Ssraeshza" is a decoy).
+// Blood of Ssraeshza's real row (162189, "#Blood_of_Ssraeshza", loottable
+// 12840) also has raid_target=0.
+var RaidTargetOverrides = map[string][]int{
+	"ssratemple": {162491, 162189},
+}
+
+// stripNPCDecoration reverses the placeholder decoration NPCNameVariantCandidates
+// adds when going display-name → db-name: strips at most one matching leading
+// PlaceholderPrefixes entry and any trailing PlaceholderSuffixes entries, so a
+// raw npc_types name like "#Emperor_Ssraeshza_" or "Emperor_Ssraeshza_"
+// reduces to the same bare form before the underscore→space render.
+func stripNPCDecoration(name string) string {
+	for _, p := range PlaceholderPrefixes {
+		if strings.HasPrefix(name, p) {
+			name = strings.TrimPrefix(name, p)
+			break
+		}
+	}
+	for _, s := range PlaceholderSuffixes {
+		name = strings.TrimSuffix(name, s)
+	}
+	return name
+}
+
+// GetRaidTargetsByZone returns every distinct raid-target NPC (raid_target =
+// 1, plus RaidTargetOverrides) with at least one spawn point in the zone (or
+// forced in via RaidTargetOverrides), ordered by name. Same-named variants
+// collapse to one row keyed by their lowest npc_types id, mirroring
+// GetNPCIDByName's convention so the id links to the same detail page a
+// lockout row's resolver would land on. Used by the Zones tab's Lockouts
+// sub-tab to know which bosses in a zone to check a character's lockout
+// status against.
+func (db *DB) GetRaidTargetsByZone(shortName string) ([]RaidTargetInZone, error) {
+	rows, err := db.Query(`
+		SELECT MIN(n.id), n.name
+		FROM spawn2 s
+		JOIN spawnentry se ON se.spawngroupID = s.spawngroupID
+		JOIN npc_types n ON n.id = se.npcID
+		WHERE s.zone = ? AND n.raid_target = 1
+		  -- '#' names are utility/script rows with no physical presence.
+		  AND n.name NOT LIKE '#%'
+		GROUP BY n.name
+		ORDER BY n.name`, shortName)
+	if err != nil {
+		return nil, fmt.Errorf("get raid targets by zone %q: %w", shortName, err)
+	}
+	defer rows.Close()
+
+	out := []RaidTargetInZone{}
+	seen := map[int]bool{}
+	for rows.Next() {
+		var t RaidTargetInZone
+		if err := rows.Scan(&t.NPCID, &t.Name); err != nil {
+			return nil, fmt.Errorf("scan raid target in zone: %w", err)
+		}
+		t.Name = strings.TrimSpace(strings.ReplaceAll(stripNPCDecoration(t.Name), "_", " "))
+		out = append(out, t)
+		seen[t.NPCID] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	for _, id := range RaidTargetOverrides[shortName] {
+		if seen[id] {
+			continue
+		}
+		var name string
+		if err := db.QueryRow(`SELECT name FROM npc_types WHERE id = ?`, id).Scan(&name); err != nil {
+			continue
+		}
+		out = append(out, RaidTargetInZone{
+			NPCID: id,
+			Name:  strings.TrimSpace(strings.ReplaceAll(stripNPCDecoration(name), "_", " ")),
+		})
+		seen[id] = true
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
 }

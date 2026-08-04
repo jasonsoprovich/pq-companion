@@ -34,6 +34,7 @@ import type {
 import type {
   LockoutCharactersResponse,
   LockoutCharacterResponse,
+  ZoneLockoutsResponse,
 } from '../types/lockouts'
 import type { PoPResolved, PoPFlagDatasetResponse, SeerPreviewResponse, SeerScanResponse } from '../types/popflag'
 import type { Backup, BackupsResponse } from '../types/backup'
@@ -1146,6 +1147,13 @@ export function getLockoutCharacters(): Promise<LockoutCharactersResponse> {
 
 export function getLockoutForCharacter(name: string): Promise<LockoutCharacterResponse> {
   return get<LockoutCharacterResponse>(`/api/lockouts/characters/${encodeURIComponent(name)}`)
+}
+
+// getZoneLockouts returns every raid-target boss known to spawn in the zone,
+// each paired with every character's known lockout status for it. Backs the
+// Zones tab's Lockouts sub-tab.
+export function getZoneLockouts(shortName: string): Promise<ZoneLockoutsResponse> {
+  return get<ZoneLockoutsResponse>(`/api/lockouts/zone/${encodeURIComponent(shortName)}`)
 }
 
 // ── Backups ────────────────────────────────────────────────────────────────────

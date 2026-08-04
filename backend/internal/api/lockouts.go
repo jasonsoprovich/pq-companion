@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
@@ -84,4 +85,82 @@ func (h *lockoutsHandler) getCharacter(w http.ResponseWriter, r *http.Request) {
 		resolved[i] = h.resolveEntry(e)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"character": name, "entries": resolved})
+}
+
+// zoneLockoutBossDTO is one raid-target boss in a zone, paired with every
+// character's known lockout status for it.
+type zoneLockoutBossDTO struct {
+	NPCID      int                       `json:"npc_id,omitempty"`
+	TargetName string                    `json:"target_name"`
+	Characters []zoneLockoutCharacterDTO `json:"characters"`
+}
+
+// zoneLockoutCharacterDTO is one character's captured lockout status for a
+// boss. Omitted entirely from a boss's Characters slice when that character
+// has never had this target captured (distinct from ExpiresAt = 0, which
+// means it was explicitly observed "Available").
+type zoneLockoutCharacterDTO struct {
+	Character  string `json:"character"`
+	ExpiresAt  int64  `json:"expires_at"`
+	ObservedAt int64  `json:"observed_at"`
+}
+
+// getZoneLockouts handles GET /api/lockouts/zone/{shortName} and returns
+// every raid-target boss known to spawn in the zone, each with every
+// character's lockout status for it — the data backing the Zones tab's
+// Lockouts sub-tab. Scoped to loot lockouts only: legacy item lockouts have
+// no zone to key off of.
+func (h *lockoutsHandler) getZoneLockouts(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "lockout store unavailable")
+		return
+	}
+	if h.db == nil {
+		writeError(w, http.StatusServiceUnavailable, "database unavailable")
+		return
+	}
+	shortName := chi.URLParam(r, "shortName")
+	if shortName == "" {
+		writeError(w, http.StatusBadRequest, "zone short name required")
+		return
+	}
+	targets, err := h.db.GetRaidTargetsByZone(shortName)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	names := make([]string, len(targets))
+	for i, t := range targets {
+		names[i] = t.Name
+	}
+	entries, err := h.store.ListBySectionAndTargets(lockout.SectionLoot, names)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	// Keyed lower-cased: target_name is player-typed game output and npc_types
+	// names are data-entry text, so casing isn't guaranteed to match exactly
+	// even though the SQL lookup was already case-insensitive.
+	byName := make(map[string][]zoneLockoutCharacterDTO, len(names))
+	for _, e := range entries {
+		key := strings.ToLower(e.TargetName)
+		byName[key] = append(byName[key], zoneLockoutCharacterDTO{
+			Character:  e.Character,
+			ExpiresAt:  e.ExpiresAt,
+			ObservedAt: e.ObservedAt,
+		})
+	}
+	bosses := make([]zoneLockoutBossDTO, len(targets))
+	for i, t := range targets {
+		chars := byName[strings.ToLower(t.Name)]
+		if chars == nil {
+			chars = []zoneLockoutCharacterDTO{}
+		}
+		bosses[i] = zoneLockoutBossDTO{
+			NPCID:      t.NPCID,
+			TargetName: t.Name,
+			Characters: chars,
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"zone": shortName, "bosses": bosses})
 }

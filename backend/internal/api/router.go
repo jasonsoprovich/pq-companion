@@ -369,6 +369,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 		r.Route("/lockouts", func(r chi.Router) {
 			r.Get("/characters", lockoutsH.listCharacters)
 			r.Get("/characters/{name}", lockoutsH.getCharacter)
+			r.Get("/zone/{shortName}", lockoutsH.getZoneLockouts)
 		})
 		r.Route("/backups", func(r chi.Router) {
 			r.Get("/", backupH.list)

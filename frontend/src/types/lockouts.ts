@@ -28,3 +28,26 @@ export interface LockoutCharacterResponse {
   character: string
   entries: LockoutEntry[]
 }
+
+// One character's captured status for a zone-lockout boss. Absent from a
+// boss's characters array entirely when that character has never had this
+// target captured — distinct from expires_at = 0, which means it was
+// explicitly observed "Available".
+export interface ZoneLockoutCharacter {
+  character: string
+  expires_at: number
+  observed_at: number
+}
+
+// One raid-target boss in a zone, paired with every character's known
+// lockout status for it. npc_id is omitted when the name didn't resolve.
+export interface ZoneLockoutBoss {
+  npc_id?: number
+  target_name: string
+  characters: ZoneLockoutCharacter[]
+}
+
+export interface ZoneLockoutsResponse {
+  zone: string
+  bosses: ZoneLockoutBoss[]
+}

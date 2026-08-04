@@ -3,6 +3,7 @@ package lockout
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -238,6 +239,47 @@ func (s *Store) ListByCharacter(character string) ([]Entry, error) {
 	`, character)
 	if err != nil {
 		return nil, fmt.Errorf("query lockouts for %q: %w", character, err)
+	}
+	defer rows.Close()
+	out := []Entry{}
+	for rows.Next() {
+		var e Entry
+		if err := rows.Scan(&e.Character, &e.Section, &e.Position, &e.TargetName, &e.ExpiresAt, &e.ObservedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// ListBySectionAndTargets returns every entry, across all characters, whose
+// section matches and whose target name is one of names — ordered by target
+// name then character. Used by the Zones tab's Lockouts sub-tab to fetch
+// every character's status for a zone's raid targets in one query rather
+// than one per character. A target name with no matching row for a given
+// character means that character has never had it captured (distinct from
+// an explicit "Available" row, which has expires_at = 0). Returns an empty
+// slice (not an error) when names is empty.
+func (s *Store) ListBySectionAndTargets(section Section, names []string) ([]Entry, error) {
+	if len(names) == 0 {
+		return []Entry{}, nil
+	}
+	placeholders := make([]string, len(names))
+	args := make([]any, 0, len(names)+1)
+	args = append(args, string(section))
+	for i, n := range names {
+		placeholders[i] = "?"
+		args = append(args, n)
+	}
+	q := fmt.Sprintf(`
+		SELECT character, section, position, target_name, expires_at, observed_at
+		FROM lockout_entries
+		WHERE section = ? AND target_name COLLATE NOCASE IN (%s)
+		ORDER BY target_name COLLATE NOCASE, character COLLATE NOCASE
+	`, strings.Join(placeholders, ","))
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query lockouts by section/targets: %w", err)
 	}
 	defer rows.Close()
 	out := []Entry{}

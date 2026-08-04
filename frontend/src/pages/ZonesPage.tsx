@@ -11,14 +11,17 @@ import {
   getZoneExpansions,
   getZoneForage,
   getZoneGroundSpawns,
+  getZoneLockouts,
   getZoneRaw,
   searchZones,
 } from '../services/api'
 import RawDataModal from '../components/RawDataModal'
 import { ZoneMapPanel } from '../components/maps/ZoneMapPanel'
 import { useHasMap } from '../hooks/useMapZones'
+import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
 import type { NPC } from '../types/npc'
 import type { Zone, ZoneConnection, ZoneDropItem, ZoneForageItem, ZoneGroundSpawn } from '../types/zone'
+import type { ZoneLockoutBoss } from '../types/lockouts'
 import { className, npcDisplayName, npcLevelLabel } from '../lib/npcHelpers'
 import { zoneExpansionName } from '../lib/enumsCache'
 
@@ -758,9 +761,137 @@ function ForageTab({ shortName }: { shortName: string }): React.ReactElement {
   )
 }
 
+// ── Tab: Lockouts ──────────────────────────────────────────────────────────────
+
+/** Formats a positive remaining duration (ms) as "5d 13h 25m", dropping
+ *  leading zero units. Matches LockoutTrackerPage's format, minus seconds —
+ *  this view ticks less urgently since it's a zone-wide overview, not a
+ *  single character's live countdown. */
+function formatRemainingShort(ms: number): string {
+  let s = Math.floor(ms / 1000)
+  const d = Math.floor(s / 86400)
+  s -= d * 86400
+  const h = Math.floor(s / 3600)
+  s -= h * 3600
+  const m = Math.floor(s / 60)
+  const parts: string[] = []
+  if (d > 0) parts.push(`${d}d`)
+  if (d > 0 || h > 0) parts.push(`${h}h`)
+  parts.push(`${m}m`)
+  return parts.join(' ')
+}
+
+function LockoutsTab({ shortName }: { shortName: string }): React.ReactElement {
+  const navigate = useNavigate()
+  const { active } = useActiveCharacter()
+  const [bosses, setBosses] = useState<ZoneLockoutBoss[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [nowMs, setNowMs] = useState(() => Date.now())
+
+  useEffect(() => {
+    setLoading(true)
+    setError(null)
+    getZoneLockouts(shortName)
+      .then((res) => setBosses(res.bosses ?? []))
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setLoading(false))
+  }, [shortName])
+
+  // Ticks the countdowns; a minute is plenty granular for a zone overview.
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 60_000)
+    return () => clearInterval(id)
+  }, [])
+
+  if (loading) return <LoadingState />
+  if (error) return <ErrorState message={error} />
+  if (bosses.length === 0) {
+    return <EmptyState message="No raid targets tracked in this zone." />
+  }
+
+  return (
+    <div
+      className="rounded border"
+      style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+    >
+      {bosses.map((boss, i) => {
+        // The active character's chip leads, then everyone else who has data,
+        // alphabetically. Characters with no captured entry for this boss are
+        // left out entirely rather than shown as an unknown state.
+        const chars = [...(boss.characters ?? [])].sort((a, b) => {
+          if (a.character === active) return -1
+          if (b.character === active) return 1
+          return a.character.localeCompare(b.character)
+        })
+        return (
+          <div
+            key={boss.target_name}
+            className="flex flex-wrap items-baseline gap-x-4 gap-y-1 px-3 py-2"
+            style={{ borderTop: i > 0 ? '1px solid var(--color-border)' : undefined }}
+          >
+            {boss.npc_id ? (
+              <button
+                onClick={() => navigate(`/npcs?select=${boss.npc_id}`)}
+                className="shrink-0 text-left text-sm font-medium underline decoration-dotted"
+                style={{ color: 'var(--color-foreground)' }}
+                title="Open in the NPC database"
+              >
+                {boss.target_name}
+              </button>
+            ) : (
+              <span
+                className="shrink-0 text-sm font-medium"
+                style={{ color: 'var(--color-foreground)' }}
+              >
+                {boss.target_name}
+              </span>
+            )}
+            {chars.length === 0 ? (
+              <span className="text-xs" style={{ color: 'var(--color-muted)' }}>
+                No lockout data
+              </span>
+            ) : (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {chars.map((c) => {
+                  const remainingMs = c.expires_at > 0 ? c.expires_at * 1000 - nowMs : 0
+                  const available = c.expires_at === 0 || remainingMs <= 0
+                  return (
+                    <span
+                      key={c.character}
+                      className="rounded px-1.5 py-0.5 text-[11px] tabular-nums"
+                      style={{
+                        backgroundColor: available
+                          ? 'color-mix(in srgb, var(--color-success) 15%, transparent)'
+                          : 'var(--color-surface-2)',
+                        color: available ? 'var(--color-success)' : 'var(--color-foreground)',
+                        fontWeight: c.character === active ? 700 : 400,
+                      }}
+                    >
+                      {c.character}: {available ? 'Available' : formatRemainingShort(remainingMs)}
+                    </span>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 // ── Detail panel ───────────────────────────────────────────────────────────────
 
-type TabKey = 'overview' | 'map' | 'npcs' | 'connections' | 'drops' | 'ground-spawns' | 'forage'
+type TabKey =
+  | 'overview'
+  | 'map'
+  | 'npcs'
+  | 'connections'
+  | 'drops'
+  | 'ground-spawns'
+  | 'forage'
+  | 'lockouts'
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'overview', label: 'Overview' },
@@ -770,6 +901,7 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'drops', label: 'Drops' },
   { key: 'ground-spawns', label: 'Ground Spawns' },
   { key: 'forage', label: 'Forage' },
+  { key: 'lockouts', label: 'Lockouts' },
 ]
 
 interface DetailPanelProps {
@@ -893,6 +1025,7 @@ function DetailPanel({ zone }: DetailPanelProps): React.ReactElement {
         {activeTab === 'drops' && <DropsTab shortName={zone.short_name} />}
         {activeTab === 'ground-spawns' && <GroundSpawnsTab shortName={zone.short_name} />}
         {activeTab === 'forage' && <ForageTab shortName={zone.short_name} />}
+        {activeTab === 'lockouts' && <LockoutsTab shortName={zone.short_name} />}
       </div>
 
       <RawDataModal
