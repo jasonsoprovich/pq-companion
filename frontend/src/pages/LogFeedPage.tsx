@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Activity, Trash2, AlertTriangle, CheckCircle2, Circle, Search, Film, Play, Pause, Square, FolderOpen, Loader2, FileText } from 'lucide-react'
+import { Activity, Trash2, AlertTriangle, CheckCircle2, Circle, Search, Film, Play, Pause, Square, FolderOpen, Loader2, FileText, ChevronUp, ChevronDown } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useLogFeed, clearLogFeed, LOG_FEED_MAX } from '../hooks/useLogFeed'
 import { useReplayPrefs, type ReplayPrefs } from '../hooks/useReplayPrefs'
@@ -465,7 +465,7 @@ function BrowsePanel({
         )}
       </div>
       <p className="mt-1 text-[10px]" style={{ color: 'var(--color-muted)' }}>
-        Read any saved character log while the game is closed. Type in the search box to filter, scroll to load older lines. Files are never modified.
+        Read any saved character log while the game is closed. Type in the search box to highlight and jump between matches, scroll to load older lines. Files are never modified.
       </p>
     </div>
   )
@@ -501,8 +501,10 @@ export default function LogFeedPage(): React.ReactElement {
   const [browseNext, setBrowseNext] = useState<number | null>(null)
   const [browseLoading, setBrowseLoading] = useState(false)
   const [browseError, setBrowseError] = useState<string | null>(null)
-  // Debounced search term so typing doesn't fire a request per keystroke.
-  const [debouncedSearch, setDebouncedSearch] = useState('')
+  // Which occurrence of `search` is the active one, for the "N of M" counter
+  // and Prev/Next navigation. Index into matchRowIndices below, not a line
+  // number — reset whenever the query or mode changes.
+  const [matchCursor, setMatchCursor] = useState(0)
 
   // Load tailer + replay status once on mount.
   useEffect(() => {
@@ -527,15 +529,55 @@ export default function LogFeedPage(): React.ReactElement {
   }, [])
   const wsState = useWebSocket(handleMessage)
 
-  const visibleEvents = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    if (!q) return events
-    return events.filter(
-      (ev) =>
-        ev.message.toLowerCase().includes(q) ||
-        ev.type.toLowerCase().includes(q)
-    )
-  }, [events, search])
+  // Search no longer hides non-matching lines — it used to filter both the
+  // live feed and the browse results down to matches only, which threw away
+  // the surrounding lines a user needs to see what led up to (or followed)
+  // a match. Instead every line stays visible and search only marks which
+  // ones match, like a find-in-file widget rather than a filter.
+  const searchQuery = search.trim().toLowerCase()
+  const activeLines = mode === 'browse' ? browseLines : events
+
+  const matchRowIndices = useMemo(() => {
+    if (!searchQuery) return []
+    const idxs: number[] = []
+    activeLines.forEach((ln, i) => {
+      if (ln.message.toLowerCase().includes(searchQuery)) idxs.push(i)
+    })
+    return idxs
+  }, [activeLines, searchQuery])
+
+  // Reverse lookup: line index -> position within matchRowIndices, so each
+  // row can carry a stable data-match-idx for scroll-to-match.
+  const matchIdxByRow = useMemo(() => {
+    const m = new Map<number, number>()
+    matchRowIndices.forEach((rowI, mi) => m.set(rowI, mi))
+    return m
+  }, [matchRowIndices])
+
+  const safeMatchCursor = matchRowIndices.length
+    ? ((matchCursor % matchRowIndices.length) + matchRowIndices.length) % matchRowIndices.length
+    : 0
+
+  // A new query (or switching Live/Browse) always starts back at the first
+  // match rather than wherever the cursor happened to be left.
+  useEffect(() => {
+    setMatchCursor(0)
+  }, [searchQuery, mode])
+
+  const scrollToMatch = useCallback((cursor: number) => {
+    const el = feedRef.current?.querySelector(`[data-match-idx="${cursor}"]`)
+    el?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }, [])
+
+  // Jump whenever the resolved cursor changes — covers both explicit
+  // Prev/Next clicks and the reset-to-0 above landing on a real match.
+  useEffect(() => {
+    if (matchRowIndices.length > 0) scrollToMatch(safeMatchCursor)
+    // Only the cursor position should trigger a scroll; matchRowIndices
+    // changing on its own (e.g. new live events streaming in) must not keep
+    // yanking the view back to the current match.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [safeMatchCursor])
 
   // Auto-scroll to top when new events arrive (live feed is newest-first).
   useEffect(() => {
@@ -543,12 +585,6 @@ export default function LogFeedPage(): React.ReactElement {
       feedRef.current.scrollTop = 0
     }
   }, [events, mode])
-
-  // Debounce the search box (drives the browse query and live filter).
-  useEffect(() => {
-    const id = setTimeout(() => setDebouncedSearch(search.trim()), 250)
-    return () => clearTimeout(id)
-  }, [search])
 
   // Load the candidate file list the first time Browse is opened, defaulting
   // to the most recently played character.
@@ -562,7 +598,12 @@ export default function LogFeedPage(): React.ReactElement {
       .catch((err: Error) => setBrowseError(err.message))
   }, [mode, browseFiles.length])
 
-  // (Re)load the first page whenever the file, type filter, or search changes.
+  // (Re)load the first page whenever the file or type filter changes. Search
+  // is deliberately NOT a dependency here — it used to be sent to the
+  // backend as a filter (q), which dropped every non-matching line from the
+  // response. That made a text search unable to show the lines around a
+  // match. Search now only highlights/navigates within whatever page is
+  // already loaded, so it no longer needs to re-fetch.
   useEffect(() => {
     if (mode !== 'browse' || !browseFile) {
       setBrowseLines([])
@@ -577,7 +618,6 @@ export default function LogFeedPage(): React.ReactElement {
     browseLog(
       {
         file: browseFile,
-        q: debouncedSearch || undefined,
         type: browseType || undefined,
         limit: BROWSE_LIMIT,
       },
@@ -596,9 +636,11 @@ export default function LogFeedPage(): React.ReactElement {
         if (!ac.signal.aborted) setBrowseLoading(false)
       })
     return () => ac.abort()
-  }, [mode, browseFile, browseType, debouncedSearch])
+  }, [mode, browseFile, browseType])
 
-  // Fetch the next (older) page and append. Called on scroll near the bottom.
+  // Fetch the next (older) page and append. Called on scroll near the bottom,
+  // or by "Load older lines" below when the user is chasing a match further
+  // back than what's currently loaded.
   const loadMoreBrowse = useCallback(() => {
     if (browseLoading || browseNext == null || !browseFile) return
     browseAbortRef.current?.abort()
@@ -608,7 +650,6 @@ export default function LogFeedPage(): React.ReactElement {
     browseLog(
       {
         file: browseFile,
-        q: debouncedSearch || undefined,
         type: browseType || undefined,
         beforeOffset: browseNext,
         limit: BROWSE_LIMIT,
@@ -626,7 +667,27 @@ export default function LogFeedPage(): React.ReactElement {
       .finally(() => {
         if (!ac.signal.aborted) setBrowseLoading(false)
       })
-  }, [browseLoading, browseNext, browseFile, debouncedSearch, browseType])
+  }, [browseLoading, browseNext, browseFile, browseType])
+
+  // Reaching (or already at) the last known match auto-loads the next older
+  // page in Browse mode, so repeatedly pressing Next can walk a search all
+  // the way back through the file instead of stopping at whatever happened
+  // to be on the first loaded page.
+  const gotoNextMatch = useCallback(() => {
+    if (matchRowIndices.length === 0) {
+      if (mode === 'browse' && browseNext != null) loadMoreBrowse()
+      return
+    }
+    if (matchCursor >= matchRowIndices.length - 1 && mode === 'browse' && browseNext != null) {
+      loadMoreBrowse()
+    }
+    setMatchCursor((c) => (c + 1) % matchRowIndices.length)
+  }, [matchRowIndices.length, matchCursor, mode, browseNext, loadMoreBrowse])
+
+  const gotoPrevMatch = useCallback(() => {
+    if (matchRowIndices.length === 0) return
+    setMatchCursor((c) => (c - 1 + matchRowIndices.length) % matchRowIndices.length)
+  }, [matchRowIndices.length])
 
   function handleScroll(): void {
     if (!feedRef.current) return
@@ -695,8 +756,6 @@ export default function LogFeedPage(): React.ReactElement {
           >
             {mode === 'browse'
               ? `${browseLines.length}${browseNext != null ? '+' : ''} lines`
-              : search
-              ? `${visibleEvents.length} / ${events.length}`
               : `${events.length} / ${LOG_FEED_MAX}`}
           </span>
         </div>
@@ -721,8 +780,10 @@ export default function LogFeedPage(): React.ReactElement {
               </button>
             ))}
           </div>
-          {/* Search input */}
-          <div style={{ position: 'relative' }}>
+          {/* Search input — a find-in-view widget, not a filter: matches are
+              highlighted in place among all the surrounding lines, with
+              Enter/Shift+Enter (or the arrows) stepping between them. */}
+          <div className="flex items-center" style={{ position: 'relative' }}>
             <Search
               size={11}
               style={{
@@ -736,12 +797,19 @@ export default function LogFeedPage(): React.ReactElement {
             />
             <input
               type="text"
-              placeholder={mode === 'browse' ? 'Search log…' : 'Filter events…'}
+              placeholder={mode === 'browse' ? 'Find in log…' : 'Find in feed…'}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  if (e.shiftKey) gotoPrevMatch()
+                  else gotoNextMatch()
+                }
+              }}
               style={{
                 paddingLeft: 24,
-                paddingRight: 8,
+                paddingRight: searchQuery ? 56 : 8,
                 paddingTop: 4,
                 paddingBottom: 4,
                 fontSize: 11,
@@ -753,7 +821,43 @@ export default function LogFeedPage(): React.ReactElement {
                 outline: 'none',
               }}
             />
+            {searchQuery && (
+              <span
+                className="tabular-nums"
+                style={{
+                  position: 'absolute',
+                  right: 8,
+                  fontSize: 10,
+                  color: matchRowIndices.length ? 'var(--color-muted)' : 'var(--color-danger)',
+                  pointerEvents: 'none',
+                }}
+              >
+                {matchRowIndices.length ? `${safeMatchCursor + 1}/${matchRowIndices.length}` : '0/0'}
+              </span>
+            )}
           </div>
+          {searchQuery && (
+            <div className="flex items-center" style={{ border: '1px solid var(--color-border)', borderRadius: 4, overflow: 'hidden' }}>
+              <button
+                onClick={gotoPrevMatch}
+                disabled={matchRowIndices.length === 0}
+                title="Previous match (Shift+Enter)"
+                className="flex items-center justify-center px-1.5 py-1 disabled:opacity-30"
+                style={{ color: 'var(--color-muted)' }}
+              >
+                <ChevronUp size={12} />
+              </button>
+              <button
+                onClick={gotoNextMatch}
+                disabled={matchRowIndices.length === 0 && !(mode === 'browse' && browseNext != null)}
+                title="Next match (Enter)"
+                className="flex items-center justify-center px-1.5 py-1 disabled:opacity-30"
+                style={{ color: 'var(--color-muted)', borderLeft: '1px solid var(--color-border)' }}
+              >
+                <ChevronDown size={12} />
+              </button>
+            </div>
+          )}
           {mode === 'live' && <ConnPill state={wsState} status={status} />}
           {mode === 'live' && (
             <button
@@ -845,7 +949,9 @@ export default function LogFeedPage(): React.ReactElement {
             loading={browseLoading}
             error={browseError}
             hasMore={browseNext != null}
-            search={debouncedSearch}
+            searchQuery={searchQuery}
+            matchIdxByRow={matchIdxByRow}
+            currentMatchIdx={searchQuery ? safeMatchCursor : -1}
             onPickLive={() => setMode('live')}
             onPlayFrom={browseFile ? handlePlayFrom : undefined}
           />
@@ -867,19 +973,21 @@ export default function LogFeedPage(): React.ReactElement {
               Browse a saved log instead
             </button>
           </div>
-        ) : visibleEvents.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-3 py-20">
-            <Search size={32} style={{ color: 'var(--color-muted)' }} />
-            <p className="text-sm" style={{ color: 'var(--color-muted)' }}>
-              No events match "{search}"
-            </p>
-          </div>
         ) : (
           <table className="w-full text-xs" style={{ borderCollapse: 'collapse' }}>
             <tbody>
-              {visibleEvents.map((ev, i) => (
-                <EventRow key={i} ev={ev} />
-              ))}
+              {events.map((ev, i) => {
+                const matchIdx = matchIdxByRow.get(i)
+                return (
+                  <EventRow
+                    key={i}
+                    ev={ev}
+                    searchQuery={searchQuery}
+                    matchIdx={matchIdx}
+                    isCurrentMatch={matchIdx === safeMatchCursor}
+                  />
+                )
+              })}
             </tbody>
           </table>
         )}
@@ -897,7 +1005,9 @@ function BrowseBody({
   loading,
   error,
   hasMore,
-  search,
+  searchQuery,
+  matchIdxByRow,
+  currentMatchIdx,
   onPickLive,
   onPlayFrom,
 }: {
@@ -906,7 +1016,9 @@ function BrowseBody({
   loading: boolean
   error: string | null
   hasMore: boolean
-  search: string
+  searchQuery: string
+  matchIdxByRow: Map<number, number>
+  currentMatchIdx: number
   onPickLive: () => void
   onPlayFrom?: (timestamp: string) => void
 }): React.ReactElement {
@@ -942,9 +1054,7 @@ function BrowseBody({
         ) : (
           <>
             <Search size={28} style={{ color: 'var(--color-muted)' }} />
-            <p className="text-sm" style={{ color: 'var(--color-muted)' }}>
-              {search ? `No lines match "${search}"` : 'No readable lines in this log.'}
-            </p>
+            <p className="text-sm" style={{ color: 'var(--color-muted)' }}>No readable lines in this log.</p>
           </>
         )}
       </div>
@@ -954,9 +1064,19 @@ function BrowseBody({
     <>
       <table className="w-full text-xs" style={{ borderCollapse: 'collapse' }}>
         <tbody>
-          {lines.map((ev, i) => (
-            <EventRow key={i} ev={ev} onPlayFrom={onPlayFrom} />
-          ))}
+          {lines.map((ev, i) => {
+            const matchIdx = matchIdxByRow.get(i)
+            return (
+              <EventRow
+                key={i}
+                ev={ev}
+                onPlayFrom={onPlayFrom}
+                searchQuery={searchQuery}
+                matchIdx={matchIdx}
+                isCurrentMatch={matchIdx === currentMatchIdx}
+              />
+            )
+          })}
         </tbody>
       </table>
       <div className="flex items-center justify-center gap-2 py-3 text-[11px]" style={{ color: 'var(--color-muted)' }}>
@@ -966,7 +1086,7 @@ function BrowseBody({
             Loading older lines…
           </>
         ) : hasMore ? (
-          'Scroll for older lines'
+          searchQuery ? 'Scroll (or press Next) for older lines' : 'Scroll for older lines'
         ) : (
           'Start of log reached'
         )}
@@ -975,16 +1095,55 @@ function BrowseBody({
   )
 }
 
+// highlightMatches wraps every case-insensitive occurrence of query in text
+// with <mark>, so a search reads as an in-place highlight (like an editor's
+// find widget) instead of the message being replaced or filtered away.
+function highlightMatches(text: string, query: string): React.ReactNode {
+  if (!query) return text
+  const lower = text.toLowerCase()
+  const q = query.toLowerCase()
+  const parts: React.ReactNode[] = []
+  let i = 0
+  let key = 0
+  while (i < text.length) {
+    const idx = lower.indexOf(q, i)
+    if (idx === -1) {
+      parts.push(text.slice(i))
+      break
+    }
+    if (idx > i) parts.push(text.slice(i, idx))
+    parts.push(
+      <mark
+        key={key++}
+        style={{ backgroundColor: '#f59e0b', color: '#1a1a1a', borderRadius: 2, padding: '0 1px' }}
+      >
+        {text.slice(idx, idx + query.length)}
+      </mark>,
+    )
+    i = idx + query.length
+  }
+  return parts
+}
+
 // EventRow renders one line for both the live feed and the browse view, so it
 // accepts the minimal shared shape rather than the narrow LogEvent union.
 // onPlayFrom, when provided, shows a hover play button that replays from this
-// line's timestamp.
+// line's timestamp. searchQuery/matchIdx/isCurrentMatch drive in-place match
+// highlighting — matchIdx is this row's position among all matches (used as
+// the scroll-to-match anchor); isCurrentMatch is whether it's the one the
+// Prev/Next cursor currently points at.
 function EventRow({
   ev,
   onPlayFrom,
+  searchQuery = '',
+  matchIdx,
+  isCurrentMatch = false,
 }: {
   ev: { type: string; timestamp: string; message: string }
   onPlayFrom?: (timestamp: string) => void
+  searchQuery?: string
+  matchIdx?: number
+  isCurrentMatch?: boolean
 }): React.ReactElement {
   const ts = new Date(ev.timestamp)
   const timeStr = ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
@@ -992,7 +1151,12 @@ function EventRow({
   return (
     <tr
       className="group border-b"
-      style={{ borderColor: 'var(--color-border)' }}
+      data-match-idx={matchIdx !== undefined ? matchIdx : undefined}
+      style={{
+        borderColor: 'var(--color-border)',
+        backgroundColor: isCurrentMatch ? 'rgba(245, 158, 11, 0.16)' : undefined,
+        boxShadow: isCurrentMatch ? 'inset 2px 0 0 0 #f59e0b' : undefined,
+      }}
     >
       {/* Play-from-here (appears on row hover) */}
       {onPlayFrom && (
@@ -1028,7 +1192,7 @@ function EventRow({
         className="px-3 py-1.5 font-mono"
         style={{ color: 'var(--color-foreground)', verticalAlign: 'middle', wordBreak: 'break-word' }}
       >
-        {ev.message}
+        {searchQuery ? highlightMatches(ev.message, searchQuery) : ev.message}
       </td>
     </tr>
   )
