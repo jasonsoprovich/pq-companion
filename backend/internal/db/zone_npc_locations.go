@@ -117,6 +117,23 @@ type RaidTargetInZone struct {
 //     real loottable_id) has raid_target=0 — the exact pattern already
 //     documented on GetNPCVariantsByNameInZone for the overlay's lookup
 //     path, not previously needed here since this query didn't exist yet.
+//
+// akheva and griegsend: NOT /sll-confirmed (no character has captured a
+// lockout there) — added on structural confidence alone from a game-wide
+// sweep for the same shape as the ssratemple script-spawned cases, since a
+// wrong id here only costs a mismatched NPC detail-page link (lockout
+// status matching is by name, not id) rather than an incorrect lockout
+// status. Re-derive/adjust if a real `/sll` capture ever disagrees.
+//   - Shei Vinitras (akheva): real row 179017 "Shei_Vinitras_" (loottable
+//     13262, 650k HP) has raid_target=0 and no spawn2 row; decoy 179032
+//     "#Shei_Vinitras" has spawn2 in akheva and raid_target=1 but
+//     loottable_id=0 — a near-exact mirror of the Emperor Ssraeshza shape.
+//   - Grieg Veneficus (griegsend): weaker match. "#Grieg_Veneficus" (163156,
+//     325k HP) has the spawn2 point and raid_target=1 but loottable_id=0;
+//     the only loot-bearing row, 163389 "Grieg_Veneficus" (loottable
+//     91472), is HP 200 / race 1 — reads like a scripted "loot corpse" NPC
+//     rather than the actual combat model, so it's less certain this is the
+//     id `/sll` would reference, but it's the best candidate available.
 var RaidTargetOverrides = map[string][]int{
 	"ssratemple": {
 		162491, // Emperor Ssraeshza
@@ -128,6 +145,8 @@ var RaidTargetOverrides = map[string][]int{
 		162178, // Rhag`Zhezum
 		162030, // Arch Lich Rhag`Zadune
 	},
+	"akheva":    {179017}, // Shei Vinitras
+	"griegsend": {163389}, // Grieg Veneficus
 }
 
 // stripNPCDecoration reverses the placeholder decoration NPCNameVariantCandidates
