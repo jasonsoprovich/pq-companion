@@ -1674,6 +1674,31 @@ hardening — no new features, but a broad sweep of reliability fixes.
   casts by caster identity instead of by target, fixing false-positive
   flags in multi-cleric raids where every cleric heals the same tank.
 
+## v0.19.0 — Live Maps, Discord Voice Overlay, Zone Loot Lockouts
+
+- **Live Maps** — a rendered zone-geometry map system built from a Go
+  port of the .s3d/WLD client-file reader (`cmd/mapgen`), writing
+  walls, floors, and depth-tinted contours to `maps.db`. A standalone
+  Maps page and a Map tab on every zone share one panel, with Outline
+  and Detailed display modes, live player position via the Zeal pipe, a
+  popout overlay window, and user-authored annotations/markers that
+  also write back to the in-game `/map`. NPC spawn points render with
+  patrol routes and trap markers, and a user-installed Brewall-style
+  map pack can be rendered as a third mode alongside the built-in ones.
+- **Discord Voice overlay** (#150) — a popout overlay embedding
+  Discord's own hosted StreamKit Overlay page (Discord declined the
+  local RPC approach originally requested), showing a live
+  voice-channel roster with a speaking highlight. Supports multiple
+  named links, adjustable content-area transparency, and full Pop Out
+  All / Close All Popouts integration.
+- **Zone Loot Lockouts** — a per-zone sub-tab showing every character's
+  loot-lockout status at a glance, alongside log-based backfill support
+  for the existing Lockout Tracker.
+- **CH Chain possible-miss detection** now also catches interrupted
+  casts, not just missing heal-landed confirmations.
+- **Discord webhook trigger action** — triggers can fire an outbound
+  Discord webhook post directly.
+
 ## Phase 11 — Project Website
 _Planned_
 
