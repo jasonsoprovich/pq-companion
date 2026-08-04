@@ -85,24 +85,49 @@ type RaidTargetInZone struct {
 }
 
 // RaidTargetOverrides force-includes npc_types ids as raid-target bosses for
-// a zone even though they fail the normal spawn2+raid_target=1 query in
-// GetRaidTargetsByZone — either the encounter is spawned purely by quest
-// script with no spawn2 row at all (see ScriptSpawnedNPCOverrides), or
-// raid_target is 0 on the row that actually carries the loot table, both
-// confirmed gaps in the upstream Quarm dump rather than something to
-// hand-edit in quarm.db (query-side correction — see
-// project_quarm_data_corrections memory). Keyed by zone short_name. Confirm
-// future additions the same way these two were found: the boss's real
-// target_name appears in a captured `/sll` snapshot (lockout_entries) but
-// GetRaidTargetsByZone doesn't surface it.
+// a zone even though they fail the normal spawn2+raid_target=1+race!=127
+// query in GetRaidTargetsByZone — either the encounter is spawned purely by
+// quest script with no spawn2 row at all (see ScriptSpawnedNPCOverrides), or
+// raid_target is 0 on the row that actually carries the loot table (both
+// confirmed gaps in the upstream Quarm dump — query-side correction, see
+// project_quarm_data_corrections memory), or the only raid_target=1 row
+// sharing the name is a race=127/bodytype=65 untargetable decoy (see the
+// GetNPCVariantsByNameInZone doc comment) that the base query's race filter
+// now excludes outright, leaving the real encounter unreachable without an
+// override. Keyed by zone short_name. Confirm future additions the same way
+// these were found: the boss's real target_name appears in a captured
+// `/sll` snapshot (lockout_entries) but GetRaidTargetsByZone doesn't surface
+// it — or, for the race=127 shape, both rows exist with a shared name but
+// opposite raid_target/loottable_id/race signatures.
 //
-// ssratemple: Emperor Ssraeshza's real encounter row (162491,
-// "Emperor_Ssraeshza_") has raid_target=0 and no spawn2 row (see
-// ScriptSpawnedNPCOverrides, npc 162065 "#Emperor_Ssraeshza" is a decoy).
-// Blood of Ssraeshza's real row (162189, "#Blood_of_Ssraeshza", loottable
-// 12840) also has raid_target=0.
+// ssratemple, all confirmed against real captured `/sll` data (character
+// Osui) or the documented decoy pattern for this exact zone:
+//   - Emperor Ssraeshza: real row 162491 "Emperor_Ssraeshza_" has
+//     raid_target=0 and no spawn2 row; decoy 162065 "#Emperor_Ssraeshza" has
+//     spawn2 but loottable_id=0.
+//   - Blood of Ssraeshza: real row 162189 "#Blood_of_Ssraeshza" (loottable
+//     12840) has raid_target=0, no other row shares the name.
+//   - Vyzh`dra the Exiled (162039) and Vyzh`dra the Cursed (162042): both
+//     raid_target=0 with no spawn2 row anywhere (script-spawned, no decoy).
+//   - a glyph covered serpent (162037): same shape as the Vyzh`dra pair.
+//   - Rhag`Mozdezh (162192), Rhag`Zhezum (162178), Arch Lich Rhag`Zadune
+//     (162030): each has a same-named race=127/bodytype=65 decoy
+//     (162264/162241/162244, ~20k HP, loottable_id=0) that carries
+//     raid_target=1 while the real encounter (race 217, 200k–825k HP, a
+//     real loottable_id) has raid_target=0 — the exact pattern already
+//     documented on GetNPCVariantsByNameInZone for the overlay's lookup
+//     path, not previously needed here since this query didn't exist yet.
 var RaidTargetOverrides = map[string][]int{
-	"ssratemple": {162491, 162189},
+	"ssratemple": {
+		162491, // Emperor Ssraeshza
+		162189, // Blood of Ssraeshza
+		162039, // Vyzh`dra the Exiled
+		162042, // Vyzh`dra the Cursed
+		162037, // a glyph covered serpent
+		162192, // Rhag`Mozdezh
+		162178, // Rhag`Zhezum
+		162030, // Arch Lich Rhag`Zadune
+	},
 }
 
 // stripNPCDecoration reverses the placeholder decoration NPCNameVariantCandidates
@@ -138,8 +163,21 @@ func (db *DB) GetRaidTargetsByZone(shortName string) ([]RaidTargetInZone, error)
 		JOIN spawnentry se ON se.spawngroupID = s.spawngroupID
 		JOIN npc_types n ON n.id = se.npcID
 		WHERE s.zone = ? AND n.raid_target = 1
-		  -- '#' names are utility/script rows with no physical presence.
-		  AND n.name NOT LIKE '#%'
+		  -- A '#' name prefix does NOT reliably mean "decoy/utility row" for
+		  -- raid encounters — Lord Inquisitor Seru's only row is
+		  -- "#Lord_Inquisitor_Seru" and it's the real, lootable boss. What
+		  -- actually distinguishes a lockout-capable encounter from a
+		  -- combat-only add sharing its raid_target flag (e.g. ssratemple's
+		  -- "#Ssraeshzian_Blood_Golem", raid_target=1 but loottable_id=0) is
+		  -- whether it has a loot table at all: /sll lockouts are inherently
+		  -- loot-driven, so a boss with none can never produce one.
+		  AND n.loottable_id != 0
+		  -- race 127 / bodytype 65 is Quarm's untargetable-decoy convention;
+		  -- several raid bosses have a same-named decoy row that wrongly
+		  -- carries raid_target=1 while the real encounter doesn't (see
+		  -- RaidTargetOverrides) — exclude it so the decoy never wins by
+		  -- default instead of surfacing as a gap to override.
+		  AND n.race != 127
 		GROUP BY n.name
 		ORDER BY n.name`, shortName)
 	if err != nil {
