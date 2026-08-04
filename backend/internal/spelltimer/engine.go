@@ -219,18 +219,30 @@ func sameSpellForDedup(existing *ActiveTimer, name string, spellID int) bool {
 	return spellID > 0 && existing.SpellID == spellID
 }
 
-// sameLandOrphan reports whether existing is a target-less, non-charm
-// detrimental created by a trigger that fired on the same land line the
-// spell-landed pipeline just resolved (identical land timestamp). That makes
+// sameLandOrphan reports whether existing is the trigger-pack twin of the
+// spell the pipeline just resolved for target: a non-charm detrimental
+// created by a trigger that fired on the same land line (identical land
+// timestamp) and carries either no target or that same target. That makes
 // it the trigger-pack twin of the spell the pipeline named — e.g. the
 // Enchanter pack's broad "Tashanian" trigger firing on the shared
 // "<mob> glances nervously about." text while the pipeline resolves the actual
 // Tash-line spell cast. onSpellLanded absorbs such an orphan into the
 // target-bound timer so the user sees one row (with a target) instead of two.
+//
+// existing.TargetName is no longer guaranteed empty: since the trigger
+// engine started falling back to the current combat target for capture-less
+// triggers (see resolveTimerTarget's caller in trigger/engine.go), a
+// same-family trigger with no capture group — like the broad "Rapture" or
+// "Tashanian" triggers above — now arrives with a real target already set.
+// Requiring an exact target match alongside the empty-target case keeps this
+// absorbing that trigger twin without reopening the AoE-mez guard directly
+// below, which still needs distinct rows for a same-named timer landed on
+// several different mobs.
+//
 // Charm is excluded — its orphan is intentionally kept distinct (see
 // removeOnKill) and never shares a land line with a different spell here.
-func sameLandOrphan(existing *ActiveTimer, landedAt time.Time) bool {
-	return existing.TargetName == "" &&
+func sameLandOrphan(existing *ActiveTimer, target string, landedAt time.Time) bool {
+	return (existing.TargetName == "" || existing.TargetName == target) &&
 		!existing.IsCharm &&
 		isDetrimentalCategory(existing.Category) &&
 		existing.StartsAt.Equal(landedAt)
@@ -1120,7 +1132,7 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 		// AoE mez to a single timer (the reported bug).
 		sameSpell := (existing.TargetName == "" || existing.TargetName == target) &&
 			sameSpellForDedup(existing, spellName, spell.ID)
-		sameLand := landDetrimental && sameLandOrphan(existing, landedAt)
+		sameLand := landDetrimental && sameLandOrphan(existing, target, landedAt)
 		if !sameSpell && !sameLand {
 			continue
 		}
@@ -1235,6 +1247,24 @@ var ambiguousLandGroups = []ambiguousLandGroup{
 		displayName: "Speed of the Shissar/Brood",
 		repSpellID:  1939,
 		memberIDs:   map[int]bool{1939: true, 2895: true},
+	},
+	{
+		// 64 Resist Magic, 72 Group Resist Magic, 964 Resistance to Magic,
+		// 3242 Guard of Druzzil — all four share the identical "<Name> is
+		// resistant to magic." land text. A group cast lands once per member
+		// in quick succession, and any OTHER cast the player makes in that
+		// same window (a heal between land lines, say) overwrites the single
+		// lastCastSpell scalar the primary disambiguation relies on — which
+		// otherwise drops the later members' land lines entirely instead of
+		// refreshing their timer. Falling back to the combined name here
+		// means a refresh still happens rather than silently vanishing; note
+		// the four differ in duration (360/360/720/500), so a fallback land
+		// can undercount for 964/3242 until a recast puts it through the
+		// precise recent-cast path again. repSpellID picks Group Resist
+		// Magic since it's the overwhelmingly common raid-group member.
+		displayName: "Resist Magic",
+		repSpellID:  72,
+		memberIDs:   map[int]bool{64: true, 72: true, 964: true, 3242: true},
 	},
 }
 
