@@ -10,6 +10,7 @@ import { useActivePlayerName, targetSuffix } from '../hooks/useActivePlayerName'
 import { useDisplayThresholds, passesThreshold } from '../hooks/useDisplayThresholds'
 import { WSEvent } from '../lib/wsEvents'
 import { useBuffSortMode, sortBuffs } from '../hooks/useBuffSortMode'
+import { useTimerAppearance, type TimerAppearance } from '../hooks/useTimerAppearance'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
@@ -40,12 +41,22 @@ function barColor(remaining: number, total: number): string {
 
 // ── Timer row ──────────────────────────────────────────────────────────────────
 
-function TimerRow({ timer, activePlayer }: { timer: ActiveTimer; activePlayer: string }): React.ReactElement {
+function TimerRow({
+  timer,
+  activePlayer,
+  appearance,
+}: {
+  timer: ActiveTimer
+  activePlayer: string
+  appearance: TimerAppearance
+}): React.ReactElement {
   const pct =
     timer.duration_seconds > 0
       ? Math.max(0, Math.min(1, timer.remaining_seconds / timer.duration_seconds))
       : 0
-  const color = barColor(timer.remaining_seconds, timer.duration_seconds)
+  // A per-trigger bar_color (Settings → Triggers) overrides the automatic
+  // remaining-time color, matching the in-app dashboard preview.
+  const color = timer.bar_color || barColor(timer.remaining_seconds, timer.duration_seconds)
   const urgent = pct < 0.2
   const onTarget = targetSuffix(timer.target_name, activePlayer)
 
@@ -53,13 +64,13 @@ function TimerRow({ timer, activePlayer }: { timer: ActiveTimer; activePlayer: s
     <div
       style={{
         position: 'relative',
-        padding: '3px 8px',
+        padding: `${appearance.rowPadding}px 8px`,
         borderBottom: '1px solid rgba(255,255,255,0.1)',
         overflow: 'hidden',
         flexShrink: 0,
       }}
     >
-      {/* depleting progress bar — kept at high alpha so it stays readable even when the window opacity is low */}
+      {/* depleting progress bar, opacity from Settings → Spell Overlays */}
       <div
         style={{
           position: 'absolute',
@@ -68,7 +79,7 @@ function TimerRow({ timer, activePlayer }: { timer: ActiveTimer; activePlayer: s
           bottom: 0,
           width: `${pct * 100}%`,
           backgroundColor: color,
-          opacity: 0.55,
+          opacity: appearance.fillOpacity,
           pointerEvents: 'none',
           transition: 'width 1s linear',
         }}
@@ -89,7 +100,7 @@ function TimerRow({ timer, activePlayer }: { timer: ActiveTimer; activePlayer: s
           )}
           <span
             style={{
-              fontSize: 12,
+              fontSize: appearance.nameFontSize,
               color: urgent ? '#f87171' : 'rgba(255,255,255,1)',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
@@ -106,7 +117,7 @@ function TimerRow({ timer, activePlayer }: { timer: ActiveTimer; activePlayer: s
         </div>
         <span
           style={{
-            fontSize: 11,
+            fontSize: appearance.timeFontSize,
             color: urgent ? '#f87171' : color,
             fontVariantNumeric: 'tabular-nums',
             flexShrink: 0,
@@ -149,6 +160,7 @@ export default function BuffTimerWindowPage(): React.ReactElement {
   const [state, setState] = useState<TimerState | null>(null)
   const activePlayer = useActivePlayerName()
   const thresholds = useDisplayThresholds()
+  const appearance = useTimerAppearance()
   const { mode: sortMode, toggle: toggleSort } = useBuffSortMode()
   const [alertsEnabled, toggleAlerts] = useOverlayAlertMute(BUFF_TIMER_ALERTS_KEY)
 
@@ -321,7 +333,7 @@ export default function BuffTimerWindowPage(): React.ReactElement {
             </p>
           </div>
         ) : (
-          buffs.map((t) => <TimerRow key={t.id} timer={t} activePlayer={activePlayer} />)
+          buffs.map((t) => <TimerRow key={t.id} timer={t} activePlayer={activePlayer} appearance={appearance} />)
         )}
       </div>
     </div>
