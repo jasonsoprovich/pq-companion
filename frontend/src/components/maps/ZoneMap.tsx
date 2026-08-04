@@ -1177,7 +1177,7 @@ function DepthControl({
       >
         <div className="range-dual-track" />
         <div
-          className="range-dual-fill"
+          className={`range-dual-fill${auto ? ' range-dual-fill-auto' : ''}`}
           style={{ left: `${pct(cur.lo)}%`, width: `${pct(cur.hi) - pct(cur.lo)}%` }}
         />
         {/* Dragging either thumb engages the filter, so there is no separate

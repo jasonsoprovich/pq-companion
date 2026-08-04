@@ -128,6 +128,22 @@ input[type="range"] {
   border-radius: 2px;
   background: var(--color-primary);
 }
+/* Auto mode moves this fill on its own as the player's height changes, so it
+   needs to read as "live" rather than as an ordinary manually-set range. */
+.range-dual .range-dual-fill-auto {
+  background-image: repeating-linear-gradient(
+    90deg,
+    var(--color-primary) 0px,
+    var(--color-primary) 4px,
+    transparent 4px,
+    transparent 8px
+  );
+  animation: range-dual-fill-auto-pulse 1.6s ease-in-out infinite;
+}
+@keyframes range-dual-fill-auto-pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.55; }
+}
 
 body {
   background-color: var(--color-background);

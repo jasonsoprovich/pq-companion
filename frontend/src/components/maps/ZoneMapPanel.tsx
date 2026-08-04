@@ -721,9 +721,9 @@ export function ZoneMapPanel({
       {mode === 'external' && !loading && external?.count === 0 && (
         <div
           className="flex shrink-0 items-start gap-2 rounded border px-2 py-1.5 text-xs"
-          style={{ borderColor: 'var(--color-border)', color: 'var(--color-muted-foreground)' }}
+          style={{ borderColor: 'var(--color-danger)', color: 'var(--color-muted-foreground)' }}
         >
-          <AlertTriangle size={13} className="mt-px shrink-0" style={{ color: 'var(--color-muted)' }} />
+          <AlertTriangle size={13} className="mt-px shrink-0" style={{ color: 'var(--color-danger)' }} />
           <span>
             Your map pack has no file for {zone.zone}. Switch to Outline or
             Detailed for this zone, or add{' '}
