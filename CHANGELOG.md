@@ -9,6 +9,31 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.19.0 — 2026-08-04
+
+Live Maps arrives — zone geometry, live player position, and user-installed map pack support — alongside a Discord Voice overlay, per-zone loot lockouts, and reliability fixes.
+
+### Highlights
+- **Live Maps** — a brand new Maps feature: rendered zone geometry (walls, floors, depth-tinted contours) parsed directly from EQ client files, a standalone Maps page and per-zone Map tab, live player position via the Zeal pipe, a popout overlay window, user-authored annotations/markers (also written to the in-game `/map`), NPC spawn points with patrol routes and trap markers, and support for rendering a user-installed Brewall-style map pack as a third display mode alongside Outline and Detailed.
+- **Discord Voice overlay** (#150) — embed a StreamKit voice-channel overlay via popout window, with multi-link support, adjustable content-area transparency, and full Pop Out All / Close All Popouts integration.
+- **Zone Loot Lockouts** — a new sub-tab shows every character's loot-lockout status for a zone at a glance, alongside log-based backfill for the Lockout Tracker.
+- **CH Chain possible-miss detection** now also catches interrupted casts, not just missing heal-landed confirmations.
+- **Discord webhook trigger action** — triggers can fire an outbound Discord webhook post directly, alongside existing overlay/audio alerts.
+- Item and NPC detail panels gained sortable source tables and a vendor inventory section, and split into sub-tabs; spells now show Resist Mod and native hover tooltips for NPC signature/proc spells.
+- Log Feed search is now find-in-view (jump-and-highlight) instead of a destructive filter.
+
+### Fixes
+- Mapgen now recovers freestanding walls its boundary-edge detection couldn't see (e.g. the Sseru maze), and height-bar/pack-alignment logic across Maps was tightened up.
+- Spell Timer overlays no longer dual-fire detrimental timers that share land text across a spell family.
+- Settings > Spell Overlays now correctly wires into the real popout timer windows instead of a disconnected preview.
+- Trigger timers bind to the current combat target instead of going orphan and getting wiped by an unrelated kill.
+- Raid-boss detection in zone lockouts/loot tracking is corrected, with structural-confidence overrides for two zones that needed them.
+- Tradeskill recipe display now prefers a race-open container for its label, fixes a race-restriction check that only looked at a recipe's first container, swaps the Fletching 202–268 line for cheaper arrow farming, and excludes non-consumed tools from recipe product results.
+- Shopping List vendor coordinates now display in the correct Y, X order to match in-game `/map` convention.
+- File-import paths (trigger packs, map packs, etc.) now cap decompression size and body limits.
+- Log parser timers now guard against log/system clock skew.
+- The Characters nav section's "Spells" item is renamed to "Spellbook" to disambiguate it from Database > Spells.
+
 ## v0.18.0 — 2026-07-27
 
 A new developer-mode Spell Emote Customizer arrives alongside trigger category export and a CH Chain possible-miss fix that eliminates false flags in large raids.
