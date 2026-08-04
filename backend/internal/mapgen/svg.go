@@ -75,11 +75,13 @@ func RenderComparison(path, title string, panels []Panel, panelW int) error {
 
 // AllTechniques extracts a zone every way, for comparison sheets.
 func AllTechniques(z *Zone, c Classification) []Panel {
+	floor := z.BoundaryEdges()
+	boundaryPlusWalls := append(floor, z.FreestandingWallEdges(floor)...)
 	return []Panel{
 		{
 			Label:    "boundary",
 			Stroke:   "#7dd3fc",
-			Segments: SimplifyCollinear(Chain(z.BoundaryEdges()), 0.03),
+			Segments: SimplifyCollinear(Chain(boundaryPlusWalls), 0.03),
 		},
 		{
 			Label:  "contours",

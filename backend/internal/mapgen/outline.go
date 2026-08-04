@@ -59,7 +59,13 @@ func ExtractOutline(z *Zone, c Classification) []Segment {
 	if c.Occupancy < outlineSilhouetteMaxOcc {
 		return z.SilhouetteCoarse()
 	}
-	chains := dropSmallChains(Chain(z.BoundaryEdges()), outlineMinExtent)
+	floor := z.BoundaryEdges()
+	// Freestanding walls (see FreestandingWallEdges) belong here too — a
+	// zone dense enough to take the boundary branch above is exactly the
+	// case where a wall can stand on a floor that never stops beneath it,
+	// and the outline should show it as much as the detailed layer does.
+	all := append(floor, z.FreestandingWallEdges(floor)...)
+	chains := dropSmallChains(Chain(all), outlineMinExtent)
 	return SimplifyRDP(chains, outlineRDPEpsilon)
 }
 

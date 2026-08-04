@@ -1393,6 +1393,78 @@ compares landmark names on every external fetch and the UI says so outright.
 Landmark matching rather than geometry, because names are the only thing the
 two sources share.
 
+## 15. Freestanding walls on a continuous floor (2026-08-04)
+
+User report: Sanctus Seru has a maze of corridors leading to Lord Inquisitor
+Seru's chamber, visible in Brewall's pack at Z 124–132, but completely absent
+from both our Detailed and Outline layers at any Z range — not thinned, not
+misplaced, just not drawn.
+
+### 15.1 Diagnosis
+
+`BoundaryEdges()` (extract.go) only ever looks at floor triangles
+(`WalkableFaces`, up-normal ≥ 0.55) and draws an edge wherever exactly one
+floor triangle owns it — i.e. wherever a floor slab actually stops. That is
+the whole mechanism `Extract`'s boundary branch and `ExtractOutline`'s
+high-occupancy branch both rely on for every wall in the game.
+
+Sanctus Seru's maze sits on one continuous floor slab (occupancy 0.89) with
+freestanding corridor walls built on top of it. The floor never stops beneath
+them, so they never produce a boundary edge — invisible by construction,
+regardless of simplification, Z range, or layer. Confirmed by slicing wall
+(near-vertical) triangles at Z=128 directly: the maze appears immediately,
+cleanly, matching Brewall's drawing.
+
+### 15.2 The fix: read walls off their own geometry
+
+`FreestandingWallEdges` (wallrim.go) recovers what `BoundaryEdges` cannot see,
+without a manually-picked height:
+
+1. **`wallRimEdges`** — every near-vertical triangle (up ≤ 0.02, i.e. within
+   about a degree of dead vertical) built as a flat rectangular panel has a
+   near-horizontal top and/or bottom rim (endpoints within 0.1 units of the
+   same Z). That rim *is* the wall's own footprint, read straight from its
+   geometry rather than sliced at one global height — which is what lets this
+   generalise across a multi-level zone: each wall's base/cap height travels
+   with it, so an upper-floor maze and a ground-floor one both resolve from
+   the same pass with no per-zone tuning.
+2. **`novelWallEdges`** — most rim edges duplicate a wall BoundaryEdges
+   already drew via its floor's own edge (the ordinary case: a room wall
+   sitting right at its floor's boundary). A spatial filter (segment midpoint
+   within 16 XY / 8 Z units of an existing boundary-edge midpoint) drops
+   those, keeping only walls with no floor discontinuity beneath them.
+
+Wired into `Extract`'s and `ExtractOutline`'s boundary branches only — the
+pathology (continuous floor, standalone walls) is specific to zones dense
+enough to route there in the first place; contour and silhouette zones are
+untouched.
+
+### 15.3 What survived the filter elsewhere, and why it's real
+
+Re-running the two zones `TestExtractors_MatchReferencePipeline` pins
+(unrest, qeynos2) showed real growth (+8–9%, both exceeding the test's 5%
+noise tolerance), not just sseru. Rendered and checked by eye per zone before
+touching the pinned numbers:
+
+- **unrest** gains an inner defensive wall ring around its courtyard (a second
+  wall standing on the walkway between it and the outer perimeter — the exact
+  same "wall on a floor that never stops" pattern as the maze, just smaller)
+  plus a couple of small pillar bases.
+- **qeynos2** gains part of a district gate wall.
+
+Both read as legitimate previously-missing structure in the rendered
+comparison, not redundant duplicate lines or noise — the pinned counts were
+updated (5013→5449, 4283→4633) rather than the technique being scoped away
+from them. The dedup tolerance (16 units) was chosen empirically: at 6 units
+a genuinely thick wall's inner face survived as a spurious near-duplicate of
+its own outer face; raising it to 40 didn't remove the unrest wall ring
+either, confirming that ring is real geometry rather than a thickness
+artifact — 16 was kept as the smaller, more conservative value.
+
+Net cost across the full corpus was not re-measured zone-by-zone before this
+write-up; re-run `mapgen -report` after any further change here and skim for
+outliers before publishing `maps.db`.
+
 ## References
 - [Zeal — CoastalRedwood/Zeal](https://github.com/CoastalRedwood/Zeal) (MIT)
 - [Brewall EQ Maps](https://www.eqmaps.info/eq-map-files/) · [RedGuides mirror](https://github.com/RedGuides/brewall-maps)

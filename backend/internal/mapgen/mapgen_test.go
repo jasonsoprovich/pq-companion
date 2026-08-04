@@ -130,11 +130,11 @@ func within(got, want int, tol float64) bool {
 	return d <= tol && d >= -tol
 }
 
-// TestExtractors_MatchReferencePipeline pins each extractor to the Python
-// prototype's segment counts, and — more importantly — pins the technique the
-// classifier picks. A wrong technique is the failure that matters: boundary
-// extraction on terrain yields an empty rectangle, and a silhouette of an open
-// zone is just its footprint.
+// TestExtractors_MatchReferencePipeline pins each extractor to a known-good
+// segment count, and — more importantly — pins the technique the classifier
+// picks. A wrong technique is the failure that matters: boundary extraction on
+// terrain yields an empty rectangle, and a silhouette of an open zone is just
+// its footprint.
 func TestExtractors_MatchReferencePipeline(t *testing.T) {
 	requireClient(t)
 
@@ -143,8 +143,17 @@ func TestExtractors_MatchReferencePipeline(t *testing.T) {
 		technique mapgen.Technique
 		segments  int
 	}{
-		{"unrest", mapgen.TechniqueBoundary, 5013},
-		{"qeynos2", mapgen.TechniqueBoundary, 4283},
+		// These no longer match the Python prototype's original counts (5013 /
+		// 4283): both zones have freestanding walls — built on a floor that
+		// never stops beneath them, so BoundaryEdges alone never drew them —
+		// that FreestandingWallEdges now recovers (see wallrim.go). Confirmed
+		// by rendering both before and after with RenderComparison: unrest
+		// gains an inner defensive wall ring around its courtyard and a couple
+		// of small pillar bases; qeynos2 gains part of its district gate wall.
+		// Both are real geometry, not noise. The number that matters is still
+		// the technique, not the exact count — see the 5% comment below.
+		{"unrest", mapgen.TechniqueBoundary, 5449},
+		{"qeynos2", mapgen.TechniqueBoundary, 4633},
 		// Contour and silhouette zones are covered by their own tests: both
 		// deliberately diverge from the flat prototype's counts, contours
 		// because they are now simplified and silhouettes because they are now

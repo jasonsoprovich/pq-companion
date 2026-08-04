@@ -190,6 +190,12 @@ func Extract(z *Zone, c Classification) []Segment {
 	case TechniqueSilhouette:
 		return z.Silhouette()
 	default:
-		return SimplifyCollinear(Chain(z.BoundaryEdges()), 0.03)
+		floor := z.BoundaryEdges()
+		// Freestanding walls (see FreestandingWallEdges) only apply to
+		// boundary zones — the pathology is a wall on a floor that never
+		// stops, which is specifically what routed this zone to boundary
+		// extraction in the first place.
+		all := append(floor, z.FreestandingWallEdges(floor)...)
+		return SimplifyCollinear(Chain(all), 0.03)
 	}
 }
