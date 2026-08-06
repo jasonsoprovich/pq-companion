@@ -1027,6 +1027,44 @@ These are inherent to log-file parsing and affect multiple features:
 
 ---
 
+## 18. Live map
+
+### 18.1 Live position has no fallback on multi-PC setups — unlike NPC targeting
+
+- **Limitation:** When PQ Companion runs on a different PC than the EQ client
+  (Zeal on PC A writing to a named pipe, the app on PC B), the Live Map's
+  player arrow never appears — position reads as permanently unknown. This is
+  inconsistent with the NPC/target overlay, which *looks* like it still works
+  in the same setup, leading users to reasonably ask why one Zeal-pipe feature
+  fails and the other doesn't (see 2026-08-06 Discord report, Druid_From_
+  Cazic_Thule/Osui/Remfin thread).
+- **Root cause:** Live position has exactly **one** data source: Zeal named-
+  pipe `MsgPlayer` frames, consumed solely in `playerpos.Tracker.Update()`
+  (`backend/internal/playerpos/tracker.go`), called only from the pipe
+  supervisor's `MsgPlayer` case in `backend/cmd/server/main.go`. There is no
+  `/loc` or coordinate parsing anywhere in `internal/logparser` — no such
+  event type exists in `models.go` — so there is nothing to fall back to when
+  the pipe can't connect. The NPC/target overlay (`internal/overlay/npc.go`)
+  has a second source: when `pipeConnected` is false, `Handle()` derives the
+  target from combat-hit/miss and `/con` log lines instead (see the
+  `SetPipeConnected` fix, `d7ba26d`). That fallback makes NPC targeting
+  degrade gracefully on a multi-PC setup — it silently runs on log-inference
+  the whole session — while Live Map has no equivalent signal to degrade to.
+  Both failures share the same ultimate cause: Zeal's named pipe is
+  `PIPE_ACCESS_OUTBOUND` kernel-level local IPC (see
+  `docs/zealpipes-reference.md:15-25`), which cannot be dialed from a second
+  machine under any configuration.
+- **Sources checked:** Zeal pipe (`MsgPlayer`, local-only by design), Log
+  (`internal/logparser/models.go` — no location/coordinate `EventType`
+  exists), `docs/zealpipes-reference.md` (confirms local-IPC scope).
+- **Could a future data source fix this?** **No** for a true live arrow on a
+  remote PC — named pipes are inherently single-machine. The only path to
+  cross-machine support would be a non-pipe transport for position data
+  (e.g. Zeal writing periodic `/loc`-style coordinates to the log, or a
+  network-capable export), which does not exist today on either side.
+
+---
+
 ## Template for new entries
 
 ```
