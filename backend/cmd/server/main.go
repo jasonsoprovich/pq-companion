@@ -40,6 +40,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/playerpos"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/players"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/popflag"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/progress"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/raidthreat"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/respawn"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/rolltracker"
@@ -286,6 +287,19 @@ func main() {
 		skillsStore = nil
 	} else {
 		defer skillsStore.Close()
+	}
+
+	// Progression tracker: persists a timestamped journal of level/AA/spell/
+	// skill milestones (backfillable from the log) plus periodic coin/totals
+	// snapshots from Zeal exports (not backfillable). Non-fatal — failing
+	// here only disables the Character Info Recap tab.
+	progressStore, err := progress.OpenStore(filepath.Join(home, ".pq-companion", "user.db"))
+	var progressConsumer *progress.Consumer
+	if err != nil {
+		slog.Warn("open progression tracker (disabled)", "err", err)
+		progressStore = nil
+	} else {
+		defer progressStore.Close()
 	}
 
 	// Keyring tracker: persists per-character /keys snapshots. Master list
@@ -1089,6 +1103,13 @@ func main() {
 		})
 	}
 
+	if progressStore != nil {
+		progressConsumer = progress.NewConsumer(progressStore, activeChar)
+		progressConsumer.SetOnUpdate(func(ev progress.Event) {
+			hub.Broadcast(ws.Event{Type: "progress:event", Data: ev})
+		})
+	}
+
 	// Backfill registry: powers Settings → Log Backfill. Each tracker that can
 	// be retroactively populated from a character's log registers a dedup-safe,
 	// timestamp-aware handler here. Upcoming trackers (loot, tradeskills) plug
@@ -1120,6 +1141,13 @@ func main() {
 			Key:        "skills",
 			Label:      "Skill Tracker",
 			NewHandler: func(character string) backfill.Handler { return skills.NewBackfillHandler(skillsStore, character) },
+		})
+	}
+	if progressStore != nil {
+		backfillRegistry.Register(backfill.Section{
+			Key:        "progress",
+			Label:      "Progression Recap",
+			NewHandler: func(character string) backfill.Handler { return progress.NewBackfillHandler(progressStore, character) },
 		})
 	}
 	if lockoutStore != nil {
@@ -1429,6 +1457,9 @@ func main() {
 		}
 		if skillsConsumer != nil {
 			skillsConsumer.Handle(ev)
+		}
+		if progressConsumer != nil {
+			progressConsumer.Handle(ev)
 		}
 		// PoP flag auto-detection: boss kills (and zone-ins) optimistically set
 		// 'auto'-sourced flags for the active character.
