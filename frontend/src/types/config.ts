@@ -105,6 +105,10 @@ export interface Preferences {
   // in the EQ folder; the renderer falls back if one is not there, since a pack
   // can be removed between launches.
   map_style?: 'outline' | 'detailed' | 'external'
+  // Keep map POI pins (zone lines, succor points, etc.) at full opacity
+  // regardless of the depth window, instead of fading them with geometry
+  // outside the focused height range. Off by default.
+  map_poi_ignore_zfade?: boolean
   // Fade overlay chrome (background, border, title bar) to transparent a few
   // seconds after the cursor leaves an overlay window; content stays visible.
   // Hovering restores overlay_opacity. Off by default.

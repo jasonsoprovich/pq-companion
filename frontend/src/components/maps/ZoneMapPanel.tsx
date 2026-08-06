@@ -165,7 +165,7 @@ export function ZoneMapPanel({
   // The saved default from Settings, plus whether a map pack is installed.
   // `style` is already resolved — it falls back when a stored 'external'
   // outlives the files it names.
-  const { style, pack, ready } = useMapStyle()
+  const { style, pack, poiIgnoreZFade, ready } = useMapStyle()
   // Session override. Starts unset so the saved default wins; switching the
   // mode here is for a look, not a preference change, so it lasts the session
   // and Settings stays the one place a default is decided.
@@ -702,6 +702,7 @@ export function ZoneMapPanel({
             onFollowRequest={() => setFollowPlayer(true)}
             pois={allPois}
             visibleCategories={visible}
+            poiIgnoreZFade={poiIgnoreZFade}
             highlights={inspect ? [{ x: inspect.x, y: inspect.y, z: inspect.z }] : []}
             onPOIClick={(p) => { setSelectedNPC(null); setSelected(p) }}
             onEmptyClick={

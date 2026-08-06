@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useCachedState } from '../../hooks/useCachedState'
 import { ChevronDown, ChevronRight, Map as MapIcon } from 'lucide-react'
+import { useMapStyle } from '../../hooks/useMapStyle'
 import { useMapZones } from '../../hooks/useMapZones'
 import { useZoneMap } from '../../hooks/useZoneMap'
 import { ZoneMap } from './ZoneMap'
@@ -129,6 +130,7 @@ function SpawnMapBody({
   // Always outline mode: this map exists to answer "where in the zone", at a
   // size where the detailed layers would be illegible anyway.
   const { zone, outline, pois, loading, error } = useZoneMap(active, 'outline')
+  const { poiIgnoreZFade } = useMapStyle()
 
   // Spawn points arrive in game coordinates; the map works in map space, which
   // is the same negation the geometry pipeline applies.
@@ -205,6 +207,7 @@ function SpawnMapBody({
               mode="outline"
               pois={pois}
               visibleCategories={visible}
+              poiIgnoreZFade={poiIgnoreZFade}
               highlights={highlights}
               paths={showPatrol ? zoneRoutes : undefined}
               height={height}

@@ -18,6 +18,7 @@ import { useWindowDrag } from '../hooks/useWindowDrag'
 import { useCachedState } from '../hooks/useCachedState'
 import OverlayLockButton from '../components/OverlayLockButton'
 import { useLiveZone } from '../hooks/useLiveZone'
+import { useMapStyle } from '../hooks/useMapStyle'
 import { usePlayerPosition } from '../hooks/usePlayerPosition'
 import { useZoneMap } from '../hooks/useZoneMap'
 import { ZoneMap } from '../components/maps/ZoneMap'
@@ -39,6 +40,7 @@ export default function LiveMapWindowPage(): React.ReactElement {
 
   const { zone: zoneName, live } = useLiveZone()
   const playerPos = usePlayerPosition()
+  const { poiIgnoreZFade } = useMapStyle()
   const [enabled] = useCachedState<MapPOICategory[]>('maps.layers', DEFAULT_LAYERS)
   // Outline mode only. At overlay size the detailed layers are illegible, and
   // this is the surface where legibility at a glance matters most.
@@ -125,6 +127,7 @@ export default function LiveMapWindowPage(): React.ReactElement {
               mode="outline"
               pois={pois}
               visibleCategories={visible}
+              poiIgnoreZFade={poiIgnoreZFade}
               playerPos={playerPos}
               // Follow starts on — an overlay you have to pan by hand every time
               // you move is worse than no overlay — but it is not forced. The

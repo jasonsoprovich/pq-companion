@@ -48,6 +48,12 @@ export interface ZoneMapProps {
   pois: MapPOI[]
   // visibleCategories gates POI layers; undefined shows all.
   visibleCategories?: Set<MapPOICategory>
+  // poiIgnoreZFade keeps POI pins at full opacity outside the depth window,
+  // instead of dimming them along with geometry. Geometry still fades — this
+  // only affects the pins, since a faded wall is still legible as "not this
+  // level" but a faded zone line or succor point hides the one thing you might
+  // want visible from any height.
+  poiIgnoreZFade?: boolean
   // highlights are drawn prominently on top of everything else. A list rather
   // than a single pin because an NPC routinely has several spawn points, and
   // showing only one would quietly imply it is the only place it appears.
@@ -278,6 +284,7 @@ export function ZoneMap({
   colorByHeight = true,
   pois,
   visibleCategories,
+  poiIgnoreZFade = false,
   highlights,
   playerPos,
   followDepth = true,
@@ -606,7 +613,7 @@ export function ZoneMap({
       const [px, py] = toScreen(p.x, p.y)
       if (px < -20 || py < -20 || px > size.w + 20 || py > size.h + 20) continue
 
-      const dimmed = depth ? p.z < depth.lo || p.z > depth.hi : false
+      const dimmed = depth && !poiIgnoreZFade ? p.z < depth.lo || p.z > depth.hi : false
       ctx.globalAlpha = dimmed ? 0.2 : 1
       ctx.fillStyle = style.color
       ctx.beginPath()

@@ -31,6 +31,7 @@ export default function MapSettingsPanel(): React.ReactElement {
   // complete document, so saving a fragment would blank every other preference.
   const [config, setConfig] = useState<Config | null>(null)
   const [style, setStyle] = useState<MapRenderMode>('detailed')
+  const [poiIgnoreZFade, setPoiIgnoreZFade] = useState(false)
   const [pack, setPack] = useState<ExternalMapStatus | null>(null)
   const [saved, setSaved] = useState(false)
   const [checking, setChecking] = useState(false)
@@ -48,6 +49,7 @@ export default function MapSettingsPanel(): React.ReactElement {
       .then((c) => {
         setConfig(c)
         setStyle(c.preferences.map_style ?? 'detailed')
+        setPoiIgnoreZFade(c.preferences.map_poi_ignore_zfade ?? false)
       })
       .catch(() => {})
     loadPack()
@@ -68,6 +70,23 @@ export default function MapSettingsPanel(): React.ReactElement {
       })
       // Put the old value back rather than showing a choice that did not stick.
       .catch(() => setStyle(config.preferences.map_style ?? 'detailed'))
+  }
+
+  const toggleIgnoreZFade = (): void => {
+    if (!config) return
+    const next = !poiIgnoreZFade
+    setPoiIgnoreZFade(next)
+    const updated: Config = {
+      ...config,
+      preferences: { ...config.preferences, map_poi_ignore_zfade: next },
+    }
+    updateConfig(updated)
+      .then((c) => {
+        setConfig(c)
+        setSaved(true)
+        setTimeout(() => setSaved(false), 2000)
+      })
+      .catch(() => setPoiIgnoreZFade(!next))
   }
 
   const options = [
@@ -139,6 +158,54 @@ export default function MapSettingsPanel(): React.ReactElement {
           Saved.
         </p>
       )}
+
+      <h3
+        className="mb-2 text-xs font-semibold uppercase tracking-widest"
+        style={{ color: 'var(--color-muted)' }}
+      >
+        Points of interest
+      </h3>
+      <label className="mb-6 flex max-w-3xl cursor-pointer items-center justify-between gap-3 py-1">
+        <div>
+          <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+            Keep pins visible at any height
+          </p>
+          <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+            The depth control fades geometry and POI pins outside the height range
+            it's focused on — useful for picking one level out of a stacked
+            zone, but it also fades zone lines, succor points and every other
+            pin. Turn this on to keep pins at full opacity regardless of height,
+            while geometry still fades normally.
+          </p>
+        </div>
+        <div
+          onClick={toggleIgnoreZFade}
+          style={{
+            width: 40,
+            height: 22,
+            borderRadius: 11,
+            backgroundColor: poiIgnoreZFade ? 'var(--color-primary)' : 'var(--color-surface-2)',
+            border: '1px solid var(--color-border)',
+            cursor: 'pointer',
+            position: 'relative',
+            flexShrink: 0,
+            transition: 'background-color 0.15s',
+          }}
+        >
+          <div
+            style={{
+              position: 'absolute',
+              top: 2,
+              left: poiIgnoreZFade ? 20 : 2,
+              width: 16,
+              height: 16,
+              borderRadius: '50%',
+              backgroundColor: '#fff',
+              transition: 'left 0.15s',
+            }}
+          />
+        </div>
+      </label>
 
       <div className="flex items-center gap-2">
         <h3

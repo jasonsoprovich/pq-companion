@@ -284,6 +284,16 @@ type Preferences struct {
 	// a feature feel unfinished. Empty means the built-in default.
 	MapStyle string `yaml:"map_style,omitempty" json:"map_style"`
 
+	// MapPOIIgnoreZFade keeps map POI pins (zone lines, succor points, etc.)
+	// drawn at full opacity regardless of the depth window, instead of fading
+	// them along with geometry outside the focused height range.
+	//
+	// Off by default, matching the fade behaviour every surface already had.
+	// Requested on Discord: Zeal's own map fades zone lines and succor points
+	// along with everything else as you move between elevations, which loses
+	// the one thing you'd want visible from any height — a way out.
+	MapPOIIgnoreZFade bool `yaml:"map_poi_ignore_zfade,omitempty" json:"map_poi_ignore_zfade"`
+
 	// OverlayFadeEnabled fades overlay chrome (background, border, title
 	// bar) to fully transparent a few seconds after the cursor leaves an
 	// overlay window, leaving only the content (timer bars, NPC stats)

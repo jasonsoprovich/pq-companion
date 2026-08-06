@@ -3,6 +3,7 @@ import { ExternalLink, Navigation } from 'lucide-react'
 import OverlayWindow from '../OverlayWindow'
 import { useCachedState } from '../../hooks/useCachedState'
 import { useLiveZone } from '../../hooks/useLiveZone'
+import { useMapStyle } from '../../hooks/useMapStyle'
 import { usePlayerPosition } from '../../hooks/usePlayerPosition'
 import { useZoneMap } from '../../hooks/useZoneMap'
 import { ZoneMap } from '../maps/ZoneMap'
@@ -42,6 +43,7 @@ export default function LiveMapPanel({
 }: LiveMapPanelProps): React.ReactElement {
   const { zone: zoneName, live } = useLiveZone()
   const playerPos = usePlayerPosition()
+  const { poiIgnoreZFade } = useMapStyle()
   const [enabled] = useCachedState<MapPOICategory[]>('maps.layers', DEFAULT_LAYERS)
   const { zone, outline, pois } = useZoneMap(zoneName, 'outline')
   const visible = useMemo(() => new Set(enabled), [enabled])
@@ -92,6 +94,7 @@ export default function LiveMapPanel({
             mode="outline"
             pois={pois}
             visibleCategories={visible}
+            poiIgnoreZFade={poiIgnoreZFade}
             playerPos={playerPos}
             followPlayer={follow}
             onUserPan={() => setFollow(false)}
