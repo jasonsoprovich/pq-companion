@@ -21,6 +21,7 @@ export const WSEvent = {
   ChatNew: 'chat:new',
   LootNew: 'loot:new',
   SkillsUpdate: 'skills:update',
+  ProgressEvent: 'progress:event',
   BackfillProgress: 'backfill:progress',
   WishlistChanged: 'wishlist:changed',
   ZealConnected: 'zeal:connected',

@@ -28,6 +28,7 @@ import { BuffPicker } from '../components/BuffPicker'
 import { ConfirmModal } from '../components/ConfirmModal'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { SpellIcon } from '../components/Icon'
+import CharacterRecapPanel from '../components/CharacterRecapPanel'
 import { EquipmentPaperDoll } from '../components/EquipmentPaperDoll'
 import CharacterSubTabs from '../components/CharacterSubTabs'
 
@@ -131,7 +132,7 @@ function StatBar({ label, value, base, max = 255, raw }: StatBarProps): React.Re
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 
-type Tab = 'stats' | 'gear' | 'aas' | 'modifiers' | 'tradeskills' | 'skills'
+type Tab = 'recap' | 'stats' | 'gear' | 'aas' | 'modifiers' | 'tradeskills' | 'skills'
 
 interface TabButtonProps {
   active: boolean
@@ -169,7 +170,7 @@ export default function CharacterProgressPage(): React.ReactElement {
     if (!viewedCharacter && activeCharacter) setViewedCharacter(activeCharacter)
   }, [activeCharacter, viewedCharacter])
   const navigate = useNavigate()
-  const [tab, setTab] = useState<Tab>('stats')
+  const [tab, setTab] = useState<Tab>('recap')
   const [quarmy, setQuarmy] = useState<QuarmyData | null>(null)
   const [trainedAAs, setTrainedAAs] = useState<CharacterAA[]>([])
   const [availableAAs, setAvailableAAs] = useState<AAInfo[]>([])
@@ -347,6 +348,7 @@ export default function CharacterProgressPage(): React.ReactElement {
             className="mb-4 flex gap-1 border-b"
             style={{ borderColor: 'var(--color-border)' }}
           >
+            <TabButton active={tab === 'recap'} onClick={() => setTab('recap')}>Recap</TabButton>
             <TabButton active={tab === 'stats'} onClick={() => setTab('stats')}>Stats</TabButton>
             <TabButton active={tab === 'gear'} onClick={() => setTab('gear')}>Gear</TabButton>
             <TabButton active={tab === 'aas'} onClick={() => setTab('aas')}>
@@ -365,6 +367,11 @@ export default function CharacterProgressPage(): React.ReactElement {
             <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>Loading…</p>
           ) : (
             <>
+              {tab === 'recap' && (
+                <ErrorBoundary label="Recap">
+                  <CharacterRecapPanel characterName={viewedCharacter} />
+                </ErrorBoundary>
+              )}
               {tab === 'stats' && (
                 <StatsPanel stats={statsSource} hasStats={!!hasStats} characterID={activeChar?.id ?? null} characterName={viewedCharacter} />
               )}

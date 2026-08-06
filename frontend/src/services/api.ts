@@ -26,6 +26,7 @@ import type {
   ZealPipeStatus,
 } from '../types/zeal'
 import type { KeysResponse, KeysProgressResponse } from '../types/keys'
+import type { CharacterRecap, ProgressEvent } from '../types/progress'
 import type {
   KeyringMasterResponse,
   KeyringCharactersResponse,
@@ -1051,6 +1052,23 @@ export function getTraderListings(character: string): Promise<TraderListing[]> {
 
 export function getTraderSessions(character: string): Promise<TraderSession[]> {
   return get<TraderSession[]>(`/api/trader/${encodeURIComponent(character)}/sessions`)
+}
+
+// All tracked characters, most-active first. The backend omits `character`
+// from the query for this shape — passing it switches the response to a
+// single object (see getProgressRecapFor).
+export function getProgressRecapAll(days: number): Promise<CharacterRecap[]> {
+  return get<CharacterRecap[]>(`/api/progress/recap?days=${days}`)
+}
+
+export function getProgressRecapFor(days: number, character: string): Promise<CharacterRecap> {
+  const params = new URLSearchParams({ days: String(days), character })
+  return get<CharacterRecap>(`/api/progress/recap?${params.toString()}`)
+}
+
+export function getProgressEvents(character: string, days: number): Promise<ProgressEvent[]> {
+  const params = new URLSearchParams({ character, days: String(days) })
+  return get<ProgressEvent[]>(`/api/progress/events?${params.toString()}`)
 }
 
 export function getTraderSnapshots(character: string): Promise<TraderSnapshotInfo[]> {
