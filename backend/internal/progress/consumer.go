@@ -81,7 +81,7 @@ func toEvent(character string, ev logparser.LogEvent) (Event, bool) {
 		if !ok {
 			return Event{}, false
 		}
-		return Event{Character: character, At: ts, Kind: KindLevel, Value: d.Level}, true
+		return Event{Character: character, At: ts, Kind: KindLevel, Value: d.Level, Delta: d.Delta}, true
 	case logparser.EventAAGain:
 		d, ok := ev.Data.(logparser.AAGainData)
 		if !ok {

@@ -54,6 +54,7 @@ func (s *Store) migrate() error {
 			kind      TEXT    NOT NULL,
 			detail    TEXT    NOT NULL DEFAULT '',
 			value     INTEGER NOT NULL DEFAULT 0,
+			delta     INTEGER NOT NULL DEFAULT 0,
 			UNIQUE (character, at, kind, detail, value)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_progress_char_at ON character_progress_events(character, at)`,
@@ -91,9 +92,9 @@ func (s *Store) AppendEvent(ev Event) (bool, error) {
 		return false, nil
 	}
 	res, err := s.db.Exec(
-		`INSERT OR IGNORE INTO character_progress_events (character, at, kind, detail, value)
-		 VALUES (?, ?, ?, ?, ?)`,
-		ev.Character, ev.At.Unix(), string(ev.Kind), ev.Detail, ev.Value,
+		`INSERT OR IGNORE INTO character_progress_events (character, at, kind, detail, value, delta)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		ev.Character, ev.At.Unix(), string(ev.Kind), ev.Detail, ev.Value, ev.Delta,
 	)
 	if err != nil {
 		return false, fmt.Errorf("insert progress event: %w", err)
@@ -109,7 +110,7 @@ func (s *Store) AppendEvent(ev Event) (bool, error) {
 // oldest first.
 func (s *Store) EventsSince(character string, since time.Time) ([]Event, error) {
 	rows, err := s.db.Query(
-		`SELECT character, at, kind, detail, value FROM character_progress_events
+		`SELECT character, at, kind, detail, value, delta FROM character_progress_events
 		 WHERE character = ? COLLATE NOCASE AND at >= ?
 		 ORDER BY at ASC, id ASC`,
 		character, since.Unix(),
@@ -125,7 +126,7 @@ func (s *Store) EventsSince(character string, since time.Time) ([]Event, error) 
 // after since, oldest first — used for the all-characters recap view.
 func (s *Store) AllEventsSince(since time.Time) ([]Event, error) {
 	rows, err := s.db.Query(
-		`SELECT character, at, kind, detail, value FROM character_progress_events
+		`SELECT character, at, kind, detail, value, delta FROM character_progress_events
 		 WHERE at >= ?
 		 ORDER BY character COLLATE NOCASE ASC, at ASC, id ASC`,
 		since.Unix(),
@@ -145,7 +146,7 @@ func scanEvents(rows *sql.Rows) ([]Event, error) {
 			at      int64
 			kindRaw string
 		)
-		if err := rows.Scan(&ev.Character, &at, &kindRaw, &ev.Detail, &ev.Value); err != nil {
+		if err := rows.Scan(&ev.Character, &at, &kindRaw, &ev.Detail, &ev.Value, &ev.Delta); err != nil {
 			return nil, fmt.Errorf("scan progress event: %w", err)
 		}
 		ev.At = time.Unix(at, 0)

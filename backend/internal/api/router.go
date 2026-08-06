@@ -29,6 +29,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/pipertts"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/players"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/popflag"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/progress"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/quarm"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/raidthreat"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/respawn"
@@ -49,7 +50,7 @@ import (
 // NewRouter builds and returns the chi router wired to all backend components.
 // combatHistory may be nil when persistence is disabled (e.g. user.db open
 // failed); in that case the history endpoints respond 503.
-func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher *zeal.Watcher, pipeSupervisor *zealpipe.Supervisor, backupMgr *backup.Manager, tailer *logparser.Tailer, replayer *logparser.Replayer, npcTracker *overlay.NPCTracker, combatTracker *combat.Tracker, combatHistory *combat.HistoryStore, threatTracker *threat.Tracker, raidThreatAssembler *raidthreat.Assembler, timerEngine *spelltimer.Engine, respawnEngine *respawn.Engine, triggerStore *trigger.Store, triggerEngine *trigger.Engine, charStore *character.Store, rollTracker *rolltracker.Tracker, appBackupMgr *appbackup.Manager, playerStore *players.Store, chatStore *chat.Store, lootStore *loot.Store, backfillRegistry *backfill.Registry, keyringStore *keyring.Store, keyringMaster []keyring.MasterEntry, lockoutStore *lockout.Store, sb *sandbox.Sandbox, savedQueryStore *savedquery.Store, skillsStore *skills.Store, traderStore *trader.Store, traderCapturer *trader.Capturer, popflagStore *popflag.Store, wishlistWatcher *wishlistwatch.Watcher, changelogEntries []changelog.Entry, factionEngine *factiontracker.Engine, emoteService *emote.Service, mapStore *maps.Store, mapAnnotations *maps.AnnotationStore, actualPort int) http.Handler {
+func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher *zeal.Watcher, pipeSupervisor *zealpipe.Supervisor, backupMgr *backup.Manager, tailer *logparser.Tailer, replayer *logparser.Replayer, npcTracker *overlay.NPCTracker, combatTracker *combat.Tracker, combatHistory *combat.HistoryStore, threatTracker *threat.Tracker, raidThreatAssembler *raidthreat.Assembler, timerEngine *spelltimer.Engine, respawnEngine *respawn.Engine, triggerStore *trigger.Store, triggerEngine *trigger.Engine, charStore *character.Store, rollTracker *rolltracker.Tracker, appBackupMgr *appbackup.Manager, playerStore *players.Store, chatStore *chat.Store, lootStore *loot.Store, backfillRegistry *backfill.Registry, keyringStore *keyring.Store, keyringMaster []keyring.MasterEntry, lockoutStore *lockout.Store, sb *sandbox.Sandbox, savedQueryStore *savedquery.Store, skillsStore *skills.Store, traderStore *trader.Store, traderCapturer *trader.Capturer, popflagStore *popflag.Store, wishlistWatcher *wishlistwatch.Watcher, changelogEntries []changelog.Entry, factionEngine *factiontracker.Engine, emoteService *emote.Service, mapStore *maps.Store, mapAnnotations *maps.AnnotationStore, progressStore *progress.Store, actualPort int) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
@@ -80,6 +81,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	resistCalc := &resistHandler{db: database, cfgMgr: cfgMgr}
 	charmH := &charmHandler{db: database, cfgMgr: cfgMgr}
 	traderH := &traderHandler{store: traderStore, capturer: traderCapturer, cfgMgr: cfgMgr, db: database}
+	progressH := &progressHandler{store: progressStore, charStore: charStore}
 	zones := &zonesHandler{db: database}
 	recipes := &recipesHandler{db: database}
 	tradeskillH := &tradeskillHandler{db: database, store: charStore}
@@ -181,6 +183,15 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 				r.Get("/{char}/sessions", traderH.sessions)
 				r.Get("/{char}/snapshots", traderH.snapshots)
 				r.Post("/{char}/capture", traderH.capture)
+			})
+		}
+		// Progression Recap: rolling-window level/AA/spell/skill journal plus
+		// coin/totals snapshots. Routes only exist when the store opened
+		// successfully (user.db available).
+		if progressStore != nil {
+			r.Route("/progress", func(r chi.Router) {
+				r.Get("/recap", progressH.recap)
+				r.Get("/events", progressH.events)
 			})
 		}
 		r.Route("/maps", func(r chi.Router) {

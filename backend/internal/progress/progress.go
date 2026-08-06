@@ -11,10 +11,10 @@ import "time"
 type Kind string
 
 const (
-	KindLevel Kind = "level" // Detail empty, Value = resulting level
-	KindAA    Kind = "aa"    // Detail empty, Value = unspent AA pool after the gain
-	KindSkill Kind = "skill" // Detail = skill display name, Value = new rank
-	KindSpell Kind = "spell" // Detail = spell name, Value unused (0)
+	KindLevel Kind = "level" // Detail empty, Value = resulting level, Delta = levels gained (or -1 on a level-drain loss)
+	KindAA    Kind = "aa"    // Detail empty, Value = unspent AA pool after the gain, Delta unused
+	KindSkill Kind = "skill" // Detail = skill display name, Value = new rank, Delta unused
+	KindSpell Kind = "spell" // Detail = spell name, Value/Delta unused
 )
 
 // Event is one row of the append-only progression journal.
@@ -24,6 +24,7 @@ type Event struct {
 	Kind      Kind      `json:"kind"`
 	Detail    string    `json:"detail,omitempty"`
 	Value     int       `json:"value"`
+	Delta     int       `json:"delta,omitempty"`
 }
 
 // Snapshot is one row of the forward-only totals capture, taken from a
