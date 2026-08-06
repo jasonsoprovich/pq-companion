@@ -1660,6 +1660,15 @@ func main() {
 		go traderCapturer.Start(context.Background())
 	}
 
+	// Progression Recap coin/totals snapshots: a lazy poller, independent of
+	// the live Zeal watcher, so a parked non-active character's totals still
+	// get captured. Its own goroutine so it never blocks startup, and its
+	// first scan is deliberately delayed (see recorderInitialDelay).
+	if progressStore != nil && charStore != nil {
+		progressRecorder := progress.NewRecorder(cfgMgr, progressStore, charStore)
+		go progressRecorder.Start(context.Background())
+	}
+
 	// Zone maps are optional: a build without maps.db still runs, with map
 	// features reporting unavailable rather than failing at startup.
 	mapStore, err := maps.Open(maps.DefaultPath())
