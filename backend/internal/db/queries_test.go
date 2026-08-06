@@ -542,6 +542,35 @@ func TestGetSpellsByClass_ExcludesNotPlayerSpell(t *testing.T) {
 	}
 }
 
+// TestGetSpellsByClass_ExcludesCuratedBadSpells verifies the hand-curated
+// checklistExcludedSpellIDs list (one-off dump bugs / out-of-era content that
+// pass every other filter) is dropped from the class list. See
+// checklistExcludedSpellIDs in queries.go.
+func TestGetSpellsByClass_ExcludesCuratedBadSpells(t *testing.T) {
+	d := openTestDB(t)
+	const bard = 7 // 0-based class index
+
+	res, err := d.GetSpellsByClass(bard, 60, 2000, 0)
+	if err != nil {
+		t.Fatalf("GetSpellsByClass: %v", err)
+	}
+	byID := make(map[int]string, len(res.Items))
+	for _, sp := range res.Items {
+		byID[sp.ID] = sp.Name
+	}
+
+	curatedExcludedIDs := map[int]string{
+		773:  "Anc: Rytan's Dirge of Death",
+		3681: "Aria of Innocence",
+		3682: "Aria of Asceticism",
+	}
+	for id, name := range curatedExcludedIDs {
+		if gotName, ok := byID[id]; ok {
+			t.Errorf("curated-excluded spell %d (%q) should be excluded, got %q", id, name, gotName)
+		}
+	}
+}
+
 // ─── Zones ────────────────────────────────────────────────────────────────────
 
 func TestGetZoneByShortName(t *testing.T) {

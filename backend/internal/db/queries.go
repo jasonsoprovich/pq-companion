@@ -1889,6 +1889,25 @@ func collectSpells(rows *sql.Rows) ([]Spell, error) {
 	return result, rows.Err()
 }
 
+// checklistExcludedSpellIDs are spells_new rows that carry a valid class/level
+// for one of the 15 classes but are not actually obtainable on Quarm, and
+// aren't caught by any of the other GetSpellsByClass filters (not_player_spell
+// is 0, they have a real name, they're within the level cap). Each entry is a
+// one-off dump bug or era mismatch confirmed by hand — add here rather than
+// trying to derive a general rule, since quarm.db has no expansion/era field
+// to filter on (see project_quarm_data_corrections).
+var checklistExcludedSpellIDs = map[int]string{
+	// "Anc:" (Ancient) spells are NPC/event-only casts; this is the sole one
+	// in the dump that also carries a player class/level (Bard 60) despite
+	// never having been an actual bard song. Reported via Discord 2026-08-06.
+	773: "Anc: Rytan's Dirge of Death",
+	// LoY (Legacy of Ykesha)-quested bard songs — LoY isn't an implemented
+	// era on Quarm, so these are permanently unobtainable despite passing
+	// the level-60 cap. Reported via Discord 2026-08-06.
+	3681: "Aria of Innocence",
+	3682: "Aria of Asceticism",
+}
+
 // GetSpellsByClass returns all spells castable by the given class index (0-based:
 // 0=Warrior, 1=Cleric, ..., 14=Beastlord), ordered by that class's required level
 // then by spell ID. Empty-name spells are excluded. Disciplines (a LoY-era
@@ -1898,13 +1917,23 @@ func collectSpells(rows *sql.Rows) ([]Spell, error) {
 // class abilities like Harm Touch and AA-granted spells like the Druid's
 // Spirit of the Wood/Wrath of the Wild) are excluded too — spells_new lists a
 // class/level for them, but no scroll ever has a merchant listing, so they'd
-// otherwise sit on the checklist permanently as false-missing rows.
+// otherwise sit on the checklist permanently as false-missing rows. A small
+// hand-curated set (checklistExcludedSpellIDs) covers the remaining one-off
+// dump bugs and out-of-era content that those column-based filters can't see.
 func (db *DB) GetSpellsByClass(classIndex, maxLevel, limit, offset int) (*SearchResult[Spell], error) {
 	if classIndex < 0 || classIndex > 14 {
 		return nil, fmt.Errorf("class index %d out of range [0,14]", classIndex)
 	}
 	col := fmt.Sprintf("s.classes%d", classIndex+1)
 	whereClause := fmt.Sprintf("%s BETWEEN 1 AND %d AND s.IsDiscipline = 0 AND s.name != '' AND s.not_player_spell = 0", col, maxLevel)
+	if len(checklistExcludedSpellIDs) > 0 {
+		ids := make([]int, 0, len(checklistExcludedSpellIDs))
+		for id := range checklistExcludedSpellIDs {
+			ids = append(ids, id)
+		}
+		sort.Ints(ids)
+		whereClause += " AND s.id NOT IN (" + intList(ids) + ")"
+	}
 
 	// Collapse duplicate-name rows to the canonical one (see variants.go).
 	db.ensureVariants()
