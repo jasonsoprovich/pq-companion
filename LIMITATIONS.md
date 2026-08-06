@@ -962,6 +962,71 @@ These are inherent to log-file parsing and affect multiple features:
 
 ---
 
+## 17. Progression Recap
+
+### 17.1 Recap depth is bounded by the live log file
+
+- **Limitation:** The Recap tab's level/AA/spell/skill journal can only be
+  backfilled as far back as the character's current
+  `eqlog_<Char>_pq.proj.txt` reaches. If Archive & Trim (or a manual log
+  rotation) has already cut the live file, milestones from before that cut
+  are gone — there's no separate archive the backfill can reach into.
+- **Root cause:** `internal/progress.BackfillHandler` replays the same live
+  log path the tailer watches, via `internal/backfill.Registry.Run`, exactly
+  like every other backfillable tracker (Skill Tracker, Faction Tracker,
+  Loot Tracker). None of them read archived/rotated log files.
+- **Sources checked:** `internal/backfill/engine.go` (opens exactly one
+  path, the live log); `internal/logparser` (archive/trim support removes
+  lines from the live file, it doesn't preserve a separate queryable
+  archive).
+- **Could a future data source fix this?** Only if archived log segments were
+  kept and the backfill UI let a user point at one explicitly — not
+  implemented.
+
+### 17.2 Coin and absolute totals have no history before this feature shipped
+
+- **Limitation:** Coin change and any "total AA/tradeskill points" framing
+  are computed from `character_progress_snapshots`, a forward-only table.
+  A character's recap will show `has_snapshot_data: false` (and the UI
+  explains why) until the background Recorder has captured at least two
+  points for them — which starts from whenever this shipped, not from the
+  window's actual start date.
+- **Root cause:** Coin and point totals only exist in a Zeal Quarmy export,
+  which reflects current state and is overwritten by the game client on
+  every `/camp`. Unlike level/AA/spell/skill milestones, there is no log
+  line to replay for "how much coin did I have 30 days ago" — spending isn't
+  logged at all.
+- **Sources checked:** `internal/zeal.QuarmyData` (current totals only, no
+  history); `internal/trader.ParseSnapshot` (same — a point-in-time read of
+  the export); the EQ log format generally (loot/sell lines exist, but
+  tracking every transaction to reconstruct a running balance retroactively
+  is a materially different, much larger feature — see the Bazaar/Trader
+  Tracker's own similar forward-only design in §14).
+- **Could a future data source fix this?** No, for history predating this
+  feature. Going forward, the Recorder in `internal/progress/snapshot.go`
+  fills in on every Quarmy export change, so this gap only affects the
+  window immediately after the feature ships.
+
+### 17.3 AA events count points earned, not net AA progress
+
+- **Limitation:** The recap's "AA Points" tile counts `You have gained an
+  ability point!` log lines in the window. It does not net out points spent
+  on AAs during that same window, so it isn't the same number as "AA total
+  went up by N" if the character also spent points.
+- **Root cause:** The client logs every point gained but never logs when a
+  point is spent (that only shows up as a `character_aas` rank change on the
+  next Quarmy export, which is a destructive overwrite with no history — see
+  §17.2). Counting gain events is the only backfillable signal available.
+- **Sources checked:** `eqstr_en.txt` string 446 (gain only); no log message
+  exists for AA spend on Project Quarm's client.
+- **Could a future data source fix this?** Partially — once enough
+  `character_progress_snapshots` history accumulates going forward, the
+  recap could switch to (or show alongside) a true net-AA-rank delta between
+  the window's start and end snapshots, the same way it already does for
+  coin.
+
+---
+
 ## Template for new entries
 
 ```
