@@ -191,6 +191,22 @@ const (
 	// /say chat (verb conjugation "says" is shared) — harmless, since a
 	// player name essentially never matches a quest NPC's full name.
 	EventNPCDialogue EventType = "log:npc_dialogue"
+
+	// EventLevelChange is emitted on "You have gained a level! Welcome to
+	// level <N>!", its multi-level variant ("You have gained <N> levels!
+	// Welcome to level <M>!"), and "You LOST a level! You are now level
+	// <N>!". Delta is positive for a gain, negative for a level drain; Level
+	// is always the resulting level.
+	EventLevelChange EventType = "log:level_change"
+
+	// EventAAGain is emitted on "You have gained an ability point!  You now
+	// have <N> ability point(s)." (note the double space after the first
+	// "!" in the client string). Points is the character's unspent AA pool
+	// after the gain, not a cumulative total — it falls again once spent.
+	EventAAGain EventType = "log:aa_gain"
+
+	// EventSpellScribed is emitted on "You have finished scribing <Spell>."
+	EventSpellScribed EventType = "log:spell_scribed"
 )
 
 // LogEvent is the parsed representation of a single EQ log line.
@@ -476,4 +492,21 @@ type FactionChangedData struct {
 type NPCDialogueData struct {
 	NPCName string `json:"npc_name"`
 	Text    string `json:"text"`
+}
+
+// LevelChangeData is the structured payload for EventLevelChange.
+type LevelChangeData struct {
+	Level int `json:"level"`
+	Delta int `json:"delta"` // positive for a gain, negative for a level-drain loss
+}
+
+// AAGainData is the structured payload for EventAAGain. Points is the
+// unspent AA pool reported by the client, not a running total.
+type AAGainData struct {
+	Points int `json:"points"`
+}
+
+// SpellScribedData is the structured payload for EventSpellScribed.
+type SpellScribedData struct {
+	SpellName string `json:"spell_name"`
 }

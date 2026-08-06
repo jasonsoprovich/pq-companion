@@ -70,6 +70,54 @@ func TestParseLine(t *testing.T) {
 			wantData: SkillUpData{SkillName: "Swimming", Rank: 5},
 		},
 
+		// --- Level change ---
+		{
+			name:     "level: single gain",
+			line:     "[Mon Apr 13 06:00:00 2026] You have gained a level! Welcome to level 55!",
+			wantOK:   true,
+			wantType: EventLevelChange,
+			wantData: LevelChangeData{Level: 55, Delta: 1},
+		},
+		{
+			name:     "level: multi-level gain",
+			line:     "[Mon Apr 13 06:00:00 2026] You have gained 2 levels! Welcome to level 60!",
+			wantOK:   true,
+			wantType: EventLevelChange,
+			wantData: LevelChangeData{Level: 60, Delta: 2},
+		},
+		{
+			name:     "level: loss",
+			line:     "[Mon Apr 13 06:00:00 2026] You LOST a level! You are now level 54!",
+			wantOK:   true,
+			wantType: EventLevelChange,
+			wantData: LevelChangeData{Level: 54, Delta: -1},
+		},
+
+		// --- AA point gain ---
+		{
+			name:     "aa gain: plural pool",
+			line:     "[Mon Apr 13 06:00:00 2026] You have gained an ability point!  You now have 12 ability points.",
+			wantOK:   true,
+			wantType: EventAAGain,
+			wantData: AAGainData{Points: 12},
+		},
+		{
+			name:     "aa gain: singular pool",
+			line:     "[Mon Apr 13 06:00:00 2026] You have gained an ability point!  You now have 1 ability point.",
+			wantOK:   true,
+			wantType: EventAAGain,
+			wantData: AAGainData{Points: 1},
+		},
+
+		// --- Spell scribed ---
+		{
+			name:     "spell scribed",
+			line:     "[Mon Apr 13 06:00:00 2026] You have finished scribing Mesmerization.",
+			wantOK:   true,
+			wantType: EventSpellScribed,
+			wantData: SpellScribedData{SpellName: "Mesmerization"},
+		},
+
 		// --- Zone change ---
 		{
 			name:     "zone: multi-word zone name",
@@ -922,6 +970,30 @@ func compareData(t *testing.T, got, want interface{}) {
 		}
 		if g != w {
 			t.Errorf("SpellInterruptData = %+v, want %+v", g, w)
+		}
+	case LevelChangeData:
+		g, ok := got.(LevelChangeData)
+		if !ok {
+			t.Fatalf("Data type = %T, want LevelChangeData", got)
+		}
+		if g != w {
+			t.Errorf("LevelChangeData = %+v, want %+v", g, w)
+		}
+	case AAGainData:
+		g, ok := got.(AAGainData)
+		if !ok {
+			t.Fatalf("Data type = %T, want AAGainData", got)
+		}
+		if g != w {
+			t.Errorf("AAGainData = %+v, want %+v", g, w)
+		}
+	case SpellScribedData:
+		g, ok := got.(SpellScribedData)
+		if !ok {
+			t.Fatalf("Data type = %T, want SpellScribedData", got)
+		}
+		if g != w {
+			t.Errorf("SpellScribedData = %+v, want %+v", g, w)
 		}
 	case SpellResistData:
 		g, ok := got.(SpellResistData)

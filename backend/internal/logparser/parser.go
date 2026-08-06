@@ -307,6 +307,23 @@ var (
 	// name can contain spaces (e.g. "Dual Wield", "Sense Heading"); the value
 	// is the new skill rank.
 	reSkillUp = regexp.MustCompile(`^You have become better at (.+)! \((\d+)\)$`)
+
+	// Level change, from eqstr_en.txt strings 447/448/442. The single- and
+	// multi-level gain forms are tried before the loss form since a gain is
+	// the overwhelmingly common case.
+	reLevelGain      = regexp.MustCompile(`^You have gained a level! Welcome to level (\d+)!$`)
+	reLevelGainMulti = regexp.MustCompile(`^You have gained (\d+) levels! Welcome to level (\d+)!$`)
+	reLevelLoss      = regexp.MustCompile(`^You LOST a level! You are now level (\d+)!$`)
+
+	// AA point gain, from eqstr_en.txt string 446. Note the double space
+	// after the first "!" — that's in the client string, not a typo here.
+	// Points is the unspent pool ("point" singular at 1, "points" plural
+	// otherwise), so the trailing word is matched loosely rather than
+	// pinned to one spelling.
+	reAAGain = regexp.MustCompile(`^You have gained an ability point!  You now have (\d+) ability points?\.$`)
+
+	// Spell scribed into the spellbook, from eqstr_en.txt string 12006.
+	reSpellScribed = regexp.MustCompile(`^You have finished scribing (.+)\.$`)
 )
 
 // ParseRawLine extracts the timestamp and message from any valid EQ log line
@@ -856,6 +873,35 @@ func classifyMessage(msg string) (LogEvent, bool) {
 				Guild:  strings.TrimSpace(m[2]),
 			},
 		}, true
+	}
+
+	// Level gain/loss — feeds the per-character Progression Recap.
+	if m := reLevelGain.FindStringSubmatch(msg); m != nil {
+		lvl, _ := strconv.Atoi(m[1])
+		return LogEvent{Type: EventLevelChange, Data: LevelChangeData{Level: lvl, Delta: 1}}, true
+	}
+	if m := reLevelGainMulti.FindStringSubmatch(msg); m != nil {
+		delta, _ := strconv.Atoi(m[1])
+		lvl, _ := strconv.Atoi(m[2])
+		return LogEvent{Type: EventLevelChange, Data: LevelChangeData{Level: lvl, Delta: delta}}, true
+	}
+	if m := reLevelLoss.FindStringSubmatch(msg); m != nil {
+		lvl, _ := strconv.Atoi(m[1])
+		return LogEvent{Type: EventLevelChange, Data: LevelChangeData{Level: lvl, Delta: -1}}, true
+	}
+
+	// AA point gain — feeds the per-character Progression Recap.
+	if m := reAAGain.FindStringSubmatch(msg); m != nil {
+		pts, _ := strconv.Atoi(m[1])
+		return LogEvent{Type: EventAAGain, Data: AAGainData{Points: pts}}, true
+	}
+
+	// Spell scribed into the spellbook — feeds the per-character Progression
+	// Recap. Tried before the spell-landed fallback below, whose patterns
+	// are keyed off entirely different phrasing but are matched last as a
+	// catch-all.
+	if m := reSpellScribed.FindStringSubmatch(msg); m != nil {
+		return LogEvent{Type: EventSpellScribed, Data: SpellScribedData{SpellName: strings.TrimSpace(m[1])}}, true
 	}
 
 	// "You have become better at <Skill>! (<rank>)" — a skill gain for the
