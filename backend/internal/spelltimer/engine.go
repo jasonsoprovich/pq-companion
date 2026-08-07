@@ -241,8 +241,15 @@ func sameSpellForDedup(existing *ActiveTimer, name string, spellID int) bool {
 //
 // Charm is excluded — its orphan is intentionally kept distinct (see
 // removeOnKill) and never shares a land line with a different spell here.
+//
+// Target names are compared via normalizeNPCName rather than raw equality:
+// the trigger-driven orphan's target may come from the combat-target
+// fallback (mid-sentence casing, e.g. "a grimling skullcracker") while the
+// spell-landed pipeline's target comes from a sentence-initial log line
+// (capitalized article, "A grimling skullcracker") — same NPC, different
+// surface form.
 func sameLandOrphan(existing *ActiveTimer, target string, landedAt time.Time) bool {
-	return (existing.TargetName == "" || existing.TargetName == target) &&
+	return (existing.TargetName == "" || normalizeNPCName(existing.TargetName) == normalizeNPCName(target)) &&
 		!existing.IsCharm &&
 		isDetrimentalCategory(existing.Category) &&
 		existing.StartsAt.Equal(landedAt)
@@ -1130,7 +1137,7 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 		// must coexist as its own row, not be overwritten. Without this guard
 		// the second mob's land deleted the first mob's timer, collapsing an
 		// AoE mez to a single timer (the reported bug).
-		sameSpell := (existing.TargetName == "" || existing.TargetName == target) &&
+		sameSpell := (existing.TargetName == "" || normalizeNPCName(existing.TargetName) == normalizeNPCName(target)) &&
 			sameSpellForDedup(existing, spellName, spell.ID)
 		sameLand := landDetrimental && sameLandOrphan(existing, target, landedAt)
 		if !sameSpell && !sameLand {
