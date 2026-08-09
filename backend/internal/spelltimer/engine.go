@@ -220,14 +220,24 @@ func sameSpellForDedup(existing *ActiveTimer, name string, spellID int) bool {
 }
 
 // sameLandOrphan reports whether existing is the trigger-pack twin of the
-// spell the pipeline just resolved for target: a non-charm detrimental
-// created by a trigger that fired on the same land line (identical land
-// timestamp) and carries either no target or that same target. That makes
-// it the trigger-pack twin of the spell the pipeline named — e.g. the
+// spell the pipeline just resolved for target (of category): a non-charm
+// timer created by a trigger that fired on the same land line (identical
+// land timestamp) and carries either no target or that same target. That
+// makes it the trigger-pack twin of the spell the pipeline named — e.g. the
 // Enchanter pack's broad "Tashanian" trigger firing on the shared
 // "<mob> glances nervously about." text while the pipeline resolves the actual
 // Tash-line spell cast. onSpellLanded absorbs such an orphan into the
 // target-bound timer so the user sees one row (with a target) instead of two.
+//
+// This isn't detrimental-only: the same shared-land-text ambiguity happens
+// for buffs (e.g. Savage Spirit sharing "'s eyes gleam with madness." with
+// six other spells) and a broad pack trigger for a differently-named sibling
+// fires on that line alongside the pipeline's correct resolution. sameKind
+// gates by category family instead of an exact match: detrimentals stay
+// grouped via isDetrimentalCategory (a trigger's TimerType only ever produces
+// the generic "debuff" category, never the pipeline's more specific
+// dot/mez/stun), while buffs — which have no such subtype split — require an
+// exact CategoryBuff match on both sides.
 //
 // existing.TargetName is no longer guaranteed empty: since the trigger
 // engine started falling back to the current combat target for capture-less
@@ -248,10 +258,16 @@ func sameSpellForDedup(existing *ActiveTimer, name string, spellID int) bool {
 // spell-landed pipeline's target comes from a sentence-initial log line
 // (capitalized article, "A grimling skullcracker") — same NPC, different
 // surface form.
-func sameLandOrphan(existing *ActiveTimer, target string, landedAt time.Time) bool {
-	return (existing.TargetName == "" || normalizeNPCName(existing.TargetName) == normalizeNPCName(target)) &&
+func sameLandOrphan(existing *ActiveTimer, target string, landedAt time.Time, category Category) bool {
+	var sameKind bool
+	if isDetrimentalCategory(category) {
+		sameKind = isDetrimentalCategory(existing.Category)
+	} else if category == CategoryBuff {
+		sameKind = existing.Category == CategoryBuff
+	}
+	return sameKind &&
+		(existing.TargetName == "" || normalizeNPCName(existing.TargetName) == normalizeNPCName(target)) &&
 		!existing.IsCharm &&
-		isDetrimentalCategory(existing.Category) &&
 		existing.StartsAt.Equal(landedAt)
 }
 
@@ -1118,15 +1134,15 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 	// up with DisplayThresholdSecs=0 and the per-trigger override is lost.
 	// This is the symmetric counterpart to the dedup in StartExternal.
 	//
-	// We also absorb a same-LAND orphan here: a trigger detrimental that fired
-	// on the exact land line this spell resolved from, but under a different
+	// We also absorb a same-LAND orphan here: a trigger timer that fired on
+	// the exact land line this spell resolved from, but under a different
 	// name. The Enchanter pack's "Tashanian" trigger matches the generic
 	// "<mob> glances nervously about." land text shared by the whole Tash line,
 	// so casting Tashania (or any other Tash spell) spawns a phantom orphan
 	// "Tashanian" timer alongside the pipeline's correct Tashania@target one.
+	// The same thing happens for buffs sharing land text (see sameLandOrphan).
 	// Keying on an identical land timestamp keeps this tight — two genuinely
-	// different debuffs land on separate log lines (separate timestamps).
-	landDetrimental := isDetrimentalCategory(timer.Category)
+	// different spells land on separate log lines (separate timestamps).
 	for existingKey, existing := range e.timers {
 		if existingKey == key {
 			continue
@@ -1139,7 +1155,7 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 		// AoE mez to a single timer (the reported bug).
 		sameSpell := (existing.TargetName == "" || normalizeNPCName(existing.TargetName) == normalizeNPCName(target)) &&
 			sameSpellForDedup(existing, spellName, spell.ID)
-		sameLand := landDetrimental && sameLandOrphan(existing, target, landedAt)
+		sameLand := sameLandOrphan(existing, target, landedAt, timer.Category)
 		if !sameSpell && !sameLand {
 			continue
 		}

@@ -1129,23 +1129,30 @@ func TestHandle_Kill_RemovesOrphanDetrimentalTimers(t *testing.T) {
 // sameLandOrphan gates the cross-name dedup that collapses a broad trigger's
 // phantom timer (e.g. the Enchanter pack's "Tashanian" firing on the shared
 // "glances nervously about" land text) into the pipeline's target-bound row.
-// It must fire for a non-charm detrimental whose land timestamp matches the
-// resolving spell and whose target is either empty or the same target the
-// pipeline resolved — never for charm, a buff, a different target, or an
-// orphan from a different log line.
+// It must fire for a non-charm timer whose land timestamp matches the
+// resolving spell, whose category family matches the pipeline's resolved
+// category, and whose target is either empty or the same target the
+// pipeline resolved — never for charm, a mismatched category family, a
+// different target, or an orphan from a different log line.
 func TestSameLandOrphan(t *testing.T) {
 	land := time.Date(2026, 5, 30, 12, 13, 47, 0, time.UTC)
 	orphanDebuff := &ActiveTimer{TargetName: "", Category: CategoryDebuff, StartsAt: land}
-	if !sameLandOrphan(orphanDebuff, "a gnoll", land) {
+	if !sameLandOrphan(orphanDebuff, "a gnoll", land, CategoryDebuff) {
 		t.Error("orphan detrimental on the same land line should merge")
 	}
+	// A trigger's generic "debuff" category still merges into the pipeline's
+	// more specific detrimental subtype (dot/mez/stun) — TimerType only ever
+	// produces the flat "debuff" category, never the finer-grained one.
+	if !sameLandOrphan(orphanDebuff, "a gnoll", land, CategoryDot) {
+		t.Error("trigger's generic debuff orphan should merge into a more specific detrimental category")
+	}
 	// Different land line (timestamp) — two distinct debuffs, keep both.
-	if sameLandOrphan(orphanDebuff, "a gnoll", land.Add(time.Second)) {
+	if sameLandOrphan(orphanDebuff, "a gnoll", land.Add(time.Second), CategoryDebuff) {
 		t.Error("orphan from a different land timestamp must not merge")
 	}
 	// Charm orphan is intentionally kept separate.
 	charm := &ActiveTimer{TargetName: "", Category: CategoryDebuff, IsCharm: true, StartsAt: land}
-	if sameLandOrphan(charm, "a gnoll", land) {
+	if sameLandOrphan(charm, "a gnoll", land, CategoryDebuff) {
 		t.Error("charm orphan must not be absorbed")
 	}
 	// Target-bound timer merges when it names the SAME target the pipeline
@@ -1154,19 +1161,34 @@ func TestSameLandOrphan(t *testing.T) {
 	// (e.g. the broad "Rapture"/"Tashanian" triggers landing on a raid boss
 	// alongside "Ancient: Eternal Rapture"/"Wind of Tashanian").
 	sameTargetBound := &ActiveTimer{TargetName: "a raid boss", Category: CategoryDebuff, StartsAt: land}
-	if !sameLandOrphan(sameTargetBound, "a raid boss", land) {
+	if !sameLandOrphan(sameTargetBound, "a raid boss", land, CategoryDebuff) {
 		t.Error("trigger twin bound to the same target as the pipeline should still merge")
 	}
 	// Target-bound timer on a DIFFERENT target is a separate recipient (AoE
 	// mez cast on several mobs) and must not merge.
 	bound := &ActiveTimer{TargetName: "a gnoll", Category: CategoryDebuff, StartsAt: land}
-	if sameLandOrphan(bound, "an orc", land) {
+	if sameLandOrphan(bound, "an orc", land, CategoryDebuff) {
 		t.Error("timer bound to a different target must not merge as an orphan")
 	}
-	// A buff orphan (e.g. a self-buff trigger) is out of scope.
+	// A buff orphan must not be absorbed as a detrimental land twin (category
+	// family mismatch), even on the same land line.
 	buff := &ActiveTimer{TargetName: "", Category: CategoryBuff, StartsAt: land}
-	if sameLandOrphan(buff, "a gnoll", land) {
+	if sameLandOrphan(buff, "a gnoll", land, CategoryDebuff) {
 		t.Error("buff orphan must not be treated as a detrimental land twin")
+	}
+	// Reproduces the live report: Savage Spirit shares its land text
+	// ("'s eyes gleam with madness.") with six other spells; a pack trigger
+	// for one of those siblings fires on the same self-cast line and must
+	// collapse into the pipeline's correctly-resolved Savage Spirit row
+	// instead of surviving as a duplicate buff.
+	orphanBuff := &ActiveTimer{TargetName: "", Category: CategoryBuff, StartsAt: land}
+	if !sameLandOrphan(orphanBuff, "Kilowatt", land, CategoryBuff) {
+		t.Error("orphan buff on the same land line should merge into the pipeline's resolved buff")
+	}
+	// Detrimental orphan must not be absorbed into a resolved buff — category
+	// families must match in both directions.
+	if sameLandOrphan(orphanDebuff, "Kilowatt", land, CategoryBuff) {
+		t.Error("detrimental orphan must not be treated as a buff land twin")
 	}
 }
 
