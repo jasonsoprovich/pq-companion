@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jasonsoprovich/pq-companion/backend/internal/combat"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db/enums"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
@@ -99,12 +100,24 @@ type NPCTracker struct {
 	// yank the overlay back onto the mob every tick. Log inference is only
 	// trusted as a fallback when no pipe is available.
 	pipeConnected bool
+
+	// verifiedPlayers names have been seen chatting on a player-only channel
+	// (EventVerifiedPlayer). Gates the pet-name heuristic below so a real
+	// player whose name happens to fit the generated-pet syllable shape is
+	// never mistaken for the player's own pet. Mirrors combat.Tracker's
+	// verifiedPlayers set; preserved for the life of the tracker.
+	verifiedPlayers map[string]bool
 }
 
 // NewNPCTracker returns an initialised NPCTracker. Inject the WebSocket hub
 // and database so the tracker can broadcast and look up NPC data.
 func NewNPCTracker(hub *ws.Hub, database *db.DB) *NPCTracker {
-	return &NPCTracker{hub: hub, db: database, st: TargetState{HPPercent: -1}}
+	return &NPCTracker{
+		hub:             hub,
+		db:              database,
+		st:              TargetState{HPPercent: -1},
+		verifiedPlayers: make(map[string]bool),
+	}
 }
 
 // Handle processes a single parsed log event.  Call this from the log-tailer
@@ -119,13 +132,29 @@ func (t *NPCTracker) Handle(ev logparser.LogEvent) {
 		if !ok {
 			return
 		}
-		// Only update when the player is the attacker; ignore NPC→player hits.
-		// Skip when the pipe is connected: DoT ticks keep generating "You hit
-		// <mob>" lines against the original DoT target even after the player
-		// retargets elsewhere, which would fight the pipe's authoritative
-		// SetPipeTarget updates.
-		if !t.isPipeConnected() && data.Actor == "You" && data.Target != "" && data.Target != "You" {
+		// Skip entirely when the pipe is connected: DoT ticks keep generating
+		// "You hit <mob>" lines against the original DoT target even after the
+		// player retargets elsewhere, which would fight the pipe's
+		// authoritative SetPipeTarget updates.
+		if t.isPipeConnected() {
+			return
+		}
+		switch {
+		// Player lands a hit on a mob.
+		case data.Actor == "You" && data.Target != "" && data.Target != "You":
 			t.setTarget(data.Target)
+		// The player's own pet lands a hit. A pet only attacks what its owner
+		// sent it at *or* — when idle — whatever just attacked the owner, so
+		// either way the pet's target reflects the player's engagement. The
+		// verifiedPlayers guard keeps a real player whose name happens to fit
+		// the generated-pet syllable shape from being mistaken for a pet.
+		case t.isOwnPet(data.Actor) && data.Target != "" && data.Target != "You":
+			t.setTarget(data.Target)
+		// An NPC lands a hit on the player: being attacked is engagement with
+		// that NPC, whether or not it was the player's prior target (e.g. an
+		// idle pet auto-engaging whatever just hit its owner).
+		case data.Target == "You" && data.Actor != "" && data.Actor != "You":
+			t.setTarget(data.Actor)
 		}
 
 	// ── Player misses NPC → still implies a target. ────────────────────────────
@@ -134,8 +163,16 @@ func (t *NPCTracker) Handle(ev logparser.LogEvent) {
 		if !ok {
 			return
 		}
-		if !t.isPipeConnected() && data.Actor == "You" && data.Target != "" && data.Target != "You" {
+		if t.isPipeConnected() {
+			return
+		}
+		switch {
+		case data.Actor == "You" && data.Target != "" && data.Target != "You":
 			t.setTarget(data.Target)
+		case t.isOwnPet(data.Actor) && data.Target != "" && data.Target != "You":
+			t.setTarget(data.Target)
+		case data.Target == "You" && data.Actor != "" && data.Actor != "You":
+			t.setTarget(data.Actor)
 		}
 
 	// ── /con result → target is whatever was considered. ─────────────────────
@@ -146,6 +183,16 @@ func (t *NPCTracker) Handle(ev logparser.LogEvent) {
 		}
 		if !t.isPipeConnected() && data.TargetName != "" {
 			t.setTarget(data.TargetName)
+		}
+
+	// ── Verified player chat → remember the name so the pet-name heuristic ───
+	// never mistakes a real player for the player's own pet.
+	case logparser.EventVerifiedPlayer:
+		data, ok := ev.Data.(logparser.VerifiedPlayerData)
+		if ok && data.Name != "" {
+			t.mu.Lock()
+			t.verifiedPlayers[data.Name] = true
+			t.mu.Unlock()
 		}
 
 	// ── Kill → clear target only if the slain mob is the current target. ─────
@@ -326,6 +373,19 @@ func (t *NPCTracker) GetState() TargetState {
 }
 
 // ── internal helpers ──────────────────────────────────────────────────────────
+
+// isOwnPet reports whether name matches the EQMac generated-pet naming shape
+// and hasn't been separately confirmed as a real player. See
+// combat.IsGeneratedPetName for the naming model and its accuracy caveats.
+func (t *NPCTracker) isOwnPet(name string) bool {
+	if !combat.IsGeneratedPetName(name) {
+		return false
+	}
+	t.mu.RLock()
+	verified := t.verifiedPlayers[name]
+	t.mu.RUnlock()
+	return !verified
+}
 
 func (t *NPCTracker) setZone(zoneName string) {
 	t.mu.Lock()

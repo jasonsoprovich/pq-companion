@@ -106,6 +106,77 @@ func TestNPCTracker_ConsiderEventSetsTarget(t *testing.T) {
 	}
 }
 
+func TestNPCTracker_PetHitSetsTarget(t *testing.T) {
+	tr := newTestTracker()
+
+	// The player's pet (a generated EQMac pet name, not "You") lands a hit —
+	// this should be treated the same as the player landing a hit, since a
+	// pet only ever attacks what its owner sent it at, or what just attacked
+	// the owner.
+	tr.Handle(logparser.LogEvent{
+		Type: logparser.EventCombatHit,
+		Data: logparser.CombatHitData{Actor: "Vonanab", Skill: "bite", Target: "a gnoll", Damage: 30},
+	})
+
+	st := tr.GetState()
+	if !st.HasTarget || st.TargetName != "a gnoll" {
+		t.Fatalf("got HasTarget=%v TargetName=%q, want HasTarget=true TargetName=%q", st.HasTarget, st.TargetName, "a gnoll")
+	}
+}
+
+func TestNPCTracker_VerifiedPlayerNotTreatedAsPet(t *testing.T) {
+	tr := newTestTracker()
+
+	// "Vonanab" fits the generated-pet syllable shape, but once it's been
+	// verified as a real player (via chat), it must never be treated as the
+	// player's pet — otherwise a party member's off-target melee swing would
+	// hijack the tracked target.
+	tr.Handle(logparser.LogEvent{
+		Type: logparser.EventVerifiedPlayer,
+		Data: logparser.VerifiedPlayerData{Name: "Vonanab"},
+	})
+	tr.Handle(logparser.LogEvent{
+		Type: logparser.EventCombatHit,
+		Data: logparser.CombatHitData{Actor: "Vonanab", Skill: "slash", Target: "a gnoll", Damage: 30},
+	})
+
+	if tr.GetState().HasTarget {
+		t.Errorf("HasTarget = true after a verified player's hit, want false")
+	}
+}
+
+func TestNPCTracker_NPCHitsPlayerSetsTarget(t *testing.T) {
+	tr := newTestTracker()
+
+	// An NPC landing a hit on the player implies engagement with that NPC —
+	// this covers the case where an idle pet auto-engages whatever just
+	// attacked its owner, and the general "getting hit means you're in a
+	// fight with something" signal in log-only mode (no Zeal pipe).
+	tr.Handle(logparser.LogEvent{
+		Type: logparser.EventCombatHit,
+		Data: logparser.CombatHitData{Actor: "a gnoll", Skill: "bite", Target: "You", Damage: 15},
+	})
+
+	st := tr.GetState()
+	if !st.HasTarget || st.TargetName != "a gnoll" {
+		t.Fatalf("got HasTarget=%v TargetName=%q, want HasTarget=true TargetName=%q", st.HasTarget, st.TargetName, "a gnoll")
+	}
+}
+
+func TestNPCTracker_NPCMissesPlayerSetsTarget(t *testing.T) {
+	tr := newTestTracker()
+
+	tr.Handle(logparser.LogEvent{
+		Type: logparser.EventCombatMiss,
+		Data: logparser.CombatMissData{Actor: "a gnoll", Target: "You", MissType: "miss"},
+	})
+
+	st := tr.GetState()
+	if !st.HasTarget || st.TargetName != "a gnoll" {
+		t.Fatalf("got HasTarget=%v TargetName=%q, want HasTarget=true TargetName=%q", st.HasTarget, st.TargetName, "a gnoll")
+	}
+}
+
 func TestNPCTracker_KillClearsMatchingTarget(t *testing.T) {
 	tr := newTestTracker()
 

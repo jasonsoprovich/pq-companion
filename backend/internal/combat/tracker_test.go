@@ -1061,7 +1061,7 @@ func TestIsGeneratedPetName(t *testing.T) {
 		"Venarab", "Vober", "Kabtik", "Vasann", "Lasekn", "Gareker", "Goner",
 		"Jibantik", "Kenarer", "Kabobab", "Karn", "Kann", "Zekn", "Gobn", "Zonekn"}
 	for _, n := range pets {
-		if !isGeneratedPetName(n) {
+		if !IsGeneratedPetName(n) {
 			t.Errorf("expected real pet name %q to be recognised", n)
 		}
 	}
@@ -1069,7 +1069,7 @@ func TestIsGeneratedPetName(t *testing.T) {
 		"Udabut", "Ammaru", "Kaalos", "Tarnak", "Zlandicar", "Sandrian",
 		"Takkisina", "Karen", "You", "", "kebartik", "Gnoll"}
 	for _, n := range players {
-		if isGeneratedPetName(n) {
+		if IsGeneratedPetName(n) {
 			t.Errorf("expected non-pet name %q NOT to be treated as a pet", n)
 		}
 	}

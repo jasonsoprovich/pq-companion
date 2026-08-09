@@ -79,7 +79,7 @@ var (
 	petFragEnd    = []string{"tik", "er", "n", "ab"}
 )
 
-// isGeneratedPetName reports whether name was produced by the EQMac summoned-pet
+// IsGeneratedPetName reports whether name was produced by the EQMac summoned-pet
 // generator. These game-generated names embed no owner, so they're the pets our
 // possessive-name and "My leader is" heuristics can't resolve alone.
 //
@@ -87,7 +87,7 @@ var (
 // real player names, so callers pair this with the verifiedPlayers guard and
 // treat any owner it yields as overridable by an authoritative signal (Zeal pet
 // name, "My leader is", charm tell).
-func isGeneratedPetName(name string) bool {
+func IsGeneratedPetName(name string) bool {
 	if len(name) < 4 || len(name) > 15 {
 		return false
 	}
@@ -770,11 +770,11 @@ func (t *Tracker) resolveNPC(actor, target string) string {
 	// name happens to be generator-shaped.
 	_, targetIsPet := t.petOwners[target]
 	if !targetIsPet {
-		targetIsPet = isGeneratedPetName(target) && !t.verifiedPlayers[target]
+		targetIsPet = IsGeneratedPetName(target) && !t.verifiedPlayers[target]
 	}
 	_, actorIsPet := t.petOwners[actor]
 	if !actorIsPet {
-		actorIsPet = isGeneratedPetName(actor) && !t.verifiedPlayers[actor]
+		actorIsPet = IsGeneratedPetName(actor) && !t.verifiedPlayers[actor]
 	}
 	if actorIsPet && !targetIsPet {
 		return target
@@ -1302,7 +1302,7 @@ func (t *Tracker) inferPetOwnerFromHealLocked(healer, target string) {
 
 	self := healer == "You" || healer == t.playerName()
 	switch {
-	case isGeneratedPetName(target):
+	case IsGeneratedPetName(target):
 		t.petOwners[target] = owner
 	case self && looksLikeNPC(target):
 		t.petOwners[target] = owner
