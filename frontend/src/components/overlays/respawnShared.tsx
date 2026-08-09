@@ -1,6 +1,7 @@
 import React from 'react'
 import { X } from 'lucide-react'
 import { removeRespawn } from '../../services/api'
+import { useTimerAppearance } from '../../hooks/useTimerAppearance'
 import type { RespawnTimer } from '../../types/respawn'
 
 // fmtClock renders a remaining-seconds value as M:SS, or "Hh Mm" for the long
@@ -42,6 +43,7 @@ interface RespawnRowProps {
 // window stays legible at low opacity (mirrors BuffTimer's two renderers).
 export function RespawnRow({ timer, currentZone, variant }: RespawnRowProps): React.ReactElement {
   const win = variant === 'window'
+  const appearance = useTimerAppearance()
   const pct =
     timer.duration_seconds > 0
       ? Math.max(0, Math.min(1, timer.remaining_seconds / timer.duration_seconds))
@@ -64,7 +66,7 @@ export function RespawnRow({ timer, currentZone, variant }: RespawnRowProps): Re
         style={{
           position: 'absolute', left: 0, top: 0, bottom: 0,
           width: `${pct * 100}%`, backgroundColor: color,
-          opacity: win ? 0.5 : 0.15,
+          opacity: appearance.fillOpacity,
           pointerEvents: 'none', transition: 'width 1s linear',
         }}
       />
