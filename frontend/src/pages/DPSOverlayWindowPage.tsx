@@ -8,14 +8,14 @@
  * buttons (clear, lock, close, etc.) stay clickable.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Swords, Clipboard, ClipboardCheck, Trash2, Users, Activity, Hourglass, User, History, Crosshair } from 'lucide-react'
+import { Swords, Clipboard, ClipboardCheck, Trash2, Users, Activity, Hourglass, User, History, Crosshair, XCircle } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
 import OverlayLockButton from '../components/OverlayLockButton'
-import { getCombatState, resetCombatState } from '../services/api'
+import { getCombatState, resetCombatState, endActiveFight } from '../services/api'
 import type { CombatState, FightState } from '../types/combat'
 import { rollupCombatants, useCombinePetWithOwner, petBadge, type RolledUpEntity } from '../lib/dpsRollup'
 import { buildDpsFightSummary } from '../lib/dpsClipboard'
@@ -477,6 +477,30 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
             }}
           >
             {copied ? <ClipboardCheck size={11} /> : <Clipboard size={11} />}
+          </button>
+          {/* end parse — finalises the current in-flight fight, saving it to
+              Combat History, without wiping session totals. Only enabled
+              while in combat. */}
+          <button
+            onClick={() => { if (inCombat) endActiveFight().catch(() => {}) }}
+            disabled={!inCombat}
+            title={
+              inCombat
+                ? 'End the current parse — clears this fight from the meter and saves it to Combat History (use after evac/zone when you’re done with the mob)'
+                : 'No active fight to end'
+            }
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              background: 'none',
+              border: 'none',
+              padding: '1px 3px',
+              cursor: inCombat ? 'pointer' : 'default',
+              color: 'rgba(255,255,255,0.4)',
+              opacity: inCombat ? 1 : 0.4,
+            }}
+          >
+            <XCircle size={11} />
           </button>
           {/* clear — resets the backend tracker (session damage, fight history,
               death log) and the local frozen-fight cache. Always enabled so the
