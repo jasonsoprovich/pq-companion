@@ -752,8 +752,17 @@ func (e *Engine) fire(c compiled, matchedLine string, firedAt time.Time, match [
 			// is swept by removeOnKill on ANY kill in the zone/raid (see its
 			// doc comment) — without this fallback, an unrelated add or pet
 			// dying clears a boss debuff timer that has nothing to do with it.
+			//
+			// Restricted to detrimental timers only: buff/custom timers with
+			// no captured target legitimately mean "self" (a proc or personal
+			// cooldown with no name in its log text, e.g. Avatar, Falcon Eye,
+			// Cannibalize) and spelltimer's removeOnKill never sweeps a
+			// target-less buff/custom timer anyway. Falling back to the combat
+			// target here was gluing those self-only timers to whatever mob
+			// was last targeted, so they vanished the moment that mob died —
+			// reported by suprphrk/HughJeffner 2026-08-07.
 			target := resolveTimerTarget(t, match, names)
-			if target == "" {
+			if target == "" && t.TimerType == TimerTypeDetrimental {
 				target = builtins["target"]
 			}
 			spellID := t.SpellID

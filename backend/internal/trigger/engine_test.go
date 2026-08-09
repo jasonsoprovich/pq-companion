@@ -2,6 +2,7 @@ package trigger
 
 import (
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"regexp"
 	"testing"
@@ -1284,6 +1285,48 @@ func TestEngine_TimerTargetFallsBackToCombatTarget(t *testing.T) {
 	e.Handle(time.Now(), "Larcen is stricken by torturing winds.")
 	if sink.calls != 1 || sink.target != "Lord Inquisitor Seru" {
 		t.Errorf("StartExternal target = %+v, want target Lord Inquisitor Seru", sink)
+	}
+}
+
+// TestEngine_BuffAndCustomTimersDontFallBackToCombatTarget verifies that a
+// self-only buff/custom trigger (no name anywhere in its log text — Avatar
+// proc, Falcon Eye, Cannibalize V) starts its timer with an EMPTY target even
+// when a mob is currently targeted, rather than binding to that mob like
+// TestEngine_TimerTargetFallsBackToCombatTarget's detrimental case does.
+// Regression for the "self-only buffs show on <target> and vanish when that
+// mob dies" report (suprphrk/HughJeffner, 2026-08-07): spelltimer's
+// removeOnKill only sweeps target-less DETRIMENTAL timers, never buff/custom
+// ones, so gluing these to the combat target was actively harmful — it made
+// an otherwise-permanent self timer die with an unrelated kill.
+func TestEngine_BuffAndCustomTimersDontFallBackToCombatTarget(t *testing.T) {
+	for _, tt := range []TimerType{TimerTypeBuff, TimerTypeCustom} {
+		t.Run(string(tt), func(t *testing.T) {
+			s := openTestStore(t)
+			hub := ws.NewHub()
+			sink := &captureSink{}
+			e := NewEngine(s, hub, sink, nil)
+			e.SetTargetProvider(func() string { return "a gnoll" })
+
+			tr := &Trigger{
+				ID:                fmt.Sprintf("avatar-proc-%s", tt),
+				Name:              "Avatar",
+				Enabled:           true,
+				Pattern:           `^Your body screams with the power of an Avatar\.$`,
+				TimerType:         tt,
+				TimerDurationSecs: 360,
+				Actions:           []Action{},
+				CreatedAt:         time.Now().UTC(),
+			}
+			if err := s.Insert(tr); err != nil {
+				t.Fatalf("Insert: %v", err)
+			}
+			e.Reload()
+
+			e.Handle(time.Now(), "Your body screams with the power of an Avatar.")
+			if sink.calls != 1 || sink.target != "" {
+				t.Errorf("StartExternal target = %+v, want empty target (self)", sink)
+			}
+		})
 	}
 }
 
