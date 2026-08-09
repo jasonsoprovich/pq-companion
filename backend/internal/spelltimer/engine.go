@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -203,6 +204,41 @@ func timerKey(spellName, targetName string) string {
 	return spellName + timerKeySep + targetName
 }
 
+// stackKeySep separates a stacking timer's base key from its per-firing
+// counter suffix. Distinct from timerKeySep so the two never collide.
+const stackKeySep = "#"
+
+// maxStackedPerName caps how many stacked rows a single trigger (by
+// SpellName) can have active at once. Guards against a misconfigured
+// trigger on a common log line spawning runaway timer counts — both for the
+// user's overlay (unbounded rows) and snapshot()'s O(n²) sort, which runs
+// every broadcastInterval.
+const maxStackedPerName = 20
+
+// evictOldestStackedLocked drops the soonest-to-expire stacked timer for
+// name once maxStackedPerName is reached, making room for the new one about
+// to be inserted. Must be called with e.mu held. No-op under the cap.
+func (e *Engine) evictOldestStackedLocked(name string) {
+	var oldestKey string
+	var oldestExpiry time.Time
+	count := 0
+	for k, t := range e.timers {
+		if !t.Stacked || t.SpellName != name {
+			continue
+		}
+		count++
+		if oldestKey == "" || t.ExpiresAt.Before(oldestExpiry) {
+			oldestKey, oldestExpiry = k, t.ExpiresAt
+		}
+	}
+	if count < maxStackedPerName || oldestKey == "" {
+		return
+	}
+	delete(e.timers, oldestKey)
+	slog.Warn("timer-debug: stacked timer cap reached, evicted oldest",
+		"name", name, "cap", maxStackedPerName)
+}
+
 // sameSpellForDedup reports whether an existing timer represents the same
 // underlying spell as an incoming (name, spellID) pair, for cross-pipeline
 // dedup. A name match is the common case. A SpellID match additionally
@@ -360,6 +396,12 @@ type Engine struct {
 	// Aegolism, etc.).
 	lastDivergenceFromPipe   string
 	lastDivergenceFromTimers string
+
+	// nextStackIndex counts firings per spell name for stacking timers
+	// (StartExternal's stack param), giving each fired instance a unique,
+	// monotonically increasing suffix regardless of how many land in the
+	// same log second.
+	nextStackIndex map[string]uint64
 }
 
 // NewEngine returns an initialised Engine ready to receive log events.
@@ -372,17 +414,18 @@ type Engine struct {
 // chChainMissFn may be nil (CH-chain possible-miss flagging runs unconditionally).
 func NewEngine(hub *ws.Hub, database *db.DB, charCtx CharacterContext, scopeFn ScopeProvider, classFilterFn ClassFilterProvider, modeFn ModeProvider, ownedItemsFn OwnedItemsProvider, keepExpiredFn KeepExpiredProvider, chChainMissFn CHChainMissProvider) *Engine {
 	return &Engine{
-		hub:           hub,
-		db:            database,
-		charCtx:       charCtx,
-		scopeFn:       scopeFn,
-		classFilterFn: classFilterFn,
-		modeFn:        modeFn,
-		ownedItemsFn:  ownedItemsFn,
-		keepExpiredFn: keepExpiredFn,
-		chChainMissFn: chChainMissFn,
-		timers:        make(map[string]*ActiveTimer),
-		pendingArms:   make(map[string]*pendingArm),
+		hub:            hub,
+		db:             database,
+		charCtx:        charCtx,
+		scopeFn:        scopeFn,
+		classFilterFn:  classFilterFn,
+		modeFn:         modeFn,
+		ownedItemsFn:   ownedItemsFn,
+		keepExpiredFn:  keepExpiredFn,
+		chChainMissFn:  chChainMissFn,
+		timers:         make(map[string]*ActiveTimer),
+		pendingArms:    make(map[string]*pendingArm),
+		nextStackIndex: make(map[string]uint64),
 	}
 }
 
@@ -733,10 +776,18 @@ func divergenceKey(names []string) string {
 // apply the active character's item/AA duration focuses to durationSecs —
 // matching the spell-landed pipeline. 0 means "use durationSecs as given"
 // (custom triggers without a spell anchor, tests).
-func (e *Engine) StartExternal(name string, category string, durationSecs, displayThresholdSecs float64, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string, pinned bool, customGroup string) {
+//
+// stack is a variadic trailing bool (pass none, or exactly one) so every
+// existing caller — production and the many test call sites below — compiles
+// unchanged; only the trigger engine's stacking path passes true. When true,
+// this firing gets its own independent timer row instead of restarting/
+// overwriting any existing same-name timer — the "stack timers" trigger
+// option (Trigger.TimerStack). Only meaningful alongside category "custom".
+func (e *Engine) StartExternal(name string, category string, durationSecs, displayThresholdSecs float64, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string, pinned bool, customGroup string, stack ...bool) {
 	if name == "" || durationSecs <= 0 {
 		return
 	}
+	stacking := len(stack) > 0 && stack[0]
 	cat := Category(category)
 	switch cat {
 	case CategoryBuff, CategoryDebuff, CategoryMez, CategoryDot, CategoryStun, CategoryCHChain, CategoryCHChain2, CategoryCustom:
@@ -766,6 +817,51 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 
 	e.mu.Lock()
 	e.gcPendingArmsLocked(time.Now())
+
+	// A stacking firing always gets its own row: skip the deferred-render
+	// mez path (which is keyed by name and would otherwise swallow it into
+	// a pendingArm) and uniquify the key with a per-name counter so it can
+	// never collide with — or be overwritten by — another stacked instance.
+	// Deliberately not gated on category here: only trigger-driven
+	// CategoryCustom firings ever pass stack=true (see the trigger engine),
+	// so this never interacts with the spell-landed pipeline's buff/debuff/
+	// mez timers.
+	if stacking {
+		e.nextStackIndex[key]++
+		key = key + stackKeySep + strconv.FormatUint(e.nextStackIndex[key], 10)
+		e.evictOldestStackedLocked(name)
+		timer := &ActiveTimer{
+			ID:                   key,
+			SpellName:            name,
+			SpellID:              spellID,
+			TargetName:           targetName,
+			Icon:                 resolvedIcon,
+			Category:             cat,
+			CastAt:               startedAt,
+			StartsAt:             startedAt,
+			ExpiresAt:            startedAt.Add(time.Duration(durationSecs * float64(time.Second))),
+			DurationSeconds:      durationSecs,
+			DisplayThresholdSecs: displayThresholdSecs,
+			TimerAlerts:          alerts,
+			BarColor:             barColor,
+			Pinned:               pinned,
+			CustomGroup:          customGroup,
+			IsCharm:              isCharm,
+			Stacked:              true,
+		}
+		e.timers[key] = timer
+		snap := e.snapshot(time.Now())
+		e.mu.Unlock()
+
+		slog.Debug("timer-debug: stacked external timer started (trigger-driven)",
+			"name", name,
+			"category", cat,
+			"duration_secs", durationSecs,
+			"active_timer_count", len(snap.Timers),
+		)
+		e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
+		return
+	}
 
 	// Deferred-render path: spells in deferredRenderSpells (currently the
 	// three mez spells with shared land text) stash trigger metadata as a
@@ -1598,7 +1694,15 @@ func (e *Engine) removeOnKill(target string) {
 	removed := 0
 	survivors := make([]string, 0, len(e.timers))
 	for k, t := range e.timers {
-		match := normalizeNPCName(t.TargetName) == normTarget
+		// Stacked timers are exempt from the target match: the tailer
+		// delivers raw log lines before parsed events (see
+		// logparser.Tailer.deliver), so a respawn trigger firing on
+		// "You have slain Foo!" creates its stacked timer a moment before
+		// this same kill's EventKill reaches removeOnKill("Foo") — which
+		// would otherwise delete the very row it just captured a target
+		// name for. The orphan sweep never applies to CategoryCustom
+		// (isDetrimentalCategory excludes it) so it's unaffected either way.
+		match := !t.Stacked && normalizeNPCName(t.TargetName) == normTarget
 		orphan := t.TargetName == "" && isDetrimentalCategory(t.Category) && !t.IsCharm
 		if match || orphan {
 			delete(e.timers, k)
@@ -1761,6 +1865,11 @@ func (e *Engine) removeIllusionsForPlayer(player string) {
 //     whole set. This also preserves the SpellID-merge fade path for haste
 //     buffs ("Your body slows.") that survived under the DB name.
 //
+//   - Stacked timers (Trigger.TimerStack) peel one, same as detrimentals: each
+//     row is an independent firing (e.g. one respawn instance), so a single
+//     worn-off pattern match should drop only the oldest still-running one,
+//     not every stacked row for that trigger at once.
+//
 // A single matching timer collapses to the same result either way.
 func (e *Engine) removeBySpellNameOrID(spellName string, spellID int) {
 	if spellName == "" && spellID <= 0 {
@@ -1771,11 +1880,15 @@ func (e *Engine) removeBySpellNameOrID(spellName string, spellID int) {
 	e.mu.Lock()
 	var matches []string
 	allDetrimental := true
+	allStacked := true
 	for k, t := range e.timers {
 		if t.SpellName == spellName || (spellID > 0 && t.SpellID == spellID) {
 			matches = append(matches, k)
 			if !isDetrimentalCategory(t.Category) {
 				allDetrimental = false
+			}
+			if !t.Stacked {
+				allStacked = false
 			}
 		}
 	}
@@ -1793,7 +1906,7 @@ func (e *Engine) removeBySpellNameOrID(spellName string, spellID int) {
 	}
 
 	removed := 0
-	if allDetrimental && len(matches) > 1 {
+	if (allDetrimental || allStacked) && len(matches) > 1 {
 		// Peel off only the single nearest-expiry instance.
 		earliest := matches[0]
 		for _, k := range matches[1:] {

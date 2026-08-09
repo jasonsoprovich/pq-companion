@@ -2500,6 +2500,12 @@ export interface CreateTriggerRequest {
   timer_key_capture?: string
   /** Capture group naming the timer's target (the "on <target>" suffix). */
   timer_target_capture?: string
+  /**
+   * When timer_type is 'custom', stacks each firing as its own timer row
+   * instead of restarting/overwriting the existing same-name row. Backend
+   * coerces this to false unless timer_type is 'custom'.
+   */
+  timer_stack?: boolean
   worn_off_pattern?: string
   spell_id?: number
   /**

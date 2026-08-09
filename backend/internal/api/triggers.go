@@ -66,6 +66,10 @@ type triggerRequest struct {
 	DisplayThresholdSecs float64  `json:"display_threshold_secs"`
 	BarColor             string   `json:"bar_color"`
 	Pinned               bool     `json:"pinned"`
+	// TimerStack requests "stack timers" — see Trigger.TimerStack. The
+	// handler coerces this to false unless the trigger's TimerType is
+	// "custom".
+	TimerStack bool `json:"timer_stack"`
 	// CustomGroupID selects which Custom Timers window a timer_type="custom"
 	// trigger's timer appears in. Empty = the original/default window.
 	CustomGroupID   string                 `json:"custom_group_id"`
@@ -161,13 +165,17 @@ func (h *triggerHandler) create(w http.ResponseWriter, r *http.Request) {
 		DisplayThresholdSecs: req.DisplayThresholdSecs,
 		BarColor:             strings.TrimSpace(req.BarColor),
 		Pinned:               req.Pinned,
-		CustomGroupID:        strings.TrimSpace(req.CustomGroupID),
-		Characters:           req.Characters,
-		TimerAlerts:          req.TimerAlerts,
-		ExcludePatterns:      req.ExcludePatterns,
-		ExtraPatterns:        req.ExtraPatterns,
-		Source:               src,
-		PipeCondition:        req.PipeCondition,
+		// TimerStack only ever applies to custom timers — see its doc comment
+		// on Trigger. Coerced here (not just in the frontend) so a crafted or
+		// stale request can't enable it on a buff/detrimental trigger.
+		TimerStack:      req.TimerStack && normalizeTimerType(req.TimerType) == trigger.TimerTypeCustom,
+		CustomGroupID:   strings.TrimSpace(req.CustomGroupID),
+		Characters:      req.Characters,
+		TimerAlerts:     req.TimerAlerts,
+		ExcludePatterns: req.ExcludePatterns,
+		ExtraPatterns:   req.ExtraPatterns,
+		Source:          src,
+		PipeCondition:   req.PipeCondition,
 	}
 	if req.RefireCooldownSecs != nil {
 		t.RefireCooldownSecs = *req.RefireCooldownSecs
@@ -246,6 +254,7 @@ func (h *triggerHandler) update(w http.ResponseWriter, r *http.Request) {
 	existing.DisplayThresholdSecs = req.DisplayThresholdSecs
 	existing.BarColor = strings.TrimSpace(req.BarColor)
 	existing.Pinned = req.Pinned
+	existing.TimerStack = req.TimerStack && existing.TimerType == trigger.TimerTypeCustom
 	existing.CustomGroupID = strings.TrimSpace(req.CustomGroupID)
 	existing.Characters = req.Characters
 	existing.TimerAlerts = req.TimerAlerts

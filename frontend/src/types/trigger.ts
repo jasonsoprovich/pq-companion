@@ -149,6 +149,13 @@ export interface Trigger {
    * Empty (or a group that didn't match, e.g. a self-cast branch) = no suffix.
    */
   timer_target_capture?: string
+  /**
+   * When timer_type is 'custom', gives every firing its own independent
+   * timer row instead of restarting/overwriting the existing same-name row
+   * — e.g. one respawn timer per mob killed instead of one shared bar that
+   * resets. False (default) = today's behavior. Ignored for buff/detrimental.
+   */
+  timer_stack?: boolean
   worn_off_pattern: string
   spell_id: number
   /**

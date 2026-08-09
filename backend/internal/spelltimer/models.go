@@ -47,7 +47,9 @@ const (
 type ActiveTimer struct {
 	// ID is the unique key in the engine's timer map. For spell-derived
 	// timers it's "<spell name>@<target name>"; for trigger-driven timers
-	// (no associated target) it's "<trigger name>@".
+	// (no associated target) it's "<trigger name>@". A Stacked timer appends
+	// "#<n>" (a per-name counter) so repeat firings never collide; SpellName
+	// itself is left unchanged so the visible label doesn't show the suffix.
 	ID        string `json:"id"`
 	SpellName string `json:"spell_name"`
 	SpellID   int    `json:"spell_id"`
@@ -117,6 +119,15 @@ type ActiveTimer struct {
 	// meaningful when Category is CategoryCustom; empty means the original/
 	// default Custom Timers window.
 	CustomGroup string `json:"custom_group,omitempty"`
+
+	// Stacked marks a timer created by a trigger with "stack timers" enabled
+	// (Trigger.TimerStack): instead of one row per trigger that restarts on
+	// every firing, each firing gets its own independent row sharing the same
+	// SpellName. StartExternal appends a counter to the map key so these rows
+	// never collide, and this flag lets removeOnKill / worn-off handling treat
+	// them differently from an ordinary single-instance custom timer. Always
+	// false outside CategoryCustom. Internal-only; the frontend doesn't need it.
+	Stacked bool `json:"-"`
 
 	// IsCharm marks a timer whose source spell is a Charm effect (SPA 22).
 	// Charm represents an ongoing pet the player controls, so — unlike a

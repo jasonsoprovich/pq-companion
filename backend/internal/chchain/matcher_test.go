@@ -29,7 +29,7 @@ type fakeSink struct {
 	manas       []manaCall
 }
 
-func (f *fakeSink) StartExternal(name, category string, dur, _ float64, _ time.Time, _ json.RawMessage, _ int, targetName, _ string, _ bool, _ string) {
+func (f *fakeSink) StartExternal(name, category string, dur, _ float64, _ time.Time, _ json.RawMessage, _ int, targetName, _ string, _ bool, _ string, _ ...bool) {
 	f.calls = append(f.calls, capture{name, category, dur, targetName})
 }
 

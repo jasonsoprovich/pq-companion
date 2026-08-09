@@ -412,6 +412,9 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, timerG
   const [barColor, setBarColor] = useState(initial?.bar_color ?? '')
   // Pins this trigger's timer(s) to the top of their overlay.
   const [pinned, setPinned] = useState(initial?.pinned ?? false)
+  // Stacks each firing as its own timer row instead of restarting/
+  // overwriting the existing same-name row. Only meaningful for custom timers.
+  const [timerStack, setTimerStack] = useState(initial?.timer_stack ?? false)
   // Which Custom Timers window this trigger's timer appears in (only used
   // when timerType === 'custom'). '' = the original/default window. The
   // "__new__" sentinel opens an inline create input, mirroring the category
@@ -691,6 +694,7 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, timerG
       display_threshold_secs: timerType === 'none' ? 0 : Math.max(0, displayThreshold),
       bar_color: timerType === 'none' ? '' : barColor,
       pinned: timerType === 'none' ? false : pinned,
+      timer_stack: timerType === 'custom' ? timerStack : false,
       custom_group_id: timerType === 'custom' ? customGroupID : '',
       characters: Array.from(selectedChars),
       timer_alerts: timerType === 'none' ? [] : timerAlerts,
@@ -1307,6 +1311,17 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, timerG
                 </span>
               </div>
             )}
+            {source === 'log' && timerType === 'custom' && (
+              <div className="flex items-center gap-1.5">
+                <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+                  Stack timers
+                </label>
+                <Toggle checked={timerStack} onChange={setTimerStack} />
+                <span className="text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
+                  start a new bar each time this fires instead of restarting the existing one — e.g. one row per mob killed
+                </span>
+              </div>
+            )}
             <div className="flex items-center gap-1.5">
               <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
                 Display threshold (s)
@@ -1667,6 +1682,7 @@ function TriggerRow({
       display_threshold_secs: trigger.display_threshold_secs,
       bar_color: trigger.bar_color ?? '',
       pinned: trigger.pinned ?? false,
+      timer_stack: trigger.timer_stack ?? false,
       custom_group_id: trigger.custom_group_id ?? '',
       characters: trigger.characters,
       timer_alerts: trigger.timer_alerts ?? [],
@@ -3227,6 +3243,7 @@ export default function TriggersPage(): React.ReactElement {
       display_threshold_secs: t.display_threshold_secs,
       bar_color: t.bar_color ?? '',
       pinned: t.pinned ?? false,
+      timer_stack: t.timer_stack ?? false,
       custom_group_id: t.custom_group_id ?? '',
       characters: t.characters,
       timer_alerts: t.timer_alerts ?? [],

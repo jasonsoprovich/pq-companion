@@ -977,6 +977,7 @@ type captureSink struct {
 	pinned   bool
 	group    string
 	alerts   json.RawMessage
+	stack    bool
 	calls    int
 
 	stopName    string
@@ -984,8 +985,9 @@ type captureSink struct {
 	stops       int
 }
 
-func (s *captureSink) StartExternal(name, category string, durationSecs, displayThresholdSecs float64, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string, pinned bool, customGroup string) {
+func (s *captureSink) StartExternal(name, category string, durationSecs, displayThresholdSecs float64, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string, pinned bool, customGroup string, stack ...bool) {
 	s.name, s.category, s.duration, s.spellID, s.target, s.barColor, s.pinned, s.group, s.alerts = name, category, durationSecs, spellID, targetName, barColor, pinned, customGroup, alerts
+	s.stack = len(stack) > 0 && stack[0]
 	s.calls++
 }
 func (s *captureSink) StopExternal(name string, spellID int) {
@@ -1035,6 +1037,54 @@ func TestEngine_CustomTimerWithCaptureDuration(t *testing.T) {
 	}
 	if stored.TimerDurationCapture != "2" || stored.TimerType != TimerTypeCustom {
 		t.Errorf("persisted trigger = capture %q type %q", stored.TimerDurationCapture, stored.TimerType)
+	}
+}
+
+// TestEngine_TimerStack_OnlyAppliesToCustomTimers verifies fire() only ever
+// passes stack=true to the sink for a TimerType "custom" trigger with
+// TimerStack set — never for buff/detrimental, even if TimerStack were
+// somehow set on one (the API layer already coerces it false, but fire()
+// is the actual behaviour gate and must not trust that alone).
+func TestEngine_TimerStack_OnlyAppliesToCustomTimers(t *testing.T) {
+	s := openTestStore(t)
+	hub := ws.NewHub()
+	sink := &captureSink{}
+	e := NewEngine(s, hub, sink, nil)
+
+	custom := &Trigger{
+		ID: "stack-custom", Name: "Respawn Timer", Enabled: true,
+		Pattern:           `^A gnoll respawned\.$`,
+		TimerType:         TimerTypeCustom,
+		TimerDurationSecs: 60,
+		TimerStack:        true,
+		Actions:           []Action{{Type: ActionOverlayText, Text: "respawned"}},
+		CreatedAt:         time.Now().UTC(),
+	}
+	buff := &Trigger{
+		ID: "stack-buff", Name: "Fake Buff", Enabled: true,
+		Pattern:           `^You feel stacked\.$`,
+		TimerType:         TimerTypeBuff,
+		TimerDurationSecs: 60,
+		TimerStack:        true,
+		Actions:           []Action{{Type: ActionOverlayText, Text: "buffed"}},
+		CreatedAt:         time.Now().UTC(),
+	}
+	if err := s.Insert(custom); err != nil {
+		t.Fatalf("Insert custom: %v", err)
+	}
+	if err := s.Insert(buff); err != nil {
+		t.Fatalf("Insert buff: %v", err)
+	}
+	e.Reload()
+
+	e.Handle(time.Now(), "A gnoll respawned.")
+	if sink.calls != 1 || !sink.stack {
+		t.Errorf("custom trigger with TimerStack should pass stack=true, got calls=%d stack=%v", sink.calls, sink.stack)
+	}
+
+	e.Handle(time.Now(), "You feel stacked.")
+	if sink.calls != 2 || sink.stack {
+		t.Errorf("buff trigger must never pass stack=true even with TimerStack set, got calls=%d stack=%v", sink.calls, sink.stack)
 	}
 }
 

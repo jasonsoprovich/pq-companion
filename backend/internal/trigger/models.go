@@ -258,6 +258,17 @@ type Trigger struct {
 	// suffix shows and {target} falls back to the current combat target.
 	TimerTargetCapture string `json:"timer_target_capture,omitempty"`
 
+	// TimerStack gives every firing of this trigger its own independent
+	// timer row instead of the default behaviour of restarting/overwriting
+	// the existing row of the same name — e.g. a respawn timer where killing
+	// a second mob of the same name should start a second countdown, not
+	// reset the first one. Only meaningful when TimerType is "custom" (the
+	// API layer forces it false otherwise); the spelltimer engine caps the
+	// number of simultaneously stacked rows per trigger so a misconfigured
+	// pattern on a frequent log line can't spawn an unbounded overlay.
+	// Default false preserves today's single-row-per-trigger behaviour.
+	TimerStack bool `json:"timer_stack,omitempty"`
+
 	// RefireCooldownSecs suppresses the trigger from firing again for this many
 	// seconds after it fires. 0 (default) means fire on every match — the
 	// out-of-the-box behaviour. Unlike CooldownSecs (a visible spell-recast

@@ -15,9 +15,10 @@ import (
 func newTestEngine() *Engine {
 	hub := ws.NewHub()
 	return &Engine{
-		hub:         hub,
-		timers:      make(map[string]*ActiveTimer),
-		pendingArms: make(map[string]*pendingArm),
+		hub:            hub,
+		timers:         make(map[string]*ActiveTimer),
+		pendingArms:    make(map[string]*pendingArm),
+		nextStackIndex: make(map[string]uint64),
 		charCtx: func() (string, string, int) {
 			return "/eq", "Osui", -1
 		},
@@ -1368,5 +1369,179 @@ func TestOnSpellLanded_ScopeCastByMe_FiltersWithoutRecentCast(t *testing.T) {
 
 	if len(e.timers) != 0 {
 		t.Errorf("cast_by_me without matching local cast should drop; got %d timers", len(e.timers))
+	}
+}
+
+// StartExternal's stack argument (Trigger.TimerStack) is the fix for the
+// reported "respawn timers overwrite each other" bug: two firings of the
+// same trigger name must produce two independent rows sharing one label,
+// not one row that keeps getting restarted.
+func TestStartExternal_Stacking_CreatesIndependentRows(t *testing.T) {
+	e := newTestEngine()
+	now := time.Now()
+
+	e.StartExternal("Zun Thall Xakra Spawn", "custom", 60, 0, now, nil, 0, "", "", false, "", true)
+	e.StartExternal("Zun Thall Xakra Spawn", "custom", 60, 0, now.Add(5*time.Second), nil, 0, "", "", false, "", true)
+
+	if len(e.timers) != 2 {
+		t.Fatalf("expected 2 stacked rows, got %d", len(e.timers))
+	}
+	var ids []string
+	for id, timer := range e.timers {
+		ids = append(ids, id)
+		if timer.SpellName != "Zun Thall Xakra Spawn" {
+			t.Errorf("SpellName should stay the trigger name (no suffix leak), got %q", timer.SpellName)
+		}
+		if !timer.Stacked {
+			t.Error("stacked timer should have Stacked=true")
+		}
+	}
+	if ids[0] == ids[1] {
+		t.Errorf("expected distinct map keys, both were %q", ids[0])
+	}
+}
+
+// Two mobs of the same name can die within the same log second (raid pulls,
+// PBAE). The stacking uniquifier must be a monotonic counter, not the log
+// timestamp, or these would collide exactly like the pre-fix bug.
+func TestStartExternal_Stacking_SameTimestampStillCreatesTwoRows(t *testing.T) {
+	e := newTestEngine()
+	now := time.Now()
+
+	e.StartExternal("Griffon", "custom", 30, 0, now, nil, 0, "", "", false, "", true)
+	e.StartExternal("Griffon", "custom", 30, 0, now, nil, 0, "", "", false, "", true)
+
+	if len(e.timers) != 2 {
+		t.Fatalf("same-second stacked firings should still produce 2 rows, got %d", len(e.timers))
+	}
+}
+
+// Without stacking, two same-name firings inside dedupGraceWindow merge into
+// one row (existing cross-pipeline dedup behaviour). With stacking, that
+// merge loop must be bypassed entirely — sameSpellForDedup matches on name,
+// not on the map key, so a unique key alone wouldn't be enough.
+func TestStartExternal_Stacking_BypassesDedupGraceWindow(t *testing.T) {
+	e := newTestEngine()
+	now := time.Now()
+
+	e.StartExternal("Griffon", "custom", 30, 0, now, nil, 0, "", "", false, "")
+	e.StartExternal("Griffon", "custom", 30, 0, now.Add(time.Second), nil, 0, "", "", false, "")
+	if len(e.timers) != 1 {
+		t.Fatalf("non-stacked firings inside the grace window should merge to 1 row, got %d", len(e.timers))
+	}
+
+	e2 := newTestEngine()
+	e2.StartExternal("Griffon", "custom", 30, 0, now, nil, 0, "", "", false, "", true)
+	e2.StartExternal("Griffon", "custom", 30, 0, now.Add(time.Second), nil, 0, "", "", false, "", true)
+	if len(e2.timers) != 2 {
+		t.Fatalf("stacked firings inside the grace window should still produce 2 rows, got %d", len(e2.timers))
+	}
+}
+
+// RemoveByID (used by the Custom Timers panel's per-row dismiss button)
+// must drop exactly the row whose key was clicked, leaving sibling stacked
+// rows for the same trigger untouched.
+func TestRemoveByID_DropsOnlyOneStackedRow(t *testing.T) {
+	e := newTestEngine()
+	now := time.Now()
+	e.StartExternal("Griffon", "custom", 30, 0, now, nil, 0, "", "", false, "", true)
+	e.StartExternal("Griffon", "custom", 30, 0, now.Add(time.Second), nil, 0, "", "", false, "", true)
+	if len(e.timers) != 2 {
+		t.Fatalf("setup: expected 2 stacked rows, got %d", len(e.timers))
+	}
+	var target string
+	for id := range e.timers {
+		target = id
+		break
+	}
+
+	if !e.RemoveByID(target) {
+		t.Fatal("RemoveByID should report the row was found and removed")
+	}
+	if len(e.timers) != 1 {
+		t.Fatalf("expected 1 remaining row, got %d", len(e.timers))
+	}
+	if _, ok := e.timers[target]; ok {
+		t.Error("the removed row's key should no longer be present")
+	}
+}
+
+// A worn-off pattern match names no specific instance. For stacked timers —
+// like the peel-one-per-signal rule already used for AoE detrimentals —
+// clearing should drop just the oldest still-running row per signal, not
+// every stacked row for the trigger at once.
+func TestRemoveBySpellNameOrID_PeelsOneStackedRow(t *testing.T) {
+	e := newTestEngine()
+	now := time.Now()
+	e.StartExternal("Zun Thall Xakra Spawn", "custom", 300, 0, now, nil, 0, "", "", false, "", true)
+	e.StartExternal("Zun Thall Xakra Spawn", "custom", 900, 0, now.Add(time.Second), nil, 0, "", "", false, "", true)
+	if len(e.timers) != 2 {
+		t.Fatalf("setup: expected 2 stacked rows, got %d", len(e.timers))
+	}
+	var earliest, latest string
+	for id, timer := range e.timers {
+		if timer.DurationSeconds == 300 {
+			earliest = id
+		} else {
+			latest = id
+		}
+	}
+
+	e.removeBySpellNameOrID("Zun Thall Xakra Spawn", 0)
+
+	if len(e.timers) != 1 {
+		t.Fatalf("expected 1 surviving row, got %d", len(e.timers))
+	}
+	if _, ok := e.timers[earliest]; ok {
+		t.Error("the nearer-expiry stacked row should have been peeled")
+	}
+	if _, ok := e.timers[latest]; !ok {
+		t.Error("the later-expiry stacked row should have survived")
+	}
+}
+
+// maxStackedPerName caps runaway stacking (a misconfigured trigger on a
+// frequent log line): once the cap is hit, the next firing evicts the
+// oldest-expiring stacked row for that name rather than growing unbounded.
+func TestStartExternal_Stacking_CapEvictsOldest(t *testing.T) {
+	e := newTestEngine()
+	now := time.Now()
+	for i := 0; i < maxStackedPerName; i++ {
+		e.StartExternal("Griffon", "custom", float64(10+i), 0, now, nil, 0, "", "", false, "", true)
+	}
+	if len(e.timers) != maxStackedPerName {
+		t.Fatalf("setup: expected %d rows, got %d", maxStackedPerName, len(e.timers))
+	}
+
+	e.StartExternal("Griffon", "custom", 1000, 0, now, nil, 0, "", "", false, "", true)
+
+	if len(e.timers) != maxStackedPerName {
+		t.Fatalf("expected cap to hold at %d rows, got %d", maxStackedPerName, len(e.timers))
+	}
+	for _, timer := range e.timers {
+		if timer.DurationSeconds == 10 {
+			t.Error("the oldest-expiring row (duration 10) should have been evicted")
+		}
+	}
+}
+
+// removeOnKill must not sweep a stacked timer that carries the just-killed
+// mob's name as its TargetName. The log tailer delivers raw lines (which
+// fire triggers) before parsed events, so a respawn trigger firing on
+// "You have slain Foo!" creates its stacked timer a moment before this same
+// kill's EventKill reaches removeOnKill("Foo") — without the exemption that
+// would delete the row the instant it was created.
+func TestHandle_Kill_LeavesStackedTimersAlone(t *testing.T) {
+	e := newTestEngine()
+	now := time.Now()
+	e.StartExternal("a gnoll respawned", "custom", 1200, 0, now, nil, 0, "a gnoll", "", false, "", true)
+
+	e.Handle(logparser.LogEvent{
+		Type: logparser.EventKill,
+		Data: logparser.KillData{Killer: "Tank", Target: "a gnoll"},
+	})
+
+	if len(e.timers) != 1 {
+		t.Errorf("stacked timer should survive a kill of its same-named target, got %d timers", len(e.timers))
 	}
 }

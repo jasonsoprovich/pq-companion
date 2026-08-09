@@ -37,8 +37,12 @@ const historyMaxSize = 200
 // active character's item/AA duration focuses to durationSecs so a
 // trigger-driven timer extends to the same length as the spell-landed
 // pipeline would produce. 0 = use durationSecs as given.
+// stack is a variadic trailing bool (pass none, or exactly one) mirroring
+// spelltimer.Engine.StartExternal's own signature — see its doc comment for
+// why. Only fire()'s primary-timer call ever passes true, when the firing
+// trigger's TimerStack option is set.
 type TimerSink interface {
-	StartExternal(name, category string, durationSecs, displayThresholdSecs float64, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string, pinned bool, customGroup string)
+	StartExternal(name, category string, durationSecs, displayThresholdSecs float64, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string, pinned bool, customGroup string, stack ...bool)
 	StopExternal(name string, spellID int)
 }
 
@@ -769,7 +773,11 @@ func (e *Engine) fire(c compiled, matchedLine string, firedAt time.Time, match [
 			if extra != nil && extra.SpellID > 0 {
 				spellID = extra.SpellID
 			}
-			e.sink.StartExternal(key, timerCategory(t.TimerType), durationSecs, t.DisplayThresholdSecs, firedAt, alertJSON, spellID, target, t.BarColor, t.Pinned, t.CustomGroupID)
+			// TimerStack only ever applies to custom timers — see its doc
+			// comment; the API layer already enforces this on write, but the
+			// check is repeated here since fire() is the actual behaviour gate.
+			stack := t.TimerStack && t.TimerType == TimerTypeCustom
+			e.sink.StartExternal(key, timerCategory(t.TimerType), durationSecs, t.DisplayThresholdSecs, firedAt, alertJSON, spellID, target, t.BarColor, t.Pinned, t.CustomGroupID, stack)
 		}
 	}
 	e.startCooldownTimer(t, firedAt)

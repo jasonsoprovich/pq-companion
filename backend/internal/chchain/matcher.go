@@ -22,7 +22,7 @@ import (
 // (*spelltimer.Engine).StartExternal / .ConfirmCast / .SetCasterMana so the
 // engine satisfies it directly.
 type Sink interface {
-	StartExternal(name string, category string, durationSecs, displayThresholdSecs float64, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string, pinned bool, customGroup string)
+	StartExternal(name string, category string, durationSecs, displayThresholdSecs float64, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string, pinned bool, customGroup string, stack ...bool)
 	ConfirmCast(name, targetName string)
 	// UnconfirmCast reverses ConfirmCast for the chain timer whose caster is
 	// caster, if one is currently confirmed and still within its cast
