@@ -160,10 +160,17 @@ type SpellTimerSettings struct {
 	KeepExpiredTimers bool `yaml:"keep_expired_timers,omitempty" json:"keep_expired_timers"`
 
 	// TimerBarFill controls the timer overlay row's bar fill: "" / "faded"
-	// (the default ~15% tint), "solid" (a stronger ~55% fill), or "none"
-	// (no fill — just the countdown text on the transparent overlay). Purely
-	// cosmetic and resolved in the frontend; the engine ignores it.
+	// (the default ~15% tint), "solid" (a stronger ~55% fill), "none" (no
+	// fill — just the countdown text on the transparent overlay), or
+	// "custom" (use the exact percentage in TimerBarFillPct instead of a
+	// preset). Purely cosmetic and resolved in the frontend; the engine
+	// ignores it.
 	TimerBarFill string `yaml:"timer_bar_fill,omitempty" json:"timer_bar_fill,omitempty"`
+
+	// TimerBarFillPct is the bar fill opacity as a percentage (0-100), used
+	// only when TimerBarFill == "custom". Lets a user fine-tune between the
+	// three presets instead of being locked to 15/55/0. Frontend-only.
+	TimerBarFillPct int `yaml:"timer_bar_fill_pct,omitempty" json:"timer_bar_fill_pct,omitempty"`
 
 	// TimerNameFontSize / TimerTimeFontSize / TimerRowPadding override the
 	// timer overlay row's spell-name font size, countdown font size, and

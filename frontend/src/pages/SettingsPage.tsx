@@ -31,6 +31,7 @@ import type { ZealInstallStatus, ZealPipeStatus } from '../types/zeal'
 import type { QuarmClientStatus, QuarmFileStatus, EqwStatus } from '../types/quarm'
 import { useWebSocket, type WsMessage } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
+import { resolveFillOpacity } from '../hooks/useTimerAppearance'
 
 const ZEAL_RELEASE_URL = 'https://github.com/CoastalRedwood/Zeal/releases/latest'
 const QUARM_PATCHER_RELEASE_URL = 'https://github.com/Pkelly668/QuarmPatcher/releases/latest'
@@ -2671,6 +2672,32 @@ export default function SettingsPage(): React.ReactElement {
               </div>
               <span className="text-[11px] italic" style={{ color: 'var(--color-muted)' }}>
                 None = countdown text only (transparent)
+              </span>
+            </div>
+            <div className="mt-2 flex items-center gap-2">
+              <span className="text-xs w-20" style={{ color: 'var(--color-muted-foreground)' }}>Fill opacity</span>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={Math.round(resolveFillOpacity(config.spell_timer) * 100)}
+                onChange={(e) =>
+                  setConfig({
+                    ...config,
+                    spell_timer: {
+                      ...config.spell_timer,
+                      timer_bar_fill: 'custom',
+                      timer_bar_fill_pct: Number(e.target.value),
+                    },
+                  })
+                }
+                style={{ width: 160 }}
+              />
+              <span className="text-xs w-9 text-right" style={{ color: 'var(--color-muted-foreground)' }}>
+                {Math.round(resolveFillOpacity(config.spell_timer) * 100)}%
+              </span>
+              <span className="text-[11px] italic" style={{ color: 'var(--color-muted)' }}>
+                drag to fine-tune between the presets above
               </span>
             </div>
             <div className="mt-3 flex gap-3">

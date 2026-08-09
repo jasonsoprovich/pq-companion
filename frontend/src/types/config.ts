@@ -345,9 +345,12 @@ export interface SpellTimerSettings {
 
   /**
    * Timer overlay bar fill: '' / 'faded' (default ~15% tint), 'solid'
-   * (~55% fill), or 'none' (no fill — just the countdown text).
+   * (~55% fill), 'none' (no fill — just the countdown text), or 'custom'
+   * (use the exact percentage in timer_bar_fill_pct).
    */
-  timer_bar_fill?: 'faded' | 'solid' | 'none'
+  timer_bar_fill?: 'faded' | 'solid' | 'none' | 'custom'
+  /** Bar fill opacity 0-100, used only when timer_bar_fill is 'custom'. */
+  timer_bar_fill_pct?: number
 
   /** Timer row spell-name font size in px. 0/absent = default (12). */
   timer_name_font_size?: number

@@ -28,14 +28,25 @@ const DEFAULTS: TimerAppearance = {
   rowPadding: 3,
 }
 
-function resolve(st: SpellTimerSettings | undefined): TimerAppearance {
-  if (!st) return DEFAULTS
-  const fillOpacity =
-    st.timer_bar_fill === 'none'
+/**
+ * Resolves a timer_bar_fill setting to a concrete opacity (0-1). Shared by
+ * the overlay panels (via resolve/useTimerAppearance) and the Settings page,
+ * which needs the same value to drive its fill-opacity slider.
+ */
+export function resolveFillOpacity(st: SpellTimerSettings | undefined): number {
+  if (!st) return DEFAULTS.fillOpacity
+  return st.timer_bar_fill === 'custom'
+    ? Math.max(0, Math.min(100, st.timer_bar_fill_pct ?? 15)) / 100
+    : st.timer_bar_fill === 'none'
       ? 0
       : st.timer_bar_fill === 'solid'
         ? 0.55
         : DEFAULTS.fillOpacity
+}
+
+function resolve(st: SpellTimerSettings | undefined): TimerAppearance {
+  if (!st) return DEFAULTS
+  const fillOpacity = resolveFillOpacity(st)
   return {
     fillOpacity,
     // 0/absent → default; these never legitimately want a 0 value.
