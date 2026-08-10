@@ -50,12 +50,19 @@ export function useBuffSortMode(): {
 }
 
 export function sortBuffs(timers: ActiveTimer[], mode: BuffSortMode): ActiveTimer[] {
+  // Pinned timers float to the top as a group in either mode — matches the
+  // backend snapshot order (see spelltimer.Engine.Snapshot) so a pinned
+  // trigger doesn't sink to its natural remaining/recent position.
   if (mode === 'recent') {
     // cast_at is RFC3339 — descending lexicographic sort = newest first.
-    return [...timers].sort((a, b) => (a.cast_at < b.cast_at ? 1 : a.cast_at > b.cast_at ? -1 : 0))
+    return [...timers].sort((a, b) => {
+      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1
+      return a.cast_at < b.cast_at ? 1 : a.cast_at > b.cast_at ? -1 : 0
+    })
   }
   // 'remaining': least time first, with cast_at as a stable tiebreak.
   return [...timers].sort((a, b) => {
+    if (a.pinned !== b.pinned) return a.pinned ? -1 : 1
     if (a.remaining_seconds !== b.remaining_seconds) {
       return a.remaining_seconds - b.remaining_seconds
     }
