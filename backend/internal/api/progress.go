@@ -37,6 +37,10 @@ func (h *progressHandler) buildOneRecap(name string, since, now time.Time) (prog
 	if err != nil {
 		return progress.CharacterRecap{}, err
 	}
+	loginDays, err := h.store.ActiveDaysSince(name, since)
+	if err != nil {
+		return progress.CharacterRecap{}, err
+	}
 	startSnap, _, err := h.store.SnapshotAtOrBefore(name, since)
 	if err != nil {
 		return progress.CharacterRecap{}, err
@@ -45,7 +49,7 @@ func (h *progressHandler) buildOneRecap(name string, since, now time.Time) (prog
 	if err != nil {
 		return progress.CharacterRecap{}, err
 	}
-	return progress.BuildRecap(name, events, startSnap, endSnap, since, now), nil
+	return progress.BuildRecap(name, events, loginDays, startSnap, endSnap, since, now), nil
 }
 
 // GET /api/progress/recap?days=30[&character=X]

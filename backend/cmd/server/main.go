@@ -1515,6 +1515,9 @@ func main() {
 		if playersConsumer != nil {
 			playersConsumer.HandleLine(ts, msg)
 		}
+		if progressConsumer != nil {
+			progressConsumer.HandleLine(ts, msg)
+		}
 	}
 
 	// Log tailer: reads new lines from the EQ log file and broadcasts parsed

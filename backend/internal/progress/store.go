@@ -74,6 +74,18 @@ func (s *Store) migrate() error {
 			created_at       INTEGER NOT NULL
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_progress_snap_char_time ON character_progress_snapshots(character, taken_at)`,
+		// One row per (character, calendar day) the character's log had any
+		// activity at all — the actual "logged into the game" signal, as
+		// opposed to character_progress_events which only fires on
+		// level/AA/spell/skill milestones. Backfillable the same way as the
+		// journal above.
+		`CREATE TABLE IF NOT EXISTS character_active_days (
+			character TEXT    NOT NULL COLLATE NOCASE,
+			date      TEXT    NOT NULL,
+			at        INTEGER NOT NULL,
+			PRIMARY KEY (character, date)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_active_days_char_at ON character_active_days(character, at)`,
 	}
 	for _, stmt := range stmts {
 		if _, err := s.db.Exec(stmt); err != nil {
@@ -152,6 +164,46 @@ func scanEvents(rows *sql.Rows) ([]Event, error) {
 		ev.At = time.Unix(at, 0)
 		ev.Kind = Kind(kindRaw)
 		out = append(out, ev)
+	}
+	return out, rows.Err()
+}
+
+// MarkActiveDay records that character had log activity on at's calendar
+// day (character's local time). Idempotent — a day already on record is
+// left untouched (first-seen timestamp within the day is what's stored).
+func (s *Store) MarkActiveDay(character string, at time.Time) error {
+	if character == "" {
+		return nil
+	}
+	date := at.Local().Format("2006-01-02")
+	_, err := s.db.Exec(
+		`INSERT OR IGNORE INTO character_active_days (character, date, at) VALUES (?, ?, ?)`,
+		character, date, at.Unix(),
+	)
+	if err != nil {
+		return fmt.Errorf("insert active day: %w", err)
+	}
+	return nil
+}
+
+// ActiveDaysSince returns the distinct calendar-day strings (YYYY-MM-DD) on
+// which character had log activity at or after since.
+func (s *Store) ActiveDaysSince(character string, since time.Time) ([]string, error) {
+	rows, err := s.db.Query(
+		`SELECT date FROM character_active_days WHERE character = ? COLLATE NOCASE AND at >= ? ORDER BY date ASC`,
+		character, since.Unix(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query active days: %w", err)
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var d string
+		if err := rows.Scan(&d); err != nil {
+			return nil, fmt.Errorf("scan active day: %w", err)
+		}
+		out = append(out, d)
 	}
 	return out, rows.Err()
 }

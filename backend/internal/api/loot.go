@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/loot"
 )
@@ -14,6 +15,16 @@ type lootHandler struct {
 	store  *loot.Store
 	mgr    *config.Manager
 	tailer *logparser.Tailer
+	db     *db.DB
+}
+
+// lootRow is a loot.Entry enriched with the item's type (resolved by name
+// against the game DB, not persisted — see db.ItemTypesByNames), so the
+// Character Info recap's loot listing can offer a "type" filter without a
+// schema change to loot_events.
+type lootRow struct {
+	loot.Entry
+	ItemType int `json:"item_type"` // -1 when the item name has no match in the game DB
 }
 
 func (h *lootHandler) scopeCharacter(r *http.Request) string {
@@ -93,7 +104,41 @@ func (h *lootHandler) list(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"loot": rows})
+	writeJSON(w, http.StatusOK, map[string]any{"loot": h.withItemTypes(rows)})
+}
+
+// withItemTypes resolves each row's item name to its game-DB itemtype
+// (best-effort; unmatched names get -1, the enum's "None" sentinel) and
+// returns the enriched rows.
+func (h *lootHandler) withItemTypes(rows []loot.Entry) []lootRow {
+	out := make([]lootRow, len(rows))
+	if h.db == nil {
+		for i, r := range rows {
+			out[i] = lootRow{Entry: r, ItemType: -1}
+		}
+		return out
+	}
+	seen := map[string]bool{}
+	names := make([]string, 0, len(rows))
+	for _, r := range rows {
+		key := strings.ToLower(r.Item)
+		if !seen[key] {
+			seen[key] = true
+			names = append(names, r.Item)
+		}
+	}
+	types, err := h.db.ItemTypesByNames(names)
+	if err != nil {
+		types = map[string]int{}
+	}
+	for i, r := range rows {
+		t, ok := types[strings.ToLower(r.Item)]
+		if !ok {
+			t = -1
+		}
+		out[i] = lootRow{Entry: r, ItemType: t}
+	}
+	return out
 }
 
 // clear handles POST /api/loot/clear — wipes the active character's loot.

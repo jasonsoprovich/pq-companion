@@ -41,6 +41,32 @@ func TestConsumer_Handle_RecordsTrackedKinds(t *testing.T) {
 	}
 }
 
+func TestConsumer_HandleLine_MarksActiveDayOncePerDay(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "user.db")
+	s, err := OpenStore(path)
+	if err != nil {
+		t.Fatalf("OpenStore: %v", err)
+	}
+	defer s.Close()
+
+	c := NewConsumer(s, func() string { return "Osui" })
+
+	base := time.Unix(1_700_000_000, 0)
+	// Two lines the same day, one the next — regardless of content, since
+	// HandleLine tracks "any log activity," not progression milestones.
+	c.HandleLine(base, "You have entered The North Karana.")
+	c.HandleLine(base.Add(2*time.Hour), "You hit a gnoll for 10 points of damage.")
+	c.HandleLine(base.Add(48*time.Hour), "You have entered The North Karana.")
+
+	days, err := s.ActiveDaysSince("Osui", time.Unix(0, 0))
+	if err != nil {
+		t.Fatalf("ActiveDaysSince: %v", err)
+	}
+	if len(days) != 2 {
+		t.Fatalf("ActiveDaysSince returned %d days, want 2", len(days))
+	}
+}
+
 func TestConsumer_Handle_NoActiveCharacterIsNoop(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "user.db")
 	s, err := OpenStore(path)

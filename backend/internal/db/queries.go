@@ -169,6 +169,39 @@ func (db *DB) ItemIcons(ids []int) (map[int]int, error) {
 	return out, rows.Err()
 }
 
+// ItemTypesByNames returns a map of item name → effective itemtype for the
+// given names (case-insensitive exact match), applying the same
+// itemTypeOverrides correction as GetItem. Names with no matching row are
+// omitted. Used to attach a filterable "type" to loot-log rows, which only
+// carry the item's name, not its id.
+func (db *DB) ItemTypesByNames(names []string) (map[string]int, error) {
+	out := make(map[string]int, len(names))
+	if len(names) == 0 {
+		return out, nil
+	}
+	placeholders := strings.Repeat("?,", len(names))
+	placeholders = placeholders[:len(placeholders)-1]
+	q := fmt.Sprintf("SELECT id, Name, itemtype FROM items WHERE Name IN (%s) COLLATE NOCASE", placeholders)
+	args := make([]any, len(names))
+	for i, n := range names {
+		args[i] = n
+	}
+	rows, err := db.Query(q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query item types: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, itemType int
+		var name string
+		if err := rows.Scan(&id, &name, &itemType); err != nil {
+			return nil, fmt.Errorf("scan item type: %w", err)
+		}
+		out[strings.ToLower(name)] = effectiveItemType(id, itemType)
+	}
+	return out, rows.Err()
+}
+
 // RechargeableMaxCharges returns id→maxcharges for the given item IDs, limited
 // to genuinely rechargeable items: click items (clickeffect > 0) with a
 // positive multi-charge cap (maxcharges > 1). Single-charge consumables and

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
@@ -60,6 +61,34 @@ func TestGetItem_NotFound(t *testing.T) {
 	_, err := d.GetItem(-1)
 	if err == nil {
 		t.Fatal("expected error for missing item, got nil")
+	}
+}
+
+func TestItemTypesByNames_ResolvesKnownItems(t *testing.T) {
+	d := openTestDB(t)
+	res, err := d.SearchItems(db.ItemFilter{Query: "Sword", ItemType: -1, Limit: 1})
+	if err != nil {
+		t.Fatalf("search items: %v", err)
+	}
+	if len(res.Items) == 0 {
+		t.Skip("no items named Sword in DB")
+	}
+	name := res.Items[0].Name
+	want := res.Items[0].ItemType
+
+	types, err := d.ItemTypesByNames([]string{name, "Definitely Not A Real Item Name XYZ"})
+	if err != nil {
+		t.Fatalf("ItemTypesByNames: %v", err)
+	}
+	got, ok := types[strings.ToLower(name)]
+	if !ok {
+		t.Fatalf("ItemTypesByNames missing entry for %q", name)
+	}
+	if got != want {
+		t.Errorf("ItemTypesByNames(%q) = %d, want %d", name, got, want)
+	}
+	if _, ok := types["definitely not a real item name xyz"]; ok {
+		t.Errorf("unexpected entry for nonexistent item name")
 	}
 }
 

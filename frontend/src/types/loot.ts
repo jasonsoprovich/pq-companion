@@ -9,6 +9,7 @@ export interface LootEntry {
   zone: string
   npc: string // best-effort; currently always '' (not present in the log line)
   ts: number
+  item_type: number // resolved server-side by item name; -1 if unmatched
 }
 
 export interface LootListResponse {

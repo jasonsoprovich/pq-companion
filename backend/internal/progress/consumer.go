@@ -17,15 +17,16 @@ type Consumer struct {
 	store      *Store
 	activeChar func() string
 
-	mu       sync.Mutex
-	onUpdate func(Event)
+	mu            sync.Mutex
+	onUpdate      func(Event)
+	lastActiveDay map[string]string // character -> last date (YYYY-MM-DD) already marked, to skip redundant writes
 }
 
 // NewConsumer constructs a consumer wired to store. activeChar returns the
 // current in-game character — these log lines carry no name, so they're
 // attributed to whoever's log is being tailed.
 func NewConsumer(store *Store, activeChar func() string) *Consumer {
-	return &Consumer{store: store, activeChar: activeChar}
+	return &Consumer{store: store, activeChar: activeChar, lastActiveDay: map[string]string{}}
 }
 
 // SetOnUpdate registers a callback fired after each newly-recorded event,
@@ -65,6 +66,40 @@ func (c *Consumer) Handle(ev logparser.LogEvent) {
 	c.mu.Unlock()
 	if fn != nil {
 		fn(out)
+	}
+}
+
+// HandleLine marks the active character's log as having activity on ts's
+// calendar day — this is the "days logged into the game" signal behind the
+// recap's Active Days stat, independent of whether any progression
+// milestone happened that day. Cheap to call on every line: a per-character
+// in-memory cache skips the DB write once today's date has already been
+// recorded.
+func (c *Consumer) HandleLine(ts time.Time, _ string) {
+	character := ""
+	if c.activeChar != nil {
+		character = c.activeChar()
+	}
+	if character == "" {
+		return
+	}
+	if ts.IsZero() {
+		ts = time.Now()
+	}
+	date := ts.Local().Format("2006-01-02")
+
+	c.mu.Lock()
+	already := c.lastActiveDay[character] == date
+	if !already {
+		c.lastActiveDay[character] = date
+	}
+	c.mu.Unlock()
+	if already {
+		return
+	}
+
+	if err := c.store.MarkActiveDay(character, ts); err != nil {
+		slog.Warn("progress: mark active day", "character", character, "err", err)
 	}
 }
 

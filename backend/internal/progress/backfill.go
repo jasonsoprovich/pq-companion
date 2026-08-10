@@ -1,6 +1,7 @@
 package progress
 
 import (
+	"log/slog"
 	"time"
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
@@ -11,9 +12,10 @@ import (
 // mapping as the live Consumer, and the store's UNIQUE constraint makes
 // re-running idempotent.
 type BackfillHandler struct {
-	store     *Store
-	character string
-	inserted  int
+	store         *Store
+	character     string
+	inserted      int
+	lastActiveDay string // last date (YYYY-MM-DD) already marked, to skip redundant writes
 }
 
 // NewBackfillHandler returns a handler that attributes events to character.
@@ -35,8 +37,25 @@ func (h *BackfillHandler) HandleEvent(ev logparser.LogEvent) {
 	}
 }
 
-// HandleLine is a no-op; progression milestones arrive as parsed events.
-func (h *BackfillHandler) HandleLine(time.Time, string) {}
+// HandleLine marks the character's log as active on ts's calendar day —
+// same signal as the live Consumer's HandleLine, replayed for historical
+// log content so Active Days is backfillable too.
+func (h *BackfillHandler) HandleLine(ts time.Time, _ string) {
+	if h.character == "" {
+		return
+	}
+	if ts.IsZero() {
+		ts = time.Now()
+	}
+	date := ts.Local().Format("2006-01-02")
+	if h.lastActiveDay == date {
+		return
+	}
+	h.lastActiveDay = date
+	if err := h.store.MarkActiveDay(h.character, ts); err != nil {
+		slog.Warn("progress: backfill mark active day", "character", h.character, "err", err)
+	}
+}
 
 // Finalize is a no-op; events are inserted as they arrive.
 func (h *BackfillHandler) Finalize() {}

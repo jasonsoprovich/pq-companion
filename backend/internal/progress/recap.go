@@ -49,14 +49,17 @@ type CharacterRecap struct {
 	// one point at or before WindowStart AND one at or before WindowEnd).
 	HasSnapshotData bool  `json:"has_snapshot_data"`
 	CoinDelta       int64 `json:"coin_delta"`
+	CurrentCopper   int64 `json:"current_copper"` // absolute total (on person + bank) as of WindowEnd
 
 	DailyActivity []DayBucket `json:"daily_activity"`
 }
 
 // BuildRecap aggregates one character's journal events (already filtered to
-// [since, now] and to this character, oldest first) plus optional start/end
+// [since, now] and to this character, oldest first), the distinct calendar
+// days the character's log showed any activity in that window (loginDays,
+// used for ActiveDays — see character_active_days), plus optional start/end
 // totals snapshots into a CharacterRecap. startSnap/endSnap may be nil.
-func BuildRecap(character string, events []Event, startSnap, endSnap *Snapshot, since, now time.Time) CharacterRecap {
+func BuildRecap(character string, events []Event, loginDays []string, startSnap, endSnap *Snapshot, since, now time.Time) CharacterRecap {
 	r := CharacterRecap{
 		Character:   character,
 		WindowStart: since,
@@ -64,12 +67,10 @@ func BuildRecap(character string, events []Event, startSnap, endSnap *Snapshot, 
 	}
 
 	dayCounts := map[string]int{}
-	activeDays := map[string]bool{}
 
 	for _, ev := range events {
 		day := ev.At.Local().Format("2006-01-02")
 		dayCounts[day]++
-		activeDays[day] = true
 
 		switch ev.Kind {
 		case KindLevel:
@@ -95,7 +96,7 @@ func BuildRecap(character string, events []Event, startSnap, endSnap *Snapshot, 
 			}
 		}
 	}
-	r.ActiveDays = len(activeDays)
+	r.ActiveDays = len(loginDays)
 
 	dates := make([]string, 0, len(dayCounts))
 	for d := range dayCounts {
@@ -109,6 +110,7 @@ func BuildRecap(character string, events []Event, startSnap, endSnap *Snapshot, 
 	if startSnap != nil && endSnap != nil {
 		r.HasSnapshotData = true
 		r.CoinDelta = endSnap.Copper - startSnap.Copper
+		r.CurrentCopper = endSnap.Copper
 		if r.EndLevel == 0 {
 			r.EndLevel = endSnap.Level
 		}

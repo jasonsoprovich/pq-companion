@@ -5,6 +5,7 @@ import type { CharacterRecap } from '../types/progress'
 import { useWebSocket, type WsMessage } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
 import BackfillLink from './BackfillLink'
+import CharacterRecapLoot from './CharacterRecapLoot'
 
 const WINDOW_OPTIONS = [7, 30, 90] as const
 type WindowDays = (typeof WINDOW_OPTIONS)[number]
@@ -21,17 +22,37 @@ function hasActivity(r: CharacterRecap): boolean {
     r.spells_scribed > 0 ||
     r.skill_ups > 0 ||
     r.tradeskill_ups > 0 ||
+    r.active_days > 0 ||
     (r.has_snapshot_data && r.coin_delta !== 0)
   )
 }
 
-function formatCoin(copper: number): string {
+// EQ coin: 1pp = 10gp = 100sp = 1000cp.
+function decomposeCoin(absCopper: number): { pp: number; gp: number; sp: number; cp: number } {
+  const pp = Math.floor(absCopper / 1000)
+  let rem = absCopper % 1000
+  const gp = Math.floor(rem / 100)
+  rem %= 100
+  const sp = Math.floor(rem / 10)
+  const cp = rem % 10
+  return { pp, gp, sp, cp }
+}
+
+// Full pp/gp/sp/cp breakdown of an absolute total, e.g. "12pp 3gp 4sp 2cp".
+function formatCoinTotal(copper: number): string {
+  const { pp, gp, sp, cp } = decomposeCoin(Math.abs(copper))
+  const parts: string[] = []
+  if (pp > 0) parts.push(`${pp}pp`)
+  if (gp > 0) parts.push(`${gp}gp`)
+  if (sp > 0) parts.push(`${sp}sp`)
+  if (cp > 0 || parts.length === 0) parts.push(`${cp}cp`)
+  return parts.join(' ')
+}
+
+// Signed delta, e.g. "+12pp 3gp" or "-4sp 2cp".
+function formatCoinDelta(copper: number): string {
   const sign = copper < 0 ? '-' : '+'
-  const abs = Math.abs(copper)
-  const plat = Math.floor(abs / 1000)
-  if (plat >= 1000) return `${sign}${(plat / 1000).toFixed(1)}k pp`
-  if (plat > 0) return `${sign}${plat} pp`
-  return `${sign}${abs} cp`
+  return `${sign}${formatCoinTotal(copper)}`
 }
 
 export default function CharacterRecapPanel({ characterName }: CharacterRecapPanelProps): React.ReactElement {
@@ -158,12 +179,25 @@ function SingleCharacterRecap({ recap, windowDays }: { recap: CharacterRecap; wi
 
       {recap.has_snapshot_data && (
         <div
-          className="flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm"
+          className="flex flex-wrap items-center gap-x-5 gap-y-1.5 rounded-lg px-4 py-2.5 text-sm"
           style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
         >
-          <Coins size={14} style={{ color: 'var(--color-primary)' }} />
-          <span style={{ color: 'var(--color-muted-foreground)' }}>Coin change:</span>
-          <span style={{ color: 'var(--color-foreground)', fontWeight: 500 }}>{formatCoin(recap.coin_delta)}</span>
+          <div className="flex items-center gap-2">
+            <Coins size={14} style={{ color: 'var(--color-primary)' }} />
+            <span style={{ color: 'var(--color-muted-foreground)' }}>Total coin:</span>
+            <span style={{ color: 'var(--color-foreground)', fontWeight: 500 }}>{formatCoinTotal(recap.current_copper)}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span style={{ color: 'var(--color-muted-foreground)' }}>Change:</span>
+            <span
+              style={{
+                color: recap.coin_delta > 0 ? '#4ade80' : recap.coin_delta < 0 ? '#f87171' : 'var(--color-foreground)',
+                fontWeight: 500,
+              }}
+            >
+              {recap.coin_delta === 0 ? '±0cp' : formatCoinDelta(recap.coin_delta)}
+            </span>
+          </div>
         </div>
       )}
       {!recap.has_snapshot_data && (
@@ -174,6 +208,8 @@ function SingleCharacterRecap({ recap, windowDays }: { recap: CharacterRecap; wi
       )}
 
       <DailyActivityStrip recap={recap} windowDays={windowDays} />
+
+      <CharacterRecapLoot characterName={recap.character} />
     </div>
   )
 }
@@ -216,7 +252,9 @@ function DailyActivityStrip({ recap, windowDays }: { recap: CharacterRecap; wind
       className="rounded-lg p-3"
       style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
     >
-      <p className="mb-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>Daily activity</p>
+      <p className="mb-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+        Milestone activity <span style={{ color: 'var(--color-muted)' }}>(levels/AA/spells/skills — separate from Active Days, which counts login days)</span>
+      </p>
       <div className="flex items-end gap-px" style={{ height: 40 }}>
         {counts.map((d) => (
           <div

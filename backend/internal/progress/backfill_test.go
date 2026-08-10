@@ -59,6 +59,29 @@ func TestBackfillHandler_ReplayIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestBackfillHandler_HandleLine_MarksActiveDays(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "user.db")
+	s, err := OpenStore(path)
+	if err != nil {
+		t.Fatalf("OpenStore: %v", err)
+	}
+	defer s.Close()
+
+	h := NewBackfillHandler(s, "Osui")
+	base := time.Unix(1_700_000_000, 0)
+	h.HandleLine(base, "You have entered The North Karana.")
+	h.HandleLine(base.Add(2*time.Hour), "You hit a gnoll for 10 points of damage.")
+	h.HandleLine(base.Add(48*time.Hour), "You have entered The North Karana.")
+
+	days, err := s.ActiveDaysSince("Osui", time.Unix(0, 0))
+	if err != nil {
+		t.Fatalf("ActiveDaysSince: %v", err)
+	}
+	if len(days) != 2 {
+		t.Fatalf("ActiveDaysSince returned %d days, want 2", len(days))
+	}
+}
+
 func TestBackfillHandler_EmptyCharacterIsNoop(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "user.db")
 	s, err := OpenStore(path)

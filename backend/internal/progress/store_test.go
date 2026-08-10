@@ -139,3 +139,45 @@ func TestStore_Snapshots_FingerprintSkipAndBaseline(t *testing.T) {
 		t.Fatalf("SnapshotAtOrBefore = %+v, ok=%v err=%v, want Level=55", baseline, ok, err)
 	}
 }
+
+func TestStore_ActiveDays_DedupesAndFiltersByWindow(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "user.db")
+	s, err := OpenStore(path)
+	if err != nil {
+		t.Fatalf("OpenStore: %v", err)
+	}
+	defer s.Close()
+
+	base := time.Unix(1_700_000_000, 0)
+	if err := s.MarkActiveDay("Osui", base); err != nil {
+		t.Fatalf("MarkActiveDay: %v", err)
+	}
+	// A second mark the same calendar day (different hour) must not create a
+	// second row.
+	if err := s.MarkActiveDay("Osui", base.Add(2*time.Hour)); err != nil {
+		t.Fatalf("MarkActiveDay: %v", err)
+	}
+	if err := s.MarkActiveDay("Osui", base.Add(48*time.Hour)); err != nil {
+		t.Fatalf("MarkActiveDay: %v", err)
+	}
+	// A different character must be tracked independently.
+	if err := s.MarkActiveDay("Nariana", base); err != nil {
+		t.Fatalf("MarkActiveDay: %v", err)
+	}
+
+	all, err := s.ActiveDaysSince("Osui", time.Unix(0, 0))
+	if err != nil {
+		t.Fatalf("ActiveDaysSince: %v", err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("ActiveDaysSince returned %d days, want 2 (dedup within a day)", len(all))
+	}
+
+	windowed, err := s.ActiveDaysSince("Osui", base.Add(time.Hour))
+	if err != nil {
+		t.Fatalf("ActiveDaysSince: %v", err)
+	}
+	if len(windowed) != 1 {
+		t.Fatalf("ActiveDaysSince (windowed) returned %d days, want 1", len(windowed))
+	}
+}

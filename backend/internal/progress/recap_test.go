@@ -20,7 +20,14 @@ func TestBuildRecap_AggregatesJournalEvents(t *testing.T) {
 		{Character: "Osui", At: since.Add(48 * time.Hour), Kind: KindSkill, Detail: "Swimming", Value: 20},
 	}
 
-	r := BuildRecap("Osui", events, nil, nil, since, now)
+	// ActiveDays is sourced from the login-day table, not the journal —
+	// these two dates mirror the two distinct calendar days the events
+	// above land on (hour 1-6, then hour 48).
+	loginDays := []string{
+		since.Add(time.Hour).Local().Format("2006-01-02"),
+		since.Add(48 * time.Hour).Local().Format("2006-01-02"),
+	}
+	r := BuildRecap("Osui", events, loginDays, nil, nil, since, now)
 
 	if r.StartLevel != 50 {
 		t.Errorf("StartLevel = %d, want 50", r.StartLevel)
@@ -67,7 +74,7 @@ func TestBuildRecap_LevelDrainNetsAgainstGains(t *testing.T) {
 		{Character: "Osui", At: since.Add(20 * time.Minute), Kind: KindLevel, Value: 54, Delta: -1},
 	}
 
-	r := BuildRecap("Osui", events, nil, nil, since, now)
+	r := BuildRecap("Osui", events, nil, nil, nil, since, now)
 	if r.StartLevel != 54 {
 		t.Errorf("StartLevel = %d, want 54", r.StartLevel)
 	}
@@ -89,13 +96,16 @@ func TestBuildRecap_UsesSnapshotsForCoinAndFallbackLevels(t *testing.T) {
 	// No journal events at all (e.g. this character's log doesn't reach
 	// back to `since`) — the recap should still report level bounds and
 	// coin delta from snapshots alone.
-	r := BuildRecap("Osui", nil, start, end, since, now)
+	r := BuildRecap("Osui", nil, nil, start, end, since, now)
 
 	if !r.HasSnapshotData {
 		t.Fatal("HasSnapshotData = false, want true")
 	}
 	if r.CoinDelta != 150_000 {
 		t.Errorf("CoinDelta = %d, want 150000", r.CoinDelta)
+	}
+	if r.CurrentCopper != 250_000 {
+		t.Errorf("CurrentCopper = %d, want 250000", r.CurrentCopper)
 	}
 	if r.StartLevel != 50 || r.EndLevel != 55 {
 		t.Errorf("StartLevel/EndLevel = %d/%d, want 50/55", r.StartLevel, r.EndLevel)

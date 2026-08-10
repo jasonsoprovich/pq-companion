@@ -32,6 +32,7 @@ export interface CharacterRecap {
 
   has_snapshot_data: boolean
   coin_delta: number
+  current_copper: number
 
   daily_activity: DayBucket[] | null
 }
