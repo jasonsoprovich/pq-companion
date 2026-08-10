@@ -1699,6 +1699,26 @@ hardening — no new features, but a broad sweep of reliability fixes.
 - **Discord webhook trigger action** — triggers can fire an outbound
   Discord webhook post directly.
 
+## v0.19.1 — Progression Recap, Custom Timer Stacking
+
+- **Progression Recap** — a new first tab on Character Info showing
+  rolling 7/30/90-day level, AA, spell, and skill progression, either
+  for the viewed character or ranked most-active-first across all
+  tracked characters. Backed by a new event journal fed from the live
+  log and log backfill, plus a periodic snapshot of coin/totals from
+  Quarmy exports (data the log itself can't reconstruct). Active Days
+  is now sourced from real login activity instead of milestone days,
+  and an embedded Loot panel scopes results to loot the character
+  actually picked up.
+- **Custom timer stacking** — an opt-in per-trigger setting gives each
+  firing of a custom timer its own independent bar instead of
+  overwriting the existing one on a repeat match, for cases like
+  respawn timers on multiple same-named mobs.
+- Timer Bar Fill gains a 0–100% opacity slider alongside the existing
+  Faded/Solid/None presets, shared across all timer overlay types.
+- Maps: a toggle keeps POI pins (zone lines, succor points) visible at
+  full opacity through the depth/z-height fade.
+
 ## Phase 11 — Project Website
 _Planned_
 
