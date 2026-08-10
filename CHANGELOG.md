@@ -9,6 +9,25 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.19.1 — 2026-08-09
+
+Progression Recap arrives on Character Info, alongside opt-in stacking for custom trigger timers and several overlay/timer reliability fixes.
+
+### Highlights
+- **Progression Recap** — a new first tab on Character Info shows rolling 7/30/90-day level, AA, spell, and skill progression, either for the viewed character or ranked most-active-first across all tracked characters. Active Days is now sourced from real login activity instead of milestone days, coin shows a full pp/gp/sp/cp total alongside a signed colored change, and an embedded Loot panel (search/zone/type filters) covers only loot the character actually picked up, not groupmates' loot witnessed while grouped or raiding.
+- **Opt-in "stack timers" for custom triggers** — a custom timer can now be set to give each firing its own independent bar instead of overwriting the existing one on a repeat match (e.g. respawn timers for multiple mobs sharing a name).
+- **Timer Bar Fill opacity slider** — the Faded/Solid/None presets are joined by a 0–100% slider for exact control, shared across the Buff, Detrimental, Custom, and Respawn overlays.
+- **Maps** — a new toggle keeps POI pins (zone lines, succor points) fully visible as elevation changes, instead of fading them along with geometry.
+
+### Fixes
+- The target overlay and trigger engine's detrimental-timer fallback now also infer target from the player's own pet landing a hit or an NPC hitting the player, so a Linux/no-ZealPipe target no longer stays pinned to whatever was last conned until the player's own attack lands.
+- Self-only buff/custom timers (procs, self-buffs, self-cooldowns with no target text in the log) no longer glue to the current combat target and vanish when an unrelated mob dies.
+- Buff timers that share landed-text with sibling spells (e.g. Savage Spirit's family of six) no longer duplicate when a broad trigger-pack rule fires on the same line.
+- Trigger-driven and spell-landed timers for the same cast no longer show as duplicate rows when EQ's mid-sentence and sentence-initial casing differ.
+- Respawn timer bars now sync their fill opacity with the shared Buff/Detrimental/Custom setting instead of using a hardcoded value.
+- The DPS overlay popout gained the End Parse button already present on the dashboard panel.
+- Anc: Rytan's Dirge of Death and the LoY-quested Aria of Innocence/Asceticism no longer show up as permanently "missing" on the spell checklist.
+
 ## v0.19.0 — 2026-08-04
 
 Live Maps arrives — zone geometry, live player position, and user-installed map pack support — alongside a Discord Voice overlay, per-zone loot lockouts, and reliability fixes.
