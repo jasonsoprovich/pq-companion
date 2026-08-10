@@ -2,6 +2,7 @@ package progress
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -13,7 +14,21 @@ import (
 // testdataDir points at the repo-root fixture directory shared across
 // packages (see internal/trader/trader_test.go's testdataDir), containing
 // real Osui-Quarmy.txt / Osui-Inventory.txt / Osui-Spellbook.txt exports.
+// These are real game exports under the gitignored testdata/ tree, so they
+// are only present on a dev machine — CI skips the fixture-backed tests.
 const testdataDir = "../../../testdata"
+
+// requireFixture skips the test when a shared game-directory fixture is
+// absent (e.g. in CI, where testdata/ is gitignored). Mirrors the
+// internal/trader package's pattern.
+func requireFixture(t *testing.T, name string) string {
+	t.Helper()
+	path := filepath.Join(testdataDir, name)
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("testdata fixture not present: %v", err)
+	}
+	return path
+}
 
 func newTestRecorder(t *testing.T) (*Recorder, *Store, *character.Store) {
 	t.Helper()
@@ -47,6 +62,7 @@ func newTestRecorder(t *testing.T) (*Recorder, *Store, *character.Store) {
 }
 
 func TestRecorder_BuildSnapshot_ParsesRealFixture(t *testing.T) {
+	requireFixture(t, "Osui-Quarmy.txt")
 	r, _, _ := newTestRecorder(t)
 
 	snap, ok := r.buildSnapshot(testdataDir, "Osui", time.Unix(1_700_000_000, 0))
@@ -67,6 +83,7 @@ func TestRecorder_BuildSnapshot_ParsesRealFixture(t *testing.T) {
 }
 
 func TestRecorder_CaptureCharacter_SkipsUnchangedModTime(t *testing.T) {
+	requireFixture(t, "Osui-Quarmy.txt")
 	r, store, _ := newTestRecorder(t)
 
 	r.captureCharacter(testdataDir, "Osui")

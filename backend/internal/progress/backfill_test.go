@@ -68,7 +68,9 @@ func TestBackfillHandler_HandleLine_MarksActiveDays(t *testing.T) {
 	defer s.Close()
 
 	h := NewBackfillHandler(s, "Osui")
-	base := time.Unix(1_700_000_000, 0)
+	// Anchored at local noon so the +2h/+48h offsets below can't cross a
+	// calendar-day boundary differently depending on the runner's timezone.
+	base := time.Date(2023, 11, 14, 12, 0, 0, 0, time.Local)
 	h.HandleLine(base, "You have entered The North Karana.")
 	h.HandleLine(base.Add(2*time.Hour), "You hit a gnoll for 10 points of damage.")
 	h.HandleLine(base.Add(48*time.Hour), "You have entered The North Karana.")

@@ -148,7 +148,10 @@ func TestStore_ActiveDays_DedupesAndFiltersByWindow(t *testing.T) {
 	}
 	defer s.Close()
 
-	base := time.Unix(1_700_000_000, 0)
+	// Anchored at local noon (not a raw Unix epoch) so the +2h/+48h offsets
+	// below can't cross a calendar-day boundary differently depending on the
+	// machine's timezone (e.g. CI runs UTC, dev machines don't).
+	base := time.Date(2023, 11, 14, 12, 0, 0, 0, time.Local)
 	if err := s.MarkActiveDay("Osui", base); err != nil {
 		t.Fatalf("MarkActiveDay: %v", err)
 	}

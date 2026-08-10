@@ -6,7 +6,9 @@ import (
 )
 
 func TestBuildRecap_AggregatesJournalEvents(t *testing.T) {
-	since := time.Unix(1_700_000_000, 0)
+	// Anchored at local noon so the +1h..+6h offsets below land on one
+	// calendar day regardless of the runner's timezone (e.g. CI runs UTC).
+	since := time.Date(2023, 11, 14, 12, 0, 0, 0, time.Local)
 	now := since.Add(30 * 24 * time.Hour)
 
 	events := []Event{

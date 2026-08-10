@@ -51,7 +51,9 @@ func TestConsumer_HandleLine_MarksActiveDayOncePerDay(t *testing.T) {
 
 	c := NewConsumer(s, func() string { return "Osui" })
 
-	base := time.Unix(1_700_000_000, 0)
+	// Anchored at local noon so the +2h/+48h offsets below can't cross a
+	// calendar-day boundary differently depending on the runner's timezone.
+	base := time.Date(2023, 11, 14, 12, 0, 0, 0, time.Local)
 	// Two lines the same day, one the next — regardless of content, since
 	// HandleLine tracks "any log activity," not progression milestones.
 	c.HandleLine(base, "You have entered The North Karana.")
