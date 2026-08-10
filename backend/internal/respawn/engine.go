@@ -392,14 +392,19 @@ func (e *Engine) snapshot(now time.Time) RespawnState {
 		timers = append(timers, entry)
 	}
 
-	// Current-zone timers first, then most imminent respawn first.
+	// Current-zone timers first, then most imminent respawn first. ID
+	// tiebreaks equal RemainingSeconds so ordering stays fixed across
+	// broadcasts even though map iteration order is randomized each call.
 	sort.SliceStable(timers, func(i, j int) bool {
 		iCur := timers[i].Zone == curZone
 		jCur := timers[j].Zone == curZone
 		if iCur != jCur {
 			return iCur
 		}
-		return timers[i].RemainingSeconds < timers[j].RemainingSeconds
+		if timers[i].RemainingSeconds != timers[j].RemainingSeconds {
+			return timers[i].RemainingSeconds < timers[j].RemainingSeconds
+		}
+		return timers[i].ID < timers[j].ID
 	})
 
 	return RespawnState{
