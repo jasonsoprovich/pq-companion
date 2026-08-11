@@ -135,9 +135,9 @@ function HealTable({ fight, showAll }: { fight: FightState; showAll: boolean }):
 
 export default function HPSOverlayWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity()
-  const chrome = useOverlayChromeFade()
-  const { locked, toggleLocked, rootInteractionProps, headerInteractionProps } =
+  const { locked, mode, toggleLocked, rootInteractionProps, headerInteractionProps } =
     useOverlayLock('hps')
+  const chrome = useOverlayChromeFade(mode === 'display-only')
   const onDragMouseDown = useWindowDrag()
   const [combat, setCombat] = useState<CombatState | null>(null)
   const [showAll, setShowAll] = useState(true)

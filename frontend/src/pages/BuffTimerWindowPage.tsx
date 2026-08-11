@@ -153,9 +153,9 @@ function TimerRow({
 
 export default function BuffTimerWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity()
-  const chrome = useOverlayChromeFade()
-  const { locked, toggleLocked, rootInteractionProps, headerInteractionProps } =
+  const { locked, mode, toggleLocked, rootInteractionProps, headerInteractionProps } =
     useOverlayLock('buffTimer')
+  const chrome = useOverlayChromeFade(mode === 'display-only')
   const onDragMouseDown = useWindowDrag()
   const [state, setState] = useState<TimerState | null>(null)
   const activePlayer = useActivePlayerName()

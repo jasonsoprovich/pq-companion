@@ -186,9 +186,9 @@ export default function CustomTimerWindowPage(): React.ReactElement {
   const groupName = searchParams.get('name') ?? ''
 
   const opacity = useOverlayOpacity()
-  const chrome = useOverlayChromeFade()
-  const { locked, toggleLocked, rootInteractionProps, headerInteractionProps } =
+  const { locked, mode, toggleLocked, rootInteractionProps, headerInteractionProps } =
     useOverlayLock('customTimer')
+  const chrome = useOverlayChromeFade(mode === 'display-only')
   const onDragMouseDown = useWindowDrag()
   const [state, setState] = useState<TimerState | null>(null)
   const thresholds = useDisplayThresholds()

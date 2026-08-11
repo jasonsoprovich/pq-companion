@@ -205,10 +205,10 @@ function FightTable({ fight, showAll, combine, mode, palette }: { fight: FightSt
 
 export default function DPSOverlayWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity()
-  const chrome = useOverlayChromeFade()
   const palette = useDPSClassColors()
-  const { locked, toggleLocked, rootInteractionProps, headerInteractionProps } =
+  const { locked, mode, toggleLocked, rootInteractionProps, headerInteractionProps } =
     useOverlayLock('dps')
+  const chrome = useOverlayChromeFade(mode === 'display-only')
   const onDragMouseDown = useWindowDrag()
   const [combat, setCombat] = useState<CombatState | null>(null)
   const [showAll, setShowAll] = useState(true)

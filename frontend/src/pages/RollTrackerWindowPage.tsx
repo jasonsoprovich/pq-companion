@@ -454,9 +454,9 @@ function ContestRow({
 
 export default function RollTrackerWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity()
-  const chrome = useOverlayChromeFade()
-  const { locked, toggleLocked, rootInteractionProps, headerInteractionProps } =
+  const { locked, mode, toggleLocked, rootInteractionProps, headerInteractionProps } =
     useOverlayLock('rollTracker')
+  const chrome = useOverlayChromeFade(mode === 'display-only')
   const onDragMouseDown = useWindowDrag()
   const [state, setState] = useState<RollsState>({
     sessions: [],

@@ -648,9 +648,9 @@ function TargetTimersView({ targetName }: { targetName: string | undefined }): R
 
 export default function NPCOverlayWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity()
-  const chrome = useOverlayChromeFade()
-  const { locked, toggleLocked, rootInteractionProps, headerInteractionProps } =
+  const { locked, mode, toggleLocked, rootInteractionProps, headerInteractionProps } =
     useOverlayLock('npc')
+  const chrome = useOverlayChromeFade(mode === 'display-only')
   const onDragMouseDown = useWindowDrag()
   const [target, setTarget] = useState<TargetState | null>(null)
   const [view, setView] = useState<View>('stats')

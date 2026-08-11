@@ -20,9 +20,9 @@ import type { RespawnState } from '../types/respawn'
 
 export default function RespawnTimerWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity()
-  const chrome = useOverlayChromeFade()
-  const { locked, toggleLocked, rootInteractionProps, headerInteractionProps } =
+  const { locked, mode, toggleLocked, rootInteractionProps, headerInteractionProps } =
     useOverlayLock('respawnTimer')
+  const chrome = useOverlayChromeFade(mode === 'display-only')
   const onDragMouseDown = useWindowDrag()
   const [state, setState] = useState<RespawnState | null>(null)
   const [alertsEnabled, toggleAlerts] = useOverlayAlertMute(RESPAWN_ALERTS_KEY)

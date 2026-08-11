@@ -34,8 +34,17 @@ const DEFAULT_FADE_DELAY_MS = 2500
  * `hovered` flag stuck true, and the chrome stayed visible forever (never
  * responding to hover again). Absence of movement can't be "dropped", so the
  * countdown always eventually fires and the fade self-heals.
+ *
+ * `displayOnly` is true when the caller's overlay_locked_modes is set to
+ * "display-only" (see useOverlayLock): that mode promises a pure HUD that
+ * never reacts to the mouse at all, so the forwarded move events driving the
+ * fade above must not reveal the chrome either — otherwise hovering a
+ * display-only overlay still flashes its background/border/title bar in,
+ * which is exactly the capture-looking behaviour display-only exists to
+ * prevent. positionMode still wins over displayOnly so a display-only HUD
+ * stays visible and grabbable while the user is repositioning it.
  */
-export function useOverlayChromeFade(): boolean {
+export function useOverlayChromeFade(displayOnly = false): boolean {
   const [enabled, setEnabled] = useState(false)
   const [delayMs, setDelayMs] = useState(DEFAULT_FADE_DELAY_MS)
   const [chromeVisible, setChromeVisible] = useState(true)
@@ -46,6 +55,10 @@ export function useOverlayChromeFade(): boolean {
   enabledRef.current = enabled
   const delayRef = useRef(delayMs)
   delayRef.current = delayMs
+  // Read inside the movement handler like enabledRef — a display-only overlay
+  // must ignore the forwarded move events entirely, not just hide the result.
+  const displayOnlyRef = useRef(displayOnly)
+  displayOnlyRef.current = displayOnly
   // While positioning overlays the chrome must stay visible so a faded-out or
   // empty overlay is still visible and grabbable.
   const positionMode = useOverlayPositionMode()
@@ -87,14 +100,14 @@ export function useOverlayChromeFade(): boolean {
   useEffect(() => {
     // Any movement over the overlay = active: show chrome, restart countdown.
     const onMove = (): void => {
-      if (!enabledRef.current) return
+      if (!enabledRef.current || displayOnlyRef.current) return
       setChromeVisible(true)
       scheduleFade()
     }
     // A leave, when it does arrive, is a fast path to start the countdown; the
     // movement handler is the reliable backstop when it doesn't.
     const onLeave = (): void => {
-      if (!enabledRef.current) return
+      if (!enabledRef.current || displayOnlyRef.current) return
       scheduleFade()
     }
     window.addEventListener('mousemove', onMove)
@@ -119,5 +132,5 @@ export function useOverlayChromeFade(): boolean {
     }
   }, [enabled, delayMs, scheduleFade, clearFade])
 
-  return chromeVisible || positionMode
+  return positionMode || (!displayOnly && chromeVisible)
 }

@@ -40,9 +40,9 @@ import { isValidStreamKitVoiceUrl } from '../lib/overlays'
 
 export default function DiscordVoiceOverlayWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity()
-  const chrome = useOverlayChromeFade()
-  const { locked, toggleLocked, rootInteractionProps, headerInteractionProps } =
+  const { locked, mode, toggleLocked, rootInteractionProps, headerInteractionProps } =
     useOverlayLock('discordVoice')
+  const chrome = useOverlayChromeFade(mode === 'display-only')
 
   const onDragMouseDown = useWindowDrag()
 
