@@ -386,21 +386,19 @@ function SpellRow({ spell, classIndex, known, selected, onSelect, onToggleSelect
 
       {/* Level badge */}
       <span
-        className="shrink-0 text-[11px] tabular-nums"
+        className="shrink-0 w-12 text-[11px] tabular-nums"
         style={{ color: 'var(--color-muted)' }}
       >
         Lv {level}
       </span>
 
       {/* Mana cost */}
-      {spell.mana > 0 && (
-        <span
-          className="shrink-0 text-[11px] tabular-nums w-16 text-right"
-          style={{ color: 'var(--color-muted)' }}
-        >
-          {spell.mana}m
-        </span>
-      )}
+      <span
+        className="shrink-0 w-16 text-[11px] tabular-nums text-right"
+        style={{ color: 'var(--color-muted)' }}
+      >
+        {spell.mana > 0 ? `${spell.mana}m` : ''}
+      </span>
 
       {/* Open in explorer */}
       <button
