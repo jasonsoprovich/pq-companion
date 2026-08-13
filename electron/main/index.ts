@@ -1037,9 +1037,15 @@ function closeAllOverlays(): void {
   // Capture the open set for "restore on launch" before we tear the windows
   // down — once destroyed, currentlyOpenAutoOpenEntries() would report nothing.
   snapshotAutoOpenOverlays()
-  for (const win of [dpsOverlayWindow, hpsOverlayWindow, buffTimerWindow, detrimTimerWindow, customTimerWindow, triggerOverlayWindow, npcOverlayWindow, threatOverlayWindow, rollTrackerWindow, respawnTimerWindow, chChainWindow, chMetronomeWindow, liveMapWindow]) {
+  // Driven by RESETTABLE_OVERLAYS/overlayWindowByName (not a hand-maintained
+  // array) so every overlay type gets closed automatically, including ones
+  // added after this function was written — discordVoice was previously
+  // omitted from a manual list and its window leaked past app quit.
+  for (const name of RESETTABLE_OVERLAYS) {
+    const win = overlayWindowByName(name)
     if (win && !win.isDestroyed()) win.destroy()
   }
+  if (triggerOverlayWindow && !triggerOverlayWindow.isDestroyed()) triggerOverlayWindow.destroy()
   for (const win of customTimerGroupWindows.values()) {
     if (win && !win.isDestroyed()) win.destroy()
   }
