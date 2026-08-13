@@ -168,6 +168,11 @@ export interface Preferences {
   // Audio cue fired as each NPC respawn timer crosses `seconds` remaining
   // (0 = at "POP"). Applies to every respawn timer; disabled by default.
   respawn_alert?: TimerAlertPref
+  // Default fading-soon alert applied to every auto-detected Detrimental
+  // timer (debuff/dot/mez/stun) that has no per-trigger alert of its own —
+  // i.e. native spell-timer timers on any mob, raid or not. Trigger-driven
+  // detrimental timers keep their own alert. Disabled by default.
+  detrim_timer_alert?: TimerAlertPref
   // CH Metronome audio cues: metronome_start_alert fires when the personal
   // countdown starts (the watched chain slot ahead of you calls), and
   // metronome_cast_alert fires at "cast now". Independent, disabled by

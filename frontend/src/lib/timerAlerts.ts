@@ -6,7 +6,7 @@
 import type { TimerAlertPref } from '../types/config'
 import type { TimerAlertThreshold } from '../types/trigger'
 
-export type TimerAlertKind = 'custom' | 'respawn' | 'metronome_start' | 'metronome_cast'
+export type TimerAlertKind = 'custom' | 'respawn' | 'detrim' | 'metronome_start' | 'metronome_cast'
 
 /** A sensible enabled-default for first-time setup of each alert kind. */
 export function defaultTimerAlertPref(kind: TimerAlertKind): TimerAlertPref {
@@ -17,15 +17,18 @@ export function defaultTimerAlertPref(kind: TimerAlertKind): TimerAlertPref {
   return {
     enabled: true,
     // Custom timers usually want a short heads-up before completion; respawns
-    // are most useful announced right as they pop (0 = at "POP"). Metronome
-    // alerts have no threshold concept — seconds is unused for those kinds.
-    seconds: kind === 'custom' ? 5 : 0,
+    // are most useful announced right as they pop (0 = at "POP"). Detrimental
+    // matches the 10s a trigger's own "From spell…" flow seeds (spellHelpers
+    // buildDefaultFadeAlert). Metronome alerts have no threshold concept —
+    // seconds is unused for those kinds.
+    seconds: kind === 'custom' ? 5 : kind === 'detrim' ? 10 : 0,
     type: 'text_to_speech',
     sound_path: '',
     volume: isMetronome ? 100 : 80,
     tts_template:
       kind === 'custom' ? '{spell} done'
       : kind === 'respawn' ? '{npc} has re-spawned'
+      : kind === 'detrim' ? '{spell} fading soon'
       : kind === 'metronome_start' ? 'Chain starting'
       : 'Cast now',
     voice: '',

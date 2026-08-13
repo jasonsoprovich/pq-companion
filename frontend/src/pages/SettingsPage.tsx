@@ -2787,6 +2787,35 @@ export default function SettingsPage(): React.ReactElement {
             />
           </div>
 
+          {/* ── Detrimental timer alerts ─────────────────────────────────── */}
+          <div className="mt-6 border-t pt-4" style={{ borderColor: 'var(--color-border)' }}>
+            <p className="mb-1 text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
+              Detrimental timer alerts
+            </p>
+            <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+              Plays a sound or speaks as a debuff/DoT/mez/stun timer is about to wear
+              off. Applies to every timer the spell-timer engine detects automatically
+              from the log — any mob, not just ones you've built a trigger for. A
+              trigger's own "From spell…" fading alert takes priority when one exists.
+              Put <code className="font-mono">{'{spell}'}</code> in the spoken text to
+              insert the effect's name. Can be muted from the bell icon in the
+              Detrimental overlay window's header without changing this setting.
+            </p>
+            <TimerAlertPrefEditor
+              value={withTimerAlertDefaults(config.preferences?.detrim_timer_alert, 'detrim')}
+              onChange={(next: TimerAlertPref) =>
+                setConfig({
+                  ...config,
+                  preferences: { ...config.preferences, detrim_timer_alert: next },
+                })
+              }
+              secondsLabel="Alert at"
+              secondsUnit="s remaining"
+              secondsHint="Fires when a timer crosses this many seconds left."
+              ttsPlaceholder="{spell} fading soon"
+            />
+          </div>
+
           {/* ── CH Chain overlay ─────────────────────────────────────────── */}
           <div className="mt-6 border-t pt-4" style={{ borderColor: 'var(--color-border)' }}>
             <p className="mb-1 text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>

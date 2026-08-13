@@ -433,6 +433,17 @@ type Preferences struct {
 	// the same reason as CustomTimerAlert.
 	RespawnAlert *TimerAlertPref `yaml:"respawn_alert,omitempty" json:"respawn_alert,omitempty"`
 
+	// DetrimTimerAlert is the default "fading soon" audio cue applied to every
+	// auto-detected Detrimental-overlay timer (debuff/dot/mez/stun) that has no
+	// alert of its own. The spell-timer engine creates these timers straight
+	// from cast/land log lines on ANY mob — raid target or not — so without
+	// this, only timers built through a trigger's own "From spell…" seeded
+	// alert ever made sound (users had to build a trigger just to hear their
+	// mez was about to break). Trigger-driven detrimental timers keep their own
+	// TimerAlerts and are unaffected. Nil/omitted by default: native timers
+	// stay silent as before. Pointer for the same reason as CustomTimerAlert.
+	DetrimTimerAlert *TimerAlertPref `yaml:"detrim_timer_alert,omitempty" json:"detrim_timer_alert,omitempty"`
+
 	// MetronomeStartAlert fires an audio cue when the CH Metronome's personal
 	// countdown starts (the watched chain slot ahead of you calls its cast).
 	// MetronomeCastAlert fires when the countdown reaches "cast now". Both are
