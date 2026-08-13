@@ -9,6 +9,20 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.19.2 — 2026-08-12
+
+Native spell-timer detrimental timers now get their own fading-soon alert, alongside overlay chrome and reliability fixes.
+
+### Highlights
+- **Fading-soon alerts for native Detrimental timers** — debuff/DoT/mez/stun timers built directly from log lines (not just trigger-driven ones) can now sound/speak a fading-soon warning, via a new global default in Settings > Overlays.
+
+### Fixes
+- Discord Voice overlay window no longer leaks past app quit.
+- "Fade When Inactive" no longer reveals Display Only overlay chrome (background/border/title bar) on hover.
+- Spell Checklist's Mana column no longer misaligns for 0-mana spells (e.g. bard songs).
+- Respawn Overlap list no longer reshuffles every second for mobs that died in the same logged second.
+- Pinned buffs stay sorted to the top of the Buff overlay panel instead of falling back to remaining-time ordering.
+
 ## v0.19.1 — 2026-08-09
 
 Progression Recap arrives on Character Info, alongside opt-in stacking for custom trigger timers and several overlay/timer reliability fixes.
