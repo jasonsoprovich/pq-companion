@@ -1719,6 +1719,15 @@ hardening — no new features, but a broad sweep of reliability fixes.
 - Maps: a toggle keeps POI pins (zone lines, succor points) visible at
   full opacity through the depth/z-height fade.
 
+## v0.19.2 — Native Detrimental Timer Alerts
+
+- **Fading-soon alerts for native Detrimental timers** — debuff/DoT/mez/
+  stun timers built directly from log lines (not just trigger-driven
+  ones) can now sound/speak a fading-soon warning, via a new
+  `Preferences.detrim_timer_alert` global default mirroring the
+  existing custom_timer_alert/respawn_alert pattern. Configurable in
+  Settings > Overlays.
+
 ## Phase 11 — Project Website
 _Planned_
 
