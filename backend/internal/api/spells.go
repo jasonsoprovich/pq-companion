@@ -89,6 +89,48 @@ func (h *spellsHandler) crossRefs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, refs)
 }
 
+// maxOwnedScrollItemIDs caps a single owned-scrolls request. A full Zeal
+// inventory export (worn + bags + bank) tops out at a few hundred entries;
+// this leaves comfortable headroom.
+const maxOwnedScrollItemIDs = 1000
+
+// POST /api/spells/owned-scrolls
+// Body: { "item_ids": [123, 456, ...] }
+// Returns: { "spell_ids": [12, 34, ...] }
+//
+// Given a set of item ids (typically a character's full Zeal inventory
+// export), returns the ids of spells taught by a scroll/tome among them.
+// Used by the spell checklist to flag spells the player already owns but
+// hasn't scribed yet.
+func (h *spellsHandler) ownedScrolls(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		ItemIDs []int `json:"item_ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if len(body.ItemIDs) == 0 {
+		writeJSON(w, http.StatusOK, struct {
+			SpellIDs []int `json:"spell_ids"`
+		}{SpellIDs: []int{}})
+		return
+	}
+	if len(body.ItemIDs) > maxOwnedScrollItemIDs {
+		writeError(w, http.StatusBadRequest, "too many item ids")
+		return
+	}
+
+	spellIDs, err := h.db.GetOwnedScrollSpellIDs(body.ItemIDs)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		SpellIDs []int `json:"spell_ids"`
+	}{SpellIDs: spellIDs})
+}
+
 // spellStatDeltaEntry is one row of the /api/spells/stat-deltas response —
 // the spell's name and icon plus its computed buff stat contribution. Name
 // and icon are bundled so the raid-buff / live-buff UIs don't need a second

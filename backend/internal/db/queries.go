@@ -2090,6 +2090,42 @@ func (db *DB) GetSpellCrossRefs(spellID int) (*SpellCrossRefs, error) {
 	return result, nil
 }
 
+// GetOwnedScrollSpellIDs takes a set of item ids (e.g. everything in a
+// character's Zeal inventory export) and returns the ids of spells taught by
+// a scroll/tome among them, via items.scrolleffect. Used by the spell
+// checklist to flag spells the player already owns but hasn't scribed yet —
+// commonly because they bought ahead of the level requirement.
+func (db *DB) GetOwnedScrollSpellIDs(itemIDs []int) ([]int, error) {
+	if len(itemIDs) == 0 {
+		return nil, nil
+	}
+	placeholders := strings.Repeat("?,", len(itemIDs))
+	placeholders = placeholders[:len(placeholders)-1]
+	args := make([]any, len(itemIDs))
+	for i, id := range itemIDs {
+		args[i] = id
+	}
+
+	rows, err := db.Query(
+		"SELECT DISTINCT scrolleffect FROM items WHERE scrolleffect != 0 AND id IN ("+placeholders+")",
+		args...,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get owned scroll spell ids: %w", err)
+	}
+	defer rows.Close()
+
+	out := []int{}
+	for rows.Next() {
+		var spellID int
+		if err := rows.Scan(&spellID); err != nil {
+			return nil, fmt.Errorf("scan owned scroll spell id: %w", err)
+		}
+		out = append(out, spellID)
+	}
+	return out, rows.Err()
+}
+
 // GetSpellVendorOptions returns, for each requested spell id, every vendor/zone
 // pair where a scroll teaching that spell can be bought. A spell maps to its
 // scroll via items.scrolleffect; the scroll maps to vendors via merchantlist,

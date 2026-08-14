@@ -144,6 +144,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/", spells.search)
 			r.Post("/stat-deltas", spells.statDeltas)
 			r.Post("/shopping-route", spells.shoppingRoute)
+			r.Post("/owned-scrolls", spells.ownedScrolls)
 			r.Get("/class/{classIndex}", spells.byClass)
 			r.Get("/{id}", spells.get)
 			r.Get("/{id}/items", spells.crossRefs)

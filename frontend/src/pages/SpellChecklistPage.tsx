@@ -8,14 +8,17 @@ import {
   Square,
   ExternalLink,
   Map,
+  PackageCheck,
   RefreshCw,
   AlertCircle,
   Search,
   X,
 } from 'lucide-react'
 import {
+  getOwnedScrollSpellIds,
   getSpell,
   getSpellsByClass,
+  getZealInventory,
   getZealSpellbook,
   listCharacters,
   type Character,
@@ -331,12 +334,13 @@ interface SpellRowProps {
   spell: Spell
   classIndex: number
   known: boolean
+  ownedInBags: boolean
   selected: boolean
   onSelect: (id: number) => void
   onToggleSelect: (id: number) => void
 }
 
-function SpellRow({ spell, classIndex, known, selected, onSelect, onToggleSelect }: SpellRowProps): React.ReactElement {
+function SpellRow({ spell, classIndex, known, ownedInBags, selected, onSelect, onToggleSelect }: SpellRowProps): React.ReactElement {
   const level = classLevel(spell, classIndex)
   return (
     <div
@@ -373,7 +377,7 @@ function SpellRow({ spell, classIndex, known, selected, onSelect, onToggleSelect
       />
 
       {/* Spell name */}
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0 flex items-center gap-1.5">
         <span
           className="text-sm truncate"
           style={{
@@ -382,6 +386,11 @@ function SpellRow({ spell, classIndex, known, selected, onSelect, onToggleSelect
         >
           {spell.name}
         </span>
+        {!known && ownedInBags && (
+          <span title="Owned — in bags, not yet scribed">
+            <PackageCheck size={12} className="shrink-0" style={{ color: '#f59e0b' }} />
+          </span>
+        )}
       </div>
 
       {/* Level badge */}
@@ -424,6 +433,11 @@ export default function SpellChecklistPage(): React.ReactElement {
   const [query, setQuery] = useState('')
   const [spells, setSpells] = useState<Spell[]>([])
   const [spellbook, setSpellbook] = useState<Spellbook | null>(null)
+  // Spell ids taught by a scroll/tome somewhere in the viewed character's Zeal
+  // inventory export — cross-referenced against knownIds to flag spells
+  // that are owned but not yet scribed. Best-effort: failures just leave the
+  // badge off, they don't block the page.
+  const [ownedScrollIds, setOwnedScrollIds] = useState<Set<number>>(new Set())
   const [loadingSpells, setLoadingSpells] = useState(true)
   const [loadingBook, setLoadingBook] = useState(true)
   const [spellError, setSpellError] = useState<string | null>(null)
@@ -474,8 +488,21 @@ export default function SpellChecklistPage(): React.ReactElement {
       .finally(() => setLoadingBook(false))
   }, [viewedCharacter, active])
 
+  const loadOwnedScrolls = useCallback(() => {
+    if (!viewedCharacter) return
+    const isActive = active && viewedCharacter.toLowerCase() === active.toLowerCase()
+    getZealInventory(isActive ? undefined : viewedCharacter)
+      .then((res) => {
+        const ids = res.inventory?.entries.map((e) => e.id) ?? []
+        return getOwnedScrollSpellIds([...new Set(ids)])
+      })
+      .then((spellIds) => setOwnedScrollIds(new Set(spellIds)))
+      .catch(() => setOwnedScrollIds(new Set()))
+  }, [viewedCharacter, active])
+
   useEffect(() => { loadSpells(classIndex) }, [classIndex, loadSpells])
   useEffect(() => { loadSpellbook() }, [loadSpellbook])
+  useEffect(() => { loadOwnedScrolls() }, [loadOwnedScrolls])
 
   // Reload the saved shopping-run selection whenever the viewed character
   // changes — each character keeps its own checked/unchecked state.
@@ -528,6 +555,7 @@ export default function SpellChecklistPage(): React.ReactElement {
   })
 
   const knownCount = spells.filter((s) => knownIds.has(s.id)).length
+  const ownedNotKnownCount = spells.filter((s) => !knownIds.has(s.id) && ownedScrollIds.has(s.id)).length
   const loading = loadingSpells || loadingBook
 
   // Spells the route should cover: still-missing, within the level filter,
@@ -728,6 +756,14 @@ export default function SpellChecklistPage(): React.ReactElement {
               {spellbook
                 ? `${knownCount} / ${spells.length} known`
                 : `${spells.length} spells`}
+              {ownedNotKnownCount > 0 && (
+                <>
+                  {' · '}
+                  <span style={{ color: '#f59e0b' }}>
+                    {ownedNotKnownCount} in bags, not scribed
+                  </span>
+                </>
+              )}
             </span>
           )}
 
@@ -753,7 +789,7 @@ export default function SpellChecklistPage(): React.ReactElement {
 
           {/* Refresh */}
           <button
-            onClick={() => { loadSpells(classIndex); loadSpellbook() }}
+            onClick={() => { loadSpells(classIndex); loadSpellbook(); loadOwnedScrolls() }}
             className="flex items-center gap-1 text-xs px-2 py-1 rounded"
             style={{
               backgroundColor: 'var(--color-surface-2)',
@@ -874,6 +910,7 @@ export default function SpellChecklistPage(): React.ReactElement {
             spell={spell}
             classIndex={classIndex}
             known={knownIds.has(spell.id)}
+            ownedInBags={ownedScrollIds.has(spell.id)}
             selected={!deselected.has(spell.id)}
             onSelect={handleSelectSpell}
             onToggleSelect={toggleSelect}

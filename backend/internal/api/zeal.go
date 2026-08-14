@@ -85,23 +85,49 @@ func (h *zealHandler) enrichEntries(entries []zeal.InventoryEntry) {
 }
 
 // GET /api/zeal/inventory
-// Returns the most recently parsed Zeal inventory export.
-// If no export file has been found yet (character or eq_path not configured,
-// or file not yet written) returns {"inventory": null}.
+// Returns the most recently parsed Zeal inventory export. With no query,
+// returns the active character's cached inventory. With ?character=Name,
+// parses that character's <Name>-Inventory.txt directly (same pattern as
+// spellbook/quarmy/spellsets below). Returns {"inventory": null} if no
+// export file has been found yet.
 func (h *zealHandler) inventory(w http.ResponseWriter, r *http.Request) {
-	inv := h.watcher.Inventory()
-	if inv != nil {
-		// Inventory() returns the watcher's shared cached pointer. Enrich a copy
-		// so we don't mutate Entries in place — concurrent GETs would otherwise
-		// write the same slice elements unsynchronized (trips -race).
-		cp := *inv
-		cp.Entries = append([]zeal.InventoryEntry(nil), inv.Entries...)
-		h.enrichEntries(cp.Entries)
-		inv = &cp
-	}
-	json.NewEncoder(w).Encode(struct {
+	resp := struct {
 		Inventory *zeal.Inventory `json:"inventory"`
-	}{Inventory: inv})
+	}{}
+	name := r.URL.Query().Get("character")
+	if name == "" {
+		inv := h.watcher.Inventory()
+		if inv != nil {
+			// Inventory() returns the watcher's shared cached pointer. Enrich a
+			// copy so we don't mutate Entries in place — concurrent GETs would
+			// otherwise write the same slice elements unsynchronized (trips -race).
+			cp := *inv
+			cp.Entries = append([]zeal.InventoryEntry(nil), inv.Entries...)
+			h.enrichEntries(cp.Entries)
+			inv = &cp
+		}
+		resp.Inventory = inv
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+	cfg := h.cfgMgr.Get()
+	if cfg.EQPath == "" {
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+	path := zeal.FindInventoryFile(cfg.EQPath, name)
+	if path == "" {
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+	inv, err := zeal.ParseInventory(path, name)
+	if err != nil {
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+	h.enrichEntries(inv.Entries)
+	resp.Inventory = inv
+	json.NewEncoder(w).Encode(resp)
 }
 
 // GET /api/zeal/spells
