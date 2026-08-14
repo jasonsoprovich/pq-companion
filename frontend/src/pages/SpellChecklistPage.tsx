@@ -15,10 +15,10 @@ import {
   X,
 } from 'lucide-react'
 import {
+  getAllInventories,
   getOwnedScrollSpellIds,
   getSpell,
   getSpellsByClass,
-  getZealInventory,
   getZealSpellbook,
   listCharacters,
   type Character,
@@ -387,7 +387,7 @@ function SpellRow({ spell, classIndex, known, ownedInBags, selected, onSelect, o
           {spell.name}
         </span>
         {!known && ownedInBags && (
-          <span title="Owned — in bags, not yet scribed">
+          <span title="Owned by one of your characters — not yet scribed">
             <PackageCheck size={12} className="shrink-0" style={{ color: '#f59e0b' }} />
           </span>
         )}
@@ -433,10 +433,10 @@ export default function SpellChecklistPage(): React.ReactElement {
   const [query, setQuery] = useState('')
   const [spells, setSpells] = useState<Spell[]>([])
   const [spellbook, setSpellbook] = useState<Spellbook | null>(null)
-  // Spell ids taught by a scroll/tome somewhere in the viewed character's Zeal
-  // inventory export — cross-referenced against knownIds to flag spells
-  // that are owned but not yet scribed. Best-effort: failures just leave the
-  // badge off, they don't block the page.
+  // Spell ids taught by a scroll/tome somewhere across ALL characters' Zeal
+  // inventory exports (bags, personal bank, shared bank) — cross-referenced
+  // against knownIds to flag spells that are owned but not yet scribed.
+  // Best-effort: failures just leave the badge off, they don't block the page.
   const [ownedScrollIds, setOwnedScrollIds] = useState<Set<number>>(new Set())
   const [loadingSpells, setLoadingSpells] = useState(true)
   const [loadingBook, setLoadingBook] = useState(true)
@@ -488,17 +488,22 @@ export default function SpellChecklistPage(): React.ReactElement {
       .finally(() => setLoadingBook(false))
   }, [viewedCharacter, active])
 
+  // Owned scrolls are checked across every character's inventory (bags, personal
+  // bank, and the shared bank) rather than just the one being viewed — a scroll
+  // bought on an alt still means the viewed character doesn't need to buy it
+  // again, since it can be mailed/traded over.
   const loadOwnedScrolls = useCallback(() => {
-    if (!viewedCharacter) return
-    const isActive = active && viewedCharacter.toLowerCase() === active.toLowerCase()
-    getZealInventory(isActive ? undefined : viewedCharacter)
+    getAllInventories()
       .then((res) => {
-        const ids = res.inventory?.entries.map((e) => e.id) ?? []
+        const ids = [
+          ...res.characters.flatMap((c) => c?.entries.map((e) => e.id) ?? []),
+          ...res.shared_bank.map((e) => e.id),
+        ]
         return getOwnedScrollSpellIds([...new Set(ids)])
       })
       .then((spellIds) => setOwnedScrollIds(new Set(spellIds)))
       .catch(() => setOwnedScrollIds(new Set()))
-  }, [viewedCharacter, active])
+  }, [])
 
   useEffect(() => { loadSpells(classIndex) }, [classIndex, loadSpells])
   useEffect(() => { loadSpellbook() }, [loadSpellbook])
@@ -760,7 +765,7 @@ export default function SpellChecklistPage(): React.ReactElement {
                 <>
                   {' · '}
                   <span style={{ color: '#f59e0b' }}>
-                    {ownedNotKnownCount} in bags, not scribed
+                    {ownedNotKnownCount} owned, not scribed
                   </span>
                 </>
               )}
