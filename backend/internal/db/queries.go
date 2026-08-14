@@ -2090,12 +2090,15 @@ func (db *DB) GetSpellCrossRefs(spellID int) (*SpellCrossRefs, error) {
 	return result, nil
 }
 
-// GetOwnedScrollSpellIDs takes a set of item ids (e.g. everything in a
-// character's Zeal inventory export) and returns the ids of spells taught by
-// a scroll/tome among them, via items.scrolleffect. Used by the spell
-// checklist to flag spells the player already owns but hasn't scribed yet —
-// commonly because they bought ahead of the level requirement.
-func (db *DB) GetOwnedScrollSpellIDs(itemIDs []int) ([]int, error) {
+// GetScrollSpellIDsForItems takes a set of item ids (e.g. every item across a
+// player's characters' Zeal inventory exports) and returns a map of item id
+// -> spell id for the ones that are a scroll/tome teaching a spell, via
+// items.scrolleffect. Keyed by item id (rather than collapsed to a distinct
+// spell id list) so the caller can trace each match back to which inventory
+// entry — and therefore which character and slot — it came from. Used by the
+// spell checklist to flag spells the player already owns but hasn't scribed
+// yet, commonly because they bought ahead of the level requirement.
+func (db *DB) GetScrollSpellIDsForItems(itemIDs []int) (map[int]int, error) {
 	if len(itemIDs) == 0 {
 		return nil, nil
 	}
@@ -2107,21 +2110,21 @@ func (db *DB) GetOwnedScrollSpellIDs(itemIDs []int) ([]int, error) {
 	}
 
 	rows, err := db.Query(
-		"SELECT DISTINCT scrolleffect FROM items WHERE scrolleffect != 0 AND id IN ("+placeholders+")",
+		"SELECT id, scrolleffect FROM items WHERE scrolleffect != 0 AND id IN ("+placeholders+")",
 		args...,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("get owned scroll spell ids: %w", err)
+		return nil, fmt.Errorf("get scroll spell ids for items: %w", err)
 	}
 	defer rows.Close()
 
-	out := []int{}
+	out := make(map[int]int)
 	for rows.Next() {
-		var spellID int
-		if err := rows.Scan(&spellID); err != nil {
-			return nil, fmt.Errorf("scan owned scroll spell id: %w", err)
+		var itemID, spellID int
+		if err := rows.Scan(&itemID, &spellID); err != nil {
+			return nil, fmt.Errorf("scan scroll spell id: %w", err)
 		}
-		out = append(out, spellID)
+		out[itemID] = spellID
 	}
 	return out, rows.Err()
 }

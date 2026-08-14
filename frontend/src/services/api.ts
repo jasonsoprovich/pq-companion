@@ -827,14 +827,16 @@ export function getZealInventory(character?: string): Promise<ZealInventoryRespo
   return get<ZealInventoryResponse>(`/api/zeal/inventory${qs}`)
 }
 
-// Given a set of item ids (typically a character's full Zeal inventory
-// export), returns the ids of spells taught by a scroll/tome among them —
-// spells the character already owns but hasn't scribed yet.
-export function getOwnedScrollSpellIds(itemIds: number[]): Promise<number[]> {
-  if (itemIds.length === 0) return Promise.resolve([])
-  return post<{ spell_ids: number[] }>('/api/spells/owned-scrolls', { item_ids: itemIds }).then(
-    (res) => res.spell_ids ?? [],
-  )
+// Given a set of item ids (typically every item across a player's
+// characters' Zeal inventory exports), returns a map of item id -> spell id
+// for the ones that are a scroll/tome — spells the player already owns but
+// hasn't scribed yet. Keyed by item id so the caller can trace a match back
+// to which inventory entry (and therefore which character/slot) it came from.
+export function getScrollSpellIdsForItems(itemIds: number[]): Promise<Record<number, number>> {
+  if (itemIds.length === 0) return Promise.resolve({})
+  return post<{ item_spell_ids: Record<number, number> }>('/api/spells/owned-scrolls', {
+    item_ids: itemIds,
+  }).then((res) => res.item_spell_ids ?? {})
 }
 
 export function getZealSpellbook(character?: string): Promise<ZealSpellbookResponse> {

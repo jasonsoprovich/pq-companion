@@ -7,7 +7,7 @@ import {
   CheckSquare,
   Square,
   ExternalLink,
-  Map,
+  Map as MapIcon,
   PackageCheck,
   RefreshCw,
   AlertCircle,
@@ -16,7 +16,7 @@ import {
 } from 'lucide-react'
 import {
   getAllInventories,
-  getOwnedScrollSpellIds,
+  getScrollSpellIdsForItems,
   getSpell,
   getSpellsByClass,
   getZealSpellbook,
@@ -32,6 +32,7 @@ import { usePoPEnabled } from '../hooks/usePoPEnabled'
 import { useSpellRefNames } from '../hooks/useSpellRefNames'
 import { useItemRefNames } from '../hooks/useItemRefNames'
 import { maxLevel as eraMaxLevel } from '../lib/era'
+import { describeLocation } from '../lib/inventoryLocations'
 import CharacterSubTabs from '../components/CharacterSubTabs'
 import {
   castableClasses,
@@ -106,6 +107,22 @@ interface LevelFilter {
 
 function classLevel(spell: Spell, classIndex: number): number {
   return spell.class_levels[classIndex] ?? 255
+}
+
+// One inventory hit for a scroll teaching a not-yet-known spell.
+interface OwnedScrollLocation {
+  character: string
+  location: string
+  count: number
+}
+
+// Multi-line hover text for the "owned, not scribed" badge — one line per
+// character/slot the scroll was found in, e.g. "Osui — Bag 3, Slot 5".
+function ownedScrollTooltip(locations: OwnedScrollLocation[]): string {
+  const lines = locations.map(
+    (l) => `${l.character} — ${describeLocation(l.location)}${l.count > 1 ? ` ×${l.count}` : ''}`,
+  )
+  return `Owned, not yet scribed:\n${lines.join('\n')}`
 }
 
 function savedClass(): number {
@@ -334,13 +351,13 @@ interface SpellRowProps {
   spell: Spell
   classIndex: number
   known: boolean
-  ownedInBags: boolean
+  ownedLocations: OwnedScrollLocation[]
   selected: boolean
   onSelect: (id: number) => void
   onToggleSelect: (id: number) => void
 }
 
-function SpellRow({ spell, classIndex, known, ownedInBags, selected, onSelect, onToggleSelect }: SpellRowProps): React.ReactElement {
+function SpellRow({ spell, classIndex, known, ownedLocations, selected, onSelect, onToggleSelect }: SpellRowProps): React.ReactElement {
   const level = classLevel(spell, classIndex)
   return (
     <div
@@ -386,8 +403,8 @@ function SpellRow({ spell, classIndex, known, ownedInBags, selected, onSelect, o
         >
           {spell.name}
         </span>
-        {!known && ownedInBags && (
-          <span title="Owned by one of your characters — not yet scribed">
+        {!known && ownedLocations.length > 0 && (
+          <span title={ownedScrollTooltip(ownedLocations)}>
             <PackageCheck size={12} className="shrink-0" style={{ color: '#f59e0b' }} />
           </span>
         )}
@@ -433,11 +450,12 @@ export default function SpellChecklistPage(): React.ReactElement {
   const [query, setQuery] = useState('')
   const [spells, setSpells] = useState<Spell[]>([])
   const [spellbook, setSpellbook] = useState<Spellbook | null>(null)
-  // Spell ids taught by a scroll/tome somewhere across ALL characters' Zeal
-  // inventory exports (bags, personal bank, shared bank) — cross-referenced
-  // against knownIds to flag spells that are owned but not yet scribed.
-  // Best-effort: failures just leave the badge off, they don't block the page.
-  const [ownedScrollIds, setOwnedScrollIds] = useState<Set<number>>(new Set())
+  // Spell id -> where a scroll/tome teaching it was found, across ALL
+  // characters' Zeal inventory exports (bags, personal bank, shared bank) —
+  // cross-referenced against knownIds to flag spells that are owned but not
+  // yet scribed, and to show where. Best-effort: failures just leave the
+  // badge off, they don't block the page.
+  const [ownedScrollLocations, setOwnedScrollLocations] = useState<Map<number, OwnedScrollLocation[]>>(new Map())
   const [loadingSpells, setLoadingSpells] = useState(true)
   const [loadingBook, setLoadingBook] = useState(true)
   const [spellError, setSpellError] = useState<string | null>(null)
@@ -491,18 +509,32 @@ export default function SpellChecklistPage(): React.ReactElement {
   // Owned scrolls are checked across every character's inventory (bags, personal
   // bank, and the shared bank) rather than just the one being viewed — a scroll
   // bought on an alt still means the viewed character doesn't need to buy it
-  // again, since it can be mailed/traded over.
+  // again, since it can be mailed/traded over. Each inventory entry is tagged
+  // with its owning character (shared bank entries get a synthetic "Shared
+  // Bank" character) before the item ids are deduplicated and sent to the
+  // server, so a match can be traced back to exactly where it lives.
   const loadOwnedScrolls = useCallback(() => {
     getAllInventories()
       .then((res) => {
-        const ids = [
-          ...res.characters.flatMap((c) => c?.entries.map((e) => e.id) ?? []),
-          ...res.shared_bank.map((e) => e.id),
+        const tagged = [
+          ...res.characters.flatMap((c) => (c ? c.entries.map((e) => ({ character: c.character, entry: e })) : [])),
+          ...res.shared_bank.map((e) => ({ character: 'Shared Bank', entry: e })),
         ]
-        return getOwnedScrollSpellIds([...new Set(ids)])
+        const itemIds = [...new Set(tagged.map((t) => t.entry.id))]
+        return getScrollSpellIdsForItems(itemIds).then((itemSpellIds) => {
+          const locations = new Map<number, OwnedScrollLocation[]>()
+          for (const { character, entry } of tagged) {
+            const spellId = itemSpellIds[entry.id]
+            if (spellId === undefined) continue
+            const list = locations.get(spellId) ?? []
+            list.push({ character, location: entry.location, count: entry.count })
+            locations.set(spellId, list)
+          }
+          return locations
+        })
       })
-      .then((spellIds) => setOwnedScrollIds(new Set(spellIds)))
-      .catch(() => setOwnedScrollIds(new Set()))
+      .then((locations) => setOwnedScrollLocations(locations))
+      .catch(() => setOwnedScrollLocations(new Map()))
   }, [])
 
   useEffect(() => { loadSpells(classIndex) }, [classIndex, loadSpells])
@@ -560,7 +592,7 @@ export default function SpellChecklistPage(): React.ReactElement {
   })
 
   const knownCount = spells.filter((s) => knownIds.has(s.id)).length
-  const ownedNotKnownCount = spells.filter((s) => !knownIds.has(s.id) && ownedScrollIds.has(s.id)).length
+  const ownedNotKnownCount = spells.filter((s) => !knownIds.has(s.id) && ownedScrollLocations.has(s.id)).length
   const loading = loadingSpells || loadingBook
 
   // Spells the route should cover: still-missing, within the level filter,
@@ -788,7 +820,7 @@ export default function SpellChecklistPage(): React.ReactElement {
                 : `Plan an efficient route to buy ${selectedIds.length} selected spell${selectedIds.length === 1 ? '' : 's'}`
             }
           >
-            <Map size={11} />
+            <MapIcon size={11} />
             Plan route{selectedIds.length > 0 ? ` (${selectedIds.length})` : ''}
           </button>
 
@@ -915,7 +947,7 @@ export default function SpellChecklistPage(): React.ReactElement {
             spell={spell}
             classIndex={classIndex}
             known={knownIds.has(spell.id)}
-            ownedInBags={ownedScrollIds.has(spell.id)}
+            ownedLocations={ownedScrollLocations.get(spell.id) ?? []}
             selected={!deselected.has(spell.id)}
             onSelect={handleSelectSpell}
             onToggleSelect={toggleSelect}

@@ -89,19 +89,22 @@ func (h *spellsHandler) crossRefs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, refs)
 }
 
-// maxOwnedScrollItemIDs caps a single owned-scrolls request. A full Zeal
-// inventory export (worn + bags + bank) tops out at a few hundred entries;
-// this leaves comfortable headroom.
-const maxOwnedScrollItemIDs = 1000
+// maxOwnedScrollItemIDs caps a single owned-scrolls request. Item ids are
+// deduplicated client-side before the request, but this now spans every
+// character's inventory (bags + bank) plus the shared bank, so the cap is
+// sized generously above a single-character export.
+const maxOwnedScrollItemIDs = 5000
 
 // POST /api/spells/owned-scrolls
 // Body: { "item_ids": [123, 456, ...] }
-// Returns: { "spell_ids": [12, 34, ...] }
+// Returns: { "item_spell_ids": { "123": 12, ... } }
 //
-// Given a set of item ids (typically a character's full Zeal inventory
-// export), returns the ids of spells taught by a scroll/tome among them.
-// Used by the spell checklist to flag spells the player already owns but
-// hasn't scribed yet.
+// Given a set of item ids (typically every item across a player's
+// characters' Zeal inventory exports), returns a map of item id -> spell id
+// for the ones that are a scroll/tome. Keyed by item id rather than
+// collapsed to a spell id list so the caller can trace a match back to which
+// inventory entry it came from. Used by the spell checklist to flag spells
+// the player already owns but hasn't scribed yet, and to show where.
 func (h *spellsHandler) ownedScrolls(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		ItemIDs []int `json:"item_ids"`
@@ -112,8 +115,8 @@ func (h *spellsHandler) ownedScrolls(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(body.ItemIDs) == 0 {
 		writeJSON(w, http.StatusOK, struct {
-			SpellIDs []int `json:"spell_ids"`
-		}{SpellIDs: []int{}})
+			ItemSpellIDs map[int]int `json:"item_spell_ids"`
+		}{ItemSpellIDs: map[int]int{}})
 		return
 	}
 	if len(body.ItemIDs) > maxOwnedScrollItemIDs {
@@ -121,14 +124,14 @@ func (h *spellsHandler) ownedScrolls(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	spellIDs, err := h.db.GetOwnedScrollSpellIDs(body.ItemIDs)
+	itemSpellIDs, err := h.db.GetScrollSpellIDsForItems(body.ItemIDs)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, struct {
-		SpellIDs []int `json:"spell_ids"`
-	}{SpellIDs: spellIDs})
+		ItemSpellIDs map[int]int `json:"item_spell_ids"`
+	}{ItemSpellIDs: itemSpellIDs})
 }
 
 // spellStatDeltaEntry is one row of the /api/spells/stat-deltas response —
