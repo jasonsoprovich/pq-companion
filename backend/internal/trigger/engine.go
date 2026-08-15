@@ -116,6 +116,10 @@ type Engine struct {
 	// populated for triggers with RefireCooldownSecs > 0.
 	fireMu    sync.Mutex
 	lastFired map[string]time.Time
+
+	// bossCast tracks recent raid-boss "begins to cast a spell." lines so
+	// signature-spell timers can bind to the actual caster — see bosscast.go.
+	bossCast *bossCastTracker
 }
 
 // NewEngine creates an Engine backed by store. Call Reload before routing
@@ -127,6 +131,7 @@ func NewEngine(store *Store, hub *ws.Hub, sink TimerSink, activeChar func() stri
 		store: store, hub: hub, sink: sink, activeChar: activeChar,
 		lastFired:   make(map[string]time.Time),
 		sendWebhook: postDiscordWebhook,
+		bossCast:    newBossCastTracker(),
 	}
 }
 
@@ -231,6 +236,8 @@ func (e *Engine) Reload() {
 // timestamp is when the line was logged; message is the text after the EQ
 // timestamp prefix (i.e. the bare log message, without brackets).
 func (e *Engine) Handle(timestamp time.Time, message string) {
+	e.bossCast.observe(timestamp, message)
+
 	e.mu.RLock()
 	cs := e.compiled
 	e.mu.RUnlock()
@@ -767,7 +774,18 @@ func (e *Engine) fire(c compiled, matchedLine string, firedAt time.Time, match [
 			// reported by suprphrk/HughJeffner 2026-08-07.
 			target := resolveTimerTarget(t, match, names)
 			if target == "" && t.TimerType == TimerTypeDetrimental {
-				target = builtins["target"]
+				// Prefer the actual caster over the live-target guess when this
+				// is a known signature spell (bosscast.go): the land text
+				// never names the caster, but a recent "<boss> begins to cast
+				// a spell." line does, and unlike the current combat target it
+				// doesn't break when the player is off-tanking an add or has
+				// nothing targeted.
+				if casters, ok := signatureSpellCasters[t.Name]; ok {
+					target = e.bossCast.resolveCaster(firedAt, casters)
+				}
+				if target == "" {
+					target = builtins["target"]
+				}
 			}
 			spellID := t.SpellID
 			if extra != nil && extra.SpellID > 0 {
