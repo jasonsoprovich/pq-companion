@@ -1,4 +1,5 @@
 import React from 'react'
+import { Swords } from 'lucide-react'
 import { SpellIcon } from '../Icon'
 import type { ActiveTimer, TimerCategory } from '../../types/timer'
 
@@ -90,6 +91,28 @@ function TimerRow({ timer }: { timer: ActiveTimer }): React.ReactElement {
           >
             {timer.spell_name}
           </span>
+          {timer.target_is_caster && (
+            <span
+              title="This NPC's own recast cooldown — not a debuff currently on it"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 2,
+                flexShrink: 0,
+                padding: '1px 4px',
+                borderRadius: 3,
+                fontSize: 9,
+                fontWeight: 600,
+                letterSpacing: 0.3,
+                textTransform: 'uppercase',
+                color: '#fbbf24',
+                backgroundColor: 'rgba(251,191,36,0.12)',
+              }}
+            >
+              <Swords size={9} />
+              Cooldown
+            </span>
+          )}
         </div>
         <span
           style={{

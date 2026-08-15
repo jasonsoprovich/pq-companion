@@ -968,25 +968,27 @@ func TestParseDurationText(t *testing.T) {
 // captureSink records StartExternal/StopExternal calls for asserting timer
 // dispatch. The scalar fields hold the most recent StartExternal call.
 type captureSink struct {
-	name     string
-	category string
-	duration float64
-	spellID  int
-	target   string
-	barColor string
-	pinned   bool
-	group    string
-	alerts   json.RawMessage
-	stack    bool
-	calls    int
+	name           string
+	category       string
+	duration       float64
+	spellID        int
+	target         string
+	barColor       string
+	pinned         bool
+	group          string
+	alerts         json.RawMessage
+	stack          bool
+	targetIsCaster bool
+	calls          int
 
 	stopName    string
 	stopSpellID int
 	stops       int
 }
 
-func (s *captureSink) StartExternal(name, category string, durationSecs, displayThresholdSecs float64, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string, pinned bool, customGroup string, stack ...bool) {
+func (s *captureSink) StartExternal(name, category string, durationSecs, displayThresholdSecs float64, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string, pinned bool, customGroup string, targetIsCaster bool, stack ...bool) {
 	s.name, s.category, s.duration, s.spellID, s.target, s.barColor, s.pinned, s.group, s.alerts = name, category, durationSecs, spellID, targetName, barColor, pinned, customGroup, alerts
+	s.targetIsCaster = targetIsCaster
 	s.stack = len(stack) > 0 && stack[0]
 	s.calls++
 }

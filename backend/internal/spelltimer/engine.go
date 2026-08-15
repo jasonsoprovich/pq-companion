@@ -783,7 +783,7 @@ func divergenceKey(names []string) string {
 // this firing gets its own independent timer row instead of restarting/
 // overwriting any existing same-name timer — the "stack timers" trigger
 // option (Trigger.TimerStack). Only meaningful alongside category "custom".
-func (e *Engine) StartExternal(name string, category string, durationSecs, displayThresholdSecs float64, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string, pinned bool, customGroup string, stack ...bool) {
+func (e *Engine) StartExternal(name string, category string, durationSecs, displayThresholdSecs float64, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string, pinned bool, customGroup string, targetIsCaster bool, stack ...bool) {
 	if name == "" || durationSecs <= 0 {
 		return
 	}
@@ -842,6 +842,7 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 			ExpiresAt:            startedAt.Add(time.Duration(durationSecs * float64(time.Second))),
 			DurationSeconds:      durationSecs,
 			DisplayThresholdSecs: displayThresholdSecs,
+			TargetIsCaster:       targetIsCaster,
 			TimerAlerts:          alerts,
 			BarColor:             barColor,
 			Pinned:               pinned,
@@ -937,6 +938,7 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 		ExpiresAt:            startedAt.Add(time.Duration(durationSecs * float64(time.Second))),
 		DurationSeconds:      durationSecs,
 		DisplayThresholdSecs: displayThresholdSecs,
+		TargetIsCaster:       targetIsCaster,
 		TimerAlerts:          alerts,
 		BarColor:             barColor,
 		Pinned:               pinned,

@@ -65,6 +65,17 @@ export interface ActiveTimer {
    */
   pinned?: boolean
   /**
+   * True when target_name is the NPC that CAST this effect, not the one it
+   * landed on — e.g. a raid boss's own signature-spell recast timer (Fling,
+   * Caustic Mist), bound to the boss via cast-start correlation rather than
+   * to whichever raid member it actually hit. Every other timer's
+   * target_name is the recipient (the mob with a debuff on it, the player
+   * with a buff). Drives the NPC Timers tab's "boss cooldown" badge so it
+   * reads differently from an ordinary "this NPC has a debuff on it" row
+   * even though both key off the same target_name.
+   */
+  target_is_caster?: boolean
+  /**
    * Which Custom Timers window this timer renders in (a TimerGroup.id).
    * Only meaningful when category is 'custom'. Absent/empty = the
    * original/default Custom Timers window.

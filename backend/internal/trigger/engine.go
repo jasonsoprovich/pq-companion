@@ -42,7 +42,7 @@ const historyMaxSize = 200
 // why. Only fire()'s primary-timer call ever passes true, when the firing
 // trigger's TimerStack option is set.
 type TimerSink interface {
-	StartExternal(name, category string, durationSecs, displayThresholdSecs float64, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string, pinned bool, customGroup string, stack ...bool)
+	StartExternal(name, category string, durationSecs, displayThresholdSecs float64, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string, pinned bool, customGroup string, targetIsCaster bool, stack ...bool)
 	StopExternal(name string, spellID int)
 }
 
@@ -472,7 +472,7 @@ func (e *Engine) firePipe(t *Trigger, matchedLine string, firedAt time.Time) {
 	if e.sink != nil && t.TimerDurationSecs > 0 && timerCategory(t.TimerType) != "" {
 		alertJSON := marshalTimerAlerts(t.TimerAlerts, nil, nil, builtins)
 		e.sink.StartExternal(timerKeyFor(t), timerCategory(t.TimerType),
-			t.TimerDurationSecs, t.DisplayThresholdSecs, firedAt, alertJSON, t.SpellID, "", t.BarColor, t.Pinned, t.CustomGroupID)
+			t.TimerDurationSecs, t.DisplayThresholdSecs, firedAt, alertJSON, t.SpellID, "", t.BarColor, t.Pinned, t.CustomGroupID, false)
 	}
 	e.startCooldownTimer(t, firedAt)
 }
@@ -773,14 +773,22 @@ func (e *Engine) fire(c compiled, matchedLine string, firedAt time.Time, match [
 			// was last targeted, so they vanished the moment that mob died —
 			// reported by suprphrk/HughJeffner 2026-08-07.
 			target := resolveTimerTarget(t, match, names)
+			// True for a known signature-spell trigger (bosscast.go)
+			// regardless of how its target below ends up resolved: the row
+			// always represents that NPC's own recast cooldown, never a
+			// debuff sitting on whatever it's bound to. Drives the NPC
+			// Timers tab's "boss cooldown" badge, which needs to read
+			// differently from an ordinary "X has this debuff" row even
+			// though both key off the same TargetName.
+			casters, isSignatureSpell := signatureSpellCasters[t.Name]
 			if target == "" && t.TimerType == TimerTypeDetrimental {
 				// Prefer the actual caster over the live-target guess when this
-				// is a known signature spell (bosscast.go): the land text
-				// never names the caster, but a recent "<boss> begins to cast
-				// a spell." line does, and unlike the current combat target it
-				// doesn't break when the player is off-tanking an add or has
-				// nothing targeted.
-				if casters, ok := signatureSpellCasters[t.Name]; ok {
+				// is a known signature spell: the land text never names the
+				// caster, but a recent "<boss> begins to cast a spell." line
+				// does, and unlike the current combat target it doesn't break
+				// when the player is off-tanking an add or has nothing
+				// targeted.
+				if isSignatureSpell {
 					target = e.bossCast.resolveCaster(firedAt, casters)
 				}
 				if target == "" {
@@ -795,7 +803,7 @@ func (e *Engine) fire(c compiled, matchedLine string, firedAt time.Time, match [
 			// comment; the API layer already enforces this on write, but the
 			// check is repeated here since fire() is the actual behaviour gate.
 			stack := t.TimerStack && t.TimerType == TimerTypeCustom
-			e.sink.StartExternal(key, timerCategory(t.TimerType), durationSecs, t.DisplayThresholdSecs, firedAt, alertJSON, spellID, target, t.BarColor, t.Pinned, t.CustomGroupID, stack)
+			e.sink.StartExternal(key, timerCategory(t.TimerType), durationSecs, t.DisplayThresholdSecs, firedAt, alertJSON, spellID, target, t.BarColor, t.Pinned, t.CustomGroupID, isSignatureSpell, stack)
 		}
 	}
 	e.startCooldownTimer(t, firedAt)
@@ -951,7 +959,7 @@ func (e *Engine) startCooldownTimer(t *Trigger, firedAt time.Time) {
 	}
 	// CustomGroupID is meaningless here — the cooldown timer always renders on
 	// the Buff overlay (hardcoded category "buff"), which has no groups.
-	e.sink.StartExternal(cooldownKeyFor(t), "buff", t.CooldownSecs, 0, firedAt, alertJSON, 0, "", "", t.Pinned, "")
+	e.sink.StartExternal(cooldownKeyFor(t), "buff", t.CooldownSecs, 0, firedAt, alertJSON, 0, "", "", t.Pinned, "", false)
 }
 
 // timerCategory maps a trigger's TimerType onto a spelltimer category string.

@@ -229,7 +229,7 @@ func TestStartExternal_DedupsAgainstSpellLandedTimer(t *testing.T) {
 	}
 
 	// User trigger fires with the same spell name moments later.
-	e.StartExternal("Visions of Grandeur", "buff", 1620, 0, now.Add(time.Second), nil, 0, "", "", false, "")
+	e.StartExternal("Visions of Grandeur", "buff", 1620, 0, now.Add(time.Second), nil, 0, "", "", false, "", false)
 
 	// Still only the one entry — the trigger's would-be entry was suppressed.
 	if len(e.timers) != 1 {
@@ -244,7 +244,7 @@ func TestStartExternal_DedupsAgainstSpellLandedTimer(t *testing.T) {
 // spell already in the timer map) should create its entry as before.
 func TestStartExternal_CreatesEntryWhenNoSpellMatch(t *testing.T) {
 	e := newTestEngine()
-	e.StartExternal("AE Incoming", "debuff", 30, 0, time.Now(), nil, 0, "", "", false, "")
+	e.StartExternal("AE Incoming", "debuff", 30, 0, time.Now(), nil, 0, "", "", false, "", false)
 
 	if len(e.timers) != 1 {
 		t.Fatalf("expected 1 timer, got %d", len(e.timers))
@@ -262,7 +262,7 @@ func TestStartExternal_CreatesEntryWhenNoSpellMatch(t *testing.T) {
 // the frontend can apply the override instead of the global default.
 func TestStartExternal_CopiesDisplayThreshold(t *testing.T) {
 	e := newTestEngine()
-	e.StartExternal("Long Buff", "buff", 7200, 600, time.Now(), nil, 0, "", "", false, "")
+	e.StartExternal("Long Buff", "buff", 7200, 600, time.Now(), nil, 0, "", "", false, "", false)
 
 	got, ok := e.timers[timerKey("Long Buff", "")]
 	if !ok {
@@ -287,8 +287,8 @@ func TestStartExternal_CopiesDisplayThreshold(t *testing.T) {
 func TestConfirmCast_TargetsTheCallersOwnTimer(t *testing.T) {
 	e := newTestEngine()
 	now := time.Now()
-	e.StartExternal("#1  Tank  <- Alice", "ch_chain", 10, 0, now, nil, 0, "Tank", "", false, "")
-	e.StartExternal("#2  Tank  <- Bob", "ch_chain", 10, 0, now.Add(3*time.Second), nil, 0, "Tank", "", false, "")
+	e.StartExternal("#1  Tank  <- Alice", "ch_chain", 10, 0, now, nil, 0, "Tank", "", false, "", false)
+	e.StartExternal("#2  Tank  <- Bob", "ch_chain", 10, 0, now.Add(3*time.Second), nil, 0, "Tank", "", false, "", false)
 
 	// Bob casts. Alice's row is older and shares the target.
 	e.ConfirmCast("#2  Tank  <- Bob", "Tank")
@@ -312,8 +312,8 @@ func TestConfirmCast_TargetsTheCallersOwnTimer(t *testing.T) {
 func TestConfirmCast_IgnoresUnknownAndOtherCategories(t *testing.T) {
 	e := newTestEngine()
 	now := time.Now()
-	e.StartExternal("#1  MainTank  <- Alice", "ch_chain", 10, 0, now, nil, 0, "MainTank", "", false, "")
-	e.StartExternal("Some Buff", "buff", 10, 0, now, nil, 0, "MainTank", "", false, "")
+	e.StartExternal("#1  MainTank  <- Alice", "ch_chain", 10, 0, now, nil, 0, "MainTank", "", false, "", false)
+	e.StartExternal("Some Buff", "buff", 10, 0, now, nil, 0, "MainTank", "", false, "", false)
 
 	e.ConfirmCast("#9  MainTank  <- Nobody", "MainTank") // no such callout
 	e.ConfirmCast("#1  MainTank  <- Alice", "OtherTank") // right label, wrong target
@@ -334,7 +334,7 @@ func TestConfirmCast_IgnoresUnknownAndOtherCategories(t *testing.T) {
 func TestConfirmCast_ClearsAnAlreadySetMissFlag(t *testing.T) {
 	e := newTestEngine()
 	e.StartExternal("#1  Tank  <- Alice", "ch_chain", 10, 0,
-		time.Now().Add(-5*time.Second), nil, 0, "Tank", "", false, "")
+		time.Now().Add(-5*time.Second), nil, 0, "Tank", "", false, "", false)
 
 	e.pruneExpired() // 5s in with no confirmation → flagged
 	tm := e.timers[timerKey("#1  Tank  <- Alice", "Tank")]
@@ -357,7 +357,7 @@ func TestConfirmCast_ClearsAnAlreadySetMissFlag(t *testing.T) {
 func TestUnconfirmCast_FlagsAnInterruptedConfirmedTimer(t *testing.T) {
 	e := newTestEngine()
 	started := time.Now().Add(-3 * time.Second)
-	e.StartExternal("#1  Tank  ← Alice", "ch_chain", 10, 0, started, nil, 0, "Tank", "", false, "")
+	e.StartExternal("#1  Tank  ← Alice", "ch_chain", 10, 0, started, nil, 0, "Tank", "", false, "", false)
 	e.ConfirmCast("#1  Tank  ← Alice", "Tank")
 
 	e.UnconfirmCast("Alice", time.Now())
@@ -379,10 +379,10 @@ func TestUnconfirmCast_FlagsAnInterruptedConfirmedTimer(t *testing.T) {
 func TestUnconfirmCast_IgnoresUnrelatedOrUnconfirmedTimers(t *testing.T) {
 	e := newTestEngine()
 	now := time.Now()
-	e.StartExternal("#1  Tank  ← Alice", "ch_chain", 10, 0, now, nil, 0, "Tank", "", false, "")
-	e.StartExternal("Some Buff", "buff", 10, 0, now, nil, 0, "Tank", "", false, "")
+	e.StartExternal("#1  Tank  ← Alice", "ch_chain", 10, 0, now, nil, 0, "Tank", "", false, "", false)
+	e.StartExternal("Some Buff", "buff", 10, 0, now, nil, 0, "Tank", "", false, "", false)
 	// Bob's timer is deliberately left unconfirmed.
-	e.StartExternal("#2  Tank  ← Bob", "ch_chain", 10, 0, now, nil, 0, "Tank", "", false, "")
+	e.StartExternal("#2  Tank  ← Bob", "ch_chain", 10, 0, now, nil, 0, "Tank", "", false, "", false)
 
 	e.UnconfirmCast("Nobody", now) // no matching caster
 	e.UnconfirmCast("Bob", now)    // matching caster, but never confirmed
@@ -403,7 +403,7 @@ func TestUnconfirmCast_IgnoresUnrelatedOrUnconfirmedTimers(t *testing.T) {
 func TestUnconfirmCast_IgnoresInterruptOutsideCastWindow(t *testing.T) {
 	e := newTestEngine()
 	started := time.Now().Add(-20 * time.Second)
-	e.StartExternal("#1  Tank  ← Alice", "ch_chain", 10, 0, started, nil, 0, "Tank", "", false, "")
+	e.StartExternal("#1  Tank  ← Alice", "ch_chain", 10, 0, started, nil, 0, "Tank", "", false, "", false)
 	e.ConfirmCast("#1  Tank  ← Alice", "Tank")
 
 	e.UnconfirmCast("Alice", time.Now()) // 20s after start, well past the 10s window
@@ -422,8 +422,8 @@ func TestUnconfirmCast_IgnoresInterruptOutsideCastWindow(t *testing.T) {
 func TestPruneExpired_FlagsUnconfirmedCHChainTimerEarly(t *testing.T) {
 	e := newTestEngine()
 	started := time.Now().Add(-chChainMissCheckDelay - 100*time.Millisecond)
-	e.StartExternal("#1  Tank  <- Alice", "ch_chain", 10, 0, started, nil, 0, "Tank", "", false, "")
-	e.StartExternal("#2  Tank  <- Bob", "ch_chain", 10, 0, started, nil, 0, "Tank", "", false, "")
+	e.StartExternal("#1  Tank  <- Alice", "ch_chain", 10, 0, started, nil, 0, "Tank", "", false, "", false)
+	e.StartExternal("#2  Tank  <- Bob", "ch_chain", 10, 0, started, nil, 0, "Tank", "", false, "", false)
 	e.ConfirmCast("#1  Tank  <- Alice", "Tank")
 
 	e.pruneExpired()
@@ -451,7 +451,7 @@ func TestPruneExpired_FlagsUnconfirmedCHChainTimerEarly(t *testing.T) {
 func TestPruneExpired_MissGraceKeepsRowWithoutMovingExpiry(t *testing.T) {
 	e := newTestEngine()
 	started := time.Now().Add(-10*time.Second - 200*time.Millisecond)
-	e.StartExternal("#2  Tank  <- Bob", "ch_chain", 10, 0, started, nil, 0, "Tank", "", false, "")
+	e.StartExternal("#2  Tank  <- Bob", "ch_chain", 10, 0, started, nil, 0, "Tank", "", false, "", false)
 	wantExpiry := started.Add(10 * time.Second)
 
 	e.pruneExpired()
@@ -481,7 +481,7 @@ func TestPruneExpired_MissGraceKeepsRowWithoutMovingExpiry(t *testing.T) {
 func TestPruneExpired_ConfirmedCHChainTimerDropsOnTime(t *testing.T) {
 	e := newTestEngine()
 	e.StartExternal("#1  Tank  <- Alice", "ch_chain", 10, 0,
-		time.Now().Add(-10*time.Second-200*time.Millisecond), nil, 0, "Tank", "", false, "")
+		time.Now().Add(-10*time.Second-200*time.Millisecond), nil, 0, "Tank", "", false, "", false)
 	e.ConfirmCast("#1  Tank  <- Alice", "Tank")
 
 	e.pruneExpired()
@@ -497,7 +497,7 @@ func TestPruneExpired_ConfirmedCHChainTimerDropsOnTime(t *testing.T) {
 func TestPruneExpired_NonCHChainCategoriesNeverFlagged(t *testing.T) {
 	e := newTestEngine()
 	past := time.Now().Add(-1 * time.Hour)
-	e.StartExternal("Mesmerization", "debuff", 10, 0, past, nil, 0, "Bob", "", false, "")
+	e.StartExternal("Mesmerization", "debuff", 10, 0, past, nil, 0, "Bob", "", false, "", false)
 
 	e.pruneExpired()
 
@@ -509,10 +509,10 @@ func TestPruneExpired_NonCHChainCategoriesNeverFlagged(t *testing.T) {
 func TestSnapshot_PinnedTimersSortFirst(t *testing.T) {
 	e := newTestEngine()
 	now := time.Now()
-	e.StartExternal("Short Unpinned", "debuff", 5, 0, now, nil, 0, "", "", false, "")
-	e.StartExternal("Long Pinned", "custom", 300, 0, now, nil, 0, "", "", true, "")
-	e.StartExternal("Short Pinned", "custom", 10, 0, now, nil, 0, "", "", true, "")
-	e.StartExternal("Long Unpinned", "buff", 600, 0, now, nil, 0, "", "", false, "")
+	e.StartExternal("Short Unpinned", "debuff", 5, 0, now, nil, 0, "", "", false, "", false)
+	e.StartExternal("Long Pinned", "custom", 300, 0, now, nil, 0, "", "", true, "", false)
+	e.StartExternal("Short Pinned", "custom", 10, 0, now, nil, 0, "", "", true, "", false)
+	e.StartExternal("Long Unpinned", "buff", 600, 0, now, nil, 0, "", "", false, "", false)
 
 	state := e.GetState()
 	if len(state.Timers) != 4 {
@@ -549,7 +549,7 @@ func TestOnSpellLanded_TriggersOnlyModeSuppressesAutoTimers(t *testing.T) {
 	}
 
 	// Triggers still create timers in this mode — that's the whole point.
-	e.StartExternal("Manual VoG", "buff", 1620, 0, time.Now(), nil, 0, "", "", false, "")
+	e.StartExternal("Manual VoG", "buff", 1620, 0, time.Now(), nil, 0, "", "", false, "", false)
 	if len(e.timers) != 1 {
 		t.Errorf("triggers should still create timers in triggers_only mode, got %d", len(e.timers))
 	}
@@ -575,7 +575,7 @@ func TestStartExternal_MergesMetadataOntoExistingTimer(t *testing.T) {
 	}
 
 	alerts := json.RawMessage(`[{"id":"x","seconds":300,"type":"tts"}]`)
-	e.StartExternal("Koadic's Endless Intellect", "buff", 4500, 300, now.Add(50*time.Millisecond), alerts, 0, "", "", false, "")
+	e.StartExternal("Koadic's Endless Intellect", "buff", 4500, 300, now.Add(50*time.Millisecond), alerts, 0, "", "", false, "", false)
 
 	if len(e.timers) != 1 {
 		t.Fatalf("expected 1 timer (merge, not duplicate), got %d", len(e.timers))
@@ -601,7 +601,7 @@ func TestStartExternal_DefersMezTimerToSpellLanded(t *testing.T) {
 	now := time.Now()
 	alerts := json.RawMessage(`[{"id":"fade","seconds":5,"type":"tts"}]`)
 
-	e.StartExternal("Mesmerize", "debuff", 24, 8, now, alerts, 0, "", "", false, "")
+	e.StartExternal("Mesmerize", "debuff", 24, 8, now, alerts, 0, "", "", false, "", false)
 
 	if len(e.timers) != 0 {
 		t.Fatalf("mez cast-begin must not create a visible timer, got %d", len(e.timers))
@@ -624,7 +624,7 @@ func TestStartExternal_DefersMezTimerToSpellLanded(t *testing.T) {
 func TestStopExternal_ClearsPendingArm(t *testing.T) {
 	e := newTestEngine()
 	now := time.Now()
-	e.StartExternal("Dazzle", "debuff", 96, 0, now, nil, 0, "", "", false, "")
+	e.StartExternal("Dazzle", "debuff", 96, 0, now, nil, 0, "", "", false, "", false)
 	if _, ok := e.pendingArms["Dazzle"]; !ok {
 		t.Fatal("setup: Dazzle arm not stored")
 	}
@@ -645,7 +645,7 @@ func TestStartExternal_ExpiresStalePendingArms(t *testing.T) {
 
 	// Any StartExternal call triggers gcPendingArmsLocked; use an unrelated
 	// non-deferred trigger so we don't reseed the slot.
-	e.StartExternal("AE Incoming", "debuff", 30, 0, time.Now(), nil, 0, "", "", false, "")
+	e.StartExternal("AE Incoming", "debuff", 30, 0, time.Now(), nil, 0, "", "", false, "", false)
 
 	if _, ok := e.pendingArms["Mesmerization"]; ok {
 		t.Error("stale pending arm should have been GC'd")
@@ -767,7 +767,7 @@ func TestStartExternal_DedupsBySpellIDAcrossNames(t *testing.T) {
 
 	// Enchanter pack trigger fires with the combined name + linked SpellID and
 	// a display-threshold override.
-	e.StartExternal("Speed of the Shissar/Brood", "buff", 1800, 120, now, nil, 1939, "", "", false, "")
+	e.StartExternal("Speed of the Shissar/Brood", "buff", 1800, 120, now, nil, 1939, "", "", false, "", false)
 
 	if len(e.timers) != 1 {
 		t.Fatalf("expected the trigger to merge into the existing timer, got %d rows", len(e.timers))
@@ -1380,8 +1380,8 @@ func TestStartExternal_Stacking_CreatesIndependentRows(t *testing.T) {
 	e := newTestEngine()
 	now := time.Now()
 
-	e.StartExternal("Zun Thall Xakra Spawn", "custom", 60, 0, now, nil, 0, "", "", false, "", true)
-	e.StartExternal("Zun Thall Xakra Spawn", "custom", 60, 0, now.Add(5*time.Second), nil, 0, "", "", false, "", true)
+	e.StartExternal("Zun Thall Xakra Spawn", "custom", 60, 0, now, nil, 0, "", "", false, "", false, true)
+	e.StartExternal("Zun Thall Xakra Spawn", "custom", 60, 0, now.Add(5*time.Second), nil, 0, "", "", false, "", false, true)
 
 	if len(e.timers) != 2 {
 		t.Fatalf("expected 2 stacked rows, got %d", len(e.timers))
@@ -1408,8 +1408,8 @@ func TestStartExternal_Stacking_SameTimestampStillCreatesTwoRows(t *testing.T) {
 	e := newTestEngine()
 	now := time.Now()
 
-	e.StartExternal("Griffon", "custom", 30, 0, now, nil, 0, "", "", false, "", true)
-	e.StartExternal("Griffon", "custom", 30, 0, now, nil, 0, "", "", false, "", true)
+	e.StartExternal("Griffon", "custom", 30, 0, now, nil, 0, "", "", false, "", false, true)
+	e.StartExternal("Griffon", "custom", 30, 0, now, nil, 0, "", "", false, "", false, true)
 
 	if len(e.timers) != 2 {
 		t.Fatalf("same-second stacked firings should still produce 2 rows, got %d", len(e.timers))
@@ -1424,15 +1424,15 @@ func TestStartExternal_Stacking_BypassesDedupGraceWindow(t *testing.T) {
 	e := newTestEngine()
 	now := time.Now()
 
-	e.StartExternal("Griffon", "custom", 30, 0, now, nil, 0, "", "", false, "")
-	e.StartExternal("Griffon", "custom", 30, 0, now.Add(time.Second), nil, 0, "", "", false, "")
+	e.StartExternal("Griffon", "custom", 30, 0, now, nil, 0, "", "", false, "", false)
+	e.StartExternal("Griffon", "custom", 30, 0, now.Add(time.Second), nil, 0, "", "", false, "", false)
 	if len(e.timers) != 1 {
 		t.Fatalf("non-stacked firings inside the grace window should merge to 1 row, got %d", len(e.timers))
 	}
 
 	e2 := newTestEngine()
-	e2.StartExternal("Griffon", "custom", 30, 0, now, nil, 0, "", "", false, "", true)
-	e2.StartExternal("Griffon", "custom", 30, 0, now.Add(time.Second), nil, 0, "", "", false, "", true)
+	e2.StartExternal("Griffon", "custom", 30, 0, now, nil, 0, "", "", false, "", false, true)
+	e2.StartExternal("Griffon", "custom", 30, 0, now.Add(time.Second), nil, 0, "", "", false, "", false, true)
 	if len(e2.timers) != 2 {
 		t.Fatalf("stacked firings inside the grace window should still produce 2 rows, got %d", len(e2.timers))
 	}
@@ -1444,8 +1444,8 @@ func TestStartExternal_Stacking_BypassesDedupGraceWindow(t *testing.T) {
 func TestRemoveByID_DropsOnlyOneStackedRow(t *testing.T) {
 	e := newTestEngine()
 	now := time.Now()
-	e.StartExternal("Griffon", "custom", 30, 0, now, nil, 0, "", "", false, "", true)
-	e.StartExternal("Griffon", "custom", 30, 0, now.Add(time.Second), nil, 0, "", "", false, "", true)
+	e.StartExternal("Griffon", "custom", 30, 0, now, nil, 0, "", "", false, "", false, true)
+	e.StartExternal("Griffon", "custom", 30, 0, now.Add(time.Second), nil, 0, "", "", false, "", false, true)
 	if len(e.timers) != 2 {
 		t.Fatalf("setup: expected 2 stacked rows, got %d", len(e.timers))
 	}
@@ -1473,8 +1473,8 @@ func TestRemoveByID_DropsOnlyOneStackedRow(t *testing.T) {
 func TestRemoveBySpellNameOrID_PeelsOneStackedRow(t *testing.T) {
 	e := newTestEngine()
 	now := time.Now()
-	e.StartExternal("Zun Thall Xakra Spawn", "custom", 300, 0, now, nil, 0, "", "", false, "", true)
-	e.StartExternal("Zun Thall Xakra Spawn", "custom", 900, 0, now.Add(time.Second), nil, 0, "", "", false, "", true)
+	e.StartExternal("Zun Thall Xakra Spawn", "custom", 300, 0, now, nil, 0, "", "", false, "", false, true)
+	e.StartExternal("Zun Thall Xakra Spawn", "custom", 900, 0, now.Add(time.Second), nil, 0, "", "", false, "", false, true)
 	if len(e.timers) != 2 {
 		t.Fatalf("setup: expected 2 stacked rows, got %d", len(e.timers))
 	}
@@ -1507,13 +1507,13 @@ func TestStartExternal_Stacking_CapEvictsOldest(t *testing.T) {
 	e := newTestEngine()
 	now := time.Now()
 	for i := 0; i < maxStackedPerName; i++ {
-		e.StartExternal("Griffon", "custom", float64(10+i), 0, now, nil, 0, "", "", false, "", true)
+		e.StartExternal("Griffon", "custom", float64(10+i), 0, now, nil, 0, "", "", false, "", false, true)
 	}
 	if len(e.timers) != maxStackedPerName {
 		t.Fatalf("setup: expected %d rows, got %d", maxStackedPerName, len(e.timers))
 	}
 
-	e.StartExternal("Griffon", "custom", 1000, 0, now, nil, 0, "", "", false, "", true)
+	e.StartExternal("Griffon", "custom", 1000, 0, now, nil, 0, "", "", false, "", false, true)
 
 	if len(e.timers) != maxStackedPerName {
 		t.Fatalf("expected cap to hold at %d rows, got %d", maxStackedPerName, len(e.timers))
@@ -1534,7 +1534,7 @@ func TestStartExternal_Stacking_CapEvictsOldest(t *testing.T) {
 func TestHandle_Kill_LeavesStackedTimersAlone(t *testing.T) {
 	e := newTestEngine()
 	now := time.Now()
-	e.StartExternal("a gnoll respawned", "custom", 1200, 0, now, nil, 0, "a gnoll", "", false, "", true)
+	e.StartExternal("a gnoll respawned", "custom", 1200, 0, now, nil, 0, "a gnoll", "", false, "", false, true)
 
 	e.Handle(logparser.LogEvent{
 		Type: logparser.EventKill,

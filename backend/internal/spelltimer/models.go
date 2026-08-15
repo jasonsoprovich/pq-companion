@@ -144,6 +144,17 @@ type ActiveTimer struct {
 	// omitempty) so a genuine 0% doesn't get hidden as "no data".
 	CasterManaPct *int `json:"caster_mana_pct,omitempty"`
 
+	// TargetIsCaster flags a timer whose TargetName is the NPC that CAST the
+	// effect, not the one it landed on — e.g. a raid boss's own signature-spell
+	// recast timer (Fling, Caustic Mist), bound to the boss via bosscast.go's
+	// cast-start correlation rather than to whichever raid member the spell
+	// actually hit. Every other timer's TargetName is the recipient (the mob
+	// with a debuff on it, the player with a buff), so the NPC Timers tab uses
+	// this to badge "this NPC's own cooldown" rows apart from "affecting this
+	// NPC" rows even though both key off the same TargetName. Always false
+	// outside trigger-driven detrimental timers.
+	TargetIsCaster bool `json:"target_is_caster,omitempty"`
+
 	// PossibleMiss flags a CategoryCHChain / CategoryCHChain2 timer whose
 	// caster was never observed starting a cast (see Engine.ConfirmCast)
 	// within chChainMissCheckDelay of the callout — a likely fizzle,

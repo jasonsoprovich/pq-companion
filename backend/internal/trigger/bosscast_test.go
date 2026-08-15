@@ -85,6 +85,46 @@ func TestEngine_SignatureSpellBindsToActualCaster_NotLiveTarget(t *testing.T) {
 	if sink.target != "Aten Ha Ra" {
 		t.Errorf("timer target_name = %q, want %q (actual caster, not the live target %q)", sink.target, "Aten Ha Ra", "an alligator")
 	}
+	if !sink.targetIsCaster {
+		t.Error("targetIsCaster = false, want true (Fling is a known signature-spell trigger)")
+	}
+}
+
+// TestEngine_OrdinaryDetrimentalDoesNotSetTargetIsCaster verifies the badge
+// flag stays false for a normal detrimental trigger (not in
+// signatureSpellCasters) that falls back to the live combat target — e.g. a
+// user's own Tash/slow tracking trigger. Only the known raid-boss
+// signature-spell triggers should ever badge as "caster-bound".
+func TestEngine_OrdinaryDetrimentalDoesNotSetTargetIsCaster(t *testing.T) {
+	s := openTestStore(t)
+	hub := ws.NewHub()
+	sink := &captureSink{}
+	e := NewEngine(s, hub, sink, nil)
+	e.SetTargetProvider(func() string { return "a gnoll" })
+
+	tr := &Trigger{
+		ID:                "ordinary-debuff",
+		Name:              "Tash Landed",
+		Enabled:           true,
+		Pattern:           `^.+ looks weaker\.$`,
+		TimerType:         TimerTypeDetrimental,
+		TimerDurationSecs: 30,
+		Actions:           []Action{},
+		CreatedAt:         time.Now().UTC(),
+	}
+	if err := s.Insert(tr); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	e.Reload()
+
+	e.Handle(time.Now(), "A gnoll pup looks weaker.")
+
+	if sink.calls != 1 || sink.target != "a gnoll" {
+		t.Fatalf("StartExternal target = %+v, want target %q", sink, "a gnoll")
+	}
+	if sink.targetIsCaster {
+		t.Error("targetIsCaster = true, want false (not a known signature-spell trigger)")
+	}
 }
 
 // TestEngine_SignatureSpellFallsBackToLiveTargetWhenNoCastObserved preserves
