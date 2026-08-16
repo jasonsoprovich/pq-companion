@@ -21,6 +21,7 @@ import NPCPanel from '../components/overlays/NPCPanel'
 import ThreatPanel from '../components/overlays/ThreatPanel'
 import RollTrackerPanel from '../components/overlays/RollTrackerPanel'
 import RespawnTimerPanel from '../components/overlays/RespawnTimerPanel'
+import ZoneLockoutsPanel from '../components/overlays/ZoneLockoutsPanel'
 import CHChainPanel from '../components/overlays/CHChainPanel'
 import CHMetronomePanel from '../components/overlays/CHMetronomePanel'
 import CustomTimerPanel from '../components/overlays/CustomTimerPanel'
@@ -79,6 +80,7 @@ const PANEL_POPOUT: Record<DashboardPanelKey, { name: OverlayName; toggle: () =>
   custom:      { name: 'customTimer',  toggle: () => { window.electron?.overlay?.toggleCustomTimer() } },
   discordVoice: { name: 'discordVoice', toggle: () => { window.electron?.overlay?.toggleDiscordVoice() } },
   liveMap:     { name: 'liveMap',      toggle: () => { window.electron?.overlay?.toggleLiveMap() } },
+  zoneLockouts: { name: 'zoneLockouts', toggle: () => { window.electron?.overlay?.toggleZoneLockouts() } },
 }
 
 // Compact square icon button for the manager's per-overlay rows.
@@ -886,6 +888,17 @@ export default function OverlaysDashboard(): React.ReactElement {
             defaultHeight={layout.respawn.height}
             snapGridSize={SNAP_GRID}
             onLayoutChange={handleLayoutChange('respawn')}
+          />
+        )}
+        {layout.zoneLockouts.visible && (
+          <ZoneLockoutsPanel
+            key={`zoneLockouts-${layoutVersion}`}
+            defaultX={layout.zoneLockouts.x}
+            defaultY={layout.zoneLockouts.y}
+            defaultWidth={layout.zoneLockouts.width}
+            defaultHeight={layout.zoneLockouts.height}
+            snapGridSize={SNAP_GRID}
+            onLayoutChange={handleLayoutChange('zoneLockouts')}
           />
         )}
         {layout.chChain.visible && (

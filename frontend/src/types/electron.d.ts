@@ -82,6 +82,9 @@ export interface ElectronAPI {
     openRespawnTimer: () => Promise<void>
     closeRespawnTimer: () => Promise<void>
     toggleRespawnTimer: () => Promise<void>
+    openZoneLockouts: () => Promise<void>
+    closeZoneLockouts: () => Promise<void>
+    toggleZoneLockouts: () => Promise<void>
     anyPopoutOpen: () => Promise<boolean>
     openAllPopouts: (panels?: Array<string | { key: string; name: string }>) => Promise<void>
     closeAllPopouts: () => Promise<void>

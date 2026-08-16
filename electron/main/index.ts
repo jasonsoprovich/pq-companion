@@ -277,7 +277,7 @@ function audioMimeType(ext: string): string {
 
 // ── Overlay bounds persistence ────────────────────────────────────────────────
 
-type OverlayName = 'dps' | 'hps' | 'buffTimer' | 'detrimTimer' | 'customTimer' | 'trigger' | 'npc' | 'threat' | 'rollTracker' | 'respawnTimer' | 'chChain' | 'chMetronome' | 'discordVoice' | 'liveMap'
+type OverlayName = 'dps' | 'hps' | 'buffTimer' | 'detrimTimer' | 'customTimer' | 'trigger' | 'npc' | 'threat' | 'rollTracker' | 'respawnTimer' | 'chChain' | 'chMetronome' | 'discordVoice' | 'liveMap' | 'zoneLockouts'
 type Bounds = { x: number; y: number; width: number; height: number }
 
 // A window's identity for bounds/lock persistence and the generic per-window
@@ -315,6 +315,7 @@ const OVERLAY_DEFAULTS: Record<Exclude<OverlayName, 'trigger'>, Bounds> = {
   // narrow strip of a zone footprint is unreadable.
   liveMap: { x: 0, y: 0, width: 380, height: 380 },
   discordVoice: { x: 0, y: 0, width: 220, height: 340 },
+  zoneLockouts: { x: 0, y: 0, width: 300, height: 320 },
 }
 
 function boundsFilePath(): string {
@@ -779,6 +780,7 @@ let npcOverlayWindow: BrowserWindow | null = null
 let threatOverlayWindow: BrowserWindow | null = null
 let rollTrackerWindow: BrowserWindow | null = null
 let respawnTimerWindow: BrowserWindow | null = null
+let zoneLockoutsWindow: BrowserWindow | null = null
 let discordVoiceOverlayWindow: BrowserWindow | null = null
 // The Discord StreamKit page embedded inside discordVoiceOverlayWindow, added
 // as a child view above the window's own React chrome (see createDiscordVoiceOverlay
@@ -1819,6 +1821,61 @@ function createRespawnTimerOverlay(): void {
   })
 }
 
+// ── Zone Lockouts overlay window ─────────────────────────────────────────────
+
+function createZoneLockoutsOverlay(): void {
+  if (zoneLockoutsWindow && !zoneLockoutsWindow.isDestroyed()) {
+    zoneLockoutsWindow.focus()
+    return
+  }
+
+  const { x, y, width, height } = getRestoredBounds('zoneLockouts', OVERLAY_DEFAULTS.zoneLockouts)
+  zoneLockoutsWindow = new BrowserWindow({
+    x,
+    y,
+    width,
+    height,
+    minWidth: 200,
+    minHeight: 140,
+    transparent: true,
+    backgroundColor: '#00000000',
+    frame: false,
+    resizable: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    hasShadow: false,
+    show: false, // show after ready-to-show to avoid blank-frame flash
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    },
+  })
+
+  zoneLockoutsWindow.once('ready-to-show', () => {
+    zoneLockoutsWindow?.show()
+  })
+
+  zoneLockoutsWindow.setAlwaysOnTop(true, 'screen-saver')
+  zoneLockoutsWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  windowToOverlayName.set(zoneLockoutsWindow, 'zoneLockouts')
+  applyInitialOverlayInput(zoneLockoutsWindow, 'zoneLockouts')
+  trackOverlayBounds('zoneLockouts', zoneLockoutsWindow)
+
+  if (isDev) {
+    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
+    zoneLockoutsWindow.loadURL(`${rendererUrl}/#/zone-lockouts-window`)
+  } else {
+    zoneLockoutsWindow.loadFile(join(__dirname, '../renderer/index.html'), {
+      hash: '/zone-lockouts-window',
+    })
+  }
+
+  zoneLockoutsWindow.on('closed', () => {
+    zoneLockoutsWindow = null
+  })
+}
+
 // ── Trigger Overlay window ────────────────────────────────────────────────────
 
 function createTriggerOverlay(): void {
@@ -2537,6 +2594,24 @@ ipcMain.handle('overlay:respawntimer:toggle', () => {
   }
 })
 
+ipcMain.handle('overlay:zonelockouts:open', () => {
+  createZoneLockoutsOverlay()
+})
+
+ipcMain.handle('overlay:zonelockouts:close', () => {
+  if (zoneLockoutsWindow && !zoneLockoutsWindow.isDestroyed()) {
+    zoneLockoutsWindow.close()
+  }
+})
+
+ipcMain.handle('overlay:zonelockouts:toggle', () => {
+  if (zoneLockoutsWindow && !zoneLockoutsWindow.isDestroyed()) {
+    zoneLockoutsWindow.close()
+  } else {
+    createZoneLockoutsOverlay()
+  }
+})
+
 ipcMain.handle('overlay:trigger:open', () => {
   createTriggerOverlay()
 })
@@ -2734,6 +2809,7 @@ function userPopoutWindows(): BrowserWindow[] {
     chMetronomeWindow,
     liveMapWindow,
     discordVoiceOverlayWindow,
+    zoneLockoutsWindow,
   ].filter((w): w is BrowserWindow => !!w && !w.isDestroyed())
   return [...fixed, ...customTimerGroupWindows.values()].filter((w) => !w.isDestroyed())
 }
@@ -2775,6 +2851,7 @@ ipcMain.handle('overlay:popouts:open-all', (_event, panels?: PopoutRequestEntry[
   if (wants('chMetronome') && (!chMetronomeWindow || chMetronomeWindow.isDestroyed())) createCHMetronomeOverlay()
   if (wants('liveMap') && (!liveMapWindow || liveMapWindow.isDestroyed())) createLiveMapOverlay()
   if (wants('discordVoice') && (!discordVoiceOverlayWindow || discordVoiceOverlayWindow.isDestroyed())) createDiscordVoiceOverlay()
+  if (wants('zoneLockouts') && (!zoneLockoutsWindow || zoneLockoutsWindow.isDestroyed())) createZoneLockoutsOverlay()
   for (const g of groupWants) {
     const win = customTimerGroupWindows.get(g.id)
     if (!win || win.isDestroyed()) createCustomTimerGroupOverlay(g.id, g.name)
@@ -2868,6 +2945,7 @@ function overlayWindowByName(name: WindowKey): BrowserWindow | null {
     case 'chMetronome': return chMetronomeWindow
     case 'liveMap': return liveMapWindow
     case 'discordVoice': return discordVoiceOverlayWindow
+    case 'zoneLockouts': return zoneLockoutsWindow
     default: return null
   }
 }
@@ -2889,6 +2967,7 @@ function createOverlayByName(name: OverlayName): void {
     case 'chMetronome': createCHMetronomeOverlay(); break
     case 'liveMap': createLiveMapOverlay(); break
     case 'discordVoice': createDiscordVoiceOverlay(); break
+    case 'zoneLockouts': createZoneLockoutsOverlay(); break
     default: break
   }
 }

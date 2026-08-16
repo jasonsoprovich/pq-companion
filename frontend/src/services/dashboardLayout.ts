@@ -20,6 +20,7 @@ export type DashboardPanelKey =
   | 'custom'
   | 'discordVoice'
   | 'liveMap'
+  | 'zoneLockouts'
 
 export interface PanelLayout {
   x: number
@@ -48,10 +49,11 @@ export const DEFAULT_DASHBOARD_LAYOUT: DashboardLayout = {
   discordVoice: { x: 336, y: 816, width: 240, height: 200, visible: false },
   // Square and larger than the list panels: a map in a narrow strip is unreadable.
   liveMap: { x: 976, y: 704, width: 384, height: 384, visible: false },
+  zoneLockouts: { x: 1072, y: 416, width: 300, height: 320, visible: false },
 }
 
 export const DASHBOARD_PANEL_KEYS: DashboardPanelKey[] =
-  ['buff', 'detrim', 'dps', 'npc', 'threat', 'hps', 'rolls', 'respawn', 'chChain', 'chMetronome', 'custom', 'discordVoice', 'liveMap']
+  ['buff', 'detrim', 'dps', 'npc', 'threat', 'hps', 'rolls', 'respawn', 'chChain', 'chMetronome', 'custom', 'discordVoice', 'liveMap', 'zoneLockouts']
 
 // HPS tracking is wired up end-to-end (panel, dashboard layout, popout window)
 // but no log-parsing pipeline currently produces healer stats, so the UI is
@@ -81,6 +83,7 @@ export const DASHBOARD_PANEL_LABELS: Record<DashboardPanelKey, string> = {
   custom: 'Custom Timers (default)',
   discordVoice: 'Discord Voice',
   liveMap: 'Live Map',
+  zoneLockouts: 'Zone Lockouts',
 }
 
 export function isPanelLayout(v: unknown): v is PanelLayout {

@@ -25,6 +25,7 @@ export type OverlayName =
   | 'chMetronome'
   | 'discordVoice'
   | 'liveMap'
+  | 'zoneLockouts'
 
 /**
  * How an overlay behaves while locked.
@@ -69,6 +70,7 @@ export const OVERLAY_DEFS: { name: OverlayName; label: string }[] = [
   { name: 'chMetronome', label: 'CH Metronome' },
   { name: 'discordVoice', label: 'Discord Voice' },
   { name: 'liveMap', label: 'Live Map' },
+  { name: 'zoneLockouts', label: 'Zone Lockouts' },
 ]
 
 // Matches a StreamKit voice-overlay URL, e.g.

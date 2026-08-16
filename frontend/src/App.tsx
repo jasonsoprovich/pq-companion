@@ -64,6 +64,7 @@ const TriggersPage = lazy(() => import('./pages/TriggersPage'))
 const RollTrackerPage = lazy(() => import('./pages/RollTrackerPage'))
 const RollTrackerWindowPage = lazy(() => import('./pages/RollTrackerWindowPage'))
 const RespawnTimerWindowPage = lazy(() => import('./pages/RespawnTimerWindowPage'))
+const ZoneLockoutsWindowPage = lazy(() => import('./pages/ZoneLockoutsWindowPage'))
 const PlayersPage = lazy(() => import('./pages/PlayersPage'))
 const ChatHistoryPage = lazy(() => import('./pages/ChatHistoryPage'))
 const LootTrackerPage = lazy(() => import('./pages/LootTrackerPage'))
@@ -272,6 +273,7 @@ export default function App(): React.ReactElement {
         <Route path="threat-overlay-window" element={<OverlayPage overlayKey="threat"><ThreatOverlayWindowPage /></OverlayPage>} />
         <Route path="roll-tracker-window" element={<OverlayPage overlayKey="rollTracker"><RollTrackerWindowPage /></OverlayPage>} />
         <Route path="respawn-timer-window" element={<OverlayPage overlayKey="respawnTimer"><RespawnTimerWindowPage /></OverlayPage>} />
+        <Route path="zone-lockouts-window" element={<OverlayPage overlayKey="zoneLockouts"><ZoneLockoutsWindowPage /></OverlayPage>} />
         <Route path="live-map-window" element={<OverlayPage overlayKey="liveMap"><LiveMapWindowPage /></OverlayPage>} />
         <Route path="ch-chain-window" element={<OverlayPage overlayKey="chChain"><CHChainOverlayWindowPage /></OverlayPage>} />
         <Route path="ch-metronome-window" element={<OverlayPage overlayKey="chMetronome"><CHMetronomeOverlayWindowPage /></OverlayPage>} />
