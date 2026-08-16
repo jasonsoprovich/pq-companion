@@ -766,10 +766,13 @@ func TestRechargeableMaxCharges(t *testing.T) {
 	}
 
 	// Seed: a genuine multi-charge clicky, an unlimited clicky (-1 sentinel),
-	// and a single-charge item — only the first should come back.
-	limited := seedRechargeID(t, d, "clickeffect > 0 AND maxcharges > 1")
+	// a single-charge item, and a multi-charge Potion — only the first should
+	// come back. Potions (itemtype 21) are single-use consumables that poof
+	// at 0 charges, not recharge-able, even though they carry maxcharges > 1.
+	limited := seedRechargeID(t, d, "clickeffect > 0 AND maxcharges > 1 AND itemtype != 21")
 	unlimited := seedRechargeID(t, d, "clickeffect > 0 AND maxcharges = -1")
 	single := seedRechargeID(t, d, "clickeffect > 0 AND maxcharges = 1")
+	potion := seedRechargeID(t, d, "clickeffect > 0 AND maxcharges > 1 AND itemtype = 21")
 	if limited.id == 0 {
 		t.Skip("no multi-charge clicky in DB")
 	}
@@ -781,6 +784,9 @@ func TestRechargeableMaxCharges(t *testing.T) {
 	if single.id != 0 {
 		ids = append(ids, single.id)
 	}
+	if potion.id != 0 {
+		ids = append(ids, potion.id)
+	}
 	got, err = d.RechargeableMaxCharges(ids)
 	if err != nil {
 		t.Fatalf("RechargeableMaxCharges: %v", err)
@@ -791,6 +797,11 @@ func TestRechargeableMaxCharges(t *testing.T) {
 	if unlimited.id != 0 {
 		if _, ok := got[unlimited.id]; ok {
 			t.Errorf("unlimited clicky %d should be excluded, got %d", unlimited.id, got[unlimited.id])
+		}
+	}
+	if potion.id != 0 {
+		if _, ok := got[potion.id]; ok {
+			t.Errorf("potion %d should be excluded, got %d", potion.id, got[potion.id])
 		}
 	}
 	if single.id != 0 {

@@ -204,9 +204,13 @@ func (db *DB) ItemTypesByNames(names []string) (map[string]int, error) {
 
 // RechargeableMaxCharges returns id→maxcharges for the given item IDs, limited
 // to genuinely rechargeable items: click items (clickeffect > 0) with a
-// positive multi-charge cap (maxcharges > 1). Single-charge consumables and
-// unlimited clickies (the -1/0 sentinel) are excluded, so a present entry means
-// "this is a rechargeable item." Used to flag held inventory items.
+// positive multi-charge cap (maxcharges > 1). Single-charge consumables,
+// unlimited clickies (the -1/0 sentinel), and Potions (itemtype 21) are
+// excluded — Potions are EQ's single-use consumable category and are never
+// recharge-able, they just poof at 0 charges — so a present entry means "this
+// is a rechargeable item." Used to flag held inventory items. This is a
+// heuristic (Quarm's data has no explicit rechargeable flag); see
+// docs/item-recharge-feasibility.md.
 func (db *DB) RechargeableMaxCharges(ids []int) (map[int]int, error) {
 	out := make(map[int]int, len(ids))
 	if len(ids) == 0 {
@@ -215,7 +219,7 @@ func (db *DB) RechargeableMaxCharges(ids []int) (map[int]int, error) {
 	placeholders := strings.Repeat("?,", len(ids))
 	placeholders = placeholders[:len(placeholders)-1]
 	q := fmt.Sprintf(
-		"SELECT id, maxcharges FROM items WHERE clickeffect > 0 AND maxcharges > 1 AND id IN (%s)",
+		"SELECT id, maxcharges FROM items WHERE clickeffect > 0 AND maxcharges > 1 AND itemtype != 21 AND id IN (%s)",
 		placeholders,
 	)
 	args := make([]any, len(ids))

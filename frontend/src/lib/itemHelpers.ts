@@ -77,6 +77,18 @@ export function isLoreItem(lore: string): boolean {
   return lore.startsWith('*')
 }
 
+// itemtype 21 = Potion, EQ's single-use consumable category — it poofs at 0
+// charges and is never recharge-able at an NPC, unlike other charged clickies
+// (armor/misc/instrument types). No explicit "rechargeable" flag exists in
+// Quarm's data, so this is a heuristic, not a certainty — see
+// docs/item-recharge-feasibility.md for the research behind it.
+const ITEM_TYPE_POTION = 21
+
+/** Returns true if a charged clicky item is likely recharge-able at an NPC (heuristic — see comment above). */
+export function isLikelyRechargeable(maxCharges: number, clickEffect: number, itemType: number): boolean {
+  return maxCharges > 1 && clickEffect > 0 && itemType !== ITEM_TYPE_POTION
+}
+
 // ── Size ───────────────────────────────────────────────────────────────────────
 
 const SIZE_NAMES = ['Tiny', 'Small', 'Medium', 'Large', 'Giant', 'Gigantic']
