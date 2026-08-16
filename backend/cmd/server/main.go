@@ -113,25 +113,37 @@ func main() {
 	// user.db and a lock on the installed exe that wedges the next NSIS update.
 	watchParentDeath()
 
-	// Apply any pending app reset BEFORE config is loaded and user.db is opened.
-	// A "data" reset wipes user.db + backups but keeps config.yaml; a "factory"
-	// reset also moves config.yaml aside so config.Load below recreates defaults
-	// and the app reopens to onboarding. Moving config.yaml aside must precede
-	// config.Load, hence this runs first. Set-aside files get a .prereset suffix
-	// for recovery.
+	// Apply any pending app reset or app-state import BEFORE config is loaded
+	// and user.db is opened. A "data" reset wipes user.db + backups but keeps
+	// config.yaml; a "factory" reset also moves config.yaml aside so
+	// config.Load below recreates defaults and the app reopens to onboarding.
+	// An import now includes config.yaml itself (merged over whatever's
+	// local), so it must also precede config.Load — otherwise the Manager
+	// loaded here would hold pre-import values and the first Update() call
+	// would silently overwrite the just-imported file. Set-aside files get a
+	// .prereset/.preimport suffix for recovery.
 	if home, hErr := os.UserHomeDir(); hErr == nil {
 		appHome := filepath.Join(home, ".pq-companion")
-		rm := appbackup.New(
-			filepath.Join(appHome, "user.db"),
-			filepath.Join(appHome, "backups"),
-			appHome,
-			filepath.Join(appHome, "config.yaml"),
-			runtimeAppVersion(),
-		)
+		userDBPath := filepath.Join(appHome, "user.db")
+		backupsDir := filepath.Join(appHome, "backups")
+		configPath := filepath.Join(appHome, "config.yaml")
+
+		rm := appbackup.New(userDBPath, backupsDir, appHome, configPath, runtimeAppVersion())
 		if mode, rErr := rm.ApplyPendingReset(); rErr != nil {
 			slog.Error("apply pending app reset", "err", rErr)
 		} else if mode != "" {
 			slog.Info("applied pending app reset; moved data aside", "mode", mode)
+		}
+
+		// Move any backups from the legacy <exe_dir>/backups location before
+		// the import swap runs, so a pending import sees the up-to-date set.
+		backup.MigrateLegacyDir(backupsDir)
+		appBackup := appbackup.New(userDBPath, backupsDir, appHome, configPath, runtimeAppVersion())
+		applied, err := appBackup.ApplyPendingImport()
+		if err != nil {
+			slog.Error("apply pending app import", "err", err)
+		} else if applied {
+			slog.Info("applied pending app-state import; swapped user.db, backups dir, and config.yaml")
 		}
 	}
 
@@ -144,28 +156,6 @@ func main() {
 	// Honor the saved verbose-logging preference for the rest of this session;
 	// the Settings toggle re-applies it live via the config update handler.
 	applog.SetDebug(cfgMgr.Get().Preferences.DebugLogging)
-
-	// Apply any pending app-state import BEFORE opening user.db connections.
-	// Sentinel + staging files live under ~/.pq-companion. A pending import
-	// is the result of the user choosing "Import" in the Backup Manager and
-	// then restarting — the actual file swap happens here so it can run
-	// without DB connections in flight.
-	homeForImport, hErr := os.UserHomeDir()
-	if hErr == nil {
-		appHome := filepath.Join(homeForImport, ".pq-companion")
-		userDBPath := filepath.Join(appHome, "user.db")
-		backupsDir := filepath.Join(appHome, "backups")
-		// Move any backups from the legacy <exe_dir>/backups location before
-		// the import swap runs, so a pending import sees the up-to-date set.
-		backup.MigrateLegacyDir(backupsDir)
-		appBackup := appbackup.New(userDBPath, backupsDir, appHome, filepath.Join(appHome, "config.yaml"), runtimeAppVersion())
-		applied, err := appBackup.ApplyPendingImport()
-		if err != nil {
-			slog.Error("apply pending app import", "err", err)
-		} else if applied {
-			slog.Info("applied pending app-state import; swapped user.db and backups dir")
-		}
-	}
 
 	// CLI flag overrides config file address when explicitly provided.
 	listenAddr := cfgMgr.Get().ServerAddr

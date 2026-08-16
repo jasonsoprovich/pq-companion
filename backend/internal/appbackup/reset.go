@@ -96,6 +96,12 @@ func (m *Manager) ApplyPendingReset() (string, error) {
 	if err := moveAsidePreReset(m.backupsDirPath, ts); err != nil {
 		return "", fmt.Errorf("reset backups dir: %w", err)
 	}
+	// Custom sound files are only ever referenced by triggers, which live in
+	// user.db — wiped in both modes above — so they're orphaned regardless of
+	// mode.
+	if err := moveAsidePreReset(filepath.Join(m.appHome, "sounds"), ts); err != nil {
+		return "", fmt.Errorf("reset sounds dir: %w", err)
+	}
 
 	if mode == ResetModeFactory {
 		if err := moveAsidePreReset(m.configPath, ts); err != nil {

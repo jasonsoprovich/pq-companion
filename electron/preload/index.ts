@@ -16,6 +16,14 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.on('app:navigate', listener)
       return () => ipcRenderer.removeListener('app:navigate', listener)
     },
+    // App Backup/Restore: Electron-side window/overlay state (bounds, lock,
+    // auto-open set, display pin, main window state) the Go backend has no
+    // visibility into. getClientState is read on export; takeClientState
+    // pulls the localStorage half of a staged import — call once, since the
+    // main process deletes the pending file the moment it's read.
+    getClientState: (): Promise<unknown> => ipcRenderer.invoke('app:client-state:get'),
+    takeClientState: (): Promise<Record<string, string>> =>
+      ipcRenderer.invoke('app:client-state:take-pending'),
   },
   backend: {
     getPort: (): Promise<number> => ipcRenderer.invoke('backend:port'),

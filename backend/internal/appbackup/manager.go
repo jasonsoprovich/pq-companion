@@ -13,6 +13,10 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
+
+	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 )
 
 // Manager handles export of the current app state into a .pqcb bundle and
@@ -70,11 +74,26 @@ func (m *Manager) sentinelPath() string {
 	return filepath.Join(m.appHome, ".import-pending")
 }
 
+// pendingClientStatePath is where a staged import's client-state.json
+// (Electron window/overlay state + renderer localStorage) is written.
+// Consumed by Electron at its own next boot — before the backend even runs
+// ApplyPendingImport — so it lives directly under appHome rather than in the
+// staging dir the backend-owned swap uses.
+func (m *Manager) pendingClientStatePath() string {
+	return filepath.Join(m.appHome, "pending-client-state.json")
+}
+
 // Export writes the current app state to a .pqcb bundle at destination.
+// clientState is an opaque JSON blob (Electron window/overlay state +
+// renderer localStorage) supplied by the caller — the Go backend has no
+// visibility into either, so it's collected renderer-side and passed through
+// verbatim. May be nil/empty; older callers or a browser-preview export
+// simply omit it.
+//
 // Returns the manifest that was written into the bundle and the final bundle
 // path (which may differ from destination if it didn't already end in the
 // bundle extension).
-func (m *Manager) Export(destination string) (string, *Manifest, error) {
+func (m *Manager) Export(destination string, clientState []byte) (string, *Manifest, error) {
 	if !strings.HasSuffix(strings.ToLower(destination), BundleExt) {
 		destination += BundleExt
 	}
@@ -149,6 +168,56 @@ func (m *Manager) Export(destination string) (string, *Manifest, error) {
 		manifest.Stats.TotalSizeBytes += fe.SizeBytes
 	}
 
+	// Add config.yaml (settings — the whole Settings tab) if present. A
+	// brand-new install may not have written one yet.
+	if _, err := os.Stat(m.configPath); err == nil {
+		fe, err := addFileToZip(zipWriter, m.configPath, configName)
+		if err != nil {
+			return "", nil, fmt.Errorf("write config.yaml into bundle: %w", err)
+		}
+		manifest.Files = append(manifest.Files, fe)
+		manifest.Stats.ConfigIncluded = true
+		manifest.Stats.TotalSizeBytes += fe.SizeBytes
+	}
+
+	// Add the Electron/renderer client state (window bounds, overlay layout,
+	// localStorage prefs) if the caller supplied any.
+	if len(clientState) > 0 {
+		csSrc := filepath.Join(tmpDir, "client-state-src.json")
+		if err := os.WriteFile(csSrc, clientState, 0o644); err != nil {
+			return "", nil, fmt.Errorf("stage client state: %w", err)
+		}
+		fe, err := addFileToZip(zipWriter, csSrc, clientStateName)
+		if err != nil {
+			return "", nil, fmt.Errorf("write client-state.json into bundle: %w", err)
+		}
+		manifest.Files = append(manifest.Files, fe)
+		manifest.Stats.ClientStateIncluded = true
+		manifest.Stats.TotalSizeBytes += fe.SizeBytes
+	}
+
+	// Add custom sound files referenced by triggers/config, recording how to
+	// remap each one back to a local path on import. Read from the db
+	// snapshot (already a consistent copy) rather than the live user.db.
+	soundPaths, err := collectSoundPaths(dbSnapshot, m.configPath)
+	if err != nil {
+		return "", nil, fmt.Errorf("collect sound paths: %w", err)
+	}
+	if len(soundPaths) > 0 {
+		manifest.SoundMap = make(map[string]string, len(soundPaths))
+	}
+	for _, p := range soundPaths {
+		nameInBundle := bundleSoundName(p)
+		fe, err := addFileToZip(zipWriter, p, nameInBundle)
+		if err != nil {
+			return "", nil, fmt.Errorf("write sound %s into bundle: %w", filepath.Base(p), err)
+		}
+		manifest.Files = append(manifest.Files, fe)
+		manifest.SoundMap[p] = nameInBundle
+		manifest.Stats.SoundCount++
+		manifest.Stats.TotalSizeBytes += fe.SizeBytes
+	}
+
 	// Manifest last so it can describe everything.
 	manifestBytes, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
@@ -219,8 +288,18 @@ func (m *Manager) StageImport(bundlePath string) (*Manifest, error) {
 	}
 
 	for _, f := range reader.File {
-		// Skip manifest — already parsed.
-		if f.Name == manifestName {
+		switch f.Name {
+		case manifestName:
+			// Already parsed.
+			continue
+		case clientStateName:
+			// Electron consumes this at its own next boot, before the
+			// backend even runs ApplyPendingImport — write it straight to
+			// the well-known pending path instead of the backend-owned
+			// staging dir.
+			if err := extractFileTo(f, m.pendingClientStatePath()); err != nil {
+				return nil, fmt.Errorf("stage client state: %w", err)
+			}
 			continue
 		}
 		if err := extractEntry(f, staging); err != nil {
@@ -228,10 +307,22 @@ func (m *Manager) StageImport(bundlePath string) (*Manifest, error) {
 		}
 	}
 
+	// Re-write the manifest into staging too — ApplyPendingImport (running
+	// after a restart, in a fresh Manager) needs SoundMap to know which
+	// sound_path references to remap, and has no other way to recover it.
+	manifestBytes, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("marshal manifest for staging: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(staging, manifestName), manifestBytes, 0o644); err != nil {
+		return nil, fmt.Errorf("stage manifest: %w", err)
+	}
+
 	// Sentinel last, only after staging is fully written. Its presence is
 	// the all-clear signal for ApplyPendingImport.
 	if err := os.WriteFile(m.sentinelPath(), []byte(time.Now().UTC().Format(time.RFC3339)), 0o644); err != nil {
 		_ = os.RemoveAll(staging)
+		_ = os.Remove(m.pendingClientStatePath())
 		return nil, fmt.Errorf("write sentinel: %w", err)
 	}
 	return manifest, nil
@@ -241,6 +332,7 @@ func (m *Manager) StageImport(bundlePath string) (*Manifest, error) {
 // the user reconsiders before restarting.
 func (m *Manager) CancelStagedImport() error {
 	_ = os.Remove(m.sentinelPath())
+	_ = os.Remove(m.pendingClientStatePath())
 	if err := os.RemoveAll(m.stagingDir()); err != nil && !os.IsNotExist(err) {
 		return err
 	}
@@ -272,6 +364,15 @@ func (m *Manager) ApplyPendingImport() (bool, error) {
 	staging := m.stagingDir()
 	stagedDB := filepath.Join(staging, userDBName)
 	stagedBackups := filepath.Join(staging, backupsDir)
+
+	// Best-effort: the manifest (written into staging by StageImport) tells us
+	// which sound files were bundled and their original paths, for the remap
+	// pass below. A missing/corrupt manifest just means "no sounds to remap"
+	// rather than aborting the whole import.
+	var manifest Manifest
+	if data, err := os.ReadFile(filepath.Join(staging, manifestName)); err == nil {
+		_ = json.Unmarshal(data, &manifest)
+	}
 
 	if _, err := os.Stat(stagedDB); err != nil {
 		// Staging is incomplete — abort and clear so we don't loop on next start.
@@ -338,6 +439,71 @@ func (m *Manager) ApplyPendingImport() (bool, error) {
 			_ = os.Rename(asideBackups, m.backupsDirPath) // restore original
 		}
 		return false, fmt.Errorf("install staged backups dir: %w", err)
+	}
+
+	// config.yaml: merge the imported settings over whatever's local (a fresh
+	// install after a wipe has nothing local yet). Unlike user.db/backups this
+	// is a merge, not a swap — a handful of fields point at local filesystem
+	// paths (EQ install dir, Piper binary) that may not exist on this machine.
+	// A bundle exported before v2 won't have one; nothing to do in that case.
+	stagedConfig := filepath.Join(staging, configName)
+	if _, err := os.Stat(stagedConfig); err == nil {
+		importedMgr, err := config.LoadFrom(stagedConfig)
+		if err != nil {
+			return false, fmt.Errorf("read staged config.yaml: %w", err)
+		}
+
+		// nil local means a fresh install with no config.yaml yet — merge
+		// treats that as "nothing to protect", e.g. the imported ServerAddr
+		// is used as-is rather than falling back to a zero value. Read
+		// before renaming aside, and only via LoadFrom (which side-effects a
+		// defaults file into existence) when a file is actually there.
+		var local *config.Config
+		localExists := false
+		if _, err := os.Stat(m.configPath); err == nil {
+			localExists = true
+			localMgr, err := config.LoadFrom(m.configPath)
+			if err != nil {
+				return false, fmt.Errorf("read existing config.yaml: %w", err)
+			}
+			c := localMgr.Get()
+			local = &c
+		}
+		merged := mergeImportedConfig(importedMgr.Get(), local)
+
+		if localExists {
+			if err := os.Rename(m.configPath, m.configPath+"."+ts+".preimport"); err != nil {
+				return false, fmt.Errorf("set aside existing config.yaml: %w", err)
+			}
+		}
+		if err := config.WriteFile(m.configPath, merged); err != nil {
+			return false, fmt.Errorf("install merged config.yaml: %w", err)
+		}
+	}
+
+	// Custom sound files: copy staged sounds into appHome/sounds and rewrite
+	// every sound_path reference (triggers table + config.yaml) that pointed
+	// at the exporting machine's original path. Runs against the now-installed
+	// user.db and config.yaml, so it's safe to attempt unconditionally — if
+	// config.yaml wasn't part of this import, none of its sound_path values
+	// will match a remap key and rewriteSoundPathsInConfig is a no-op.
+	if len(manifest.SoundMap) > 0 {
+		remap, err := copyStagedSounds(staging, filepath.Join(m.appHome, "sounds"), manifest.SoundMap)
+		if err != nil {
+			return false, fmt.Errorf("install sounds: %w", err)
+		}
+		if err := rewriteTriggerSoundPaths(m.userDBPath, remap); err != nil {
+			return false, fmt.Errorf("remap trigger sound paths: %w", err)
+		}
+		if data, err := os.ReadFile(m.configPath); err == nil {
+			var cfg config.Config
+			if err := yaml.Unmarshal(data, &cfg); err == nil {
+				rewritten, changed, err := rewriteSoundPathsInConfig(cfg, remap)
+				if err == nil && changed {
+					_ = config.WriteFile(m.configPath, rewritten)
+				}
+			}
+		}
 	}
 
 	// Cleanup staging + sentinel.
@@ -459,12 +625,21 @@ func extractEntry(f *zip.File, destRoot string) error {
 	if strings.HasPrefix(clean, "..") || strings.Contains(clean, string(filepath.Separator)+"..") || filepath.IsAbs(clean) {
 		return fmt.Errorf("unsafe bundle entry %q", f.Name)
 	}
-	if f.UncompressedSize64 > maxBundleEntrySize {
-		return fmt.Errorf("bundle entry %q is too large (%d bytes, max %d)", f.Name, f.UncompressedSize64, maxBundleEntrySize)
-	}
 	dest := filepath.Join(destRoot, clean)
 	if f.FileInfo().IsDir() {
 		return os.MkdirAll(dest, 0o755)
+	}
+	return extractFileTo(f, dest)
+}
+
+// extractFileTo writes a single (non-directory) zip entry's contents to an
+// exact destination path, bypassing extractEntry's destRoot-relative path
+// handling — used when the destination is already a known, trusted path
+// (e.g. the pending-client-state.json well-known location) rather than one
+// derived from the untrusted entry name.
+func extractFileTo(f *zip.File, dest string) error {
+	if f.UncompressedSize64 > maxBundleEntrySize {
+		return fmt.Errorf("bundle entry %q is too large (%d bytes, max %d)", f.Name, f.UncompressedSize64, maxBundleEntrySize)
 	}
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return err

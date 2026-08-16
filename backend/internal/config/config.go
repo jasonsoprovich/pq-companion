@@ -1364,17 +1364,24 @@ func (m *Manager) Modify(mutate func(*Config)) error {
 }
 
 // save writes the current config to disk (must be called with m.mu held).
+func (m *Manager) save() error {
+	return WriteFile(m.path, m.cfg)
+}
+
+// WriteFile atomically writes cfg as YAML to path. Exported so other packages
+// (e.g. appbackup, applying an imported config.yaml) can persist a Config
+// without needing a full Manager lifecycle.
 //
 // The write is atomic: marshal to a temp file in the same directory, then
 // os.Rename over the target. A crash / power loss / disk-full mid-write can
 // then only leave a stray temp file — never a truncated config.yaml that
 // fails to parse on next launch and blocks startup.
-func (m *Manager) save() error {
-	dir := filepath.Dir(m.path)
+func WriteFile(path string, cfg Config) error {
+	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	data, err := yaml.Marshal(&m.cfg)
+	data, err := yaml.Marshal(&cfg)
 	if err != nil {
 		return err
 	}
@@ -1399,7 +1406,7 @@ func (m *Manager) save() error {
 	if err := os.Chmod(tmpPath, 0o644); err != nil {
 		return err
 	}
-	return os.Rename(tmpPath, m.path)
+	return os.Rename(tmpPath, path)
 }
 
 // Path returns the path to the config file on disk.

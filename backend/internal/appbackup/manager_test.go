@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -79,7 +80,7 @@ func TestExportImportRoundtrip(t *testing.T) {
 	mgr := New(srcDB, srcBackups, srcHome, filepath.Join(srcHome, "config.yaml"), "test-1.0.0")
 
 	exportDest := filepath.Join(t.TempDir(), "out")
-	bundlePath, manifest, err := mgr.Export(exportDest)
+	bundlePath, manifest, err := mgr.Export(exportDest, nil)
 	if err != nil {
 		t.Fatalf("Export: %v", err)
 	}
@@ -161,7 +162,7 @@ func TestApplyPreservesPriorUserDB(t *testing.T) {
 	writeBackupZip(t, srcBackups, "one.zip", "src-content")
 
 	srcMgr := New(srcDB, srcBackups, srcHome, filepath.Join(srcHome, "config.yaml"), "v1")
-	bundle, _, err := srcMgr.Export(filepath.Join(t.TempDir(), "b"))
+	bundle, _, err := srcMgr.Export(filepath.Join(t.TempDir(), "b"), nil)
 	if err != nil {
 		t.Fatalf("Export: %v", err)
 	}
@@ -232,7 +233,7 @@ func TestApplyImportMovesAsideStaleWALSidecars(t *testing.T) {
 	makeUserDB(t, srcDB)
 
 	srcMgr := New(srcDB, filepath.Join(srcHome, "backups"), srcHome, filepath.Join(srcHome, "config.yaml"), "v1")
-	bundle, _, err := srcMgr.Export(filepath.Join(t.TempDir(), "b"))
+	bundle, _, err := srcMgr.Export(filepath.Join(t.TempDir(), "b"), nil)
 	if err != nil {
 		t.Fatalf("Export: %v", err)
 	}
@@ -318,4 +319,138 @@ func writeBogusFutureBundle(path string) error {
 	}
 	_, err = dbw.Write([]byte("not really a sqlite file"))
 	return err
+}
+
+// TestImportV1BundleWithoutConfigOrClientState verifies a bundle from before
+// config.yaml/client-state.json/sounds/ existed (format_version 1) still
+// imports cleanly — the new blocks in ApplyPendingImport must all be
+// no-ops when their bundle entries are simply absent, not errors.
+func TestImportV1BundleWithoutConfigOrClientState(t *testing.T) {
+	tmp := t.TempDir()
+	realDB := filepath.Join(tmp, "src-user.db")
+	makeUserDB(t, realDB)
+	dbBytes, err := os.ReadFile(realDB)
+	if err != nil {
+		t.Fatalf("read real db: %v", err)
+	}
+
+	bundlePath := filepath.Join(tmp, "v1.pqcb")
+	f, err := os.Create(bundlePath)
+	if err != nil {
+		t.Fatalf("create bundle: %v", err)
+	}
+	zw := newTestZip(f)
+	manifest := `{"format_version":1,"app_version":"old","exported_at":"then","files":[],"stats":{"backup_count":0,"total_size_bytes":0}}`
+	mw, err := zw.Create(manifestName)
+	if err != nil {
+		t.Fatalf("create manifest entry: %v", err)
+	}
+	if _, err := mw.Write([]byte(manifest)); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	dbw, err := zw.Create(userDBName)
+	if err != nil {
+		t.Fatalf("create user.db entry: %v", err)
+	}
+	if _, err := dbw.Write(dbBytes); err != nil {
+		t.Fatalf("write user.db entry: %v", err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("close zip: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("close file: %v", err)
+	}
+
+	dstHome := t.TempDir()
+	dstDB := filepath.Join(dstHome, "user.db")
+	dstMgr := New(dstDB, filepath.Join(dstHome, "backups"), dstHome, filepath.Join(dstHome, "config.yaml"), "test-2.0.0")
+
+	if _, err := dstMgr.StageImport(bundlePath); err != nil {
+		t.Fatalf("StageImport: %v", err)
+	}
+	applied, err := dstMgr.ApplyPendingImport()
+	if err != nil {
+		t.Fatalf("ApplyPendingImport: %v", err)
+	}
+	if !applied {
+		t.Fatal("ApplyPendingImport returned false")
+	}
+
+	got := readPayloads(t, dstDB)
+	want := []string{"one", "two"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("imported user.db payloads = %v, want %v", got, want)
+	}
+	if _, err := os.Stat(filepath.Join(dstHome, "config.yaml")); err == nil {
+		t.Error("config.yaml should not exist — v1 bundle had none, nothing to merge")
+	}
+	if _, err := os.Stat(filepath.Join(dstHome, "pending-client-state.json")); err == nil {
+		t.Error("pending-client-state.json should not exist — v1 bundle had no client-state.json")
+	}
+}
+
+// TestExportImportRoundtripWithConfigAndSounds exercises the v2 additions
+// end-to-end: config.yaml travels and merges, and a trigger's custom sound
+// file is bundled and its stored path rewritten to the new local location.
+func TestExportImportRoundtripWithConfigAndSounds(t *testing.T) {
+	srcHome := t.TempDir()
+	srcDB := filepath.Join(srcHome, "user.db")
+	srcConfigPath := filepath.Join(srcHome, "config.yaml")
+
+	soundFile := filepath.Join(srcHome, "alarm.wav")
+	if err := os.WriteFile(soundFile, []byte("wav-data"), 0o644); err != nil {
+		t.Fatalf("write sound: %v", err)
+	}
+	makeTriggersDB(t, srcDB, soundFile, "")
+	if err := os.WriteFile(srcConfigPath, []byte("chat_retention_days: 999\n"), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	srcMgr := New(srcDB, filepath.Join(srcHome, "backups"), srcHome, srcConfigPath, "v2")
+	bundlePath, manifest, err := srcMgr.Export(filepath.Join(t.TempDir(), "b"), nil)
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+	if !manifest.Stats.ConfigIncluded {
+		t.Error("manifest.Stats.ConfigIncluded = false, want true")
+	}
+	if manifest.Stats.SoundCount != 1 {
+		t.Errorf("manifest.Stats.SoundCount = %d, want 1", manifest.Stats.SoundCount)
+	}
+
+	dstHome := t.TempDir()
+	dstDB := filepath.Join(dstHome, "user.db")
+	dstConfigPath := filepath.Join(dstHome, "config.yaml")
+	dstMgr := New(dstDB, filepath.Join(dstHome, "backups"), dstHome, dstConfigPath, "v2")
+
+	if _, err := dstMgr.StageImport(bundlePath); err != nil {
+		t.Fatalf("StageImport: %v", err)
+	}
+	if _, err := dstMgr.ApplyPendingImport(); err != nil {
+		t.Fatalf("ApplyPendingImport: %v", err)
+	}
+
+	cfgBytes, err := os.ReadFile(dstConfigPath)
+	if err != nil {
+		t.Fatalf("read imported config.yaml: %v", err)
+	}
+	if !strings.Contains(string(cfgBytes), "chat_retention_days: 999") {
+		t.Errorf("imported config.yaml missing chat_retention_days: 999, got:\n%s", cfgBytes)
+	}
+
+	soundsDir := filepath.Join(dstHome, "sounds")
+	entries, err := os.ReadDir(soundsDir)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("expected exactly one file under %s, got %v (err=%v)", soundsDir, entries, err)
+	}
+	newSoundPath := filepath.Join(soundsDir, entries[0].Name())
+
+	gotPaths, err := collectTriggerSoundPaths(dstDB)
+	if err != nil {
+		t.Fatalf("collectTriggerSoundPaths: %v", err)
+	}
+	if len(gotPaths) != 1 || gotPaths[0] != newSoundPath {
+		t.Errorf("imported trigger sound_path = %v, want [%q]", gotPaths, newSoundPath)
+	}
 }

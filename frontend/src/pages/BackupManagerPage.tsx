@@ -38,6 +38,7 @@ import {
   type AppResetMode,
 } from '../services/api'
 import { useEscapeToClose } from '../hooks/useEscapeToClose'
+import { collectClientState } from '../services/clientState'
 import type { Backup } from '../types/backup'
 import type { Config, BackupSettings } from '../types/config'
 
@@ -637,8 +638,10 @@ function AppTransferPanel(): React.ReactElement {
     if (!dest) return
     setBusy(true)
     try {
-      const res = await exportAppBackup(dest)
-      setStatusMessage(`Exported to ${res.bundle_path} (${formatBytes(res.manifest.stats.total_size_bytes)}, ${res.manifest.stats.backup_count} EQ-config backup(s) included).`)
+      const clientState = await collectClientState()
+      const res = await exportAppBackup(dest, clientState)
+      const soundNote = res.manifest.stats.sound_count > 0 ? `, ${res.manifest.stats.sound_count} custom sound(s)` : ''
+      setStatusMessage(`Exported to ${res.bundle_path} (${formatBytes(res.manifest.stats.total_size_bytes)}, ${res.manifest.stats.backup_count} EQ-config backup(s)${soundNote} included).`)
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : String(err))
     } finally {
@@ -715,7 +718,7 @@ function AppTransferPanel(): React.ReactElement {
         </span>
       </div>
       <p className="text-[11px] mb-3" style={{ color: 'var(--color-muted-foreground)' }}>
-        Export bundles your entire PQ Companion setup — characters, triggers, combat history, AAs, tasks, key tracker, plus every EQ config backup below — into a single <code className="font-mono">.pqcb</code> file. Import that file on a different device after installing the app to restore everything in place. Different from the EQ config backups list below, which only protects your in-game <code className="font-mono">.ini</code> files.
+        Export bundles your entire PQ Companion setup — characters, triggers, combat history, AAs, tasks, key tracker, every Settings-tab preference, overlay dashboard layout, popped-out window positions/sizes, custom trigger sounds, plus every EQ config backup below — into a single <code className="font-mono">.pqcb</code> file. Import that file on a different device after installing the app to restore everything in place, including which overlays are shown/hidden and where they sit. Different from the EQ config backups list below, which only protects your in-game <code className="font-mono">.ini</code> files.
       </p>
 
       {/* Export */}
@@ -757,8 +760,17 @@ function AppTransferPanel(): React.ReactElement {
             Bundle exported {importPreview.manifest.exported_at} by app version {importPreview.manifest.app_version}.
           </p>
           <p>
-            Contains {importPreview.manifest.stats.backup_count} EQ-config backup(s), {formatBytes(importPreview.manifest.stats.total_size_bytes)} total.
+            Contains {importPreview.manifest.stats.backup_count} EQ-config backup(s)
+            {importPreview.manifest.stats.sound_count > 0 ? `, ${importPreview.manifest.stats.sound_count} custom sound(s)` : ''}
+            {importPreview.manifest.stats.config_included ? ', settings' : ''}
+            {importPreview.manifest.stats.client_state_included ? ', overlay/window layout' : ''}
+            , {formatBytes(importPreview.manifest.stats.total_size_bytes)} total.
           </p>
+          {!importPreview.manifest.stats.config_included && (
+            <p className="mt-1" style={{ color: 'var(--color-muted-foreground)' }}>
+              This bundle predates settings/layout transfer — only characters, triggers, and history will be restored.
+            </p>
+          )}
           <p className="mt-2" style={{ color: 'var(--color-danger)' }}>
             This replaces your current app data and restarts the app to apply it. Your existing data is renamed aside (with a <code className="font-mono">.preimport</code> suffix) for recovery, not deleted.
           </p>

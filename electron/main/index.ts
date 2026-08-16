@@ -1,7 +1,7 @@
-import { app, BrowserWindow, shell, ipcMain, nativeTheme, dialog, screen, protocol, globalShortcut, Tray, Menu, nativeImage, WebContentsView } from 'electron'
+import { app, BrowserWindow, shell, ipcMain, nativeTheme, dialog, screen, protocol, globalShortcut, Tray, Menu, nativeImage, WebContentsView, session } from 'electron'
 import { join, extname, dirname } from 'path'
 import { spawn, ChildProcess } from 'child_process'
-import { existsSync, mkdirSync, readFileSync, writeFileSync, statSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync, statSync, unlinkSync } from 'fs'
 import { readFile, access, open as fsOpen } from 'fs/promises'
 import { constants as fsConstants } from 'fs'
 import { homedir } from 'os'
@@ -586,6 +586,134 @@ function saveMainWindowState(state: MainWindowState): void {
     console.error('[main] Failed to write main window state:', err)
   }
 }
+
+// ── App Backup/Restore: Electron-side window & overlay state ────────────────
+// The five small userData JSON files above (bounds, lock, auto-open, display
+// pin, main window state) hold everything about *how the desktop shell is
+// laid out*. None of it lives in the Go backend's user.db/config.yaml, so the
+// App Backup/Restore feature (BackupManagerPage.tsx) can't include it without
+// this bridge to the renderer. 'app:client-state:get' is read on demand when
+// the user clicks Export; the import path writes a pending-client-state.json
+// next to user.db that this process reads BEFORE creating any window on its
+// next boot (see the whenReady handler) — Electron rewrites these files on
+// every quit, so applying them any later would just get clobbered by the
+// relaunching process's own shutdown writes.
+type ClientStateElectron = {
+  overlayBounds?: BoundsStore
+  overlayLockState?: LockStore
+  overlayAutoOpen?: AutoOpenStore
+  overlayDisplay?: OverlayDisplayPref
+  mainWindowState?: MainWindowState
+}
+
+const CLIENT_STATE_FILES: { [K in keyof ClientStateElectron]-?: () => string } = {
+  overlayBounds: boundsFilePath,
+  overlayLockState: lockFilePath,
+  overlayAutoOpen: autoOpenFilePath,
+  overlayDisplay: overlayDisplayFilePath,
+  mainWindowState: mainWindowStateFilePath,
+}
+
+// Matches appbackup.Manager.pendingClientStatePath() on the Go side exactly —
+// both read/write the same file. Lives directly under ~/.pq-companion (like
+// hardwareAccelFilePath above) rather than userData, because it must be
+// readable before app.getPath('userData') is reliable this early in boot.
+function pendingClientStatePath(): string {
+  return join(homedir(), '.pq-companion', 'pending-client-state.json')
+}
+
+// Collects the current Electron-side state for an export. Refreshes the
+// auto-open set from what's actually open right now (mirroring
+// snapshotAutoOpenOverlays below) so an export captures live state rather
+// than whatever was true at the app's last quit.
+function collectClientStateElectron(): ClientStateElectron {
+  const autoOpen = loadAutoOpenStore()
+  if (autoOpen.enabled) autoOpen.overlays = currentlyOpenAutoOpenEntries()
+  const displayPref = loadOverlayDisplayPref()
+  return {
+    overlayBounds: loadBoundsStore(),
+    overlayLockState: loadLockStore(),
+    overlayAutoOpen: autoOpen,
+    ...(displayPref ? { overlayDisplay: displayPref } : {}),
+    mainWindowState: loadMainWindowState(),
+  }
+}
+
+// Applies a staged import's Electron-side state, if any. Called once at boot
+// before any window is created. Deliberately does NOT delete the pending
+// file — 'app:client-state:take-pending' (called by the renderer after
+// mount, for the localStorage half) owns that, so this can run first without
+// racing the renderer's later read.
+function applyPendingClientState(): void {
+  try {
+    const raw = readFileSync(pendingClientStatePath(), 'utf8')
+    const parsed = JSON.parse(raw) as { electron?: ClientStateElectron }
+    if (!parsed.electron) return
+    for (const key of Object.keys(CLIENT_STATE_FILES) as (keyof ClientStateElectron)[]) {
+      const value = parsed.electron[key]
+      if (value === undefined) continue
+      writeFileSync(CLIENT_STATE_FILES[key](), JSON.stringify(value, null, 2), 'utf8')
+    }
+  } catch {
+    // No pending import — the normal case.
+  }
+}
+
+// Matches appbackup.Manager.resetSentinelPath() on the Go side — read-only
+// here, never written or deleted by this process. The Go backend owns
+// consuming it (ApplyPendingReset, run when the sidecar starts moments after
+// this) so its own aside/recovery bookkeeping stays authoritative; this just
+// needs to know "is a factory reset about to happen" before creating any
+// window that would otherwise read the stale overlay/window state.
+function resetSentinelPath(): string {
+  return join(homedir(), '.pq-companion', '.reset-pending')
+}
+
+// A factory reset (unlike a "data" reset, which keeps config.yaml and
+// preferences) puts the app back to "as if freshly installed" — including
+// the overlay layout and window positions Electron owns. Neither user.db nor
+// config.yaml lives in this process, so there's nothing here for a plain
+// "data" reset to do. Called once at boot, before any window is created,
+// same as applyPendingClientState.
+async function applyPendingFactoryResetClientState(): Promise<void> {
+  let mode: string
+  try {
+    mode = readFileSync(resetSentinelPath(), 'utf8').trim()
+  } catch {
+    return // no pending reset — the normal case
+  }
+  if (mode !== 'factory') return
+
+  for (const filePathFn of Object.values(CLIENT_STATE_FILES)) {
+    try {
+      unlinkSync(filePathFn())
+    } catch {
+      // Already gone / never existed — fine.
+    }
+  }
+  try {
+    await session.defaultSession.clearStorageData({ storages: ['localstorage'] })
+  } catch (err) {
+    console.error('[main] Failed to clear localStorage for factory reset:', err)
+  }
+}
+
+ipcMain.handle('app:client-state:get', () => collectClientStateElectron())
+
+ipcMain.handle('app:client-state:take-pending', (): Record<string, string> => {
+  try {
+    const raw = readFileSync(pendingClientStatePath(), 'utf8')
+    const parsed = JSON.parse(raw) as { local_storage?: Record<string, string> }
+    try {
+      unlinkSync(pendingClientStatePath())
+    } catch {
+      // Already gone / never existed — fine, nothing left to consume.
+    }
+    return parsed.local_storage ?? {}
+  } catch {
+    return {}
+  }
+})
 
 let mainStateDebounce: ReturnType<typeof setTimeout> | null = null
 
@@ -3345,6 +3473,16 @@ app.whenReady().then(async () => {
       return new Response('not found', { status: 404 })
     }
   })
+
+  // Apply any pending App Backup/Restore import's Electron-side state before
+  // anything reads overlayBounds.json et al. — createMainWindow,
+  // createTriggerOverlay, and the restore-overlays-on-launch block just below
+  // all read those files, and this process itself rewrites them on quit, so
+  // there's no later point this could safely run. A pending factory reset
+  // (mutually exclusive with a pending import — see the Settings UI) clears
+  // the same files instead of restoring them.
+  applyPendingClientState()
+  await applyPendingFactoryResetClientState()
 
   startSidecar()
   createMainWindow()

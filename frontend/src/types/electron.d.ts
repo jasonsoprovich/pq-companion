@@ -6,6 +6,10 @@ export interface ElectronAPI {
     relaunch: () => Promise<void>
     navigateMain: (route: string) => Promise<void>
     onNavigate: (cb: (route: string) => void) => () => void
+    // App Backup/Restore: Electron-side window/overlay state the Go backend
+    // can't see. See preload/index.ts for details.
+    getClientState: () => Promise<unknown>
+    takeClientState: () => Promise<Record<string, string>>
   }
   backend: {
     getPort: () => Promise<number>

@@ -1405,11 +1405,27 @@ export interface AppBackupManifest {
   app_version: string
   exported_at: string
   files: Array<{ name: string; size_bytes: number; sha256: string }>
-  stats: { backup_count: number; total_size_bytes: number }
+  stats: {
+    backup_count: number
+    total_size_bytes: number
+    config_included: boolean
+    client_state_included: boolean
+    sound_count: number
+  }
 }
 
-export function exportAppBackup(destinationPath: string): Promise<{ bundle_path: string; manifest: AppBackupManifest }> {
-  return post<{ bundle_path: string; manifest: AppBackupManifest }>('/api/app/export', { destination_path: destinationPath })
+// clientState is the Electron/renderer-collected {local_storage, electron}
+// blob from services/clientState.ts — an opaque object as far as this
+// wrapper and the Go backend are concerned. Omitted for a browser-preview
+// export (no Electron bridge to collect it from).
+export function exportAppBackup(
+  destinationPath: string,
+  clientState?: unknown,
+): Promise<{ bundle_path: string; manifest: AppBackupManifest }> {
+  return post<{ bundle_path: string; manifest: AppBackupManifest }>('/api/app/export', {
+    destination_path: destinationPath,
+    client_state: clientState,
+  })
 }
 
 export function previewAppImport(bundlePath: string): Promise<{ manifest: AppBackupManifest }> {

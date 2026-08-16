@@ -11,12 +11,17 @@ type appBackupHandler struct {
 	mgr *appbackup.Manager
 }
 
-// export handles POST /api/app/export. Body: {"destination_path": "<abs path>"}.
+// export handles POST /api/app/export. Body: {"destination_path": "<abs path>",
+// "client_state": {...}}. client_state is an opaque object (Electron
+// window/overlay state + renderer localStorage) the caller collects itself —
+// the Go backend has no visibility into either — and is optional so a
+// browser-preview export (no Electron bridge) still works.
 // Returns the final bundle path (which may differ from destination if the
 // caller didn't include the .pqcb extension) and the manifest contents.
 func (h *appBackupHandler) export(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		DestinationPath string `json:"destination_path"`
+		DestinationPath string          `json:"destination_path"`
+		ClientState     json.RawMessage `json:"client_state"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -26,7 +31,7 @@ func (h *appBackupHandler) export(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "destination_path is required")
 		return
 	}
-	bundlePath, manifest, err := h.mgr.Export(body.DestinationPath)
+	bundlePath, manifest, err := h.mgr.Export(body.DestinationPath, body.ClientState)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
