@@ -14,19 +14,24 @@ import { formatNPCName } from './SourceNPCLink'
 // Kept separate from SourceNPCLink, which is still the right compact form for
 // the spell acquisition panel and the gear-finder popovers.
 
-export type SourceSortKey = 'name' | 'zone' | 'rate'
+export type SourceSortKey = 'name' | 'zone' | 'rate' | 'lootLevel'
 type SortState = { key: SourceSortKey; dir: 'asc' | 'desc' }
 
 interface SourceNPCTableProps {
   npcs: ItemSourceNPC[]
   // showRate adds the drop-rate column (drops only; vendors have no rate).
   showRate?: boolean
+  // showLootLevel adds the min-loot-level column. Callers should only pass
+  // this when at least one row actually has a restriction — most items
+  // don't, and an all-dashes column is just clutter.
+  showLootLevel?: boolean
   defaultSort?: SortState
 }
 
 export function SourceNPCTable({
   npcs,
   showRate,
+  showLootLevel,
   defaultSort,
 }: SourceNPCTableProps): React.ReactElement {
   const navigate = useNavigate()
@@ -44,6 +49,8 @@ export function SourceNPCTable({
           return byName(a, b)
         case 'rate':
           return (a.drop_rate ?? 0) - (b.drop_rate ?? 0)
+        case 'lootLevel':
+          return (a.min_looter_level ?? 0) - (b.min_looter_level ?? 0)
         default:
           // Within a zone keep NPCs alphabetical, so the grouping reads as a
           // block rather than an arbitrary order.
@@ -70,6 +77,9 @@ export function SourceNPCTable({
         >
           <Th label="NPC" sortKey="name" sort={sort} onSort={toggleSort} />
           <Th label="Zone" sortKey="zone" sort={sort} onSort={toggleSort} width="40%" />
+          {showLootLevel && (
+            <Th label="Min Lvl" sortKey="lootLevel" sort={sort} onSort={toggleSort} width="4.5rem" align="right" />
+          )}
           {showRate && (
             <Th label="Rate" sortKey="rate" sort={sort} onSort={toggleSort} width="4.5rem" align="right" />
           )}
@@ -103,6 +113,16 @@ export function SourceNPCTable({
                 </button>
               )}
             </td>
+            {showLootLevel && (
+              <td
+                className="px-1.5 py-1 text-right text-xs tabular-nums"
+                style={{ color: 'var(--color-muted-foreground)' }}
+              >
+                {npc.min_looter_level != null && npc.min_looter_level > 0
+                  ? npc.min_looter_level
+                  : '—'}
+              </td>
+            )}
             {showRate && (
               <td
                 className="px-1.5 py-1 text-right text-xs tabular-nums"

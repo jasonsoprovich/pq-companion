@@ -533,7 +533,8 @@ func (db *DB) GetItemSources(itemID int) (*ItemSources, error) {
 		SELECT n.id, n.name,
 		       `+zoneNameSubquery+` AS zone_name,
 		       `+zoneShortSubquery+` AS zone_short_name,
-		       ROUND(MAX(CAST(lte.probability AS REAL) * lde.chance / 100.0), 2) AS drop_rate
+		       ROUND(MAX(CAST(lte.probability AS REAL) * lde.chance / 100.0), 2) AS drop_rate,
+		       MAX(lde.min_looter_level) AS min_looter_level
 		FROM npc_types n
 		JOIN loottable_entries lte ON lte.loottable_id = n.loottable_id
 		JOIN lootdrop_entries lde ON lde.lootdrop_id = lte.lootdrop_id
@@ -663,7 +664,7 @@ func collectSourceNPCs(rows *sql.Rows, withDropRate bool) ([]ItemSourceNPC, erro
 	for rows.Next() {
 		var s ItemSourceNPC
 		if withDropRate {
-			if err := rows.Scan(&s.ID, &s.Name, &s.ZoneName, &s.ZoneShortName, &s.DropRate); err != nil {
+			if err := rows.Scan(&s.ID, &s.Name, &s.ZoneName, &s.ZoneShortName, &s.DropRate, &s.MinLooterLevel); err != nil {
 				return nil, fmt.Errorf("scan source npc: %w", err)
 			}
 		} else {

@@ -338,6 +338,9 @@ function OverviewTab({ zone }: { zone: Zone }): React.ReactElement {
           }
         />
         <StatRow label="Succor Point" value={coordStr} />
+        {zone.min_level > 0 && (
+          <StatRow label="Min Level to Enter" value={zone.min_level} />
+        )}
         {zone.note && <StatRow label="Note" value={zone.note} />}
       </Section>
       <Section title="Bard Swarm Limits">

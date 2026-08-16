@@ -830,7 +830,15 @@ function DropsFromTab({ drops }: { drops: ItemSourceNPC[] }): React.ReactElement
   if (drops.length === 0) return <EmptyTabMessage message="No drop sources found." />
   // Drops default to best rate first — the question here is "where is this most
   // likely to come from", not "where is it".
-  return <SourceNPCTable npcs={drops} showRate defaultSort={{ key: 'rate', dir: 'desc' }} />
+  const showLootLevel = drops.some((d) => (d.min_looter_level ?? 0) > 0)
+  return (
+    <SourceNPCTable
+      npcs={drops}
+      showRate
+      showLootLevel={showLootLevel}
+      defaultSort={{ key: 'rate', dir: 'desc' }}
+    />
+  )
 }
 
 // ── Tab: Purchased From ────────────────────────────────────────────────────────

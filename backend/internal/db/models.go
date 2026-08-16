@@ -381,6 +381,10 @@ type ItemSourceNPC struct {
 	ZoneName      string  `json:"zone_name"`
 	ZoneShortName string  `json:"zone_short_name"`
 	DropRate      float64 `json:"drop_rate,omitempty"`
+	// MinLooterLevel is the minimum character level required to loot the item
+	// off this NPC (lootdrop_entries.min_looter_level), 0 = no restriction.
+	// Drop sources only — merchant listings never set this.
+	MinLooterLevel int `json:"min_looter_level,omitempty"`
 }
 
 // ItemForageZone is a zone where an item can be obtained via the Forage skill.

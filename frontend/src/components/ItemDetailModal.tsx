@@ -192,7 +192,15 @@ function OverviewTab({ item, copied, onCopy }: { item: Item; copied: boolean; on
 
 function DropsFromTab({ drops }: { drops: ItemSourceNPC[] }): React.ReactElement {
   if (drops.length === 0) return <EmptyTabMessage message="No drop sources found." />
-  return <SourceNPCTable npcs={drops} showRate defaultSort={{ key: 'rate', dir: 'desc' }} />
+  const showLootLevel = drops.some((d) => (d.min_looter_level ?? 0) > 0)
+  return (
+    <SourceNPCTable
+      npcs={drops}
+      showRate
+      showLootLevel={showLootLevel}
+      defaultSort={{ key: 'rate', dir: 'desc' }}
+    />
+  )
 }
 
 function PurchasedFromTab({ merchants }: { merchants: ItemSourceNPC[] }): React.ReactElement {

@@ -95,6 +95,7 @@ export interface ItemSourceNPC {
   zone_name: string
   zone_short_name: string
   drop_rate?: number
+  min_looter_level?: number
 }
 
 export interface ItemForageZone {
