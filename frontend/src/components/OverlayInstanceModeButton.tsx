@@ -26,8 +26,8 @@ export default function OverlayInstanceModeButton({
       onClick={onToggle}
       title={
         enabled
-          ? 'Raw timers ON — new kills use the full unreduced respawn time (click to use normal fast-respawn timers)'
-          : 'Using normal fast-respawn timers (click to force raw timers for a guild/raid-locked instance)'
+          ? 'Normal timers — new kills use the full unreduced respawn time (click to use fast-respawn timers)'
+          : 'Fast timers — Quarm\'s reduction is applied (click to use normal/unreduced timers for a guild/raid-locked instance)'
       }
       aria-pressed={enabled}
       style={{

@@ -91,11 +91,14 @@ export default function RespawnTimerWindowPage(): React.ReactElement {
           <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.8)' }}>
             Respawns
           </span>
-          {instanceMode && (
-            <span style={{ fontSize: 9, fontWeight: 700, color: '#f97316', letterSpacing: 0.3 }}>
-              RAW
-            </span>
-          )}
+          <span
+            style={{
+              fontSize: 9, fontWeight: 700, letterSpacing: 0.3,
+              color: instanceMode ? '#f97316' : 'rgba(255,255,255,0.35)',
+            }}
+          >
+            {instanceMode ? 'NORMAL' : 'FAST'}
+          </span>
           {timers.length > 0 && (
             <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginLeft: 2 }}>
               {timers.length}

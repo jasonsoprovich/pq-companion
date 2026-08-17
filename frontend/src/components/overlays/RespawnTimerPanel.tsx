@@ -82,11 +82,14 @@ export default function RespawnTimerPanel({
         <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
           <Hourglass size={13} style={{ color: '#a855f7' }} />
           Respawns
-          {instanceMode && (
-            <span style={{ fontSize: 9, fontWeight: 700, color: '#f97316', letterSpacing: 0.3 }}>
-              RAW
-            </span>
-          )}
+          <span
+            style={{
+              fontSize: 9, fontWeight: 700, letterSpacing: 0.3,
+              color: instanceMode ? '#f97316' : 'var(--color-muted)',
+            }}
+          >
+            {instanceMode ? 'NORMAL' : 'FAST'}
+          </span>
         </span>
       }
       headerRight={
