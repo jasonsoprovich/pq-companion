@@ -1728,6 +1728,46 @@ hardening — no new features, but a broad sweep of reliability fixes.
   existing custom_timer_alert/respawn_alert pattern. Configurable in
   Settings > Overlays.
 
+## v0.19.3 — Zone Lockouts Overlay, App Backup Portability, Signature-Spell Caster Binding
+
+- **Zone Lockouts overlay** — a dashboard panel and floating popout
+  showing the active character's loot-lockout status for every
+  raid-target boss in the current zone, following the existing overlay
+  pattern (respawn timers). Zone comes from the live-map Zeal pipe
+  feed; lockout data reuses the existing per-zone lockouts endpoint and
+  WebSocket event, so no backend changes were needed.
+- **App Backup transfers overlay layout and sounds** — the `.pqcb`
+  bundle format bumps to v2 (v1 bundles still import cleanly) and now
+  also carries spell-timer thresholds, sidebar favorites, dashboard
+  layout, popped-out overlay positions, `config.yaml` (merged, with
+  machine-local paths re-validated against disk), and any custom
+  trigger sound files, instead of dropping everything but `user.db`
+  and the EQ config backup zips on a move to a new device.
+- **Signature-spell timers bind to the real caster** — a new cast-start
+  correlator watches raid bosses' "begins to cast" lines and matches
+  them by timing to the land-text trigger fire, so timers for spells
+  like Fling/Silence/Caustic Mist (which only log the victim) bind to
+  the actual caster instead of the player's live target. Falls back to
+  the old target-guess when no matching cast-start line was observed.
+  The NPC Timers tab badges these caster-bound rows "Cooldown" to
+  distinguish them from ordinary debuffs.
+- **Manual Fast/Normal respawn-timer toggle** — the Respawns overlay
+  (dashboard card and popped-out window) can force newly-started
+  timers to skip Quarm's fast-respawn reduction, for guild/raid-locked
+  instances that run with the reduction disabled server-side but can't
+  be automatically detected (see `LIMITATIONS.md` §4.1).
+- **Spell Checklist flags owned-but-unscribed scrolls** —
+  cross-references the viewed character's Zeal inventory export (all
+  characters' bags and bank) against `items.scrolleffect`; hovering the
+  badge lists every character and slot the scroll was found in.
+- Zones overview shows each zone's minimum entry level; an item's Drops
+  From table shows a Min Lvl column when a source has a
+  `lootdrop_entries.min_looter_level` restriction.
+- Potions no longer show up as Rechargeable in the Inventory Tracker
+  (itemtype 21 excluded from the maxcharges/clickeffect heuristic — 238
+  of 481 matches were mislabeled); the same heuristic now badges the
+  item detail Charges row.
+
 ## Phase 11 — Project Website
 _Planned_
 
