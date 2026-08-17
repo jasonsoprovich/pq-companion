@@ -12,9 +12,10 @@ import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
 import OverlayLockButton from '../components/OverlayLockButton'
 import OverlayMuteButton from '../components/OverlayMuteButton'
+import OverlayInstanceModeButton from '../components/OverlayInstanceModeButton'
 import { useOverlayAlertMute } from '../hooks/useOverlayAlertMute'
 import { RESPAWN_ALERTS_KEY } from '../lib/overlayAlertMute'
-import { clearRespawns, getRespawnState } from '../services/api'
+import { clearRespawns, getRespawnState, setRespawnInstanceMode } from '../services/api'
 import { RespawnRow } from '../components/overlays/respawnShared'
 import type { RespawnState } from '../types/respawn'
 
@@ -41,6 +42,11 @@ export default function RespawnTimerWindowPage(): React.ReactElement {
 
   const timers = state?.timers ?? []
   const currentZone = state?.current_zone ?? ''
+  const instanceMode = state?.instance_mode ?? false
+
+  const toggleInstanceMode = useCallback(() => {
+    setRespawnInstanceMode(!instanceMode).then(setState).catch(() => {})
+  }, [instanceMode])
 
   return (
     <div
@@ -85,6 +91,11 @@ export default function RespawnTimerWindowPage(): React.ReactElement {
           <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.8)' }}>
             Respawns
           </span>
+          {instanceMode && (
+            <span style={{ fontSize: 9, fontWeight: 700, color: '#f97316', letterSpacing: 0.3 }}>
+              RAW
+            </span>
+          )}
           {timers.length > 0 && (
             <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginLeft: 2 }}>
               {timers.length}
@@ -109,6 +120,7 @@ export default function RespawnTimerWindowPage(): React.ReactElement {
           >
             <Trash2 size={11} />
           </button>
+          <OverlayInstanceModeButton enabled={instanceMode} onToggle={toggleInstanceMode} />
           <OverlayMuteButton enabled={alertsEnabled} onToggle={toggleAlerts} />
           <OverlayLockButton locked={locked} onToggle={toggleLocked} />
           <button

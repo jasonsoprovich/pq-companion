@@ -1709,6 +1709,10 @@ export function removeRespawn(id: string): Promise<void> {
   return del(`/api/overlay/respawns/${encodeURIComponent(id)}`)
 }
 
+export function setRespawnInstanceMode(enabled: boolean): Promise<RespawnState> {
+  return put<RespawnState>('/api/overlay/respawns/instance-mode', { enabled })
+}
+
 // ── Config ─────────────────────────────────────────────────────────────────────
 
 export function getConfig(): Promise<Config> {

@@ -58,6 +58,9 @@ type Engine struct {
 	pipeZoneLong  string
 	logZoneShort  string
 	logZoneLong   string
+
+	// instanceMode is a manual, session-only override (see SetInstanceMode).
+	instanceMode bool
 }
 
 // NewEngine returns an initialised Engine ready to receive log events.
@@ -212,11 +215,19 @@ func (e *Engine) onKill(displayName string, diedAt time.Time) {
 	// decide whether (and how) the raw spawn2.respawntime collapses to a fixed
 	// fast value; reducing each row before summarising also dissolves a false
 	// "ambiguous" range when every spawn maps to the same fast timer.
+	// Skipped entirely when instanceMode is on — see SetInstanceMode.
+	e.mu.Lock()
+	instanceMode := e.instanceMode
+	e.mu.Unlock()
+
 	reduced, dungeon, err := e.db.GetZoneSpawnReduction(zoneShort)
 	if err != nil {
 		slog.Warn("respawn: DB error looking up zone reduction flags",
 			"zone", zoneShort, "err", err)
 		// Fall through with reduced=false: raw respawntime is used.
+	}
+	if reduced && instanceMode {
+		reduced = false
 	}
 	if reduced {
 		for i := range infos {
@@ -302,6 +313,24 @@ func (e *Engine) GetState() RespawnState {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.snapshot(time.Now())
+}
+
+// SetInstanceMode toggles the manual "raw timers" override: while enabled,
+// newly started timers skip Quarm's fast-respawn reduction and use the raw
+// spawn2.respawntime instead. Guild/raid-locked instances run with the
+// reduction disabled server-side, but are indistinguishable from the
+// open-world zone from any data source available to the app (log, DB, Zeal
+// pipe — see LIMITATIONS.md §4.1), so this is a manual per-session flag
+// rather than something the engine can detect on its own. Already-running
+// timers are left as-is; only kills processed after the toggle are affected.
+func (e *Engine) SetInstanceMode(enabled bool) RespawnState {
+	e.mu.Lock()
+	e.instanceMode = enabled
+	snap := e.snapshot(time.Now())
+	e.mu.Unlock()
+
+	e.hub.Broadcast(ws.Event{Type: WSEventRespawns, Data: snap})
+	return snap
 }
 
 // RemoveByID removes a single timer by its ID (the per-row dismiss button).
@@ -408,8 +437,9 @@ func (e *Engine) snapshot(now time.Time) RespawnState {
 	})
 
 	return RespawnState{
-		Timers:      timers,
-		CurrentZone: curZone,
-		LastUpdated: now,
+		Timers:       timers,
+		CurrentZone:  curZone,
+		LastUpdated:  now,
+		InstanceMode: e.instanceMode,
 	}
 }

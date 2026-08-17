@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/url"
 
@@ -41,4 +42,17 @@ func (h *respawnHandler) remove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// setInstanceMode handles PUT /api/overlay/respawns/instance-mode — toggles
+// the manual "raw timers" override (see respawn.Engine.SetInstanceMode).
+func (h *respawnHandler) setInstanceMode(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	writeJSON(w, http.StatusOK, h.engine.SetInstanceMode(req.Enabled))
 }

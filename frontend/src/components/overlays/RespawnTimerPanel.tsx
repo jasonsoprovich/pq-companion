@@ -5,8 +5,11 @@ import {
 } from 'lucide-react'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { WSEvent } from '../../lib/wsEvents'
-import { clearRespawns, getLogStatus, getRespawnState, removeRespawn } from '../../services/api'
+import {
+  clearRespawns, getLogStatus, getRespawnState, removeRespawn, setRespawnInstanceMode,
+} from '../../services/api'
 import OverlayWindow from '../OverlayWindow'
+import OverlayInstanceModeButton from '../OverlayInstanceModeButton'
 import type { RespawnState, RespawnTimer } from '../../types/respawn'
 import type { LogTailerStatus } from '../../types/logEvent'
 import { RespawnRow } from './respawnShared'
@@ -67,6 +70,11 @@ export default function RespawnTimerPanel({
 
   const timers: RespawnTimer[] = state?.timers ?? []
   const currentZone = state?.current_zone ?? ''
+  const instanceMode = state?.instance_mode ?? false
+
+  const toggleInstanceMode = useCallback(() => {
+    setRespawnInstanceMode(!instanceMode).then(setState).catch(() => {})
+  }, [instanceMode])
 
   return (
     <OverlayWindow
@@ -74,10 +82,16 @@ export default function RespawnTimerPanel({
         <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
           <Hourglass size={13} style={{ color: '#a855f7' }} />
           Respawns
+          {instanceMode && (
+            <span style={{ fontSize: 9, fontWeight: 700, color: '#f97316', letterSpacing: 0.3 }}>
+              RAW
+            </span>
+          )}
         </span>
       }
       headerRight={
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <OverlayInstanceModeButton enabled={instanceMode} onToggle={toggleInstanceMode} size={12} />
           <button
             onClick={() => clearRespawns().catch(() => {})}
             title="Clear all respawn timers"

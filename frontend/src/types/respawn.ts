@@ -29,4 +29,12 @@ export interface RespawnState {
   /** Player's current zone short_name, so the UI can emphasise local rows. */
   current_zone: string
   last_updated: string
+  /**
+   * Manual override: when true, newly started timers use the raw
+   * (unreduced) respawn time instead of Quarm's fast-respawn reduction.
+   * Meant for guild/raid-locked instances, which run with the reduction
+   * disabled server-side but are indistinguishable from the open-world zone
+   * (see LIMITATIONS.md §4.1). Session-only, toggled from either overlay.
+   */
+  instance_mode: boolean
 }

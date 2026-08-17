@@ -57,4 +57,10 @@ type RespawnState struct {
 	// emphasise rows for where the player is standing. Empty when unknown.
 	CurrentZone string    `json:"current_zone"`
 	LastUpdated time.Time `json:"last_updated"`
+	// InstanceMode is a user-toggled flag (see Engine.SetInstanceMode). When
+	// true, newly started timers use the raw spawn2.respawntime instead of
+	// Quarm's fast-respawn reduction — for guild/raid-locked instances, which
+	// run with the reduction disabled server-side and are otherwise
+	// indistinguishable from the open-world zone (see LIMITATIONS.md §4.1).
+	InstanceMode bool `json:"instance_mode"`
 }
