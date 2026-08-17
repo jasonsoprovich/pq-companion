@@ -9,6 +9,21 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.19.3 — 2026-08-17
+
+A new Zone Lockouts overlay, App Backup now carries your overlay layout and settings across devices, and spell/timer accuracy fixes for raid signature spells and the spellbook.
+
+### Highlights
+- **Zone Lockouts overlay** — a dashboard panel and floating popout showing the active character's loot-lockout status for every raid-target boss in the zone they're currently in, at a glance. Requested on Discord as a follow-up to the Zones tab's Lockouts sub-tab.
+- **App Backup carries your full setup on transfer** — exporting/importing a `.pqcb` bundle now also moves spell-timer thresholds, sidebar favorites, dashboard layout, popped-out overlay positions, and custom trigger sounds, instead of dropping everything but `user.db` and your EQ config backups on a move to a new device.
+- **Signature-spell timers bind to the real caster** — raid alert timers for spells like Fling, Silence, or Caustic Mist (which only log the victim, never the caster) now correlate against the boss's own cast-start line instead of guessing from your current target, so they no longer break when off-tanking an add or with nothing selected. The NPC Timers tab also badges these "Cooldown" rows to tell them apart from ordinary debuffs.
+- **Spell Checklist flags owned-but-unscribed scrolls** — cross-references your Zeal inventory export against every character's bags/bank so a scroll you already own (even on an alt) is badged instead of relying on a separate Inventory Tracker check, and hovering the badge now shows exactly where it was found.
+- **Manual Fast/Normal toggle for respawn timers** — the Respawns overlay (dashboard card and popped-out window) now has a toggle to switch newly-started timers between Quarm's fast-respawn reduction and the full raw respawn time, for guild/raid-locked instances (e.g. Sebilis, Howling Stones) that run with the reduction disabled server-side but can't be automatically detected.
+- Zones overview now shows each zone's minimum entry level, and an item's Drops From table shows a Min Lvl column when a source has a loot-level restriction.
+
+### Fixes
+- Potions no longer show up as Rechargeable in the Inventory Tracker (49% of matches were mislabeled); item detail's Charges row now badges the same recharge-eligibility heuristic.
+
 ## v0.19.2 — 2026-08-12
 
 Native spell-timer detrimental timers now get their own fading-soon alert, alongside overlay chrome and reliability fixes.
