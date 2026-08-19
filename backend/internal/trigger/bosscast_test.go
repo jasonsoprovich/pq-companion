@@ -12,7 +12,7 @@ func TestBossCastTracker_ResolveWithinWindow(t *testing.T) {
 	now := time.Now()
 	b.observe(now, "Aten Ha Ra begins to cast a spell.")
 
-	got := b.resolveCaster(now.Add(5*time.Second), []string{"Aten Ha Ra"})
+	got := b.resolveCaster(now.Add(5*time.Second), []string{"Aten Ha Ra"}, "")
 	if got != "Aten Ha Ra" {
 		t.Errorf("resolveCaster = %q, want %q", got, "Aten Ha Ra")
 	}
@@ -23,7 +23,7 @@ func TestBossCastTracker_ExpiresOutsideWindow(t *testing.T) {
 	now := time.Now()
 	b.observe(now, "Aten Ha Ra begins to cast a spell.")
 
-	got := b.resolveCaster(now.Add(bossCastWindow+time.Second), []string{"Aten Ha Ra"})
+	got := b.resolveCaster(now.Add(bossCastWindow+time.Second), []string{"Aten Ha Ra"}, "")
 	if got != "" {
 		t.Errorf("resolveCaster after window expiry = %q, want empty", got)
 	}
@@ -36,7 +36,7 @@ func TestBossCastTracker_IgnoresUnknownCasters(t *testing.T) {
 	// known boss — must not be recorded at all.
 	b.observe(now, "Healbot begins to cast a spell.")
 
-	got := b.resolveCaster(now, []string{"Aten Ha Ra"})
+	got := b.resolveCaster(now, []string{"Aten Ha Ra"}, "")
 	if got != "" {
 		t.Errorf("resolveCaster = %q, want empty (unrelated caster shouldn't be tracked)", got)
 	}
@@ -48,9 +48,49 @@ func TestBossCastTracker_PicksMostRecentAmongCandidates(t *testing.T) {
 	b.observe(now, "Diabo Xi Xin Thall begins to cast a spell.")
 	b.observe(now.Add(2*time.Second), "Aten Ha Ra begins to cast a spell.")
 
-	got := b.resolveCaster(now.Add(3*time.Second), signatureSpellCasters["Silence of the Shadows"])
+	got := b.resolveCaster(now.Add(3*time.Second), signatureSpellCasters["Silence of the Shadows"], "")
 	if got != "Aten Ha Ra" {
 		t.Errorf("resolveCaster = %q, want most recent caster %q", got, "Aten Ha Ra")
+	}
+}
+
+// TestBossCastTracker_PrefersLiveTargetOverMostRecent covers the real-world
+// case a Vex Thal Ring War report surfaced (2026-08-18): the player is
+// targeting "Kaas Thox Xi Ans Dyek", which really is casting Fling, but
+// another Fling candidate from the same Aten Ha Ra family ("Kaas Thox Xi
+// Aten Ha Ra") logged some other cast-start line a moment later — e.g. a
+// second add up at the same time, or overlap from a prior phase. Picking
+// "most recent among all candidates" would bind the timer to the wrong add,
+// which the general Detrimental panel wouldn't visibly flag (it just prints
+// whatever name it's given) but which silently drops the row from the NPC
+// overlay's Timers tab, since that view exact-matches against the live
+// target. The live target, once confirmed to itself be casting within the
+// window, should win regardless of which candidate cast most recently.
+func TestBossCastTracker_PrefersLiveTargetOverMostRecent(t *testing.T) {
+	b := newBossCastTracker()
+	now := time.Now()
+	b.observe(now, "Kaas Thox Xi Ans Dyek begins to cast a spell.")
+	b.observe(now.Add(2*time.Second), "Kaas Thox Xi Aten Ha Ra begins to cast a spell.")
+
+	got := b.resolveCaster(now.Add(3*time.Second), signatureSpellCasters["Fling"], "Kaas Thox Xi Ans Dyek")
+	if got != "Kaas Thox Xi Ans Dyek" {
+		t.Errorf("resolveCaster = %q, want live target %q even though it wasn't the most recent observed cast", got, "Kaas Thox Xi Ans Dyek")
+	}
+}
+
+// TestBossCastTracker_LiveTargetIgnoredIfNotObservedCasting ensures the live
+// target only wins when it was itself independently confirmed casting within
+// the window — otherwise it's just a guess, no better than the old
+// live-target fallback this feature was built to avoid (off-tanking an add,
+// or a stale/irrelevant target left over from before the current cast).
+func TestBossCastTracker_LiveTargetIgnoredIfNotObservedCasting(t *testing.T) {
+	b := newBossCastTracker()
+	now := time.Now()
+	b.observe(now, "Aten Ha Ra begins to cast a spell.")
+
+	got := b.resolveCaster(now.Add(2*time.Second), signatureSpellCasters["Fling"], "Kaas Thox Xi Ans Dyek")
+	if got != "Aten Ha Ra" {
+		t.Errorf("resolveCaster = %q, want most-recent fallback %q since the live target was never observed casting", got, "Aten Ha Ra")
 	}
 }
 

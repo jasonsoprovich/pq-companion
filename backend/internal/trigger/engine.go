@@ -789,7 +789,7 @@ func (e *Engine) fire(c compiled, matchedLine string, firedAt time.Time, match [
 				// when the player is off-tanking an add or has nothing
 				// targeted.
 				if isSignatureSpell {
-					target = e.bossCast.resolveCaster(firedAt, casters)
+					target = e.bossCast.resolveCaster(firedAt, casters, builtins["target"])
 				}
 				if target == "" {
 					target = builtins["target"]

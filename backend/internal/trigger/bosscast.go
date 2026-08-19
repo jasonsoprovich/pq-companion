@@ -120,9 +120,39 @@ func (b *bossCastTracker) observe(now time.Time, line string) {
 // from candidates — or "" if none of them were observed casting recently
 // (e.g. the boss started casting before this log file was open, or the
 // trigger fired well outside any observed cast-start).
-func (b *bossCastTracker) resolveCaster(now time.Time, candidates []string) string {
+//
+// liveTarget, when non-empty and equal (case-insensitively) to one of
+// candidates that was itself observed casting within the window, wins over
+// the "most recent" tiebreak below. This matters because "most recently
+// observed casting *something*" doesn't reliably identify who cast *this*
+// spell once more than one candidate is active at once — e.g. two
+// same-family adds up simultaneously (Aten Ha Ra's several "Kaas Thox Xi..."
+// permutations, several of which are candidates for the same signature
+// spell), or a boss that's a candidate for two different signature spells
+// and just cast the other one. The player's actual live target, independently
+// confirmed to be casting, is a much stronger signal — and using it also
+// makes this line up by construction with the NPC overlay's Timers tab,
+// which filters strictly by matching the live target name (see
+// frontend/src/hooks/useTargetTimers.ts).
+func (b *bossCastTracker) resolveCaster(now time.Time, candidates []string, liveTarget string) string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
+	if liveTarget != "" {
+		want := strings.ToLower(liveTarget)
+		for _, c := range candidates {
+			if strings.ToLower(c) != want {
+				continue
+			}
+			if ts, ok := b.last[want]; ok {
+				if d := now.Sub(ts); d >= 0 && d <= bossCastWindow {
+					return c
+				}
+			}
+			break
+		}
+	}
+
 	var best string
 	var bestTime time.Time
 	for _, c := range candidates {
