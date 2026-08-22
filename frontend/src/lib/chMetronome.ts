@@ -349,7 +349,7 @@ export function acceptNewAnchor(prev: AnchorResult | null, next: AnchorResult, c
     return true
   }
   if (gapMs <= 0) return false // not newer than what's already anchored
-  return gapMs >= Math.min(c.delay, next.cadenceSecs) * 800 // 0.8 × the beat, in ms
+  return gapMs >= next.cadenceSecs * 800 // 0.8 × the beat, in ms
 }
 
 // sameCycle reports whether two anchor times describe the same trip around the
