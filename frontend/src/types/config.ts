@@ -330,6 +330,16 @@ export interface SpellTimerSettings {
   class_filter: boolean
 
   /**
+   * When true, hide buff/detrimental overlay rows whose caster_character
+   * doesn't match the currently active character. Rows with no recorded
+   * caster are always shown. Switching characters never clears the
+   * underlying timers — this only affects what's displayed, so switching
+   * back to the casting character brings hidden rows right back. Off by
+   * default.
+   */
+  hide_other_character_timers?: boolean
+
+  /**
    * Controls whether the spell-landed pipeline auto-creates timer rows.
    *   "auto"          — every recognised landing creates a timer; triggers
    *                     can attach metadata (thresholds, fading-soon TTS)

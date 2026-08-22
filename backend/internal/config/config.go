@@ -172,6 +172,17 @@ type SpellTimerSettings struct {
 	// three presets instead of being locked to 15/55/0. Frontend-only.
 	TimerBarFillPct int `yaml:"timer_bar_fill_pct,omitempty" json:"timer_bar_fill_pct,omitempty"`
 
+	// HideOtherCharacterTimers, when true, hides buff/detrimental overlay
+	// rows whose CasterCharacter (the character active when the timer was
+	// created) doesn't match the currently active character. Rows with no
+	// recorded caster (older timers, or ones created before a character
+	// context was known) are always shown. This is purely a display filter:
+	// switching characters never clears or prunes the underlying timer map —
+	// that's deliberate (see TrackingScope's alt-swap/crash-recovery
+	// rationale) — so switching back to the casting character brings hidden
+	// rows right back. Off by default to preserve existing behaviour.
+	HideOtherCharacterTimers bool `yaml:"hide_other_character_timers,omitempty" json:"hide_other_character_timers,omitempty"`
+
 	// TimerNameFontSize / TimerTimeFontSize / TimerRowPadding override the
 	// timer overlay row's spell-name font size, countdown font size, and
 	// vertical row padding (in px). 0 (default) means "use the built-in

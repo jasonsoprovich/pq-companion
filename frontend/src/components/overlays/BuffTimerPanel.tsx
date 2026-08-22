@@ -3,7 +3,7 @@ import { Shield, ExternalLink, Plus, Trash2, Circle, CheckCircle2, AlertTriangle
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { WSEvent } from '../../lib/wsEvents'
 import { useActivePlayerName, targetSuffix } from '../../hooks/useActivePlayerName'
-import { useDisplayThresholds, passesThreshold } from '../../hooks/useDisplayThresholds'
+import { useDisplayThresholds, passesThreshold, useHideOtherCharacterTimers, passesCharacterScope } from '../../hooks/useDisplayThresholds'
 import { useBuffSortMode, sortBuffs } from '../../hooks/useBuffSortMode'
 import { useTimerAppearance, type TimerAppearance } from '../../hooks/useTimerAppearance'
 import { clearTimers, getLogStatus, getTimerState, removeTimer } from '../../services/api'
@@ -145,6 +145,7 @@ export default function BuffTimerPanel({
   const [pickedSpell, setPickedSpell] = useState<Spell | null>(null)
   const activePlayer = useActivePlayerName()
   const thresholds = useDisplayThresholds()
+  const hideOtherCharacters = useHideOtherCharacterTimers()
   const appearance = useTimerAppearance()
   const { mode: sortMode, toggle: toggleSort } = useBuffSortMode()
 
@@ -162,7 +163,8 @@ export default function BuffTimerPanel({
   const buffs = sortBuffs(
     (timerState?.timers ?? [])
       .filter((t) => t.category === 'buff')
-      .filter((t) => passesThreshold(t, thresholds)),
+      .filter((t) => passesThreshold(t, thresholds))
+      .filter((t) => passesCharacterScope(t, hideOtherCharacters, activePlayer)),
     sortMode,
   )
 

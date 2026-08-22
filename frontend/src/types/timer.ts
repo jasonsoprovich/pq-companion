@@ -25,6 +25,14 @@ export interface ActiveTimer {
    */
   target_name: string
   category: TimerCategory
+  /**
+   * The character that was active when this timer was created (whichever
+   * character's log was being tailed at cast/trigger time). Absent for
+   * timers created before this field existed, or when no character context
+   * was available. Used by the "hide other characters' timers" setting to
+   * filter the view without touching the timer itself.
+   */
+  caster_character?: string
   cast_at: string
   starts_at: string
   expires_at: string

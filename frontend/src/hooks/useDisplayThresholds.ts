@@ -85,3 +85,42 @@ export function passesThreshold(timer: ActiveTimer, defaults: DisplayThresholds)
   if (threshold <= 0) return true
   return timer.remaining_seconds <= threshold
 }
+
+/**
+ * Returns the user's "hide other characters' timers" setting. Polls on
+ * mount and updates instantly via `config:updated`, same as
+ * useDisplayThresholds. Defaults to false (show everything) on initial load
+ * and on any error.
+ */
+export function useHideOtherCharacterTimers(): boolean {
+  const [hide, setHide] = useState(false)
+
+  useEffect(() => {
+    getConfig()
+      .then((c) => setHide(c.spell_timer?.hide_other_character_timers ?? false))
+      .catch(() => {})
+  }, [])
+
+  const handle = useCallback((msg: WsMessage) => {
+    if (msg.type !== WSEvent.ConfigUpdated) return
+    getConfig()
+      .then((c) => setHide(c.spell_timer?.hide_other_character_timers ?? false))
+      .catch(() => {})
+  }, [])
+  useWebSocket(handle)
+
+  return hide
+}
+
+/**
+ * True when the timer should be visible given the "hide other characters'
+ * timers" setting. Off (hide=false) always passes. When on, a timer with no
+ * recorded caster_character (created before this field existed, or with no
+ * character context available) always passes — only rows with a definite
+ * caster mismatch are hidden.
+ */
+export function passesCharacterScope(timer: ActiveTimer, hide: boolean, activePlayer: string): boolean {
+  if (!hide) return true
+  if (!timer.caster_character) return true
+  return timer.caster_character === activePlayer
+}

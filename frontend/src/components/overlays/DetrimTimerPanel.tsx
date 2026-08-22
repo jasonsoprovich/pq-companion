@@ -3,7 +3,7 @@ import { Skull, ExternalLink, Plus, Trash2, Circle, CheckCircle2, AlertTriangle,
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { WSEvent } from '../../lib/wsEvents'
 import { useActivePlayerName } from '../../hooks/useActivePlayerName'
-import { useDisplayThresholds, passesThreshold } from '../../hooks/useDisplayThresholds'
+import { useDisplayThresholds, passesThreshold, useHideOtherCharacterTimers, passesCharacterScope } from '../../hooks/useDisplayThresholds'
 import { useTimerAppearance, type TimerAppearance } from '../../hooks/useTimerAppearance'
 import { clearTimers, getLogStatus, getTimerState, removeTimer } from '../../services/api'
 import OverlayWindow from '../OverlayWindow'
@@ -160,6 +160,7 @@ export default function DetrimTimerPanel({
   const [pickedSpell, setPickedSpell] = useState<Spell | null>(null)
   const activePlayer = useActivePlayerName()
   const thresholds = useDisplayThresholds()
+  const hideOtherCharacters = useHideOtherCharacterTimers()
   const appearance = useTimerAppearance()
 
   useEffect(() => {
@@ -176,6 +177,7 @@ export default function DetrimTimerPanel({
   const detrims = (timerState?.timers ?? [])
     .filter((t) => DETRIM_CATEGORIES.has(t.category))
     .filter((t) => passesThreshold(t, thresholds))
+    .filter((t) => passesCharacterScope(t, hideOtherCharacters, activePlayer))
 
   return (
     <>

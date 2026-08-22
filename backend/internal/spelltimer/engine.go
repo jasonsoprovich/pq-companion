@@ -814,6 +814,7 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 	// below still avoids a duplicate row when the spell-landed pipeline already
 	// created one for the same buff.
 	key := timerKey(name, targetName)
+	caster := e.activePlayerName()
 
 	e.mu.Lock()
 	e.gcPendingArmsLocked(time.Now())
@@ -849,6 +850,7 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 			CustomGroup:          customGroup,
 			IsCharm:              isCharm,
 			Stacked:              true,
+			CasterCharacter:      caster,
 		}
 		e.timers[key] = timer
 		snap := e.snapshot(time.Now())
@@ -944,6 +946,7 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 		Pinned:               pinned,
 		CustomGroup:          customGroup,
 		IsCharm:              isCharm,
+		CasterCharacter:      caster,
 	}
 	e.timers[key] = timer
 	snap := e.snapshot(time.Now())
@@ -1221,6 +1224,7 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 		ExpiresAt:       expiresAt,
 		DurationSeconds: durationSeconds,
 		IsCharm:         isCharmSpell(spell),
+		CasterCharacter: active,
 	}
 
 	e.mu.Lock()

@@ -2569,6 +2569,30 @@ export default function SettingsPage(): React.ReactElement {
           </div>
 
           <div className="mt-4">
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={config.spell_timer?.hide_other_character_timers ?? false}
+                onChange={(e) =>
+                  setConfig({
+                    ...config,
+                    spell_timer: { ...config.spell_timer, hide_other_character_timers: e.target.checked },
+                  })
+                }
+                style={{ marginTop: 3 }}
+              />
+              <span>
+                <span className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+                  Hide timers from other characters
+                </span>
+                <span className="block text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                  When on, the Buff and Detrimental overlays only show timers cast by the currently active character — e.g. swapping from your enchanter to your necromancer hides the enchanter's buffs instead of leaving them visible. Timers aren't cleared or lost: switch back and they reappear right where they left off. Off by default.
+                </span>
+              </span>
+            </label>
+          </div>
+
+          <div className="mt-4">
             <p className="mb-1 text-sm" style={{ color: 'var(--color-foreground)' }}>
               Display thresholds
             </p>

@@ -67,6 +67,18 @@ type ActiveTimer struct {
 
 	Category Category `json:"category"`
 
+	// CasterCharacter is the active character (per CharacterContext) at the
+	// moment this timer was created — i.e. whichever character's log was
+	// being tailed when the spell landed or the trigger fired. Empty when no
+	// character context was available (tests, early startup). Purely a
+	// display hint: the engine never re-evaluates or prunes existing timers
+	// when the active character changes, so alt-swapping and crash recovery
+	// keep working exactly as before. The frontend's "hide other
+	// characters' timers" setting uses this to filter the view without
+	// touching the underlying timer, so switching back to the casting
+	// character brings the row right back.
+	CasterCharacter string `json:"caster_character,omitempty"`
+
 	// CastAt is the log timestamp when the spell took effect (post PR1-3 this
 	// is the same as StartsAt; pre-PR1-3 it was the begin-cast timestamp).
 	CastAt time.Time `json:"cast_at"`
