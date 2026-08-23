@@ -45,10 +45,12 @@ function TimerRow({
   timer,
   activePlayer,
   appearance,
+  showRemove,
 }: {
   timer: ActiveTimer
   activePlayer: string
   appearance: TimerAppearance
+  showRemove: boolean
 }): React.ReactElement {
   const pct =
     timer.duration_seconds > 0
@@ -127,23 +129,25 @@ function TimerRow({
         >
           {fmtRemaining(timer.remaining_seconds)}
         </span>
-        <button
-          onClick={() => removeTimer(timer.id).catch(() => {})}
-          title="Remove this timer"
-          style={{
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            padding: 0,
-            color: 'rgba(255,255,255,0.55)',
-            display: 'flex',
-            alignItems: 'center',
-            flexShrink: 0,
-            lineHeight: 0,
-          }}
-        >
-          <X size={11} />
-        </button>
+        {showRemove && (
+          <button
+            onClick={() => removeTimer(timer.id).catch(() => {})}
+            title="Remove this timer"
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: 0,
+              color: 'rgba(255,255,255,0.55)',
+              display: 'flex',
+              alignItems: 'center',
+              flexShrink: 0,
+              lineHeight: 0,
+            }}
+          >
+            <X size={11} />
+          </button>
+        )}
       </div>
     </div>
   )
@@ -153,7 +157,7 @@ function TimerRow({
 
 export default function BuffTimerWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity()
-  const { locked, mode, toggleLocked, rootInteractionProps, headerInteractionProps } =
+  const { locked, mode, toggleLocked, rootInteractionProps, headerInteractionProps, rowsInteractive } =
     useOverlayLock('buffTimer')
   const chrome = useOverlayChromeFade(mode === 'display-only')
   const onDragMouseDown = useWindowDrag()
@@ -333,7 +337,15 @@ export default function BuffTimerWindowPage(): React.ReactElement {
             </p>
           </div>
         ) : (
-          buffs.map((t) => <TimerRow key={t.id} timer={t} activePlayer={activePlayer} appearance={appearance} />)
+          buffs.map((t) => (
+            <TimerRow
+              key={t.id}
+              timer={t}
+              activePlayer={activePlayer}
+              appearance={appearance}
+              showRemove={rowsInteractive}
+            />
+          ))
         )}
       </div>
     </div>

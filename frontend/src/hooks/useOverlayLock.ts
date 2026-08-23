@@ -55,6 +55,7 @@ export function useOverlayLock(name: OverlayName): {
   toggleLocked: () => void
   rootInteractionProps: InteractionProps
   headerInteractionProps: InteractionProps
+  rowsInteractive: boolean
 } {
   const [locked, setLocked] = useState(false)
   const [mode, setMode] = useState<LockedMode>('interactive')
@@ -212,7 +213,19 @@ export function useOverlayLock(name: OverlayName): {
   const rootInteractionProps = active && mode === 'interactive' ? handlers : {}
   const headerInteractionProps = active && mode === 'clickthrough' ? handlers : {}
 
-  return { locked, mode, toggleLocked, rootInteractionProps, headerInteractionProps }
+  // Whether per-row controls (e.g. a timer's remove button) can actually be
+  // clicked right now, as opposed to merely being rendered. "interactive"
+  // mode re-enables the whole body on hover, and an unlocked overlay is
+  // always fully interactive, so rows are reachable in both cases. In
+  // "clickthrough" mode only the header re-enables on hover — the body stays
+  // click-through — and "display-only" never re-enables at all, so in either
+  // of those (while locked, for clickthrough) row controls are dead weight
+  // and callers should hide them rather than show a button that can't be
+  // clicked. Positioning forces the whole window interactive, overriding all
+  // of the above.
+  const rowsInteractive = positioning || mode === 'interactive' || (mode === 'clickthrough' && !locked)
+
+  return { locked, mode, toggleLocked, rootInteractionProps, headerInteractionProps, rowsInteractive }
 }
 
 // useOverlayPlacingSelf reports whether THIS overlay window is in "Move" mode.

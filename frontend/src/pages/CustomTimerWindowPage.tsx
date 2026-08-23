@@ -73,7 +73,15 @@ function parseDurationText(raw: string): number {
 
 // ── Timer row ──────────────────────────────────────────────────────────────────
 
-function TimerRow({ timer, appearance }: { timer: ActiveTimer; appearance: TimerAppearance }): React.ReactElement {
+function TimerRow({
+  timer,
+  appearance,
+  showRemove,
+}: {
+  timer: ActiveTimer
+  appearance: TimerAppearance
+  showRemove: boolean
+}): React.ReactElement {
   const pct =
     timer.duration_seconds > 0
       ? Math.max(0, Math.min(1, timer.remaining_seconds / timer.duration_seconds))
@@ -151,23 +159,25 @@ function TimerRow({ timer, appearance }: { timer: ActiveTimer; appearance: Timer
         >
           {fmtRemaining(timer.remaining_seconds)}
         </span>
-        <button
-          onClick={() => removeTimer(timer.id).catch(() => {})}
-          title="Remove this timer"
-          style={{
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            padding: 0,
-            color: 'rgba(255,255,255,0.55)',
-            display: 'flex',
-            alignItems: 'center',
-            flexShrink: 0,
-            lineHeight: 0,
-          }}
-        >
-          <X size={11} />
-        </button>
+        {showRemove && (
+          <button
+            onClick={() => removeTimer(timer.id).catch(() => {})}
+            title="Remove this timer"
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: 0,
+              color: 'rgba(255,255,255,0.55)',
+              display: 'flex',
+              alignItems: 'center',
+              flexShrink: 0,
+              lineHeight: 0,
+            }}
+          >
+            <X size={11} />
+          </button>
+        )}
       </div>
     </div>
   )
@@ -186,7 +196,7 @@ export default function CustomTimerWindowPage(): React.ReactElement {
   const groupName = searchParams.get('name') ?? ''
 
   const opacity = useOverlayOpacity()
-  const { locked, mode, toggleLocked, rootInteractionProps, headerInteractionProps } =
+  const { locked, mode, toggleLocked, rootInteractionProps, headerInteractionProps, rowsInteractive } =
     useOverlayLock('customTimer')
   const chrome = useOverlayChromeFade(mode === 'display-only')
   const onDragMouseDown = useWindowDrag()
@@ -391,7 +401,9 @@ export default function CustomTimerWindowPage(): React.ReactElement {
             </p>
           </div>
         ) : (
-          timers.map((t) => <TimerRow key={t.id} timer={t} appearance={appearance} />)
+          timers.map((t) => (
+            <TimerRow key={t.id} timer={t} appearance={appearance} showRemove={rowsInteractive} />
+          ))
         )}
       </div>
 
