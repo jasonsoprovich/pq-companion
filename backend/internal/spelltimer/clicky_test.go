@@ -26,12 +26,13 @@ func enchanterCastable() [15]int {
 
 const enchanterClassIdx = 11
 
-// classFilterAllowsBuff is the gate behind the "only show buffs my class can
-// cast" filter. The load-bearing case is the regression that flooded the buff
-// overlay: an all-classes-255 self-buff (clicky or NPC recourse) cast by
-// SOMEONE ELSE must be dropped, while the user's own clicky (landing on them)
-// stays exempt.
-func TestClassFilterAllowsBuff(t *testing.T) {
+// classFilterAllowsSpell is the gate behind the "only show spells my class
+// can cast" filter (buffs and, since scope=anyone was extended to
+// detrimentals, debuffs/mez/etc too). The load-bearing case is the
+// regression that flooded the buff overlay: an all-classes-255 self-buff
+// (clicky or NPC recourse) cast by SOMEONE ELSE must be dropped, while the
+// user's own clicky (landing on them) stays exempt.
+func TestClassFilterAllowsSpell(t *testing.T) {
 	clicky := &db.Spell{ClassLevels: allClasses255(), GoodEffect: 1, TargetType: targetTypeSelf}
 	offClassBuff := &db.Spell{ClassLevels: func() [15]int { c := allClasses255(); c[0] = 50; return c }(), GoodEffect: 1}
 	onClassBuff := &db.Spell{ClassLevels: enchanterCastable(), GoodEffect: 1}
@@ -58,9 +59,9 @@ func TestClassFilterAllowsBuff(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := classFilterAllowsBuff(tc.spell, tc.isSelfTarget, tc.enabled, tc.classIdx)
+			got := classFilterAllowsSpell(tc.spell, tc.isSelfTarget, tc.enabled, tc.classIdx)
 			if got != tc.want {
-				t.Errorf("classFilterAllowsBuff = %v, want %v", got, tc.want)
+				t.Errorf("classFilterAllowsSpell = %v, want %v", got, tc.want)
 			}
 		})
 	}

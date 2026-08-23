@@ -129,3 +129,86 @@ func TestOnSpellLanded_AoEMezTracksPerTarget(t *testing.T) {
 		t.Fatalf("one mez break should clear one mob, got %d timers", len(e.timers))
 	}
 }
+
+// enchanterClassLevelsIdx is spells_new.classes14 (0-indexed into
+// db.Spell.ClassLevels), the real Enchanter column — distinct from the
+// synthetic enchanterClassIdx used by the classFilterAllowsSpell unit tests
+// in clicky_test.go, which build their own fake Spell literals.
+const enchanterClassLevelsIdx = 13
+
+// scope=anyone now extends the caster-restriction lift to detrimentals
+// (previously they always used cast_by_me semantics regardless of scope —
+// see the raid enchanter report that "Anyone + class filter" should surface
+// every enchanter's mez/tash, not just the player's own). Tashanian is a
+// real single-target enchanter debuff with no recent local cast recorded —
+// i.e. exactly the shape of "another enchanter tashed this mob."
+func TestOnSpellLanded_ScopeAnyone_DetrimentalTrackedWithoutLocalCast(t *testing.T) {
+	database, err := db.Open("../../data/quarm.db")
+	if err != nil {
+		t.Skipf("quarm.db not available: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+	charCtx := func() (string, string, int) { return "/eq", "Osui", -1 }
+	e := NewEngine(ws.NewHub(), database, charCtx,
+		func() string { return scopeAnyone },
+		func() (bool, int) { return true, enchanterClassLevelsIdx },
+		nil, nil, nil, nil)
+
+	e.onSpellLanded(time.Now(), logparser.SpellLandedData{
+		Kind:       logparser.SpellLandedKindOther,
+		SpellName:  "Tashanian",
+		TargetName: "a gnoll",
+	})
+	if _, ok := e.timers[timerKey("Tashanian", "a gnoll")]; !ok {
+		t.Error("scope=anyone should track another enchanter's Tashanian with no local cast recorded")
+	}
+}
+
+// The class filter must still gate detrimentals under scope=anyone, the same
+// way it already gates buffs — otherwise lifting the caster restriction would
+// flood the overlay with every class's debuffs. Turgur's Insects is a
+// shaman-only debuff the enchanter class filter should reject.
+func TestOnSpellLanded_ScopeAnyone_DetrimentalStillHonoursClassFilter(t *testing.T) {
+	database, err := db.Open("../../data/quarm.db")
+	if err != nil {
+		t.Skipf("quarm.db not available: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+	charCtx := func() (string, string, int) { return "/eq", "Osui", -1 }
+	e := NewEngine(ws.NewHub(), database, charCtx,
+		func() string { return scopeAnyone },
+		func() (bool, int) { return true, enchanterClassLevelsIdx },
+		nil, nil, nil, nil)
+
+	e.onSpellLanded(time.Now(), logparser.SpellLandedData{
+		Kind:       logparser.SpellLandedKindOther,
+		SpellName:  "Turgur's Insects",
+		TargetName: "a gnoll",
+	})
+	if _, ok := e.timers[timerKey("Turgur's Insects", "a gnoll")]; ok {
+		t.Error("scope=anyone + class filter should drop an off-class (shaman) debuff")
+	}
+}
+
+// Regression guard for the original cast_by_me fix: scope=cast_by_me (as
+// opposed to anyone) must still drop a detrimental with no recent local cast,
+// even though the scope switch above now shares more code between the two.
+func TestOnSpellLanded_ScopeCastByMe_StillDropsUnmatchedDetrimental(t *testing.T) {
+	database, err := db.Open("../../data/quarm.db")
+	if err != nil {
+		t.Skipf("quarm.db not available: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+	charCtx := func() (string, string, int) { return "/eq", "Osui", -1 }
+	e := NewEngine(ws.NewHub(), database, charCtx,
+		func() string { return scopeCastByMe }, nil, nil, nil, nil, nil)
+
+	e.onSpellLanded(time.Now(), logparser.SpellLandedData{
+		Kind:       logparser.SpellLandedKindOther,
+		SpellName:  "Tashanian",
+		TargetName: "a gnoll",
+	})
+	if len(e.timers) != 0 {
+		t.Error("scope=cast_by_me without a recent local cast should still drop another caster's Tashanian")
+	}
+}

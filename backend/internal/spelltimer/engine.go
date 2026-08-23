@@ -111,8 +111,11 @@ func isItemClicky(spell *db.Spell) bool {
 	return true
 }
 
-// classFilterAllowsBuff reports whether a landed buff survives the optional
-// "only show buffs my class can cast" filter.
+// classFilterAllowsSpell reports whether a landed buff or detrimental
+// survives the optional "only show spells my class can cast" filter. Used
+// for both categories: a raid enchanter with scope=anyone wants other
+// enchanters' buffs (VoG, etc.) AND their mez/tash landing on any target,
+// without being flooded by shaman/cleric buffs or non-enchanter debuffs.
 //
 // Spells no player class can cast (isItemClicky == true) cover three very
 // different cases that the spell data can't tell apart: item clickies the
@@ -123,9 +126,10 @@ func isItemClicky(spell *db.Spell) bool {
 // the item, so it lands on *them*. We therefore exempt an all-classes-255
 // spell from the filter ONLY when it lands on the active player. Without the
 // isSelfTarget gate, scope=anyone surfaces every clicky and NPC self-buff
-// cast by anyone in the zone, flooding the buff overlay with spells the
-// user's class can't cast.
-func classFilterAllowsBuff(spell *db.Spell, isSelfTarget, enabled bool, classIdx int) bool {
+// cast by anyone in the zone, flooding the overlay with spells the user's
+// class can't cast. (This exemption is effectively inert for detrimentals,
+// which almost never land on the caster themselves.)
+func classFilterAllowsSpell(spell *db.Spell, isSelfTarget, enabled bool, classIdx int) bool {
 	if !enabled {
 		return true
 	}
@@ -1190,13 +1194,7 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 
 	// Tracking scope filter, split by category:
 	//
-	// Detrimental categories (debuff/dot/mez/stun) are always cast_by_me —
-	// the user cast them on an enemy and definitely wants to see the timer.
-	// They never land on the player from other players, so the buff scope
-	// modes don't apply. Without this carve-out a user with scope=self would
-	// silently lose every Tashan/Asphyxiate/etc. they cast on a mob.
-	//
-	// Buff category honours the user-configured scope:
+	// Buff category honours the user-configured scope directly:
 	//   self        — drop everything not landing on the active player.
 	//   cast_by_me  — keep self lands; otherwise require a recent local cast
 	//                 of this spell name within lastCastWindow. EQ logs
@@ -1207,6 +1205,17 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 	//                 spells and pipe-less setups fall back to the coarser
 	//                 name+window heuristic.
 	//   anyone      — no filtering.
+	//
+	// Detrimental categories (debuff/dot/mez/stun) mostly can't honour
+	// self/cast_by_me the same way a buff does — they land on an enemy, not
+	// the player, so "self" would silently drop every Tashan/Asphyxiate/mez
+	// the user casts without a carve-out. self and cast_by_me therefore both
+	// collapse to the cast_by_me heuristic for detrimentals. anyone, though,
+	// now mirrors the buff behaviour: no caster restriction, relying on the
+	// class filter below to keep it from flooding the overlay with every
+	// class's debuffs — this is what lets a raid enchanter with
+	// scope=anyone + class filter watch every enchanter's mez/tash landing
+	// on any mob, not just their own.
 	switch cat {
 	case CategoryBuff:
 		switch e.trackingScope() {
@@ -1225,29 +1234,33 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 				}
 			}
 		}
-		// Optional class filter: drop buffs the player's class can't cast.
-		// Item clickies the user triggered (all classes 255, landing on the
-		// player) are exempt so Shield of the Eighth (Coldain Insignia Ring)
-		// and friends still reach the buff overlay. The isSelfTarget gate
-		// keeps OTHER players' clickies and NPC self-buffs/recourses out of
-		// the overlay under scope=anyone — see classFilterAllowsBuff.
-		if e.classFilterFn != nil {
-			if enabled, classIdx := e.classFilterFn(); !classFilterAllowsBuff(spell, isSelfTarget, enabled, classIdx) {
-				slog.Debug("timer-debug: spell-landed skipped (class filter)",
-					"spell", spellName, "target", target, "class_idx", classIdx)
-				return
-			}
-		}
 
 	default:
-		// Detrimental (debuff/dot/mez/stun): apply cast_by_me semantics
-		// regardless of the user's chosen scope — see comment above.
-		if !isSelfTarget {
+		if e.trackingScope() != scopeAnyone && !isSelfTarget {
 			if !e.recentSelfCastMatches(spellName, target, isSingleTargetSpellType(spell.TargetType)) {
 				slog.Debug("timer-debug: detrimental spell-landed skipped (no matching local cast)",
 					"spell", spellName, "target", target, "category", cat)
 				return
 			}
+		}
+	}
+
+	// Optional class filter: drop buffs/detrimentals the player's class
+	// can't cast. Applies after the scope check, to both categories, and
+	// regardless of the scope value — under self/cast_by_me it's a no-op
+	// (the spell is already the user's own, so it trivially passes), and
+	// under anyone it's what keeps the overlay from filling with every
+	// other class's spells. Item clickies the user triggered (all classes
+	// 255, landing on the player) are exempt so Shield of the Eighth
+	// (Coldain Insignia Ring) and friends still reach the buff overlay. The
+	// isSelfTarget gate keeps OTHER players' clickies and NPC
+	// self-buffs/recourses out of the overlay under scope=anyone — see
+	// classFilterAllowsSpell.
+	if e.classFilterFn != nil {
+		if enabled, classIdx := e.classFilterFn(); !classFilterAllowsSpell(spell, isSelfTarget, enabled, classIdx) {
+			slog.Debug("timer-debug: spell-landed skipped (class filter)",
+				"spell", spellName, "target", target, "category", cat, "class_idx", classIdx)
+			return
 		}
 	}
 

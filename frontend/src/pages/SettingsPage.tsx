@@ -2559,10 +2559,10 @@ export default function SettingsPage(): React.ReactElement {
               />
               <span>
                 <span className="text-sm" style={{ color: 'var(--color-foreground)' }}>
-                  Filter buffs to my class
+                  Filter to my class
                 </span>
                 <span className="block text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-                  Drops buffs your class can't cast (e.g. paladin Spiritual Purity, shaman Talisman, bard songs) so an enchanter's overlay isn't cluttered with raid buffs from other classes. Detrimentals you cast are always tracked. Combine with <b>Anyone</b> scope to see other same-class casters' buffs across the raid.
+                  Drops buffs and detrimentals your class can't cast (e.g. paladin Spiritual Purity, shaman Talisman, bard songs) so an enchanter's overlay isn't cluttered with other classes' casts. Your own detrimentals are always tracked regardless of scope. Combine with <b>Anyone</b> scope to see other same-class casters' buffs and detrimentals (e.g. another enchanter's mez or Tashan) across the raid.
                 </span>
               </span>
             </label>
