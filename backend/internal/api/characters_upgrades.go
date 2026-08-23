@@ -68,14 +68,25 @@ func upgradeSlotByKey(key string) (upgradeSlot, bool) {
 	return upgradeSlot{}, false
 }
 
-// twoHandSlotMask is Primary|Secondary. An item whose items.slots sets both
-// bits is a two-handed weapon: equipping it occupies both hand slots at
-// once, so it also displaces whatever is currently worn in Secondary — not
-// just the item in Primary.
-const twoHandSlotMask = 0x002000 | 0x004000
+// twoHandedItemTypes are the items.itemtype values that are mechanically
+// two-handed weapons (EQMacEmu common/item_data.h ItemType enum — see
+// internal/db/enums/item_type.go). Verified against live quarm.db data:
+// every 2H Blunt/Slashing/Piercing item has items.slots = Primary only (it
+// can't be "placed" in Secondary at all), while ordinary 1H weapons — and
+// Monk Hand to Hand (itemtype 45) — carry BOTH the Primary and Secondary
+// bits, since they're equally valid in either hand. items.slots therefore
+// can't distinguish 1H from 2H (an earlier version of this check assumed
+// "both bits set" meant 2H, which is backwards — it was flagging ordinary
+// dual-wieldable 1H/H2H weapons as 2H and vice versa); itemtype is the only
+// reliable signal.
+var twoHandedItemTypes = map[int]bool{
+	1:  true, // 2H Slashing
+	4:  true, // 2H Blunt
+	35: true, // 2H Piercing
+}
 
-func isTwoHander(slotsMask int) bool {
-	return slotsMask&twoHandSlotMask == twoHandSlotMask
+func isTwoHander(itemType int) bool {
+	return twoHandedItemTypes[itemType]
 }
 
 // sumStatLine adds two equipped items' stat lines field-by-field, for the
@@ -544,7 +555,7 @@ func (h *charactersHandler) scoreSlotCands(
 		if wornLore[c.ID] {
 			continue // a LORE item worn elsewhere can't be acquired a second time
 		}
-		twoHander := isTwoHander(c.Slots)
+		twoHander := isTwoHander(c.ItemType)
 		if slot.Key == "secondary" && twoHander {
 			continue // occupies both hands; only ever offered under Primary
 		}

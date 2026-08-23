@@ -9,24 +9,33 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/zeal"
 )
 
-// TestIsTwoHander checks the Primary|Secondary bit-combination detector used
-// to flag a candidate as a two-handed weapon.
+// TestIsTwoHander checks the items.itemtype classifier used to flag a
+// candidate as a two-handed weapon. itemtype is the only reliable signal —
+// items.slots does NOT distinguish 1H from 2H (verified against live
+// quarm.db: e.g. Facesmasher, a confirmed 2H Blunt weapon, has slots=Primary
+// only, while Serrated Dragon Tooth, a confirmed 1H Piercing weapon, has
+// slots=Primary|Secondary|Range — the opposite of what an earlier
+// slots-bitmask heuristic assumed).
 func TestIsTwoHander(t *testing.T) {
 	cases := []struct {
-		name string
-		mask int
-		want bool
+		name     string
+		itemType int
+		want     bool
 	}{
-		{"primary only (1H)", 0x002000, false},
-		{"secondary only (shield)", 0x004000, false},
-		{"2H weapon", 0x002000 | 0x004000, true},
-		{"2H weapon plus range (bow-like)", 0x002000 | 0x004000 | 0x000800, true},
-		{"unrelated slot", 0x000004, false},
+		{"2H Slashing", 1, true},
+		{"2H Blunt", 4, true},
+		{"2H Piercing", 35, true},
+		{"1H Slashing", 0, false},
+		{"1H Piercing", 2, false},
+		{"1H Blunt", 3, false},
+		{"Hand to Hand (monk fist weapon)", 45, false},
+		{"Shield", 8, false},
+		{"unrelated type (armor)", 10, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := isTwoHander(c.mask); got != c.want {
-				t.Errorf("isTwoHander(%#x) = %v, want %v", c.mask, got, c.want)
+			if got := isTwoHander(c.itemType); got != c.want {
+				t.Errorf("isTwoHander(%d) = %v, want %v", c.itemType, got, c.want)
 			}
 		})
 	}
@@ -64,7 +73,9 @@ func TestScoreSlotCands_TwoHanderNetsOutOffhand(t *testing.T) {
 		2: {ID: 2, Name: "Offhand Weapon", HP: 100, Slots: 0x004000},
 	}
 	cands := []db.UpgradeCandidate{
-		{ID: 3, Name: "2H Weapon", HP: 125, Slots: 0x002000 | 0x004000},
+		// itemtype 4 = 2H Blunt; real 2H weapons carry slots=Primary only
+		// (see TestIsTwoHander) — items.slots plays no part in the check.
+		{ID: 3, Name: "2H Weapon", HP: 125, Slots: 0x002000, ItemType: 4},
 	}
 
 	slot, ok := upgradeSlotByKey("primary")
@@ -106,7 +117,8 @@ func TestScoreSlotCands_OneHanderUnaffected(t *testing.T) {
 		2: {ID: 2, Name: "Offhand Weapon", HP: 100, Slots: 0x004000},
 	}
 	cands := []db.UpgradeCandidate{
-		{ID: 4, Name: "1H Weapon", HP: 140, Slots: 0x002000},
+		// itemtype 2 = 1H Piercing.
+		{ID: 4, Name: "1H Weapon", HP: 140, Slots: 0x002000 | 0x004000, ItemType: 2},
 	}
 
 	slot, _ := upgradeSlotByKey("primary")
@@ -127,8 +139,11 @@ func TestScoreSlotCands_OneHanderUnaffected(t *testing.T) {
 
 // TestScoreSlotCands_TwoHanderExcludedFromSecondary checks that a 2H weapon
 // is never offered as a candidate for the Secondary slot view — it can't be
-// equipped "into" just the offhand, and the bitmask candidate query matches
-// it there incidentally (2H items set both the Primary and Secondary bits).
+// equipped "into" just the offhand. In practice a real 2H item's slots
+// bitmask is Primary-only, so it wouldn't even be fetched as a Secondary
+// candidate; this exercises the explicit itemtype-based guard directly as a
+// defensive check against anomalous data (e.g. a miscategorized item whose
+// slots bitmask does include Secondary).
 func TestScoreSlotCands_TwoHanderExcludedFromSecondary(t *testing.T) {
 	h := &charactersHandler{}
 	wc := h.newWornCache()
@@ -140,7 +155,7 @@ func TestScoreSlotCands_TwoHanderExcludedFromSecondary(t *testing.T) {
 		2: {ID: 2, Name: "Offhand Weapon", AC: 5, Slots: 0x004000},
 	}
 	cands := []db.UpgradeCandidate{
-		{ID: 3, Name: "2H Weapon", HP: 125, Slots: 0x002000 | 0x004000},
+		{ID: 3, Name: "2H Weapon", HP: 125, Slots: 0x002000 | 0x004000, ItemType: 4},
 	}
 
 	slot, _ := upgradeSlotByKey("secondary")
@@ -168,8 +183,12 @@ func TestScoreSlotCands_WeaponStyleFilter(t *testing.T) {
 		1: {ID: 1, Name: "Primary Weapon", HP: 50, Slots: 0x002000},
 	}
 	cands := []db.UpgradeCandidate{
-		{ID: 2, Name: "1H Weapon", HP: 60, Slots: 0x002000},
-		{ID: 3, Name: "2H Weapon", HP: 200, Slots: 0x002000 | 0x004000},
+		// itemtype 2 = 1H Piercing (slots=Primary|Secondary, like a real 1H
+		// weapon); itemtype 4 = 2H Blunt (slots=Primary only, like a real 2H
+		// weapon) — see TestIsTwoHander for why slots alone can't tell these
+		// apart.
+		{ID: 2, Name: "1H Weapon", HP: 60, Slots: 0x002000 | 0x004000, ItemType: 2},
+		{ID: 3, Name: "2H Weapon", HP: 200, Slots: 0x002000, ItemType: 4},
 	}
 
 	slot, _ := upgradeSlotByKey("primary")
