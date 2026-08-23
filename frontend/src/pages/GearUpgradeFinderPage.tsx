@@ -28,6 +28,7 @@ import {
   type UpgradesResponse,
   type UpgradesOverviewResponse,
   type UpgradeOverviewSlot,
+  type UpgradeWeaponStyle,
   type FocusOption,
 } from '../services/api'
 import type { Item, ItemSources, ItemQuests } from '../types/item'
@@ -177,6 +178,10 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
   const [hideCrafted, setHideCrafted] = useState(true)
   // NO RENT gear (expires on camp/zone) is always excluded server-side — it's
   // throwaway and never a real upgrade target, so there's no toggle for it.
+  // Hand-style preference for the Primary weapon slot: some classes will never
+  // equip the other style regardless of stats (a dual-wield rogue won't switch
+  // to a 2H for +HP), so let them exclude it rather than relying on score alone.
+  const [weaponStyle, setWeaponStyle] = useState<UpgradeWeaponStyle>('')
 
   const [weights, setWeights] = useState<UpgradeWeights | null>(null)
   const [weightsCustom, setWeightsCustom] = useState(false)
@@ -239,7 +244,7 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
     const id = setTimeout(() => {
       setLoading(true)
       setError(null)
-      getCharacterUpgrades(selected.id, { slot, showAll, showPoP, hideCrafted, hideNoDrop, weights, limit: 100 })
+      getCharacterUpgrades(selected.id, { slot, showAll, showPoP, hideCrafted, hideNoDrop, weaponStyle, weights, limit: 100 })
         .then((r) => {
           if (!cancelled) setData(r)
         })
@@ -254,7 +259,7 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
       cancelled = true
       clearTimeout(id)
     }
-  }, [selected, slot, showAll, showPoP, hideCrafted, hideNoDrop, weights, reload])
+  }, [selected, slot, showAll, showPoP, hideCrafted, hideNoDrop, weaponStyle, weights, reload])
 
   // Fetch the all-slots overview on demand (entering overview mode, or weights
   // change while in it).
@@ -263,7 +268,7 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
     let cancelled = false
     const id = setTimeout(() => {
       setOverviewLoading(true)
-      getCharacterUpgradesOverview(selected.id, weights, showPoP, hideCrafted, hideNoDrop)
+      getCharacterUpgradesOverview(selected.id, weights, showPoP, hideCrafted, hideNoDrop, weaponStyle)
         .then((r) => {
           if (!cancelled) setOverview(r)
         })
@@ -276,7 +281,7 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
       cancelled = true
       clearTimeout(id)
     }
-  }, [mode, selected, weights, showPoP, hideCrafted, hideNoDrop, reload])
+  }, [mode, selected, weights, showPoP, hideCrafted, hideNoDrop, weaponStyle, reload])
 
   // Load the viewed character's wishlist for the star toggles.
   const refreshWishlist = useCallback((charID: number) => {
@@ -484,6 +489,21 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
                 <input type="checkbox" checked={showPoP} onChange={(e) => setShowPoP(e.target.checked)} />
                 Show PoP gear
               </label>
+              {slot === 'primary' && (
+                <label className="flex items-center gap-1" style={{ color: 'var(--color-muted-foreground)' }}
+                  title="Restrict Primary suggestions to a hand style, regardless of stats">
+                  Weapon style:
+                  <select
+                    value={weaponStyle}
+                    onChange={(e) => setWeaponStyle(e.target.value as UpgradeWeaponStyle)}
+                    style={inputStyle()}
+                  >
+                    <option value="">All</option>
+                    <option value="dw">Dual wield (1H only)</option>
+                    <option value="2h">Two-handed only</option>
+                  </select>
+                </label>
+              )}
               <button onClick={() => setShowFocus((v) => !v)}
                 className="flex items-center gap-1 rounded px-2 py-1"
                 style={{ border: '1px solid var(--color-border)',
@@ -518,6 +538,19 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
                 title="Planes of Power gear isn't obtainable on Quarm yet">
                 <input type="checkbox" checked={showPoP} onChange={(e) => setShowPoP(e.target.checked)} />
                 Show PoP gear
+              </label>
+              <label className="flex items-center gap-1" style={{ color: 'var(--color-muted-foreground)' }}
+                title="Restrict the Primary row's best pick to a hand style, regardless of stats">
+                Weapon style:
+                <select
+                  value={weaponStyle}
+                  onChange={(e) => setWeaponStyle(e.target.value as UpgradeWeaponStyle)}
+                  style={inputStyle()}
+                >
+                  <option value="">All</option>
+                  <option value="dw">Dual wield (1H only)</option>
+                  <option value="2h">Two-handed only</option>
+                </select>
               </label>
               <button onClick={() => setShowFocus((v) => !v)}
                 className="flex items-center gap-1 rounded px-2 py-1"

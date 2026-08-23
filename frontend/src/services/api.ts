@@ -1967,6 +1967,10 @@ export interface UpgradeWeightsResponse {
   archetype: string
 }
 
+// UpgradeWeaponStyle narrows Primary-slot candidates to a hand preference:
+// "dw" (dual wield — 1H only) or "2h" (two-handed only). '' means no filter.
+export type UpgradeWeaponStyle = '' | 'dw' | '2h'
+
 export function getCharacterUpgrades(
   id: number,
   opts: {
@@ -1975,6 +1979,7 @@ export function getCharacterUpgrades(
     showPoP?: boolean
     hideCrafted?: boolean
     hideNoDrop?: boolean
+    weaponStyle?: UpgradeWeaponStyle
     limit?: number
     weights?: UpgradeWeights
   },
@@ -1986,6 +1991,7 @@ export function getCharacterUpgrades(
   if (opts.hideCrafted === false) p.set('hide_crafted', '0')
   // NO DROP gear is shown by default; only send the param to hide it.
   if (opts.hideNoDrop) p.set('hide_nodrop', '1')
+  if (opts.weaponStyle) p.set('weapon_style', opts.weaponStyle)
   if (opts.limit) p.set('limit', String(opts.limit))
   if (opts.weights) p.set('weights', JSON.stringify(opts.weights))
   return get<UpgradesResponse>(`/api/characters/${id}/upgrades?${p.toString()}`)
@@ -2046,12 +2052,14 @@ export function getCharacterUpgradesOverview(
   showPoP?: boolean,
   hideCrafted?: boolean,
   hideNoDrop?: boolean,
+  weaponStyle?: UpgradeWeaponStyle,
 ): Promise<UpgradesOverviewResponse> {
   const p = new URLSearchParams()
   if (weights) p.set('weights', JSON.stringify(weights))
   if (showPoP) p.set('show_pop', '1')
   if (hideCrafted === false) p.set('hide_crafted', '0')
   if (hideNoDrop) p.set('hide_nodrop', '1')
+  if (weaponStyle) p.set('weapon_style', weaponStyle)
   const qs = p.toString()
   return get<UpgradesOverviewResponse>(`/api/characters/${id}/upgrades/overview${qs ? `?${qs}` : ''}`)
 }

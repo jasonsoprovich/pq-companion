@@ -74,7 +74,7 @@ func TestScoreSlotCands_TwoHanderNetsOutOffhand(t *testing.T) {
 	ctx := upgrade.Context{Level: 60}
 	weights := upgrade.Weights{HP: 1}
 
-	_, _, results, _ := h.scoreSlotCands(character.Character{}, ctx, weights, slot, byLoc, worn, true, 10, nil, nil, nil, wc, nil, cands)
+	_, _, results, _ := h.scoreSlotCands(character.Character{}, ctx, weights, slot, byLoc, worn, true, "", 10, nil, nil, nil, wc, nil, cands)
 	if len(results) != 1 {
 		t.Fatalf("got %d results, want 1", len(results))
 	}
@@ -113,7 +113,7 @@ func TestScoreSlotCands_OneHanderUnaffected(t *testing.T) {
 	ctx := upgrade.Context{Level: 60}
 	weights := upgrade.Weights{HP: 1}
 
-	_, _, results, _ := h.scoreSlotCands(character.Character{}, ctx, weights, slot, byLoc, worn, true, 10, nil, nil, nil, wc, nil, cands)
+	_, _, results, _ := h.scoreSlotCands(character.Character{}, ctx, weights, slot, byLoc, worn, true, "", 10, nil, nil, nil, wc, nil, cands)
 	if len(results) != 1 {
 		t.Fatalf("got %d results, want 1", len(results))
 	}
@@ -147,8 +147,53 @@ func TestScoreSlotCands_TwoHanderExcludedFromSecondary(t *testing.T) {
 	ctx := upgrade.Context{Level: 60}
 	weights := upgrade.Weights{HP: 1, AC: 1}
 
-	_, _, results, _ := h.scoreSlotCands(character.Character{}, ctx, weights, slot, byLoc, worn, true, 10, nil, nil, nil, wc, nil, cands)
+	_, _, results, _ := h.scoreSlotCands(character.Character{}, ctx, weights, slot, byLoc, worn, true, "", 10, nil, nil, nil, wc, nil, cands)
 	if len(results) != 0 {
 		t.Fatalf("got %d results, want 0 (2H candidate must be excluded from the Secondary slot view)", len(results))
 	}
+}
+
+// TestScoreSlotCands_WeaponStyleFilter checks the "dw"/"2h" hand-style filter
+// on the Primary slot: a dual-wielder can exclude 2H candidates (even a
+// statistically better one) and a 2H user can exclude 1H candidates, so the
+// list only ever shows weapons they'd actually equip.
+func TestScoreSlotCands_WeaponStyleFilter(t *testing.T) {
+	h := &charactersHandler{}
+	wc := h.newWornCache()
+
+	byLoc := map[string][]zeal.InventoryEntry{
+		"Primary": {{Location: "Primary", ID: 1, Name: "Primary Weapon"}},
+	}
+	worn := map[int]*db.Item{
+		1: {ID: 1, Name: "Primary Weapon", HP: 50, Slots: 0x002000},
+	}
+	cands := []db.UpgradeCandidate{
+		{ID: 2, Name: "1H Weapon", HP: 60, Slots: 0x002000},
+		{ID: 3, Name: "2H Weapon", HP: 200, Slots: 0x002000 | 0x004000},
+	}
+
+	slot, _ := upgradeSlotByKey("primary")
+	ctx := upgrade.Context{Level: 60}
+	weights := upgrade.Weights{HP: 1}
+
+	t.Run("dw excludes 2H", func(t *testing.T) {
+		_, _, results, _ := h.scoreSlotCands(character.Character{}, ctx, weights, slot, byLoc, worn, true, "dw", 10, nil, nil, nil, wc, nil, cands)
+		if len(results) != 1 || results[0].ID != 2 {
+			t.Fatalf("got %+v, want only the 1H candidate", results)
+		}
+	})
+
+	t.Run("2h excludes 1H", func(t *testing.T) {
+		_, _, results, _ := h.scoreSlotCands(character.Character{}, ctx, weights, slot, byLoc, worn, true, "2h", 10, nil, nil, nil, wc, nil, cands)
+		if len(results) != 1 || results[0].ID != 3 {
+			t.Fatalf("got %+v, want only the 2H candidate", results)
+		}
+	})
+
+	t.Run("empty style includes both", func(t *testing.T) {
+		_, _, results, _ := h.scoreSlotCands(character.Character{}, ctx, weights, slot, byLoc, worn, true, "", 10, nil, nil, nil, wc, nil, cands)
+		if len(results) != 2 {
+			t.Fatalf("got %d results, want 2", len(results))
+		}
+	})
 }

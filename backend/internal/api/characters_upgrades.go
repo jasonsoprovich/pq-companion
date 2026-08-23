@@ -192,6 +192,10 @@ func (h *charactersHandler) upgrades(w http.ResponseWriter, r *http.Request) {
 	excludeCrafted := r.URL.Query().Get("hide_crafted") != "0" && r.URL.Query().Get("hide_crafted") != "false"
 	// NO DROP gear is shown by default; ?hide_nodrop=1 drops it.
 	excludeNoDrop := r.URL.Query().Get("hide_nodrop") == "1" || r.URL.Query().Get("hide_nodrop") == "true"
+	// weapon_style narrows Primary-slot candidates to a hand preference: "dw"
+	// (dual wield — 1H only, for classes that won't ever equip a 2H regardless
+	// of stats) or "2h" (two-handed only). Empty/anything else means no filter.
+	weaponStyle := r.URL.Query().Get("weapon_style")
 	limit := 75
 	if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 && v <= 500 {
 		limit = v
@@ -215,7 +219,7 @@ func (h *charactersHandler) upgrades(w http.ResponseWriter, r *http.Request) {
 	wornLore := h.equippedLoreSet(worn)
 	wc := h.newWornCache()
 	hasteByLoc := h.hasteByLocation(byLoc, worn, wc)
-	current, baselineID, results, considered, err := h.scoreSlot(char, ctx, weights, slot, byLoc, worn, showAll, excludePoP, excludeCrafted, excludeNoDrop, limit, prioritySet, equippedFocus, wornLore, wc, hasteByLoc)
+	current, baselineID, results, considered, err := h.scoreSlot(char, ctx, weights, slot, byLoc, worn, showAll, excludePoP, excludeCrafted, excludeNoDrop, weaponStyle, limit, prioritySet, equippedFocus, wornLore, wc, hasteByLoc)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load upgrade candidates")
 		return
@@ -360,6 +364,7 @@ func (h *charactersHandler) upgradesOverview(w http.ResponseWriter, r *http.Requ
 	excludePoP := !(r.URL.Query().Get("show_pop") == "1" || r.URL.Query().Get("show_pop") == "true")
 	excludeCrafted := r.URL.Query().Get("hide_crafted") != "0" && r.URL.Query().Get("hide_crafted") != "false"
 	excludeNoDrop := r.URL.Query().Get("hide_nodrop") == "1" || r.URL.Query().Get("hide_nodrop") == "true"
+	weaponStyle := r.URL.Query().Get("weapon_style")
 
 	// One candidate scan for the whole sweep: the class/race/level/hidden/variant
 	// filter is identical across all 19 slots — only the slot mask differs — so
@@ -393,7 +398,7 @@ func (h *charactersHandler) upgradesOverview(w http.ResponseWriter, r *http.Requ
 				slotCands = append(slotCands, c)
 			}
 		}
-		current, _, results, considered := h.scoreSlotCands(char, ctx, weights, s, byLoc, worn, false, 1, prioritySet, equippedFocus, wornLore, wc, hasteByLoc, slotCands)
+		current, _, results, considered := h.scoreSlotCands(char, ctx, weights, s, byLoc, worn, false, weaponStyle, 1, prioritySet, equippedFocus, wornLore, wc, hasteByLoc, slotCands)
 		var best *upgradeResult
 		if len(results) > 0 {
 			best = &results[0]
@@ -443,7 +448,7 @@ func charClassBit(char character.Character) int {
 // query and calls scoreSlotCands directly.
 func (h *charactersHandler) scoreSlot(
 	char character.Character, ctx upgrade.Context, weights upgrade.Weights,
-	slot upgradeSlot, byLoc map[string][]zeal.InventoryEntry, worn map[int]*db.Item, showAll, excludePoP, excludeCrafted, excludeNoDrop bool, limit int,
+	slot upgradeSlot, byLoc map[string][]zeal.InventoryEntry, worn map[int]*db.Item, showAll, excludePoP, excludeCrafted, excludeNoDrop bool, weaponStyle string, limit int,
 	prioritySet, equippedFocus, wornLore map[int]bool, wc *wornCache, hasteByLoc map[string]int,
 ) (current []upgradeCurrentItem, baselineID int, results []upgradeResult, considered int, err error) {
 	cands, err := h.db.UpgradeCandidates(db.CandidateFilter{
@@ -460,7 +465,7 @@ func (h *charactersHandler) scoreSlot(
 		// as "no upgrades" (indistinguishable from best-in-slot).
 		return nil, 0, nil, 0, err
 	}
-	current, baselineID, results, considered = h.scoreSlotCands(char, ctx, weights, slot, byLoc, worn, showAll, limit, prioritySet, equippedFocus, wornLore, wc, hasteByLoc, cands)
+	current, baselineID, results, considered = h.scoreSlotCands(char, ctx, weights, slot, byLoc, worn, showAll, weaponStyle, limit, prioritySet, equippedFocus, wornLore, wc, hasteByLoc, cands)
 	return current, baselineID, results, considered, nil
 }
 
@@ -471,7 +476,7 @@ func (h *charactersHandler) scoreSlot(
 // ranked results (truncated to limit), and how many candidates were considered.
 func (h *charactersHandler) scoreSlotCands(
 	char character.Character, ctx upgrade.Context, weights upgrade.Weights,
-	slot upgradeSlot, byLoc map[string][]zeal.InventoryEntry, worn map[int]*db.Item, showAll bool, limit int,
+	slot upgradeSlot, byLoc map[string][]zeal.InventoryEntry, worn map[int]*db.Item, showAll bool, weaponStyle string, limit int,
 	prioritySet, equippedFocus, wornLore map[int]bool, wc *wornCache, hasteByLoc map[string]int,
 	cands []db.UpgradeCandidate,
 ) (current []upgradeCurrentItem, baselineID int, results []upgradeResult, considered int) {
@@ -542,6 +547,19 @@ func (h *charactersHandler) scoreSlotCands(
 		twoHander := isTwoHander(c.Slots)
 		if slot.Key == "secondary" && twoHander {
 			continue // occupies both hands; only ever offered under Primary
+		}
+		if slot.Key == "primary" {
+			// Hand-style preference: some classes (rogue/monk dual wielders,
+			// warrior/SK 2H users) will never equip the other style regardless
+			// of stats, so let them exclude it rather than relying on the score
+			// alone. Irrelevant elsewhere — Secondary already excludes 2H above,
+			// and Range/other slots have no hand-style concept.
+			if weaponStyle == "dw" && twoHander {
+				continue
+			}
+			if weaponStyle == "2h" && !twoHander {
+				continue
+			}
 		}
 		slotCur := baseline
 		replacesSecondary := false
