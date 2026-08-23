@@ -12,7 +12,9 @@ import { HeartPulse, Trash2, ExternalLink } from 'lucide-react'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { WSEvent } from '../../lib/wsEvents'
 import { useCHChainConfig } from '../../hooks/useCHChainConfig'
+import { useAnimatedChainList } from '../../hooks/useAnimatedChainList'
 import { clearTimers, getTimerState } from '../../services/api'
+import { chainPositionColor } from '../../lib/chChainPositionColor'
 import OverlayWindow from '../OverlayWindow'
 import type { ActiveTimer, TimerState } from '../../types/timer'
 
@@ -109,7 +111,15 @@ function manaColor(pct: number): string {
   return 'var(--color-muted)'
 }
 
-function ChainRow({ timer, letters }: { timer: ActiveTimer; letters?: boolean }): React.ReactElement {
+function ChainRow({
+  timer,
+  letters,
+  exiting,
+}: {
+  timer: ActiveTimer
+  letters?: boolean
+  exiting?: boolean
+}): React.ReactElement {
   const { position, text } = parseLabel(timer.spell_name)
   const missed = timer.possible_miss ?? false
   const manaPct = timer.caster_mana_pct
@@ -129,7 +139,27 @@ function ChainRow({ timer, letters }: { timer: ActiveTimer; letters?: boolean })
   const landing = !missed && pct < 0.34
 
   return (
-    <div style={{ position: 'relative', padding: '3px 10px', borderBottom: '1px solid var(--color-border)', overflow: 'hidden', flexShrink: 0 }}>
+    <div
+      style={{
+        position: 'relative',
+        paddingLeft: 10,
+        paddingRight: 10,
+        // A landed callout stays mounted briefly (see useAnimatedChainList) so
+        // it can collapse to zero height instead of vanishing — the rows
+        // below it then reflow smoothly in the same transition rather than
+        // snapping up in one frame.
+        paddingTop: exiting ? 0 : 3,
+        paddingBottom: exiting ? 0 : 3,
+        maxHeight: exiting ? 0 : 40,
+        opacity: exiting ? 0 : 1,
+        borderBottom: `1px solid ${exiting ? 'transparent' : 'var(--color-border)'}`,
+        overflow: 'hidden',
+        flexShrink: 0,
+        transition: exiting
+          ? 'max-height 0.22s ease, opacity 0.16s ease, padding 0.22s ease, border-color 0.22s ease'
+          : undefined,
+      }}
+    >
       <div
         style={{
           position: 'absolute', left: 0, top: 0, bottom: 0,
@@ -143,7 +173,7 @@ function ChainRow({ timer, letters }: { timer: ActiveTimer; letters?: boolean })
             <span
               style={{
                 fontSize: 10, fontWeight: 700, color: '#fff',
-                backgroundColor: missed ? 'rgba(239,68,68,0.7)' : 'rgba(59,130,246,0.6)', borderRadius: 3,
+                backgroundColor: missed ? 'rgba(239,68,68,0.7)' : chainPositionColor(position), borderRadius: 3,
                 padding: '0 4px', flexShrink: 0, fontVariantNumeric: 'tabular-nums',
               }}
             >
@@ -222,6 +252,7 @@ export default function CHChainPanel({
       return a.spell_name.localeCompare(b.spell_name)
     })
   const cadence = computeCadence(chain)
+  const { displayList, exitingIds } = useAnimatedChainList(chain)
 
   return (
     <OverlayWindow
@@ -287,7 +318,7 @@ export default function CHChainPanel({
             <HeartPulse size={28} style={{ opacity: 0.2, color: '#3b82f6' }} />
             <p style={{ fontSize: 12, margin: 0 }}>Connecting…</p>
           </div>
-        ) : chain.length === 0 ? (
+        ) : displayList.length === 0 ? (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: 'var(--color-muted)', padding: 16 }}>
             <HeartPulse size={28} style={{ opacity: 0.2, color: '#3b82f6' }} />
             <p style={{ fontSize: 12, margin: 0 }}>
@@ -295,7 +326,9 @@ export default function CHChainPanel({
             </p>
           </div>
         ) : (
-          chain.map((t) => <ChainRow key={t.id} timer={t} letters={activeView === 'ramp'} />)
+          displayList.map((t) => (
+            <ChainRow key={t.id} timer={t} letters={activeView === 'ramp'} exiting={exitingIds.has(t.id)} />
+          ))
         )}
       </div>
     </OverlayWindow>

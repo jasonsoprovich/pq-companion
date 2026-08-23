@@ -15,8 +15,10 @@ import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
 import { useCHChainConfig } from '../hooks/useCHChainConfig'
+import { useAnimatedChainList } from '../hooks/useAnimatedChainList'
 import OverlayLockButton from '../components/OverlayLockButton'
 import { clearTimers, getTimerState } from '../services/api'
+import { chainPositionColor } from '../lib/chChainPositionColor'
 import type { ActiveTimer, TimerState } from '../types/timer'
 
 // Which chain the overlay is showing. 'main' = ch_chain timers (001-style
@@ -106,7 +108,15 @@ function manaColor(pct: number): string {
   return 'rgba(255,255,255,0.5)'
 }
 
-function ChainRow({ timer, letters }: { timer: ActiveTimer; letters?: boolean }): React.ReactElement {
+function ChainRow({
+  timer,
+  letters,
+  exiting,
+}: {
+  timer: ActiveTimer
+  letters?: boolean
+  exiting?: boolean
+}): React.ReactElement {
   const { position, text } = parseLabel(timer.spell_name)
   const missed = timer.possible_miss ?? false
   const manaPct = timer.caster_mana_pct
@@ -130,10 +140,22 @@ function ChainRow({ timer, letters }: { timer: ActiveTimer; letters?: boolean })
     <div
       style={{
         position: 'relative',
-        padding: '3px 8px',
-        borderBottom: '1px solid rgba(255,255,255,0.1)',
+        paddingLeft: 8,
+        paddingRight: 8,
+        // A landed callout stays mounted briefly (see useAnimatedChainList) so
+        // it can collapse to zero height instead of vanishing — the rows
+        // below it then reflow smoothly in the same transition rather than
+        // snapping up in one frame.
+        paddingTop: exiting ? 0 : 3,
+        paddingBottom: exiting ? 0 : 3,
+        maxHeight: exiting ? 0 : 40,
+        opacity: exiting ? 0 : 1,
+        borderBottom: `1px solid ${exiting ? 'transparent' : 'rgba(255,255,255,0.1)'}`,
         overflow: 'hidden',
         flexShrink: 0,
+        transition: exiting
+          ? 'max-height 0.22s ease, opacity 0.16s ease, padding 0.22s ease, border-color 0.22s ease'
+          : undefined,
       }}
     >
       <div
@@ -165,7 +187,7 @@ function ChainRow({ timer, letters }: { timer: ActiveTimer; letters?: boolean })
                 fontSize: 10,
                 fontWeight: 700,
                 color: '#fff',
-                backgroundColor: missed ? 'rgba(239,68,68,0.7)' : 'rgba(59,130,246,0.6)',
+                backgroundColor: missed ? 'rgba(239,68,68,0.7)' : chainPositionColor(position),
                 borderRadius: 3,
                 padding: '0 4px',
                 flexShrink: 0,
@@ -269,6 +291,7 @@ export default function CHChainOverlayWindowPage(): React.ReactElement {
       return a.spell_name.localeCompare(b.spell_name)
     })
   const cadence = computeCadence(chain)
+  const { displayList, exitingIds } = useAnimatedChainList(chain)
 
   return (
     <div
@@ -381,7 +404,7 @@ export default function CHChainOverlayWindowPage(): React.ReactElement {
           <p style={{ padding: 12, fontSize: 11, color: 'rgba(255,255,255,0.3)', textAlign: 'center', margin: 0 }}>
             Connecting…
           </p>
-        ) : chain.length === 0 ? (
+        ) : displayList.length === 0 ? (
           <div
             style={{
               flex: 1,
@@ -402,7 +425,9 @@ export default function CHChainOverlayWindowPage(): React.ReactElement {
             </p>
           </div>
         ) : (
-          chain.map((t) => <ChainRow key={t.id} timer={t} letters={activeView === 'ramp'} />)
+          displayList.map((t) => (
+            <ChainRow key={t.id} timer={t} letters={activeView === 'ramp'} exiting={exitingIds.has(t.id)} />
+          ))
         )}
       </div>
     </div>
