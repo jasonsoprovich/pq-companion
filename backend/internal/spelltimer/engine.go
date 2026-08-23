@@ -340,6 +340,16 @@ type Engine struct {
 	lastCastSpell string
 	lastCastAt    time.Time
 
+	// lastCastTarget is a best-effort snapshot of lastPipeTarget taken at
+	// the moment lastCastSpell/lastCastAt were recorded — i.e. whoever the
+	// Zeal pipe said the player had selected when they began casting. Empty
+	// when the pipe isn't connected or reported no target. Used to tighten
+	// the cast_by_me scope heuristic in onSpellLanded: for single-target
+	// spells this lets a landed instance be checked against the specific
+	// recipient the player chose, instead of only the spell name and a time
+	// window (see recentSelfCastMatches).
+	lastCastTarget string
+
 	// clickableSpellIDs is the set of spell IDs produced by some item's click
 	// or proc effect, lazily loaded from the DB on first need (see
 	// resolveLandedSpellName). Used as a last resort to disambiguate instant
@@ -518,6 +528,7 @@ func (e *Engine) Handle(ev logparser.LogEvent) {
 		e.mu.Lock()
 		e.lastCastSpell = data.SpellName
 		e.lastCastAt = time.Now()
+		e.lastCastTarget = e.lastPipeTarget
 		// Cross-check: if Zeal is reporting a different in-flight cast than
 		// the log, that's a parser miss worth investigating. Logged once per
 		// cast event so this can't spam during fast cast chains.
@@ -545,6 +556,7 @@ func (e *Engine) Handle(ev logparser.LogEvent) {
 		e.mu.Lock()
 		e.lastCastSpell = ""
 		e.lastCastAt = time.Time{}
+		e.lastCastTarget = ""
 		e.mu.Unlock()
 
 	case logparser.EventSpellFade:
@@ -1049,6 +1061,59 @@ func categoryMatchesGroup(cat Category, group string) bool {
 
 // ── internal helpers ──────────────────────────────────────────────────────────
 
+// singleTargetTypes holds the spells_new.targettype codes (EQMacEmu ST_*
+// enum, see db/enums/spell.go) that name one specific recipient the caster
+// chose, as opposed to a group/AE type that legitimately lands on several
+// people from a single cast. ST_Self (6) is excluded since self-casts are
+// already handled by the isSelfTarget branch before recentSelfCastMatches is
+// ever consulted.
+var singleTargetTypes = map[int]bool{
+	1:  true, // ST_TargetOptional
+	5:  true, // ST_Target
+	9:  true, // ST_Animal
+	10: true, // ST_Undead
+	11: true, // ST_Summoned
+	14: true, // ST_Pet
+	16: true, // ST_Plant
+	17: true, // ST_UberGiant
+	18: true, // ST_UberDragon
+}
+
+// isSingleTargetSpellType reports whether targetType names one specific
+// recipient, making it safe to check a landed instance's target against the
+// caster's selected target at cast time.
+func isSingleTargetSpellType(targetType int) bool {
+	return singleTargetTypes[targetType]
+}
+
+// recentSelfCastMatches reports whether a landed instance of spellName on
+// target plausibly came from the player's own recent cast. EQ's log never
+// names the caster of a buff/detrimental landing on someone other than the
+// player, so this can only ever be a heuristic:
+//
+//   - The spell name must match the most recent EventSpellCast and fall
+//     within lastCastWindow of it — otherwise it's certainly not a match.
+//   - For a single-target spell type, if the Zeal pipe reported a target at
+//     cast time (lastCastTarget), the landed target must match it exactly.
+//     This turns the check from a heuristic into an exact match whenever
+//     pipe data is available, which is the common case that was previously
+//     misattributing other players' casts of the same spell to the user.
+//   - For group/AE spell types, or when no pipe target was recorded, target
+//     can't be checked this way — one legitimate cast produces several
+//     differently-targeted land lines (or the pipe is disconnected) — so the
+//     name+window match stands on its own.
+func (e *Engine) recentSelfCastMatches(spellName, target string, singleTarget bool) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.lastCastSpell != spellName || time.Since(e.lastCastAt) > lastCastWindow {
+		return false
+	}
+	if singleTarget && e.lastCastTarget != "" {
+		return normalizeNPCName(e.lastCastTarget) == normalizeNPCName(target)
+	}
+	return true
+}
+
 // onSpellLanded creates (or refreshes) a timer for a spell that just took
 // effect. Resolves the spell name (disambiguating against lastCastSpell when
 // the cast text is shared by multiple spells), the target (the active player
@@ -1134,9 +1199,13 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 	// Buff category honours the user-configured scope:
 	//   self        — drop everything not landing on the active player.
 	//   cast_by_me  — keep self lands; otherwise require a recent local cast
-	//                 of this spell name within lastCastWindow. EQ logs don't
-	//                 record the caster of buffs landing on third parties,
-	//                 so this is a heuristic.
+	//                 of this spell name within lastCastWindow. EQ logs
+	//                 don't record the caster of buffs landing on third
+	//                 parties, so for single-target spells this is tightened
+	//                 to an exact match against the Zeal pipe's reported
+	//                 cast-time target (recentSelfCastMatches); group/AE
+	//                 spells and pipe-less setups fall back to the coarser
+	//                 name+window heuristic.
 	//   anyone      — no filtering.
 	switch cat {
 	case CategoryBuff:
@@ -1149,10 +1218,7 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 			}
 		case scopeCastByMe:
 			if !isSelfTarget {
-				e.mu.Lock()
-				recentMatch := e.lastCastSpell == spellName && time.Since(e.lastCastAt) <= lastCastWindow
-				e.mu.Unlock()
-				if !recentMatch {
+				if !e.recentSelfCastMatches(spellName, target, isSingleTargetSpellType(spell.TargetType)) {
 					slog.Debug("timer-debug: spell-landed skipped (scope=cast_by_me, no matching local cast)",
 						"spell", spellName, "target", target)
 					return
@@ -1177,10 +1243,7 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 		// Detrimental (debuff/dot/mez/stun): apply cast_by_me semantics
 		// regardless of the user's chosen scope — see comment above.
 		if !isSelfTarget {
-			e.mu.Lock()
-			recentMatch := e.lastCastSpell == spellName && time.Since(e.lastCastAt) <= lastCastWindow
-			e.mu.Unlock()
-			if !recentMatch {
+			if !e.recentSelfCastMatches(spellName, target, isSingleTargetSpellType(spell.TargetType)) {
 				slog.Debug("timer-debug: detrimental spell-landed skipped (no matching local cast)",
 					"spell", spellName, "target", target, "category", cat)
 				return

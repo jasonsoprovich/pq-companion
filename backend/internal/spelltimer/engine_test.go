@@ -1372,6 +1372,73 @@ func TestOnSpellLanded_ScopeCastByMe_FiltersWithoutRecentCast(t *testing.T) {
 	}
 }
 
+// recentSelfCastMatches is what cast_by_me actually consults for non-self
+// lands. This covers the bug report: two players casting the same
+// single-target buff within the same window must not cross-match once the
+// Zeal pipe tells us who each cast was actually aimed at, while group/AE
+// spells (or a disconnected pipe) keep the old name+window heuristic since
+// one legitimate cast can produce several differently-targeted lands.
+func TestRecentSelfCastMatches(t *testing.T) {
+	tests := []struct {
+		name         string
+		castSpell    string
+		castAt       time.Time
+		castTarget   string
+		spellName    string
+		landedTarget string
+		singleTarget bool
+		want         bool
+	}{
+		{
+			name: "no recent cast at all", castSpell: "", spellName: "Tashanian",
+			landedTarget: "Bob", singleTarget: true, want: false,
+		},
+		{
+			name: "different spell name", castSpell: "Haste", castAt: time.Now(),
+			spellName: "Tashanian", landedTarget: "Bob", singleTarget: true, want: false,
+		},
+		{
+			name: "stale cast outside window", castSpell: "Tashanian",
+			castAt: time.Now().Add(-2 * lastCastWindow), spellName: "Tashanian",
+			landedTarget: "Bob", singleTarget: true, want: false,
+		},
+		{
+			name:      "single-target: pipe target matches lands on the same person",
+			castSpell: "Tashanian", castAt: time.Now(), castTarget: "Bob",
+			spellName: "Tashanian", landedTarget: "Bob", singleTarget: true, want: true,
+		},
+		{
+			name:      "single-target: pipe target disagrees — another player's cast on someone else",
+			castSpell: "Tashanian", castAt: time.Now(), castTarget: "Bob",
+			spellName: "Tashanian", landedTarget: "Sally", singleTarget: true, want: false,
+		},
+		{
+			name:      "single-target: no pipe data falls back to name+window heuristic",
+			castSpell: "Tashanian", castAt: time.Now(), castTarget: "",
+			spellName: "Tashanian", landedTarget: "Sally", singleTarget: true, want: true,
+		},
+		{
+			name:      "group/AE: pipe target present but ignored, several targets are legitimate",
+			castSpell: "Symbol of Ryltan", castAt: time.Now(), castTarget: "Bob",
+			spellName: "Symbol of Ryltan", landedTarget: "Sally", singleTarget: false, want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newTestEngine()
+			e.lastCastSpell = tt.castSpell
+			e.lastCastAt = tt.castAt
+			e.lastCastTarget = tt.castTarget
+
+			got := e.recentSelfCastMatches(tt.spellName, tt.landedTarget, tt.singleTarget)
+			if got != tt.want {
+				t.Errorf("recentSelfCastMatches() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 // StartExternal's stack argument (Trigger.TimerStack) is the fix for the
 // reported "respawn timers overwrite each other" bug: two firings of the
 // same trigger name must produce two independent rows sharing one label,
