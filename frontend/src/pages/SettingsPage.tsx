@@ -2661,7 +2661,7 @@ export default function SettingsPage(): React.ReactElement {
               Timer bar appearance
             </p>
             <p className="mb-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-              Tune how timer rows look across the Buff, Detrimental, Custom, and Respawn overlays. Per-trigger bar colors (set in the Triggers tab) still override the automatic color. Each of those overlay windows also has its own bell icon in its header to mute per-trigger alerts without editing the triggers themselves.
+              Tune how timer rows look across the Buff, Detrimental, Custom, Respawn, and CH Chain overlays. Per-trigger bar colors (set in the Triggers tab) still override the automatic color. Each of those overlay windows also has its own bell icon in its header to mute per-trigger alerts without editing the triggers themselves.
             </p>
             <div className="flex items-center gap-2">
               <span className="text-xs w-20" style={{ color: 'var(--color-muted-foreground)' }}>Bar fill</span>

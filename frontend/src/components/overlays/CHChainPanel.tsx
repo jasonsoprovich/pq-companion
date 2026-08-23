@@ -13,6 +13,7 @@ import { useWebSocket } from '../../hooks/useWebSocket'
 import { WSEvent } from '../../lib/wsEvents'
 import { useCHChainConfig } from '../../hooks/useCHChainConfig'
 import { useAnimatedChainList } from '../../hooks/useAnimatedChainList'
+import { useTimerAppearance, type TimerAppearance } from '../../hooks/useTimerAppearance'
 import { clearTimers, getTimerState } from '../../services/api'
 import { chainPositionColor } from '../../lib/chChainPositionColor'
 import OverlayWindow from '../OverlayWindow'
@@ -115,10 +116,12 @@ function ChainRow({
   timer,
   letters,
   exiting,
+  appearance,
 }: {
   timer: ActiveTimer
   letters?: boolean
   exiting?: boolean
+  appearance: TimerAppearance
 }): React.ReactElement {
   const { position, text } = parseLabel(timer.spell_name)
   const missed = timer.possible_miss ?? false
@@ -137,6 +140,11 @@ function ChainRow({
   // possible_miss (this callout's caster was never seen starting a cast — see
   // backend Engine.ConfirmCast) recolors the row red instead.
   const landing = !missed && pct < 0.34
+  // Missed gets a slight emphasis bump over the base fill (like BuffRow's
+  // expired bump), but a 0 (text-only) fill stays fully transparent.
+  const fillOpacity = missed
+    ? (appearance.fillOpacity === 0 ? 0 : Math.min(1, appearance.fillOpacity + 0.15))
+    : appearance.fillOpacity
 
   return (
     <div
@@ -148,9 +156,13 @@ function ChainRow({
         // it can collapse to zero height instead of vanishing — the rows
         // below it then reflow smoothly in the same transition rather than
         // snapping up in one frame.
-        paddingTop: exiting ? 0 : 3,
-        paddingBottom: exiting ? 0 : 3,
-        maxHeight: exiting ? 0 : 40,
+        paddingTop: exiting ? 0 : appearance.rowPadding,
+        paddingBottom: exiting ? 0 : appearance.rowPadding,
+        // A generous fixed ceiling (comfortably above the appearance
+        // settings' max row padding + font size) rather than a measured
+        // height — the CSS transition only needs a concrete px value to
+        // interpolate toward 0, not an exact one.
+        maxHeight: exiting ? 0 : 96,
         opacity: exiting ? 0 : 1,
         borderBottom: `1px solid ${exiting ? 'transparent' : 'var(--color-border)'}`,
         overflow: 'hidden',
@@ -164,7 +176,7 @@ function ChainRow({
         style={{
           position: 'absolute', left: 0, top: 0, bottom: 0,
           width: `${pct * 100}%`, backgroundColor: missed ? '#ef4444' : landing ? '#22c55e' : '#3b82f6',
-          opacity: missed ? 0.3 : 0.18, pointerEvents: 'none', transition: 'width 1s linear, background-color 0.2s linear',
+          opacity: fillOpacity, pointerEvents: 'none', transition: 'width 1s linear, background-color 0.2s linear',
         }}
       />
       <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
@@ -180,7 +192,7 @@ function ChainRow({
               {letters ? positionLetter(position) : position}
             </span>
           )}
-          <span style={{ fontSize: 12, color: 'var(--color-foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: landing || missed ? 600 : 400 }}>
+          <span style={{ fontSize: appearance.nameFontSize, color: 'var(--color-foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: landing || missed ? 600 : 400 }}>
             {text}
             {manaPct !== undefined && (
               <span style={{ marginLeft: 5, fontWeight: 700, color: manaColor(manaPct) }}>{manaPct}%</span>
@@ -195,7 +207,7 @@ function ChainRow({
               rather than replacing it, so the row reads the same either way. */}
           {missed && <span style={{ fontSize: 10, fontWeight: 700, color: '#f87171' }}>miss?</span>}
           <span
-            style={{ fontSize: 11, color: missed ? '#f87171' : landing ? '#22c55e' : '#60a5fa', fontVariantNumeric: 'tabular-nums', fontWeight: landing || missed ? 700 : 500 }}
+            style={{ fontSize: appearance.timeFontSize, color: missed ? '#f87171' : landing ? '#22c55e' : '#60a5fa', fontVariantNumeric: 'tabular-nums', fontWeight: landing || missed ? 700 : 500 }}
           >
             {fmtRemaining(timer.remaining_seconds)}
           </span>
@@ -215,6 +227,7 @@ export default function CHChainPanel({
 }: CHChainPanelProps): React.ReactElement {
   const [state, setState] = useState<TimerState | null>(null)
   const [view, setView] = useState<ChainView>(loadView)
+  const appearance = useTimerAppearance()
   const chConfig = useCHChainConfig()
   const secondaryEnabled = chConfig?.secondary_enabled ?? false
   // With the secondary chain off in settings, always show the main chain —
@@ -327,7 +340,7 @@ export default function CHChainPanel({
           </div>
         ) : (
           displayList.map((t) => (
-            <ChainRow key={t.id} timer={t} letters={activeView === 'ramp'} exiting={exitingIds.has(t.id)} />
+            <ChainRow key={t.id} timer={t} letters={activeView === 'ramp'} exiting={exitingIds.has(t.id)} appearance={appearance} />
           ))
         )}
       </div>

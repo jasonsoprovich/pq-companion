@@ -16,6 +16,7 @@ import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
 import { useCHChainConfig } from '../hooks/useCHChainConfig'
 import { useAnimatedChainList } from '../hooks/useAnimatedChainList'
+import { useTimerAppearance, type TimerAppearance } from '../hooks/useTimerAppearance'
 import OverlayLockButton from '../components/OverlayLockButton'
 import { clearTimers, getTimerState } from '../services/api'
 import { chainPositionColor } from '../lib/chChainPositionColor'
@@ -112,10 +113,12 @@ function ChainRow({
   timer,
   letters,
   exiting,
+  appearance,
 }: {
   timer: ActiveTimer
   letters?: boolean
   exiting?: boolean
+  appearance: TimerAppearance
 }): React.ReactElement {
   const { position, text } = parseLabel(timer.spell_name)
   const missed = timer.possible_miss ?? false
@@ -135,6 +138,11 @@ function ChainRow({
   // possible_miss (this callout's caster was never seen starting a cast — see
   // backend Engine.ConfirmCast) recolors the row red instead.
   const landing = !missed && pct < 0.34
+  // Missed gets a slight emphasis bump over the base fill (like BuffRow's
+  // expired bump), but a 0 (text-only) fill stays fully transparent.
+  const fillOpacity = missed
+    ? (appearance.fillOpacity === 0 ? 0 : Math.min(1, appearance.fillOpacity + 0.15))
+    : appearance.fillOpacity
 
   return (
     <div
@@ -146,9 +154,13 @@ function ChainRow({
         // it can collapse to zero height instead of vanishing — the rows
         // below it then reflow smoothly in the same transition rather than
         // snapping up in one frame.
-        paddingTop: exiting ? 0 : 3,
-        paddingBottom: exiting ? 0 : 3,
-        maxHeight: exiting ? 0 : 40,
+        paddingTop: exiting ? 0 : appearance.rowPadding,
+        paddingBottom: exiting ? 0 : appearance.rowPadding,
+        // A generous fixed ceiling (comfortably above the appearance
+        // settings' max row padding + font size) rather than a measured
+        // height — the CSS transition only needs a concrete px value to
+        // interpolate toward 0, not an exact one.
+        maxHeight: exiting ? 0 : 96,
         opacity: exiting ? 0 : 1,
         borderBottom: `1px solid ${exiting ? 'transparent' : 'rgba(255,255,255,0.1)'}`,
         overflow: 'hidden',
@@ -166,7 +178,7 @@ function ChainRow({
           bottom: 0,
           width: `${pct * 100}%`,
           backgroundColor: missed ? '#ef4444' : landing ? '#22c55e' : '#3b82f6',
-          opacity: missed ? 0.55 : 0.5,
+          opacity: fillOpacity,
           pointerEvents: 'none',
           transition: 'width 1s linear, background-color 0.2s linear',
         }}
@@ -200,7 +212,7 @@ function ChainRow({
           )}
           <span
             style={{
-              fontSize: 12,
+              fontSize: appearance.nameFontSize,
               color: 'rgba(255,255,255,1)',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
@@ -228,7 +240,7 @@ function ChainRow({
           )}
           <span
             style={{
-              fontSize: 11,
+              fontSize: appearance.timeFontSize,
               color: missed ? '#fca5a5' : landing ? '#86efac' : '#93c5fd',
               fontVariantNumeric: 'tabular-nums',
               fontWeight: landing || missed ? 700 : 600,
@@ -251,6 +263,7 @@ export default function CHChainOverlayWindowPage(): React.ReactElement {
   const onDragMouseDown = useWindowDrag()
   const [state, setState] = useState<TimerState | null>(null)
   const [view, setView] = useState<ChainView>(loadView)
+  const appearance = useTimerAppearance()
   const chConfig = useCHChainConfig()
   const secondaryEnabled = chConfig?.secondary_enabled ?? false
   // With the secondary chain off in settings, always show the main chain —
@@ -426,7 +439,7 @@ export default function CHChainOverlayWindowPage(): React.ReactElement {
           </div>
         ) : (
           displayList.map((t) => (
-            <ChainRow key={t.id} timer={t} letters={activeView === 'ramp'} exiting={exitingIds.has(t.id)} />
+            <ChainRow key={t.id} timer={t} letters={activeView === 'ramp'} exiting={exitingIds.has(t.id)} appearance={appearance} />
           ))
         )}
       </div>
