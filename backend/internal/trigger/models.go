@@ -89,9 +89,10 @@ type Action struct {
 	// grows rightward as its length changes), "center" keeps the point at
 	// the text's horizontal center (grows evenly both ways), "right" keeps
 	// it as the right edge (grows leftward). Also used as the CSS text-align
-	// of the rendered text. Empty = "left", the pre-existing behaviour, so
-	// upgrading users see no change. Has no visible effect on unpinned
-	// (stacking) alerts.
+	// of the rendered text, and — via alignSelf on the alert's stack entry —
+	// how it sits within an unpinned (stacking) alert column too. Empty =
+	// inherit the global Preferences.DefaultOverlayTextAlign default, itself
+	// falling back to "left" so upgrading users see no change.
 	Align string `json:"align,omitempty"`
 
 	// WebhookID references a Preferences.DiscordWebhooks entry by ID for a

@@ -110,7 +110,7 @@ function AlertCard({
               transform: overlayAnchorTransform(align),
               zIndex: 10,
             }
-          : { padding: '4px 8px' }),
+          : { padding: '4px 8px', alignSelf: overlayAlignItems(align) }),
       }}
     >
       <div
@@ -121,7 +121,7 @@ function AlertCard({
           color,
           fontFamily: overlayFontFamilyCSS(fontFamily),
           textShadow: overlayTextShadow(glowColor),
-          textAlign: position ? align : 'center',
+          textAlign: align,
           userSelect: 'none',
           whiteSpace: 'nowrap',
         }}
@@ -611,7 +611,9 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
                 // position, clamped onto the current overlay window the same
                 // way AlertCard clamps per-trigger positions. Pinned alerts
                 // render position:fixed from inside AlertCard, so this
-                // container doesn't affect them.
+                // container doesn't affect them. Per-card alignSelf (driven by
+                // each alert's own resolved align) does the real alignment
+                // work below — this is just a sane baseline for the column.
                 position: 'fixed',
                 left: Math.min(Math.max(0, defaultPos.x), Math.max(0, window.innerWidth - 40)),
                 top: Math.min(Math.max(0, defaultPos.y), Math.max(0, window.innerHeight - 24)),
@@ -621,11 +623,16 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
                 gap: 6,
               }
             : {
+                // No default position configured: alerts stack centered on
+                // screen. alignItems still reflects the global default (and
+                // per-card alignSelf below still honors per-trigger overrides)
+                // rather than hardcoding 'center', which used to silently
+                // ignore the Default Overlay Text alignment setting entirely.
                 flex: 1,
                 display: 'flex',
                 flexDirection: 'column',
                 justifyContent: 'center',
-                alignItems: 'center',
+                alignItems: overlayAlignItems(resolveOverlayTextStyle(null, styleDefaults).align),
                 gap: 6,
                 padding: alerts.length > 0 ? '8px 8px' : 0,
                 overflow: 'hidden',
