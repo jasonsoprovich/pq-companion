@@ -9,6 +9,15 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.20.1 — 2026-08-25
+
+Two overlay fixes: alert text lands where you put it, and a crash that could turn an overlay into a black box.
+
+### Fixes
+- **Alert alignment no longer pushes the stack to the screen edge** — v0.20.0's alignment change made unpinned alerts stack hard against the left edge of the screen instead of the centered column they've always used. Alerts stack centered again, and alignment positions each alert against its neighbours rather than against a screen edge.
+- **A default overlay position now honors your alignment setting** — with a default position set, the alert stack always grew rightward from that point no matter which alignment you picked, so "Center" looked stuck on left-aligned and per-trigger alignment appeared to do nothing. The stack now anchors on the point the same way pinned alerts and the Settings positioning card always have. Left alignment is unchanged; if you use Center or Right with a default position, your alerts will shift to sit on that point.
+- **Overlay windows no longer turn into a black box** — a render error inside an overlay took down its entire window and repainted it solid black until the app was restarted. Overlays now catch the error and show a retry panel with the message instead. The known trigger is fixed as well: targeting an NPC that shares its name with another database row — the lizards in the Lost Temple of Cazic Thule, among others — could crash the NPC overlay when one of the matching rows had no special abilities.
+
 ## v0.20.0 — 2026-08-25
 
 Gear Upgrade Finder gets a weapon-style preference for dual wield vs. two-handed builds, spell-timer tracking scope gets more accurate, and the game database is refreshed against the latest Project Quarm dump.
