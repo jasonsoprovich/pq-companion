@@ -1768,6 +1768,44 @@ hardening — no new features, but a broad sweep of reliability fixes.
   of 481 matches were mislabeled); the same heuristic now badges the
   item detail Charges row.
 
+## v0.20.0 — Weapon-Style Filter, Spell-Timer Scope Accuracy, Game Data Refresh
+
+- **Weapon style filter (Gear Upgrade Finder)** — a Primary-slot "Weapon
+  style: All / Dual wield / Two-handed" selector filters candidates by
+  `isTwoHander` before scoring, for classes that never switch hand
+  styles regardless of stats. Applies to both the by-slot finder and
+  the Overview sweep. Fixed alongside: `isTwoHander` was checking
+  whether `items.slots` set both the Primary and Secondary bits, which
+  live data showed was backwards — real 2H weapons carry only the
+  Primary bit; ordinary 1H and Monk Hand-to-Hand items carry both.
+  Switched to `items.itemtype` (EQMacEmu's actual 1H/2H classification).
+- **Anyone scope now covers detrimentals** — previously detrimentals
+  (debuff/dot/mez/stun) always used cast_by_me semantics regardless of
+  the chosen tracking scope. `scope=anyone` now lifts the caster
+  restriction for detrimentals too, relying on the (renamed,
+  dual-purpose) class filter to keep the overlay from filling with
+  every class's debuffs.
+- **cast_by_me tightened to exact target match** — previously compared
+  only spell name + a 30s window. Single-target spells now also
+  require the landed target to match the Zeal pipe's cast-time target
+  when one was recorded, cutting down on other players' casts of the
+  same spell being misattributed to the local player. Group/AE spells
+  and pipe-less setups keep the name+window heuristic.
+- **Per-character scoping for buff/detrimental overlays** — timers can
+  be scoped to only the active character's own casts.
+- **CH Metronome** — per-position badge colors, smoother exit
+  animation, Timer Bar Fill opacity slider now respected, and a fix
+  for configured delay distorting anchor-position acceptance.
+- **Signature-spell caster resolution** now prefers the player's live
+  target over the cast-correlation fallback when the live target is
+  itself a valid, recently-observed candidate.
+- **Game database refreshed** to the 2026-08-23 Project Quarm dump
+  (from 2026-03-20). Schema unchanged; content delta is narrow — 80
+  items table rows corrected (nodrop/wornlevel/proc/casttime/price
+  fixes, 1 new item), 2 new tradeskill_recipe_entries, 1 loottable
+  rebalance, 1 spawn2 point enabled. Verified via full row-level diff
+  and the backend test suite against the new db.
+
 ## Phase 11 — Project Website
 _Planned_
 
