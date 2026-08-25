@@ -1,6 +1,8 @@
 package overlay
 
 import (
+	"bytes"
+	"encoding/json"
 	"math"
 	"path/filepath"
 	"runtime"
@@ -502,5 +504,50 @@ func TestNPCTracker_VariantSetWhenZoneKnownButPositionMissing(t *testing.T) {
 	}
 	if len(st.Variants) != 2 {
 		t.Errorf("Variants len = %d, want 2 (no position → keep both)", len(st.Variants))
+	}
+}
+
+// Regression: a variant's SpecialAbilities must never marshal as JSON null.
+// "a lizard page" in the Lost Temple of Cazic Thule resolves to three rows,
+// two of which (48039, 48853) have an empty special_abilities string and no
+// see-invis flags — ParseSpecialAbilities returns nil for those. The field
+// carries no omitempty, so a nil slice shipped a literal null, and the
+// frontend's variant renderer called .filter() on it. That throw unmounted
+// the whole overlay window and painted it solid black until an app restart
+// (reported 2026-08-24, screenshot taken in this exact zone).
+func TestNPCTracker_VariantSpecialAbilitiesNeverNull(t *testing.T) {
+	tr := newRealDBTracker(t)
+	// cazicthule_old (Lost Temple of CazicThule) is zoneidnumber 1048. No
+	// player position, so every same-name row survives as a variant — the
+	// log-only case the reporter was in.
+	tr.SetPipePlayerSnapshot(1048, 0, 0, 0)
+	tr.mu.Lock()
+	tr.pipePlayerKnown = false
+	tr.mu.Unlock()
+	tr.SetPipeTarget("a lizard page")
+
+	st := tr.GetState()
+	if len(st.Variants) < 2 {
+		t.Fatalf("Variants len = %d, want >= 2 (same-name lizard page rows)", len(st.Variants))
+	}
+	sawEmpty := false
+	for _, v := range st.Variants {
+		if v.SpecialAbilities == nil {
+			t.Errorf("npc %d (%s): SpecialAbilities is nil, want an empty slice", v.NPC.ID, v.NPC.Name)
+		}
+		if len(v.SpecialAbilities) == 0 {
+			sawEmpty = true
+		}
+	}
+	if !sawEmpty {
+		t.Fatal("no ability-less variant in the set — this fixture no longer covers the bug")
+	}
+
+	blob, err := json.Marshal(st)
+	if err != nil {
+		t.Fatalf("marshal state: %v", err)
+	}
+	if bytes.Contains(blob, []byte(`"special_abilities":null`)) {
+		t.Error("payload contains special_abilities:null, want []")
 	}
 }
