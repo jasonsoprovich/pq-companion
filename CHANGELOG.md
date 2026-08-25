@@ -9,6 +9,25 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.20.0 — 2026-08-25
+
+Gear Upgrade Finder gets a weapon-style preference for dual wield vs. two-handed builds, spell-timer tracking scope gets more accurate, and the game database is refreshed against the latest Project Quarm dump.
+
+### Highlights
+- **Weapon style filter for the Gear Upgrade Finder's Primary slot** — classes that never switch hand styles regardless of stats (a dual-wield rogue won't equip a stat-better 2H) can now filter Primary-slot suggestions to Dual Wield or Two-Handed only, on both the by-slot finder and the Overview sweep.
+- **More accurate spell-timer tracking scope** — the buff/detrimental overlays' "Anyone" scope now also covers detrimentals (mez/tash/etc.), gated by the class filter, so a raid enchanter can watch other enchanters' debuffs land the same way they already could for buffs. "Cast by Me" scope is tightened to match the exact target you cast on (when Zeal pipe data is available) instead of just the spell name and a time window, cutting down on other players' casts being misattributed to you.
+- **Per-character scoping for buff/detrimental overlays** — timers can now be scoped to only the active character's own casts, in addition to the existing Self/Cast by Me/Anyone options.
+- **CH Metronome per-position badge colors** — chain-heal position badges get distinct colors and a smoother exit animation.
+- **Game database refreshed** — quarm.db rebuilt from the latest Project Quarm dump, correcting several items' proc effects, level requirements, tradeable (No Drop) flags, and vendor prices.
+
+### Fixes
+- 2H weapon detection in the Gear Upgrade Finder now correctly uses the item's weapon type instead of an inverted slot-bitmask check.
+- Unpinned overlay alerts now honor per-trigger and default text alignment instead of always centering.
+- Timer rows no longer show a remove button when they aren't clickable.
+- CH Metronome's Timer Bar Fill opacity slider is respected instead of using a hardcoded value.
+- CH Metronome's configured delay no longer distorts anchor-position acceptance.
+- Signature-spell raid timers (Fling, Silence, Caustic Mist, etc.) prefer your live target for caster resolution again when it's a valid candidate, ahead of the cast-correlation fallback.
+
 ## v0.19.3 — 2026-08-17
 
 A new Zone Lockouts overlay, App Backup now carries your overlay layout and settings across devices, and spell/timer accuracy fixes for raid signature spells and the spellbook.
