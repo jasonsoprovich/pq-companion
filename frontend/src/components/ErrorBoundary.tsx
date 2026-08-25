@@ -52,6 +52,16 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
             This section failed to render, but the rest of the app is fine. Try again, or
             switch selection.
           </p>
+          {/* The raw message, so a user reporting this can screenshot something
+              actionable — overlay windows have no reachable DevTools console. */}
+          {this.state.error.message && (
+            <p
+              className="mt-2 max-w-sm break-words px-3 font-mono text-[10px] leading-snug"
+              style={{ color: 'var(--color-muted)' }}
+            >
+              {this.state.error.message.slice(0, 200)}
+            </p>
+          )}
           <button
             onClick={this.reset}
             className="mt-3 flex items-center gap-1.5 rounded px-3 py-1.5 text-xs"
