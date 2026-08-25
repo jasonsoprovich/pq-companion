@@ -56,6 +56,14 @@ let nextId = 1
 
 // ── Alert card ─────────────────────────────────────────────────────────────────
 
+/** The pinned position of an alert's first overlay_text action, or undefined
+ *  when the trigger has none (the common case — pack and imported triggers
+ *  never carry one, so they stack at the global default position instead).
+ *  Must resolve `position` exactly the way AlertCard does. */
+function alertPinnedPosition(entry: AlertEntry): { x: number; y: number } | undefined {
+  return entry.event.actions.find((a) => a.type === 'overlay_text')?.position ?? undefined
+}
+
 function AlertCard({
   entry,
   styleDefaults,
@@ -586,6 +594,16 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [testAlert, endSession])
 
+  // The global default alignment, resolved once for the stack container.
+  // Per-trigger overrides are applied per card inside AlertCard.
+  const defaultAlign = resolveOverlayTextStyle(null, styleDefaults).align
+
+  // Alerts with a pinned per-trigger position are positioned against the
+  // viewport and must not live inside the stack container (see the comment on
+  // the render below). Everything else stacks.
+  const pinnedAlerts = alerts.filter((a) => alertPinnedPosition(a) !== undefined)
+  const stackAlerts = alerts.filter((a) => alertPinnedPosition(a) === undefined)
+
   // The trigger overlay is fully invisible and click-through. The only thing
   // it ever shows is real-fire alerts (text-only, pointer-events:none) and,
   // during a positioning session, a single draggable test card. The "Done"
@@ -603,43 +621,56 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
         backgroundColor: 'transparent',
       }}
     >
+      {/* Pinned alerts render position:fixed against the viewport. They are
+          rendered OUTSIDE the stack container on purpose: the container may
+          carry a CSS transform (the default-position anchor below), and a
+          transformed ancestor becomes the containing block for fixed-position
+          descendants, which would silently offset every pinned alert. */}
+      {pinnedAlerts.map((entry) => (
+        <AlertCard key={entry.id} entry={entry} styleDefaults={styleDefaults} />
+      ))}
       <div
         style={
           defaultPos
             ? {
                 // Anchor the unpinned-alert stack at the user's default
                 // position, clamped onto the current overlay window the same
-                // way AlertCard clamps per-trigger positions. Pinned alerts
-                // render position:fixed from inside AlertCard, so this
-                // container doesn't affect them. Per-card alignSelf (driven by
-                // each alert's own resolved align) does the real alignment
-                // work below — this is just a sane baseline for the column.
+                // way AlertCard clamps per-trigger positions. The anchor
+                // transform makes the default alignment mean the same thing
+                // here as it does for a pinned alert (and as it did in the
+                // Settings positioning card the user dragged): 'left' grows
+                // rightward from the point, 'center' straddles it, 'right'
+                // grows leftward. Without it a centered default still grew
+                // rightward, which is what read as "stuck on left aligned".
                 position: 'fixed',
                 left: Math.min(Math.max(0, defaultPos.x), Math.max(0, window.innerWidth - 40)),
                 top: Math.min(Math.max(0, defaultPos.y), Math.max(0, window.innerHeight - 24)),
+                transform: overlayAnchorTransform(defaultAlign),
                 display: 'flex',
                 flexDirection: 'column',
-                alignItems: overlayAlignItems(resolveOverlayTextStyle(null, styleDefaults).align),
+                alignItems: overlayAlignItems(defaultAlign),
                 gap: 6,
               }
             : {
-                // No default position configured: alerts stack centered on
-                // screen. alignItems still reflects the global default (and
-                // per-card alignSelf below still honors per-trigger overrides)
-                // rather than hardcoding 'center', which used to silently
-                // ignore the Default Overlay Text alignment setting entirely.
+                // No default position configured: the stack sits in the middle
+                // of the screen, as it always has. alignSelf:'center' shrinks
+                // the column to its content and centers it — the column must
+                // NOT span the viewport, or per-card alignSelf (below) would
+                // fling each alert to a screen edge instead of aligning it
+                // against its neighbours in the stack.
                 flex: 1,
+                alignSelf: 'center',
                 display: 'flex',
                 flexDirection: 'column',
                 justifyContent: 'center',
-                alignItems: overlayAlignItems(resolveOverlayTextStyle(null, styleDefaults).align),
+                alignItems: overlayAlignItems(defaultAlign),
                 gap: 6,
-                padding: alerts.length > 0 ? '8px 8px' : 0,
+                padding: stackAlerts.length > 0 ? '8px 8px' : 0,
                 overflow: 'hidden',
               }
         }
       >
-        {alerts.map((entry) => (
+        {stackAlerts.map((entry) => (
           <AlertCard key={entry.id} entry={entry} styleDefaults={styleDefaults} />
         ))}
       </div>
