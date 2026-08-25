@@ -600,7 +600,10 @@ function NPCContent({
             <StatsBody
               key={v.npc.id}
               npc={v.npc}
-              abilities={v.special_abilities}
+              // ?? [] because a variant with no abilities used to arrive as
+              // JSON null; a raw .filter() on it threw during render, which
+              // unmounts the whole overlay (see OverlayPage's error boundary).
+              abilities={v.special_abilities ?? []}
               casterSummary={v.caster_summary}
               sections={sections}
               view={view}

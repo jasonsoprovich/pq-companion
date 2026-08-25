@@ -28,7 +28,10 @@ const WSEventNPCTarget = "overlay:npc_target"
 // rows like ssratemple's necro/SK shissar revenant), the overlay surfaces
 // the full set rather than guessing.
 type TargetVariant struct {
-	NPC              db.NPC               `json:"npc"`
+	NPC db.NPC `json:"npc"`
+	// SpecialAbilities is never nil — an NPC with no abilities marshals as []
+	// rather than null. The field has no omitempty, so a nil slice would ship
+	// a literal null to a frontend whose type says the array is always there.
 	SpecialAbilities []db.SpecialAbility  `json:"special_abilities"`
 	CasterSummary    *db.NPCCasterSummary `json:"caster_summary,omitempty"`
 }
@@ -577,6 +580,11 @@ func (t *NPCTracker) lookupNPCVariants(
 		npc := c.NPC
 		abs := db.ParseSpecialAbilities(npc.SpecialAbilities)
 		abs = mergeInvisFlags(abs, &npc)
+		// An NPC with no special abilities and no see-invis flags parses to a
+		// nil slice; keep it an empty one so the field marshals as [].
+		if abs == nil {
+			abs = []db.SpecialAbility{}
+		}
 		out = append(out, TargetVariant{
 			NPC:              npc,
 			SpecialAbilities: abs,

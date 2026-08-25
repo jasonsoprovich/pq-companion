@@ -3,6 +3,7 @@ import { HashRouter, Routes, Route, Navigate, useNavigate } from 'react-router-d
 import Layout from './components/Layout'
 import OnboardingWizard from './components/OnboardingWizard'
 import WhatsNewModal from './components/WhatsNewModal'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { getConfig, getChangelog, updateConfig, type ChangelogEntry } from './services/api'
 import { setAudioOwner } from './services/audio'
 import { loadEnums } from './lib/enumsCache'
@@ -91,14 +92,33 @@ function OverlayPage({
 }): React.ReactElement {
   useEffect(() => {
     document.body.style.backgroundColor = 'transparent'
-    return () => { document.body.style.backgroundColor = '' }
+    return () => {
+      // Only hand the opaque app background back when this window really has
+      // navigated off the overlay route. A React tree can also unmount because
+      // it threw during render — reverting there repaints the whole frameless
+      // window solid #0a0a0a, which is the "overlay turned into a black box,
+      // gone only after a restart" bug. The boundary below should now catch
+      // those, but the window must never be able to go opaque either way.
+      if (!window.location.hash.includes('-window')) {
+        document.body.style.backgroundColor = ''
+      }
+    }
   }, [])
   // Apply this window's per-overlay zoom (no-op default of 1.0 when unset).
   // Called unconditionally with '' for keyless overlays so hook order is stable.
   useOverlayZoom(overlayKey ?? '')
   // Overlay pages are lazy too; a null fallback keeps the window fully
   // transparent while the (small) chunk loads instead of flashing a backdrop.
-  return <Suspense fallback={null}>{children}</Suspense>
+  //
+  // The boundary keeps one bad payload (an unexpected null in a WebSocket
+  // target/timer push, say) from unmounting the window's entire tree — an
+  // overlay has no navigation to recover through, so an uncaught render throw
+  // left users with a dead window until they restarted the app.
+  return (
+    <ErrorBoundary label={`${overlayKey ?? 'Overlay'} overlay`}>
+      <Suspense fallback={null}>{children}</Suspense>
+    </ErrorBoundary>
+  )
 }
 
 // MainWindowLayout mounts the audio/alert hooks and renders the main Layout.

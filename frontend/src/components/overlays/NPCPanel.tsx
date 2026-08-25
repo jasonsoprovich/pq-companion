@@ -450,7 +450,9 @@ function OtherVariants({
           <NPCDetails
             key={v.npc.id}
             npc={v.npc}
-            abilities={v.special_abilities}
+            // ?? [] because a variant with no abilities used to arrive as JSON
+            // null, and reading .length off it threw during render.
+            abilities={v.special_abilities ?? []}
             casterSummary={v.caster_summary}
             sections={sections}
             view={view}
