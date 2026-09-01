@@ -621,7 +621,7 @@ func (e *Engine) Handle(ev logparser.LogEvent) {
 		if !ok || data.Target == "" {
 			return
 		}
-		e.removeOnKill(data.Target)
+		e.removeOnKill(data.Target, false)
 	}
 }
 
@@ -666,7 +666,10 @@ func (e *Engine) SetPipeCasting(name string) {
 // always-in-range death signal — unlike the log's slain-line, which never
 // reaches a caster standing far from a raid boss. On the transition into a
 // corpse target we drop any detrimental timers keyed to that NPC, the same
-// cleanup the log-driven EventKill path performs via removeOnKill.
+// cleanup the log-driven EventKill path performs via removeOnKill. This path
+// passes viaCorpseTarget=true: a corpse means the player had that exact mob
+// selected as it died, so unlike a log kill line it also clears a matching
+// charm timer (the player deliberately killed their own charmed pet).
 //
 // The pipe resends the current target at ~10 Hz, so we de-dupe against the
 // last seen name and act only when it changes; non-corpse and empty targets
@@ -684,7 +687,7 @@ func (e *Engine) HandlePipeTarget(name string) {
 	e.mu.Unlock()
 
 	if base, ok := parseCorpseTarget(name); ok {
-		e.removeOnKill(base)
+		e.removeOnKill(base, true)
 	}
 }
 
@@ -1761,13 +1764,23 @@ func (e *Engine) removeSelfTimers() {
 // regardless — a target-less buff is usually a self-buff or a raid-wide
 // effect that survives a single mob's death.
 //
-// Charm is the one detrimental excluded from the orphan sweep: a charmed
-// pet is a living ally the player keeps fighting WITH, so killing the mob
-// it's tanking must not drop the charm timer. Charm orphans clear via their
-// charm-break worn-off message (or expiry) instead. A charm timer that IS
-// bound to the slain mob (the player killed their own charm) still clears
-// through the normal target match below.
-func (e *Engine) removeOnKill(target string) {
+// Charm handling. A charmed pet is a living ally the player keeps fighting
+// WITH, so killing the mob it's tanking must not drop the charm timer — and
+// EQ writes NO "Your charm spell has worn off." line when a charmed pet is
+// killed under the player's control, so EventCharmBroken can't be relied on
+// for pet death either. Charm timers are therefore excluded from the orphan
+// sweep AND from the name match on a log-driven kill (viaCorpseTarget ==
+// false): a groupmate's kill, an add, or the mob the pet is tanking all
+// produce a kill line naming only a string that's indistinguishable from the
+// pet's own name (EQ logs carry no spawn id). Such a timer clears via
+// EventCharmBroken (charm expiry / resist break / manual /pet), its own
+// duration expiry, or the corpse-target signal below.
+//
+// The Zeal corpse-target path (viaCorpseTarget == true) DOES clear a matching
+// charm timer: the pipe only reports a corpse when the player had that exact
+// mob selected as it died — i.e. deliberately killed their own charmed pet —
+// which is positive evidence, not a same-name guess.
+func (e *Engine) removeOnKill(target string, viaCorpseTarget bool) {
 	if target == "" {
 		return
 	}
@@ -1784,7 +1797,11 @@ func (e *Engine) removeOnKill(target string) {
 		// would otherwise delete the very row it just captured a target
 		// name for. The orphan sweep never applies to CategoryCustom
 		// (isDetrimentalCategory excludes it) so it's unaffected either way.
-		match := !t.Stacked && normalizeNPCName(t.TargetName) == normTarget
+		// Charm timers only match on the corpse-target signal, never a
+		// log-driven kill (see the doc comment) — a same-named mob dying
+		// elsewhere must not drop the pet's timer.
+		match := !t.Stacked && normalizeNPCName(t.TargetName) == normTarget &&
+			(!t.IsCharm || viaCorpseTarget)
 		orphan := t.TargetName == "" && isDetrimentalCategory(t.Category) && !t.IsCharm
 		if match || orphan {
 			delete(e.timers, k)

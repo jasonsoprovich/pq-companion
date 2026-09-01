@@ -1334,6 +1334,46 @@ func TestHandle_CharmBroken_ClearsCharmTimers(t *testing.T) {
 	}
 }
 
+// A charm timer bound to the pet's NAME must survive a same-named mob's kill
+// on a log line — a groupmate's kill, an add, or the mob the pet is tanking
+// all produce "<name> ... slain" and EQ logs carry no spawn id to tell the
+// dead mob from the still-living pet. Reproduces the Discord report of Solon's
+// Bewitching Bravura vanishing when a mob sharing the pet's name was killed.
+// The Zeal corpse-target signal DOES clear it: that only fires when the player
+// had that exact mob selected as it died (deliberately killed their own pet).
+func TestHandle_Kill_KeepsCharmTimerBoundToSameName(t *testing.T) {
+	e := newTestEngine()
+	now := time.Now()
+	key := timerKey("Solon's Bewitching Bravura", "a sarnak conscript")
+	arm := func() {
+		e.timers[key] = &ActiveTimer{
+			ID: key, SpellName: "Solon's Bewitching Bravura",
+			Category: CategoryDebuff, IsCharm: true, TargetName: "a sarnak conscript",
+			CastAt: now, StartsAt: now, ExpiresAt: now.Add(2 * time.Minute),
+		}
+	}
+
+	arm()
+	// The group AoEs down several other "a sarnak conscript" — each emits an
+	// EventKill naming only that string.
+	for i := 0; i < 3; i++ {
+		e.Handle(logparser.LogEvent{
+			Type: logparser.EventKill,
+			Data: logparser.KillData{Killer: "Groupmate", Target: "a sarnak conscript"},
+		})
+	}
+	if _, ok := e.timers[key]; !ok {
+		t.Fatal("charm timer must survive same-named mobs' log kills — the pet is still alive")
+	}
+
+	// Now the player's OWN targeted pet dies: Zeal reports the corpse.
+	e.HandlePipeTarget("a sarnak conscript")
+	e.HandlePipeTarget("a sarnak conscript's corpse")
+	if _, ok := e.timers[key]; ok {
+		t.Error("charm timer should clear when the player's own targeted pet dies (corpse signal)")
+	}
+}
+
 // Multi-word boss names — verify the existing target-match path handles
 // names with spaces (e.g. "Zun Thall Xakra") since these are the typical
 // raid targets where users notice debuffs lingering.

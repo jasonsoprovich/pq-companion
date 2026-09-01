@@ -143,10 +143,13 @@ type ActiveTimer struct {
 
 	// IsCharm marks a timer whose source spell is a Charm effect (SPA 22).
 	// Charm represents an ongoing pet the player controls, so — unlike a
-	// debuff or mez — its timer must survive the death of *other* mobs.
-	// removeOnKill's orphan-clear path skips charm timers; they clear only
-	// via their charm-break worn-off message (or expiry). Internal-only; the
-	// frontend doesn't need it.
+	// debuff or mez — its timer must survive the death of *other* mobs,
+	// including a different mob that shares the pet's name (EQ logs carry no
+	// spawn id to tell them apart). removeOnKill skips charm timers on both
+	// the orphan sweep and a log-driven name match; they clear only via
+	// EventCharmBroken (charm expiry / resist break / manual /pet), their own
+	// duration expiry, or the Zeal corpse-target signal (player killed their
+	// own targeted pet). Internal-only; the frontend doesn't need it.
 	IsCharm bool `json:"-"`
 
 	// CasterManaPct is the caster's self-reported remaining mana percentage,
