@@ -2030,6 +2030,14 @@ func (e *Engine) clearAll() {
 // would accumulate in the overlay forever.
 const keepExpiredMaxOverdue = 60 * time.Minute
 
+// expiryGraceWindow is how long pruneExpired holds a just-expired non-CH-chain
+// timer (when keep-expired is off) before dropping it — long enough that the
+// same tick's broadcast still emits the row at RemainingSeconds == 0, short
+// enough that the next tick (broadcastInterval apart) removes it. This is what
+// lets a fade-soon alert with a 0-second threshold fire reliably instead of
+// only when scheduler jitter happens to land a broadcast on the expiry instant.
+const expiryGraceWindow = broadcastInterval / 2
+
 // isCHChainCategory reports whether c is one of the two CH-chain categories
 // (main or secondary/ramp) — the only categories eligible for possible-miss
 // flagging.
@@ -2102,6 +2110,24 @@ func (e *Engine) pruneExpired() {
 			continue
 		}
 		if keep && now.Sub(t.ExpiresAt) <= keepExpiredMaxOverdue {
+			continue
+		}
+		// One-tick "just expired" grace. Hold a newly-expired timer in the
+		// map for a single broadcast so snapshot() emits it once at
+		// RemainingSeconds == 0 (it already clamps the negative value when
+		// keep-expired is off) and the frontend can observe the downward
+		// crossing that fires a fade-soon alert whose threshold is 0. The
+		// prune-then-broadcast tick loop would otherwise delete the row in
+		// the same tick it expires, before broadcast() runs. Mirrors the
+		// respawn engine, which already keeps a row visible at 0:00 for a
+		// grace window for exactly this reason. CH-chain timers (handled
+		// above) keep their own missGraceUntil path; keep-expired rows never
+		// reach here. expiryGraceWindow is shorter than broadcastInterval so
+		// the row is gone by the next tick.
+		if t.expiryGraceUntil.IsZero() {
+			t.expiryGraceUntil = now.Add(expiryGraceWindow)
+		}
+		if !now.After(t.expiryGraceUntil) {
 			continue
 		}
 		delete(e.timers, name)

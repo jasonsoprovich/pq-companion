@@ -492,17 +492,97 @@ func TestPruneExpired_ConfirmedCHChainTimerDropsOnTime(t *testing.T) {
 }
 
 // TestPruneExpired_NonCHChainCategoriesNeverFlagged guards the scope of the
-// feature: ordinary buff/debuff timers must never get a PossibleMiss flag or
-// grace extension, confirmed timers unaffected.
+// possible-miss feature: ordinary buff/debuff timers must never get a
+// PossibleMiss flag or the multi-second CH-style grace extension. They get only
+// the single-tick expiry grace (see
+// TestPruneExpired_JustExpiredTimerVisibleAtZeroForOneTick) and are then
+// dropped.
 func TestPruneExpired_NonCHChainCategoriesNeverFlagged(t *testing.T) {
 	e := newTestEngine()
-	past := time.Now().Add(-1 * time.Hour)
-	e.StartExternal("Mesmerization", "debuff", 10, 0, past, nil, 0, "Bob", "", false, "", false)
+	// Just-expired (a hair past ExpiresAt), non-deferred debuff.
+	started := time.Now().Add(-5100 * time.Millisecond)
+	e.StartExternal("Cripple", "debuff", 5, 0, started, nil, 0, "Bob", "", false, "", false)
+	key := timerKey("Cripple", "Bob")
+	wantExpiry := started.Add(5 * time.Second)
 
 	e.pruneExpired()
 
-	if e.timers[timerKey("Mesmerization", "Bob")] != nil {
-		t.Error("an expired non-CH-chain timer should be dropped immediately, not flagged/extended")
+	tm := e.timers[key]
+	if tm == nil {
+		t.Fatal("expired non-CH timer should linger one tick for the expiry grace")
+	}
+	if tm.PossibleMiss {
+		t.Error("a non-CH-chain timer must never be flagged PossibleMiss")
+	}
+	if !tm.missGraceUntil.IsZero() {
+		t.Error("a non-CH-chain timer must never get a CH miss grace")
+	}
+	if !tm.ExpiresAt.Equal(wantExpiry) {
+		t.Errorf("expiry grace must not move ExpiresAt: got %v, want %v", tm.ExpiresAt, wantExpiry)
+	}
+
+	// Once the one-tick grace has elapsed, the row is dropped — no multi-second
+	// CH-style linger.
+	tm.expiryGraceUntil = time.Now().Add(-time.Second)
+	e.pruneExpired()
+	if e.timers[key] != nil {
+		t.Error("expired non-CH-chain timer should be dropped after its one-tick grace")
+	}
+}
+
+// TestPruneExpired_JustExpiredTimerVisibleAtZeroForOneTick verifies the
+// single-broadcast expiry grace: with keep-expired off, a timer that has just
+// passed its expiry is held for one more broadcast at RemainingSeconds == 0
+// (Expired stays false) so the frontend observes the downward crossing that
+// fires a fade-soon alert with a 0-second threshold, then is dropped on the
+// next prune. Without the grace, prune deletes the row in the same tick it
+// expires — before broadcast() runs — so the 0 crossing is never seen and a
+// 0s threshold fires only on scheduler jitter.
+func TestPruneExpired_JustExpiredTimerVisibleAtZeroForOneTick(t *testing.T) {
+	e := newTestEngine()
+	// Duration elapsed by a hair — expired, but only just.
+	started := time.Now().Add(-3100 * time.Millisecond)
+	e.StartExternal("Clarity", "buff", 3, 0, started, nil, 0, "Osui", "", false, "", false)
+	key := timerKey("Clarity", "Osui")
+	wantExpiry := started.Add(3 * time.Second)
+
+	e.pruneExpired()
+
+	tm := e.timers[key]
+	if tm == nil {
+		t.Fatal("just-expired timer must survive the first prune for the one-tick grace")
+	}
+	if tm.expiryGraceUntil.IsZero() {
+		t.Error("expected expiryGraceUntil to be set on the just-expired timer")
+	}
+	if !tm.ExpiresAt.Equal(wantExpiry) {
+		t.Errorf("grace must not move ExpiresAt: got %v, want %v", tm.ExpiresAt, wantExpiry)
+	}
+
+	// The broadcast the frontend sees must carry the row at exactly 0 — not
+	// negative (that's keep-expired overdue mode) and not omitted.
+	var got *ActiveTimer
+	state := e.GetState()
+	for i := range state.Timers {
+		if state.Timers[i].ID == key {
+			got = &state.Timers[i]
+		}
+	}
+	if got == nil {
+		t.Fatal("just-expired timer must still appear in the broadcast snapshot")
+	}
+	if got.RemainingSeconds != 0 {
+		t.Errorf("held timer should report RemainingSeconds == 0, got %v", got.RemainingSeconds)
+	}
+	if got.Expired {
+		t.Error("Expired must stay false when keep-expired is off")
+	}
+
+	// Next prune, after the grace window: the row is gone.
+	tm.expiryGraceUntil = time.Now().Add(-time.Second)
+	e.pruneExpired()
+	if e.timers[key] != nil {
+		t.Error("timer should be dropped on the prune after its one-tick grace elapses")
 	}
 }
 

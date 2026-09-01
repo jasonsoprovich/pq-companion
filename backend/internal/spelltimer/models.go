@@ -189,6 +189,17 @@ type ActiveTimer struct {
 	// derives its anchor from RemainingSeconds — desynced the metronome by
 	// the grace amount. Zero when no grace is pending. Internal-only.
 	missGraceUntil time.Time `json:"-"`
+
+	// expiryGraceUntil holds a just-expired non-CH-chain timer in the map for
+	// one extra broadcast (see expiryGraceWindow) so snapshot() emits it once
+	// at RemainingSeconds == 0 before pruneExpired drops it. Without this the
+	// prune-then-broadcast tick loop deletes the row in the same tick it
+	// expires, so the frontend never observes the downward crossing to 0 and
+	// a fade-soon alert whose threshold is 0 fires only on scheduler jitter.
+	// Only set when "keep expired timers" is off (that mode already lingers
+	// the row with a negative RemainingSeconds). Zero when no grace is
+	// pending. Internal-only.
+	expiryGraceUntil time.Time `json:"-"`
 }
 
 // TimerState is the full payload broadcast via WebSocket and returned by the
