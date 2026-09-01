@@ -76,6 +76,38 @@ func (d *DB) InstantEffectSpellIDs() (map[int]bool, error) {
 	return ids, rows.Err()
 }
 
+// IllusionSpellIDs returns the set of spell IDs whose effect list contains
+// SPA 58 (Illusion / "play another race"). The whole illusion family — every
+// "Illusion: <race>", "Minor Illusion", and the illusion-clicky buffs like
+// Cloak of Khala Dun and Form of Protection — shares the exact land text
+// "You feel different." and "<name>'s image shimmers.", so a land event with
+// no disambiguating recent cast can't name the specific spell. The spell-timer
+// engine uses this set to recognise "this ambiguous land is definitely some
+// illusion" and collapse it to one generic timer. Read-only data.
+func (d *DB) IllusionSpellIDs() (map[int]bool, error) {
+	const q = `
+		SELECT id FROM spells_new
+		WHERE 58 IN (effectid1, effectid2, effectid3, effectid4, effectid5,
+		             effectid6, effectid7, effectid8, effectid9, effectid10,
+		             effectid11, effectid12)
+	`
+	rows, err := d.Query(q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	ids := make(map[int]bool)
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids[id] = true
+	}
+	return ids, rows.Err()
+}
+
 // ClickEffectSpellIDsForItems returns the set of click-effect spell IDs
 // produced by the given owned item IDs. The spell-timer engine uses it to
 // disambiguate land text shared by several clickies: among the clicky

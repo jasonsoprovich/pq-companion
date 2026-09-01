@@ -194,6 +194,67 @@ func TestResolveLandedSpellName(t *testing.T) {
 			},
 			want: "",
 		},
+		{
+			// A cast_on_other illusion land ("<name>'s image shimmers.") must
+			// NOT be disambiguated by the local player's clicky inventory —
+			// that's the bug where every other player's illusion showed up as
+			// whatever lone illusion mask the active character carried. With
+			// every candidate an illusion, it collapses to the generic name.
+			name: "cast_on_other illusion land collapses to combined name, ignoring local clickies",
+			setup: func(e *Engine) {
+				e.clickableLoaded = true
+				e.clickableSpellIDs = map[int]bool{588: true, 590: true}
+				e.ownedClickyLoaded = true
+				e.ownedClickySpellIDs = map[int]bool{590: true} // local Mask of Deception
+				e.illusionLoaded = true
+				e.illusionSpellIDs = map[int]bool{588: true, 590: true}
+			},
+			data: logparser.SpellLandedData{
+				Kind: logparser.SpellLandedKindOther,
+				Candidates: []logparser.SpellLandedCandidate{
+					{SpellID: 588, SpellName: "Illusion: Wood Elf"},
+					{SpellID: 590, SpellName: "Illusion: Dark Elf"},
+				},
+			},
+			want: illusionCombinedName,
+		},
+		{
+			// The Kind guard only blocks cast_on_other: a SELF illusion land
+			// still reaches the clicky path, so a sole item-produced candidate
+			// resolves to that specific race.
+			name: "self illusion land still resolves via sole item-produced candidate",
+			setup: func(e *Engine) {
+				e.clickableLoaded = true
+				e.clickableSpellIDs = map[int]bool{590: true}
+				e.illusionLoaded = true
+				e.illusionSpellIDs = map[int]bool{588: true, 590: true}
+			},
+			data: logparser.SpellLandedData{
+				Kind: logparser.SpellLandedKindYou,
+				Candidates: []logparser.SpellLandedCandidate{
+					{SpellID: 588, SpellName: "Illusion: Wood Elf"},
+					{SpellID: 590, SpellName: "Illusion: Dark Elf"},
+				},
+			},
+			want: "Illusion: Dark Elf",
+		},
+		{
+			// cast_on_other collision where a non-illusion candidate is in the
+			// set: we can't be sure it's an illusion, so stay ambiguous.
+			name: "cast_on_other collision with a non-illusion candidate stays empty",
+			setup: func(e *Engine) {
+				e.illusionLoaded = true
+				e.illusionSpellIDs = map[int]bool{588: true}
+			},
+			data: logparser.SpellLandedData{
+				Kind: logparser.SpellLandedKindOther,
+				Candidates: []logparser.SpellLandedCandidate{
+					{SpellID: 588, SpellName: "Illusion: Wood Elf"},
+					{SpellID: 9999, SpellName: "Some Other Buff"},
+				},
+			},
+			want: "",
+		},
 	}
 
 	for _, tc := range cases {

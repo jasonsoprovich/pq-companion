@@ -364,6 +364,17 @@ type Engine struct {
 	clickableSpellIDs map[int]bool
 	clickableLoaded   bool
 
+	// illusionSpellIDs is the set of spell IDs carrying SPA 58 (Illusion /
+	// "play another race"), lazily loaded from the DB. The whole illusion
+	// family shares the exact land text "You feel different." /
+	// "<name>'s image shimmers.", so an ambiguous land with no disambiguating
+	// recent cast can't name the race — candidatesAllIllusion uses this set to
+	// recognise "this collision is definitely some illusion" and collapse it
+	// to one generic timer instead of mislabeling it (see resolveLandedSpellName).
+	illusionMu       sync.Mutex
+	illusionSpellIDs map[int]bool
+	illusionLoaded   bool
+
 	// ownedItemsFn / ownedClicky* narrow a multi-clicky land collision to the
 	// single clicky the active character actually carries. The clicky spell-ID
 	// set is derived from the owned item list once and cached; RefreshModifiers
@@ -1444,6 +1455,12 @@ type ambiguousLandGroup struct {
 	memberIDs   map[int]bool
 }
 
+// illusionCombinedName is the display name for an ambiguous illusion land that
+// can't be pinned to a specific race (see candidatesAllIllusion). Kept out of
+// the "Illusion: <race>" namespace on purpose so removeIllusionsForPlayer and
+// callers can tell the collapsed timer apart from a resolved one.
+const illusionCombinedName = "Illusion"
+
 var ambiguousLandGroups = []ambiguousLandGroup{
 	{
 		// 1939 Speed of the Shissar (single) + 2895 Speed of the Brood (group)
@@ -1469,6 +1486,21 @@ var ambiguousLandGroups = []ambiguousLandGroup{
 		displayName: "Resist Magic",
 		repSpellID:  72,
 		memberIDs:   map[int]bool{64: true, 72: true, 964: true, 3242: true},
+	},
+	{
+		// Every "Illusion: <race>", "Minor Illusion", and illusion-clicky buff
+		// (Cloak of Khala Dun, Form of Protection, ...) shares the exact land
+		// text "You feel different." and "<name>'s image shimmers.", so a land
+		// with no disambiguating recent local cast can't name the race. This
+		// group is matched via candidatesAllIllusion (a SPA-58 DB check), NOT
+		// the exact memberID-set path — the illusion family is large and grows
+		// with quarm.db updates, so an exhaustive list would rot. memberIDs is
+		// left nil; only repSpellID (category/duration/icon metadata) and
+		// displayName are used. Every illusion is 360 ticks / formula 3, so the
+		// generic timer's countdown is still accurate.
+		displayName: illusionCombinedName,
+		repSpellID:  582, // Illusion: Human — a plain 360-tick / formula-3 illusion
+		memberIDs:   nil,
 	},
 }
 
@@ -1545,19 +1577,42 @@ func (e *Engine) resolveLandedSpellName(data logparser.SpellLandedData) string {
 		)
 	}
 
-	// Last resort: an ambiguous self-land with no disambiguating recent cast
+	// Last resort: an ambiguous SELF-land with no disambiguating recent cast
 	// is, by construction, an instant item clicky (a player-cast spell would
 	// have logged "You begin casting"). The real spell must therefore be one
 	// an item can actually produce. If exactly one candidate is item-produced,
 	// resolve to it — this rescues collisions like "Shield of the Eighth"
 	// (Coldain ring clicky) sharing cast text with the item-less, never-
 	// triggerable "Shield of the Ring".
-	if name := e.soleClickableCandidate(data.Candidates); name != "" {
-		slog.Debug("timer-debug: ambiguous spell-landed resolved to sole item-clicky candidate",
-			"spell", name,
+	//
+	// This is gated to self-lands: soleClickableCandidate tie-breaks on
+	// clickies the ACTIVE character carries, which says nothing about what
+	// somebody else cast. Running it on a cast_on_other land made every other
+	// player's illusion ("<name>'s image shimmers.") resolve to whatever lone
+	// illusion clicky the local player happened to carry (e.g. a Mask of
+	// Deception → "Illusion: Dark Elf"), regardless of the real form.
+	if data.Kind != logparser.SpellLandedKindOther {
+		if name := e.soleClickableCandidate(data.Candidates); name != "" {
+			slog.Debug("timer-debug: ambiguous spell-landed resolved to sole item-clicky candidate",
+				"spell", name,
+				"candidates", len(data.Candidates),
+			)
+			return name
+		}
+	}
+
+	// Every candidate is an illusion (SPA 58) — the "Illusion: <race>" /
+	// "Minor Illusion" / illusion-clicky family shares "You feel different."
+	// and "<name>'s image shimmers." verbatim, so a land with no recent
+	// disambiguating cast can't name the race. Collapse to a generic
+	// "Illusion" timer rather than drop it or mislabel it; every illusion
+	// shares 360-tick / formula-3 duration so the countdown stays accurate.
+	if e.candidatesAllIllusion(data.Candidates) {
+		slog.Debug("timer-debug: ambiguous spell-landed resolved to combined Illusion name",
 			"candidates", len(data.Candidates),
+			"kind", data.Kind,
 		)
-		return name
+		return illusionCombinedName
 	}
 
 	// Known display-equivalent group (e.g. Speed of the Shissar/Brood): the
@@ -1667,6 +1722,50 @@ func (e *Engine) clickableIDs() map[int]bool {
 	}
 	e.clickableSpellIDs = ids
 	return ids
+}
+
+// illusionIDs returns the cached set of spell IDs carrying SPA 58 (Illusion),
+// loading it from the DB on first call. Returns nil if the DB is unavailable
+// or the load fails.
+func (e *Engine) illusionIDs() map[int]bool {
+	e.illusionMu.Lock()
+	defer e.illusionMu.Unlock()
+	if e.illusionLoaded {
+		return e.illusionSpellIDs
+	}
+	e.illusionLoaded = true
+	if e.db == nil {
+		return nil
+	}
+	ids, err := e.db.IllusionSpellIDs()
+	if err != nil {
+		slog.Warn("timer-debug: failed to load illusion spell IDs", "err", err)
+		return nil
+	}
+	e.illusionSpellIDs = ids
+	return ids
+}
+
+// candidatesAllIllusion reports whether every ambiguous land candidate is an
+// illusion spell (SPA 58). The exact land text "You feel different." /
+// "<name>'s image shimmers." is shared only by the illusion family, so when
+// this holds the collision is definitely some illusion and can be collapsed
+// to one generic timer. Needs at least two candidates (a unique match is
+// already resolved) and a loaded illusion set.
+func (e *Engine) candidatesAllIllusion(cands []logparser.SpellLandedCandidate) bool {
+	if len(cands) < 2 {
+		return false
+	}
+	ids := e.illusionIDs()
+	if len(ids) == 0 {
+		return false
+	}
+	for _, c := range cands {
+		if !ids[c.SpellID] {
+			return false
+		}
+	}
+	return true
 }
 
 // RemoveByID removes a single timer by its composite key (the ID field
@@ -1930,7 +2029,8 @@ func (e *Engine) removeIllusionsForPlayer(player string) {
 	e.mu.Lock()
 	removed := 0
 	for k, t := range e.timers {
-		if t.TargetName == player && strings.HasPrefix(t.SpellName, "Illusion: ") {
+		if t.TargetName == player &&
+			(t.SpellName == illusionCombinedName || strings.HasPrefix(t.SpellName, "Illusion: ")) {
 			delete(e.timers, k)
 			removed++
 		}
