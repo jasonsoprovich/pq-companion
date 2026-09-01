@@ -9,6 +9,15 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## Unreleased
+
+Staged notes for the next release. `/newrelease` folds these into the dated
+version section.
+
+### Fixes
+- **Fade-soon / "0 seconds" alerts fire reliably again** — a timer alert set to speak or play at 0 seconds remaining only fired sporadically, because the timer was removed the instant it expired, a beat before the overlay could report it hitting zero. Expired timers now stay visible for one extra beat at 0:00 so the alert always fires. The workaround of padding the duration by a second and alerting at 1s is no longer needed.
+- **Charm timers no longer vanish when a same-named creature dies** — a bard's Solon's Bewitching Bravura (or any charm timer) disappeared whenever another creature sharing the charmed pet's name was killed nearby — a groupmate's kill, an add, or the mob the pet was tanking — because the game log can't tell two same-named creatures apart. Charm timers now ignore those kills and clear only when the charm actually breaks, the timer runs out, or you kill your own targeted pet.
+
 ## v0.20.1 — 2026-08-25
 
 Two overlay fixes: alert text lands where you put it, and a crash that could turn an overlay into a black box.

@@ -1806,6 +1806,31 @@ hardening — no new features, but a broad sweep of reliability fixes.
   rebalance, 1 spawn2 point enabled. Verified via full row-level diff
   and the backend test suite against the new db.
 
+## Unreleased
+
+- **Fade-soon timer alerts fire reliably at 0 seconds remaining** — the
+  client fires a threshold alert when it sees a timer's remaining time
+  cross the threshold on an `overlay:timers` broadcast, but the engine
+  pruned an expired timer in the same tick it broadcast, so no frame
+  ever showed it at 0 and a 0-second threshold fired only on timing
+  jitter. A just-expired non-CH-chain timer now lingers for one
+  broadcast at `remaining_seconds == 0` (mirroring the respawn engine's
+  existing grace) so the crossing is always seen; overlays render one
+  final 0 frame before the row clears. The +1s-duration / alert-at-1s
+  workaround is no longer needed.
+- **Charm spell timers survive a same-named creature's death** — a charm
+  timer is bound to the pet's name (e.g. "a sarnak conscript"), and
+  `removeOnKill`'s name match deleted it whenever anything normalizing
+  to that name died in the zone or group, since EQ kill lines carry no
+  spawn id. Charm timers are now exempt from the name match on a
+  log-driven kill (matching their existing exemption from the orphan
+  sweep) and clear only via the charm-break line, their own expiry, or
+  the Zeal corpse-target signal (you killed your own targeted pet). EQ
+  emits no charm-break line when a charmed pet is killed, so a timer
+  whose pet dies to the mob it was fighting now lingers to expiry
+  rather than clearing early — a deliberate trade against it vanishing
+  while the pet is still alive.
+
 ## Phase 11 — Project Website
 _Planned_
 
