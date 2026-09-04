@@ -109,23 +109,26 @@ type ItemFilter struct {
 	MaxLevel int // 0=no maximum
 	Slot     int // slot bitmask; 0=any slot
 	ItemType int // -1=any, 0=1H Slashing, 10=Armor, …
-	MinSTR   int
-	MinSTA   int
-	MinAGI   int
-	MinDEX   int
-	MinWIS   int
-	MinINT   int
-	MinCHA   int
-	MinHP    int
-	MinMana  int
-	MinAC    int
-	MinMR    int
-	MinCR    int
-	MinDR    int
-	MinFR    int
-	MinPR    int
-	Limit    int
-	Offset   int
+	// HideNoDrop excludes NO DROP items (items.nodrop = 0) — for finding
+	// gear that can be handed to a charmed pet or traded to an alt.
+	HideNoDrop bool
+	MinSTR     int
+	MinSTA     int
+	MinAGI     int
+	MinDEX     int
+	MinWIS     int
+	MinINT     int
+	MinCHA     int
+	MinHP      int
+	MinMana    int
+	MinAC      int
+	MinMR      int
+	MinCR      int
+	MinDR      int
+	MinFR      int
+	MinPR      int
+	Limit      int
+	Offset     int
 }
 
 // NPC represents a row from the npc_types table.

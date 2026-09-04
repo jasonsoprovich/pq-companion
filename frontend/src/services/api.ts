@@ -179,6 +179,7 @@ export interface ItemSearchFilter {
   maxLevel?: number
   slot?: number
   itemType?: number // -1 = any
+  hideNoDrop?: boolean // exclude NO DROP items
   minSTR?: number
   minSTA?: number
   minAGI?: number
@@ -210,6 +211,7 @@ export function searchItems(
   if (filter.maxLevel && filter.maxLevel > 0) params.set('max_level', String(filter.maxLevel))
   if (filter.slot && filter.slot > 0) params.set('slot', String(filter.slot))
   if (filter.itemType !== undefined && filter.itemType >= 0) params.set('item_type', String(filter.itemType))
+  if (filter.hideNoDrop) params.set('hide_nodrop', '1')
   if (filter.minSTR && filter.minSTR > 0) params.set('min_str', String(filter.minSTR))
   if (filter.minSTA && filter.minSTA > 0) params.set('min_sta', String(filter.minSTA))
   if (filter.minAGI && filter.minAGI > 0) params.set('min_agi', String(filter.minAGI))

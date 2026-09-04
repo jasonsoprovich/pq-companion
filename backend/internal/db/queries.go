@@ -277,6 +277,10 @@ func (db *DB) SearchItems(f ItemFilter) (*SearchResult[Item], error) {
 		where += " AND itemtype = ?"
 		args = append(args, f.ItemType)
 	}
+	if f.HideNoDrop {
+		// nodrop = 0 marks a NO DROP item; anything else is tradeable.
+		where += " AND nodrop != 0"
+	}
 	if f.MinSTR > 0 {
 		where += " AND astr >= ?"
 		args = append(args, f.MinSTR)

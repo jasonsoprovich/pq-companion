@@ -119,6 +119,29 @@ func TestSearchItems(t *testing.T) {
 	}
 }
 
+func TestSearchItems_HideNoDrop(t *testing.T) {
+	d := openTestDB(t)
+	all, err := d.SearchItems(db.ItemFilter{Query: "a", ItemType: -1, Limit: 200})
+	if err != nil {
+		t.Fatalf("SearchItems (all): %v", err)
+	}
+	tradeable, err := d.SearchItems(db.ItemFilter{Query: "a", ItemType: -1, Limit: 200, HideNoDrop: true})
+	if err != nil {
+		t.Fatalf("SearchItems (HideNoDrop): %v", err)
+	}
+	if tradeable.Total > all.Total {
+		t.Fatalf("HideNoDrop total %d exceeds unfiltered total %d", tradeable.Total, all.Total)
+	}
+	if all.Total == tradeable.Total {
+		t.Skip("test slice contains no NO DROP items; nothing to assert")
+	}
+	for _, it := range tradeable.Items {
+		if it.NoDrop == 0 {
+			t.Errorf("item %d (%q) is NO DROP but was returned with HideNoDrop", it.ID, it.Name)
+		}
+	}
+}
+
 func TestSearchItems_Pagination(t *testing.T) {
 	d := openTestDB(t)
 	page1, err := d.SearchItems(db.ItemFilter{Query: "a", ItemType: -1, Limit: 5})

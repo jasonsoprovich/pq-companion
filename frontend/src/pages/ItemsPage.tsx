@@ -107,6 +107,7 @@ interface FilterState {
   maxLevel: string
   slot: number
   itemType: number
+  hideNoDrop: boolean
   minHP: string
   minMana: string
   minAC: string
@@ -126,7 +127,7 @@ interface FilterState {
 
 const EMPTY_FILTER: FilterState = {
   race: 0, class: 0, minLevel: '', maxLevel: '',
-  slot: 0, itemType: -1,
+  slot: 0, itemType: -1, hideNoDrop: false,
   minHP: '', minMana: '', minAC: '',
   minSTR: '', minSTA: '', minAGI: '', minDEX: '',
   minWIS: '', minINT: '', minCHA: '',
@@ -141,6 +142,7 @@ function filterToApiParams(f: FilterState): ItemSearchFilter {
     maxLevel: parseInt(f.maxLevel) > 0 ? parseInt(f.maxLevel) : undefined,
     slot: f.slot > 0 ? f.slot : undefined,
     itemType: f.itemType >= 0 ? f.itemType : undefined,
+    hideNoDrop: f.hideNoDrop || undefined,
     minHP: parseInt(f.minHP) > 0 ? parseInt(f.minHP) : undefined,
     minMana: parseInt(f.minMana) > 0 ? parseInt(f.minMana) : undefined,
     minAC: parseInt(f.minAC) > 0 ? parseInt(f.minAC) : undefined,
@@ -167,6 +169,7 @@ function activeChips(f: FilterState): { key: keyof FilterState; label: string }[
   if (parseInt(f.maxLevel) > 0) chips.push({ key: 'maxLevel', label: `Max Lvl: ${f.maxLevel}` })
   if (f.slot > 0) chips.push({ key: 'slot', label: `Slot: ${ITEM_SLOTS.find(s => s.value === f.slot)?.label ?? f.slot}` })
   if (f.itemType >= 0) chips.push({ key: 'itemType', label: `Type: ${ITEM_TYPES.find(t => t.value === f.itemType)?.label ?? f.itemType}` })
+  if (f.hideNoDrop) chips.push({ key: 'hideNoDrop', label: 'Hide NO DROP' })
   if (parseInt(f.minHP) > 0) chips.push({ key: 'minHP', label: `HP ≥ ${f.minHP}` })
   if (parseInt(f.minMana) > 0) chips.push({ key: 'minMana', label: `Mana ≥ ${f.minMana}` })
   if (parseInt(f.minAC) > 0) chips.push({ key: 'minAC', label: `AC ≥ ${f.minAC}` })
@@ -303,6 +306,14 @@ function FilterModal({ filter, onChange, onClose }: FilterModalProps): React.Rea
                 </select>
               </div>
             </div>
+            <label className="mt-2 flex items-center gap-2 text-xs" style={{ color: 'var(--color-muted-foreground)', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={draft.hideNoDrop}
+                onChange={(e) => set('hideNoDrop', e.target.checked)}
+              />
+              Hide NO DROP items
+            </label>
           </section>
 
           {/* Stats */}
