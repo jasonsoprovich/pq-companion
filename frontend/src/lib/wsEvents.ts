@@ -20,6 +20,9 @@ export const WSEvent = {
   ConfigCharacterDetected: 'config:character_detected',
   ChatNew: 'chat:new',
   LootNew: 'loot:new',
+  // Broadcast when the active character zones — carries {name, last_zone,
+  // last_zone_at} so the Characters page can update its "Camped in …" line.
+  CharacterZone: 'character:zone',
   SkillsUpdate: 'skills:update',
   ProgressEvent: 'progress:event',
   BackfillProgress: 'backfill:progress',

@@ -23,6 +23,15 @@ type Character struct {
 	BaseINT int    `json:"base_int"`
 	BaseAGI int    `json:"base_agi"`
 	BaseWIS int    `json:"base_wis"`
+
+	// LastZone is the long name of the last zone this character was seen in
+	// (from the EQ log's "You have entered …" line while this character was
+	// the active one). LastZoneAt is the Unix time of that sighting. Together
+	// they answer "which zone did I camp this character in?" — when you camp
+	// and switch away, the stored value stays put at the camp zone. Both are
+	// zero/empty until the app has seen the character zone at least once.
+	LastZone   string `json:"last_zone"`
+	LastZoneAt int64  `json:"last_zone_at"`
 }
 
 // AAEntry is a purchased AA ability with its current rank.
@@ -97,6 +106,8 @@ func (s *Store) migrate() error {
 		`ALTER TABLE characters ADD COLUMN base_int INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE characters ADD COLUMN base_agi INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE characters ADD COLUMN base_wis INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE characters ADD COLUMN last_zone TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE characters ADD COLUMN last_zone_at INTEGER NOT NULL DEFAULT 0`,
 	}
 	for _, stmt := range addColumns {
 		if _, err := s.db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
@@ -177,7 +188,8 @@ const MaxRaidBuffSlots = 13
 func (s *Store) List() ([]Character, error) {
 	rows, err := s.db.Query(`
 		SELECT id, name, class, race, level,
-		       base_str, base_sta, base_cha, base_dex, base_int, base_agi, base_wis
+		       base_str, base_sta, base_cha, base_dex, base_int, base_agi, base_wis,
+		       last_zone, last_zone_at
 		FROM characters ORDER BY name`)
 	if err != nil {
 		return nil, err
@@ -187,7 +199,8 @@ func (s *Store) List() ([]Character, error) {
 	for rows.Next() {
 		var c Character
 		if err := rows.Scan(&c.ID, &c.Name, &c.Class, &c.Race, &c.Level,
-			&c.BaseSTR, &c.BaseSTA, &c.BaseCHA, &c.BaseDEX, &c.BaseINT, &c.BaseAGI, &c.BaseWIS); err != nil {
+			&c.BaseSTR, &c.BaseSTA, &c.BaseCHA, &c.BaseDEX, &c.BaseINT, &c.BaseAGI, &c.BaseWIS,
+			&c.LastZone, &c.LastZoneAt); err != nil {
 			return nil, err
 		}
 		out = append(out, c)
@@ -259,11 +272,13 @@ func (s *Store) Get(id int) (Character, bool, error) {
 	var c Character
 	err := s.db.QueryRow(
 		`SELECT id, name, class, race, level,
-		        base_str, base_sta, base_cha, base_dex, base_int, base_agi, base_wis
+		        base_str, base_sta, base_cha, base_dex, base_int, base_agi, base_wis,
+		        last_zone, last_zone_at
 		 FROM characters WHERE id = ?`,
 		id,
 	).Scan(&c.ID, &c.Name, &c.Class, &c.Race, &c.Level,
-		&c.BaseSTR, &c.BaseSTA, &c.BaseCHA, &c.BaseDEX, &c.BaseINT, &c.BaseAGI, &c.BaseWIS)
+		&c.BaseSTR, &c.BaseSTA, &c.BaseCHA, &c.BaseDEX, &c.BaseINT, &c.BaseAGI, &c.BaseWIS,
+		&c.LastZone, &c.LastZoneAt)
 	if err == sql.ErrNoRows {
 		return Character{}, false, nil
 	}
@@ -278,11 +293,13 @@ func (s *Store) GetByName(name string) (Character, bool, error) {
 	var c Character
 	err := s.db.QueryRow(
 		`SELECT id, name, class, race, level,
-		        base_str, base_sta, base_cha, base_dex, base_int, base_agi, base_wis
+		        base_str, base_sta, base_cha, base_dex, base_int, base_agi, base_wis,
+		        last_zone, last_zone_at
 		 FROM characters WHERE name = ? COLLATE NOCASE`,
 		name,
 	).Scan(&c.ID, &c.Name, &c.Class, &c.Race, &c.Level,
-		&c.BaseSTR, &c.BaseSTA, &c.BaseCHA, &c.BaseDEX, &c.BaseINT, &c.BaseAGI, &c.BaseWIS)
+		&c.BaseSTR, &c.BaseSTA, &c.BaseCHA, &c.BaseDEX, &c.BaseINT, &c.BaseAGI, &c.BaseWIS,
+		&c.LastZone, &c.LastZoneAt)
 	if err == sql.ErrNoRows {
 		return Character{}, false, nil
 	}
@@ -298,6 +315,22 @@ func (s *Store) UpdatePersona(id, class, race, level int) error {
 	_, err := s.db.Exec(
 		`UPDATE characters SET class=?, race=?, level=? WHERE id=?`,
 		class, race, level, id,
+	)
+	return err
+}
+
+// UpdateLastZone records the zone a character was last seen in, keyed by name
+// (case-insensitive) so the live log's active-character name maps straight to
+// the stored row. A no-op when no character row matches the name — the app
+// tracks zones for every name that appears in the log, not just imported ones.
+// zone is the long zone name; ts is the Unix time of the sighting.
+func (s *Store) UpdateLastZone(name, zone string, ts int64) error {
+	if name == "" || zone == "" {
+		return nil
+	}
+	_, err := s.db.Exec(
+		`UPDATE characters SET last_zone=?, last_zone_at=? WHERE name=? COLLATE NOCASE`,
+		zone, ts, name,
 	)
 	return err
 }

@@ -1451,6 +1451,28 @@ func main() {
 		if progressConsumer != nil {
 			progressConsumer.Handle(ev)
 		}
+		// Last-seen zone: stamp the active character's row with the zone name on
+		// every zone-in. When the player camps and switches away, the stored
+		// value stays put at the camp zone — that's what the Characters page
+		// shows as "Camped in …". Runs on replay too, so existing characters
+		// get backfilled from their logs without any user action.
+		if ev.Type == logparser.EventZone {
+			if zd, ok := ev.Data.(logparser.ZoneData); ok {
+				if name := activeChar(); name != "" && zd.ZoneName != "" {
+					at := ev.Timestamp.Unix()
+					if err := charStore.UpdateLastZone(name, zd.ZoneName, at); err != nil {
+						slog.Warn("update character last zone", "character", name, "zone", zd.ZoneName, "err", err)
+					} else {
+						hub.Broadcast(ws.Event{Type: "character:zone", Data: map[string]any{
+							"name":         name,
+							"last_zone":    zd.ZoneName,
+							"last_zone_at": at,
+						}})
+					}
+				}
+			}
+		}
+
 		// PoP flag auto-detection: boss kills (and zone-ins) optimistically set
 		// 'auto'-sourced flags for the active character.
 		if popflagConsumer != nil {

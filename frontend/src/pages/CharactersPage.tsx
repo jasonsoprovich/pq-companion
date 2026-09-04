@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { Users, Plus, Trash2, Check, X, Radar } from 'lucide-react'
+import { Users, Plus, Trash2, Check, X, Radar, MapPin } from 'lucide-react'
 import {
   listCharacters,
   createCharacter,
@@ -9,6 +9,8 @@ import {
   updateConfig,
   type Character,
 } from '../services/api'
+import { useWebSocket } from '../hooks/useWebSocket'
+import { WSEvent } from '../lib/wsEvents'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
 import { usePoPEnabled } from '../hooks/usePoPEnabled'
 import { maxLevel } from '../lib/era'
@@ -30,6 +32,21 @@ interface FormState {
 }
 
 const EMPTY_FORM: FormState = { name: '', class: -1, race: -1, level: 1 }
+
+// Short relative age of a Unix-second timestamp, e.g. "3h ago". Returns '' for
+// a zero/absent time so callers can skip the suffix entirely.
+function relativeAge(unix: number): string {
+  if (!unix) return ''
+  const diffMs = Date.now() - unix * 1000
+  if (diffMs < 60_000) return 'just now'
+  const mins = Math.floor(diffMs / 60_000)
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  if (days < 30) return `${days}d ago`
+  return new Date(unix * 1000).toLocaleDateString()
+}
 
 interface CharacterRowProps {
   char: Character
@@ -69,6 +86,23 @@ function CharacterRow({ char, active, onSelect, onDelete }: CharacterRowProps): 
         <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
           {details}
         </p>
+        {char.last_zone && (
+          <p
+            className="mt-0.5 flex items-center gap-1 text-[11px]"
+            style={{ color: 'var(--color-muted)' }}
+            title={
+              char.last_zone_at
+                ? `Last seen ${new Date(char.last_zone_at * 1000).toLocaleString()}`
+                : undefined
+            }
+          >
+            <MapPin size={11} className="shrink-0" />
+            <span className="truncate">
+              Camped in {char.last_zone}
+              {relativeAge(char.last_zone_at) && ` · ${relativeAge(char.last_zone_at)}`}
+            </span>
+          </p>
+        )}
       </div>
       <div className="flex items-center gap-2">
         {!active && (
@@ -245,6 +279,24 @@ export default function CharactersPage(): React.ReactElement {
     setLoading(true)
     load().finally(() => setLoading(false))
   }, [load])
+
+  // Live "camped in …" updates: the backend stamps the active character's zone
+  // on every zone-in and broadcasts it, so the row refreshes without a reload.
+  useWebSocket((msg) => {
+    if (msg.type !== WSEvent.CharacterZone) return
+    const d = msg.data as { name?: string; last_zone?: string; last_zone_at?: number }
+    const name = d.name
+    const zone = d.last_zone
+    if (!name || !zone) return
+    const at = d.last_zone_at ?? 0
+    setCharacters((prev) =>
+      prev.map((c) =>
+        c.name.toLowerCase() === name.toLowerCase()
+          ? { ...c, last_zone: zone, last_zone_at: at }
+          : c,
+      ),
+    )
+  })
 
   async function handleSelect(char: Character) {
     try {

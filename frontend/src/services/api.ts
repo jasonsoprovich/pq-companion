@@ -1794,6 +1794,11 @@ export interface Character {
   base_int: number
   base_agi: number
   base_wis: number
+  // Last zone this character was seen in (long name) and the Unix time of
+  // that sighting. Empty / 0 until the app has watched the character zone at
+  // least once. When you camp and switch away, this stays at the camp zone.
+  last_zone: string
+  last_zone_at: number
 }
 
 export interface CharacterAA {
