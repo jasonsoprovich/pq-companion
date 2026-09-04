@@ -399,6 +399,38 @@ func main() {
 	go zealWatcher.RefreshAllPersonas()
 	go zealWatcher.Start(context.Background())
 
+	// Seed each stored character's last-seen zone from the tail of their log
+	// file so the Recap tab shows "Camped in …" straight away, without waiting
+	// for a live zone-in. Only fills a gap or a newer sighting — a value the
+	// live parser already recorded (equal or fresher timestamp) is left alone.
+	go func() {
+		eqPath := cfgMgr.Get().EQPath
+		if eqPath == "" {
+			return
+		}
+		chars, err := charStore.List()
+		if err != nil {
+			slog.Warn("seed last zones: list characters", "err", err)
+			return
+		}
+		for _, c := range chars {
+			zone, ts, ok := logparser.LastZoneInLog(eqPath, c.Name)
+			if !ok || ts.Unix() <= c.LastZoneAt {
+				continue
+			}
+			if err := charStore.UpdateLastZone(c.Name, zone, ts.Unix()); err != nil {
+				slog.Warn("seed last zone", "character", c.Name, "err", err)
+				continue
+			}
+			slog.Info("seeded last zone from log tail", "character", c.Name, "zone", zone)
+			hub.Broadcast(ws.Event{Type: "character:zone", Data: map[string]any{
+				"name":         c.Name,
+				"last_zone":    zone,
+				"last_zone_at": ts.Unix(),
+			}})
+		}
+	}()
+
 	// NPC overlay tracker: watches log events to infer the current combat target
 	// and broadcasts overlay:npc_target WebSocket events with full NPC data.
 	npcTracker := overlay.NewNPCTracker(hub, database)
