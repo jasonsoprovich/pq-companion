@@ -68,6 +68,29 @@ func (h *charactersHandler) list(w http.ResponseWriter, r *http.Request) {
 	if !manual {
 		active = detected
 	}
+
+	// Stamp the hidden flag and, unless ?include_hidden=1, drop hidden
+	// characters from the list. The currently-active character is always kept
+	// so switching away from a hidden alt still works. include_hidden=1 is used
+	// by the Characters management page, which needs to show hidden rows so
+	// they can be unhidden.
+	hidden, err := h.store.HiddenNames()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	includeHidden := r.URL.Query().Get("include_hidden") == "1"
+	if len(hidden) > 0 {
+		kept := chars[:0]
+		for _, c := range chars {
+			_, isHidden := hidden[strings.ToLower(c.Name)]
+			c.Hidden = isHidden
+			if !isHidden || includeHidden || strings.EqualFold(c.Name, active) {
+				kept = append(kept, c)
+			}
+		}
+		chars = kept
+	}
 	resp := charactersListResponse{
 		Characters: chars,
 		Manual:     manual,
@@ -151,6 +174,30 @@ func (h *charactersHandler) del(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// setVisibility hides or unhides a character (by name) from the tab strips and
+// the sidebar switcher. Body: {"name": "Mule", "hidden": true}. Keyed by name,
+// not id, so a character that only exists as an on-disk <Name>_pq.proj.ini can
+// be hidden from the Macros ribbon without importing it first.
+func (h *charactersHandler) setVisibility(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name   string `json:"name"`
+		Hidden bool   `json:"hidden"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		writeError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	if err := h.store.SetHidden(req.Name, req.Hidden); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"name": req.Name, "hidden": req.Hidden})
 }
 
 // aas returns the AA abilities for a character: both the trained list (with

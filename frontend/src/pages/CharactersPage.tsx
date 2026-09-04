@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { Users, Plus, Trash2, Check, X, Radar } from 'lucide-react'
+import { Users, Plus, Trash2, Check, X, Radar, Eye, EyeOff } from 'lucide-react'
 import {
   listCharacters,
   createCharacter,
   deleteCharacter,
   discoverCharacters,
+  setCharacterVisibility,
   getConfig,
   updateConfig,
   type Character,
@@ -36,9 +37,16 @@ interface CharacterRowProps {
   active: boolean
   onSelect: (c: Character) => void
   onDelete: (c: Character) => void
+  onToggleHidden: (c: Character) => void
 }
 
-function CharacterRow({ char, active, onSelect, onDelete }: CharacterRowProps): React.ReactElement {
+function CharacterRow({
+  char,
+  active,
+  onSelect,
+  onDelete,
+  onToggleHidden,
+}: CharacterRowProps): React.ReactElement {
   const raceLabel = charRaceLabel(char.race)
   const classLabel = charClassLabel(char.class)
   const details = [
@@ -55,6 +63,7 @@ function CharacterRow({ char, active, onSelect, onDelete }: CharacterRowProps): 
           ? 'color-mix(in srgb, var(--color-primary) 8%, var(--color-surface))'
           : 'var(--color-surface)',
         border: `1px solid ${active ? 'color-mix(in srgb, var(--color-primary) 40%, transparent)' : 'var(--color-border)'}`,
+        opacity: char.hidden ? 0.55 : 1,
       }}
     >
       <div
@@ -63,14 +72,35 @@ function CharacterRow({ char, active, onSelect, onDelete }: CharacterRowProps): 
         title={active ? 'Active character' : ''}
       />
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium" style={{ color: 'var(--color-foreground)' }}>
+        <p className="flex items-center gap-2 text-sm font-medium" style={{ color: 'var(--color-foreground)' }}>
           {char.name}
+          {char.hidden && (
+            <span
+              className="rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide"
+              style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted)' }}
+              title="Hidden from the character tab strips and sidebar switcher"
+            >
+              Hidden
+            </span>
+          )}
         </p>
         <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
           {details}
         </p>
       </div>
       <div className="flex items-center gap-2">
+        <button
+          onClick={() => onToggleHidden(char)}
+          className="rounded p-1 transition-colors hover:bg-(--color-surface-2)"
+          style={{ color: 'var(--color-muted)' }}
+          title={
+            char.hidden
+              ? 'Unhide — show this character in the tab strips again'
+              : 'Hide from the character tab strips and sidebar switcher'
+          }
+        >
+          {char.hidden ? <EyeOff size={14} /> : <Eye size={14} />}
+        </button>
         {!active && (
           <button
             onClick={() => onSelect(char)}
@@ -233,7 +263,9 @@ export default function CharactersPage(): React.ReactElement {
   const [discovering, setDiscovering] = useState(false)
 
   const load = useCallback(() => {
-    return listCharacters()
+    // include_hidden so this management page can list (and unhide) hidden
+    // characters — every other consumer gets them filtered out.
+    return listCharacters({ includeHidden: true })
       .then((resp) => {
         setCharacters(resp.characters)
         setActive(resp.active, resp.manual)
@@ -288,6 +320,15 @@ export default function CharactersPage(): React.ReactElement {
       await load()
     } catch (err: unknown) {
       setLoadError(err instanceof Error ? err.message : 'Failed to delete character')
+    }
+  }
+
+  async function handleToggleHidden(char: Character) {
+    try {
+      await setCharacterVisibility(char.name, !char.hidden)
+      await load()
+    } catch (err: unknown) {
+      setLoadError(err instanceof Error ? err.message : 'Failed to update visibility')
     }
   }
 
@@ -456,6 +497,7 @@ export default function CharactersPage(): React.ReactElement {
                 active={activeCharacter === char.name}
                 onSelect={handleSelect}
                 onDelete={handleDelete}
+                onToggleHidden={handleToggleHidden}
               />
               {deleteConfirm === char.id && (
                 <div

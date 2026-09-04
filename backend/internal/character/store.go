@@ -32,6 +32,14 @@ type Character struct {
 	// zero/empty until the app has seen the character zone at least once.
 	LastZone   string `json:"last_zone"`
 	LastZoneAt int64  `json:"last_zone_at"`
+
+	// Hidden is true when the user has chosen to hide this character from the
+	// character tab strips and the sidebar switcher (e.g. mule accounts they
+	// never play). It is stored by name in the hidden_characters table rather
+	// than as a column here, so a character that only exists as an on-disk
+	// _pq.proj.ini (never imported) can be hidden too. Populated by the API
+	// layer, never by the store's own List/Get scans.
+	Hidden bool `json:"hidden"`
 }
 
 // AAEntry is a purchased AA ability with its current rank.
@@ -149,6 +157,17 @@ func (s *Store) migrate() error {
 			spell_id     INTEGER NOT NULL,
 			PRIMARY KEY (character_id, slot_index),
 			FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE CASCADE
+		)
+	`); err != nil {
+		return err
+	}
+	// Characters the user has hidden from the tab strips / sidebar switcher.
+	// Keyed by name (not character_id) so a name that only exists as an on-disk
+	// <Name>_pq.proj.ini — never imported into the characters table — can still
+	// be hidden from the Macros ribbon.
+	if _, err := s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS hidden_characters (
+			name TEXT PRIMARY KEY COLLATE NOCASE
 		)
 	`); err != nil {
 		return err
@@ -477,6 +496,45 @@ func (s *Store) ReplaceRaidBuffs(characterID int, spellIDs []int) error {
 		}
 	}
 	return tx.Commit()
+}
+
+// SetHidden hides or unhides a character by name (case-insensitive). Hiding a
+// name that isn't in the characters table is allowed — the Macros ribbon lists
+// every on-disk <Name>_pq.proj.ini, imported or not. A no-op name ("") is
+// rejected so an empty row can't shadow the "no character" state.
+func (s *Store) SetHidden(name string, hidden bool) error {
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf("hidden character name is required")
+	}
+	if hidden {
+		_, err := s.db.Exec(
+			`INSERT INTO hidden_characters (name) VALUES (?)
+			 ON CONFLICT(name) DO NOTHING`,
+			name,
+		)
+		return err
+	}
+	_, err := s.db.Exec(`DELETE FROM hidden_characters WHERE name = ? COLLATE NOCASE`, name)
+	return err
+}
+
+// HiddenNames returns the set of hidden character names, lower-cased for
+// case-insensitive membership tests.
+func (s *Store) HiddenNames() (map[string]struct{}, error) {
+	rows, err := s.db.Query(`SELECT name FROM hidden_characters`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string]struct{})
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		out[strings.ToLower(name)] = struct{}{}
+	}
+	return out, rows.Err()
 }
 
 // Names returns the set of stored character names (case-preserved).

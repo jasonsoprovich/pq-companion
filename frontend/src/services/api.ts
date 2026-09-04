@@ -924,8 +924,9 @@ export function getZealMacros(character?: string): Promise<ZealMacrosResponse> {
   return get<ZealMacrosResponse>(`/api/zeal/macros${qs}`)
 }
 
-export function getAllMacros(): Promise<AllMacrosResponse> {
-  return get<AllMacrosResponse>('/api/zeal/macros/all')
+export function getAllMacros(includeHidden = false): Promise<AllMacrosResponse> {
+  const qs = includeHidden ? '?include_hidden=1' : ''
+  return get<AllMacrosResponse>(`/api/zeal/macros/all${qs}`)
 }
 
 export function updateMacros(
@@ -1799,6 +1800,12 @@ export interface Character {
   // least once. When you camp and switch away, this stays at the camp zone.
   last_zone: string
   last_zone_at: number
+  // True when the user has hidden this character from the tab strips and the
+  // sidebar switcher (mule/alt accounts they don't play). The active character
+  // is never filtered out even when hidden. Set hidden state via
+  // setCharacterVisibility; only /api/characters?include_hidden=1 returns
+  // hidden rows.
+  hidden: boolean
 }
 
 export interface CharacterAA {
@@ -1868,8 +1875,24 @@ export interface CharacterRequest {
   level: number
 }
 
-export function listCharacters(): Promise<CharactersResponse> {
-  return get<CharactersResponse>('/api/characters')
+export function listCharacters(
+  opts: { includeHidden?: boolean } = {},
+): Promise<CharactersResponse> {
+  const qs = opts.includeHidden ? '?include_hidden=1' : ''
+  return get<CharactersResponse>(`/api/characters${qs}`)
+}
+
+// Hide or unhide a character from the tab strips / sidebar switcher. Keyed by
+// name so a character that only exists as an on-disk _pq.proj.ini (never
+// imported) can still be hidden from the Macros ribbon.
+export function setCharacterVisibility(
+  name: string,
+  hidden: boolean,
+): Promise<{ name: string; hidden: boolean }> {
+  return post<{ name: string; hidden: boolean }>('/api/characters/visibility', {
+    name,
+    hidden,
+  })
 }
 
 export function createCharacter(req: CharacterRequest): Promise<Character> {

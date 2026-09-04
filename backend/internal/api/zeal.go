@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonsoprovich/pq-companion/backend/internal/character"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db/enums"
@@ -29,11 +30,12 @@ var bandolierFilenameRe = regexp.MustCompile(`(?i)^(.+?)_bandolier\.ini$`)
 var macroFilenameRe = regexp.MustCompile(`(?i)^([^_]+)_pq\.proj\.ini$`)
 
 type zealHandler struct {
-	watcher *zeal.Watcher
-	cfgMgr  *config.Manager
-	db      *db.DB
-	pipe    *zealpipe.Supervisor
-	latest  *zeal.LatestFetcher
+	watcher   *zeal.Watcher
+	cfgMgr    *config.Manager
+	db        *db.DB
+	pipe      *zealpipe.Supervisor
+	latest    *zeal.LatestFetcher
+	charStore *character.Store
 }
 
 // enrichEntries fills in the Icon and MaxCharges fields on each entry by looking
@@ -849,6 +851,20 @@ func (h *zealHandler) allMacros(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to scan macros")
 		return
+	}
+	// Drop macro files for characters the user has hidden from the ribbon,
+	// unless ?include_hidden=1. Keyed by name so a mule that was never imported
+	// into the characters table is still hidden here.
+	if h.charStore != nil && r.URL.Query().Get("include_hidden") != "1" {
+		if hidden, hErr := h.charStore.HiddenNames(); hErr == nil && len(hidden) > 0 {
+			kept := resp.Characters[:0]
+			for _, mf := range resp.Characters {
+				if _, isHidden := hidden[strings.ToLower(mf.Character)]; !isHidden {
+					kept = append(kept, mf)
+				}
+			}
+			resp.Characters = kept
+		}
 	}
 	json.NewEncoder(w).Encode(resp)
 }
