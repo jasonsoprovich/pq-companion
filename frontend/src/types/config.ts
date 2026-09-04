@@ -7,6 +7,8 @@ export interface NPCOverlaySections {
   attributes: boolean
   special_abilities: boolean
   faction: boolean
+  // behavior is the aggro radius / assist radius / attack delay section.
+  behavior: boolean
   // spells is the master toggle for the caster-summary section (highlights are
   // always shown when on). The spells_* flags are per-group sub-toggles.
   spells: boolean
@@ -22,6 +24,7 @@ export const DEFAULT_NPC_OVERLAY_SECTIONS: NPCOverlaySections = {
   attributes: true,
   special_abilities: true,
   faction: true,
+  behavior: true,
   spells: true,
   spells_procs: true,
   spells_signature: true,

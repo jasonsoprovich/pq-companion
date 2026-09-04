@@ -34,6 +34,11 @@ export interface NPC {
 
   // Behavior
   aggro_radius: number
+  // Assist radius — sparsely populated in the Quarm DB; 0 means the server
+  // falls back to the aggro radius.
+  assist_radius: number
+  // Base melee swing timer in tenths of a second (18 = 1.8s); lower is faster.
+  attack_delay: number
   run_speed: number
   size: number
   raid_target: number

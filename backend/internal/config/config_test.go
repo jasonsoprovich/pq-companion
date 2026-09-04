@@ -279,6 +279,69 @@ preferences:
 	}
 }
 
+// The Behavior NPC-overlay section (aggro/assist radius, attack delay) was
+// added after the others. A config written without the behavior field must
+// have it turned on exactly once, and a later choice to disable it must
+// survive subsequent loads.
+func TestLoadFrom_MigratesNPCBehaviorSection_Once(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	const old = `eq_path: /games/EQ
+preferences:
+  npc_overlay_dashboard_sections:
+    identity: true
+    combat: true
+    resists: true
+    attributes: true
+    special_abilities: true
+    faction: true
+  npc_overlay_popout_sections:
+    identity: true
+    combat: false
+    resists: true
+    attributes: true
+    special_abilities: true
+    faction: true
+`
+	if err := os.WriteFile(path, []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	m, err := LoadFrom(path)
+	if err != nil {
+		t.Fatalf("LoadFrom: %v", err)
+	}
+	cfg := m.Get()
+
+	if !cfg.Preferences.NPCOverlayDashboardSections.Behavior {
+		t.Error("dashboard Behavior should be on after migration")
+	}
+	if !cfg.Preferences.NPCOverlayPopoutSections.Behavior {
+		t.Error("popout Behavior should be on after migration")
+	}
+	if !cfg.Preferences.NPCBehaviorSectionMigrationDone {
+		t.Error("NPCBehaviorSectionMigrationDone should be true after migration")
+	}
+	// Unrelated toggles must be left untouched.
+	if cfg.Preferences.NPCOverlayPopoutSections.Combat {
+		t.Error("migration must not change unrelated toggles (popout combat)")
+	}
+
+	// User disables Behavior on the popout, then we reload.
+	cfg.Preferences.NPCOverlayPopoutSections.Behavior = false
+	if err := m.Update(cfg); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	m2, err := LoadFrom(path)
+	if err != nil {
+		t.Fatalf("LoadFrom (reload): %v", err)
+	}
+	if m2.Get().Preferences.NPCOverlayPopoutSections.Behavior {
+		t.Error("reload after disabling behavior: must stay off (migration is one-shot)")
+	}
+}
+
 func TestLoadFrom_MigratesRespawnTTSSpelling(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")

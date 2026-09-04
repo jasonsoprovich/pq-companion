@@ -33,7 +33,10 @@ export function useNPCOverlaySections(
           surface === 'dashboard'
             ? c.preferences?.npc_overlay_dashboard_sections
             : c.preferences?.npc_overlay_popout_sections
-        if (value) setSections(value)
+        // Merge onto the defaults so a section added after the user last
+        // saved (e.g. Behavior) still shows until they choose otherwise —
+        // the backend runs the same one-time migration on persisted configs.
+        if (value) setSections({ ...DEFAULT_NPC_OVERLAY_SECTIONS, ...value })
       })
       .catch(() => {})
   }, [surface])

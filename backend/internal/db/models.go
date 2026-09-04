@@ -165,7 +165,15 @@ type NPC struct {
 	CHA int `json:"cha"`
 
 	// Behavior
-	AggroRadius int     `json:"aggro_radius"`
+	AggroRadius int `json:"aggro_radius"`
+	// AssistRadius is how far this NPC will respond to a nearby faction
+	// member calling for help. Sparsely populated in the Quarm DB (~10% of
+	// rows) — when 0 the server falls back to the aggro radius.
+	AssistRadius int `json:"assist_radius"`
+	// AttackDelay is the base melee swing timer in tenths of a second
+	// (18 = 1.8s per swing); lower is faster. Double attack, dual wield and
+	// haste are applied on top at runtime and not reflected here.
+	AttackDelay int     `json:"attack_delay"`
 	RunSpeed    float64 `json:"run_speed"`
 	Size        float64 `json:"size"`
 	RaidTarget  int     `json:"raid_target"`

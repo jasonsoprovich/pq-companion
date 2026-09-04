@@ -1072,6 +1072,15 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
           {npc.aggro_radius > 0 && (
             <StatRow label="Aggro Radius" value={npc.aggro_radius} />
           )}
+          {npc.assist_radius > 0 && (
+            <StatRow label="Assist Radius" value={npc.assist_radius} />
+          )}
+          {npc.attack_delay > 0 && (
+            <StatRow
+              label="Attack Delay"
+              value={`${(npc.attack_delay / 10).toFixed(1)}s`}
+            />
+          )}
           <StatRow label="Run Speed" value={`${npcRunSpeedPct(npc.run_speed)}%`} />
           <StatRow label="Size" value={npc.size.toFixed(1)} />
         </Section>

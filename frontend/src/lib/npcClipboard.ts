@@ -90,10 +90,14 @@ export function buildTargetStatsLine(state: TargetState | null): string | null {
   const npc = state?.npc_data
   if (!state || !npc) return null
 
+  const dmg =
+    npc.attack_delay > 0
+      ? `DMG: ${npc.min_dmg}-${npc.max_dmg} @${(npc.attack_delay / 10).toFixed(1)}s`
+      : `DMG: ${npc.min_dmg}-${npc.max_dmg}`
   const segments: string[] = [
     state.target_name ?? npc.name ?? 'Unknown',
     `HP: ${fmtHP(npc.hp)}`,
-    `DMG: ${npc.min_dmg}-${npc.max_dmg}`,
+    dmg,
     `MR:${npc.mr} FR:${npc.fr} CR:${npc.cr} PR:${npc.pr} DR:${npc.dr}`,
   ]
 

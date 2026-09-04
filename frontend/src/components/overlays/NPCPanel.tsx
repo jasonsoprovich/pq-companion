@@ -547,6 +547,20 @@ function NPCDetails({
             </div>
           )}
 
+          {sections.behavior &&
+            (npc.attack_delay > 0 || npc.aggro_radius > 0 || npc.assist_radius > 0) && (
+            <div>
+              <p className="mb-1 text-[9px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>Behavior</p>
+              <div className="flex flex-wrap gap-1.5">
+                {npc.attack_delay > 0 && (
+                  <Stat label="Delay" value={`${(npc.attack_delay / 10).toFixed(1)}s`} />
+                )}
+                {npc.aggro_radius > 0 && <Stat label="Aggro" value={npc.aggro_radius} />}
+                {npc.assist_radius > 0 && <Stat label="Assist" value={npc.assist_radius} />}
+              </div>
+            </div>
+          )}
+
           {sections.resists && (
             <div>
               <p className="mb-1 text-[9px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>Resists</p>

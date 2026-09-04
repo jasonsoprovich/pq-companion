@@ -436,6 +436,17 @@ function StatsBody({
             </div>
           )}
 
+          {sections.behavior &&
+            (npc.attack_delay > 0 || npc.aggro_radius > 0 || npc.assist_radius > 0) && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+              {npc.attack_delay > 0 && (
+                <Chip label="Delay" value={`${(npc.attack_delay / 10).toFixed(1)}s`} />
+              )}
+              {npc.aggro_radius > 0 && <Chip label="Aggro" value={npc.aggro_radius} />}
+              {npc.assist_radius > 0 && <Chip label="Assist" value={npc.assist_radius} />}
+            </div>
+          )}
+
           {sections.resists && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
               <ResistChip type="magic"   value={npc.mr} />

@@ -563,6 +563,11 @@ type Preferences struct {
 	// upgrading users would never see the new section. See applyDefaults.
 	NPCSpellsSectionMigrationDone bool `yaml:"npc_spells_section_migration_done,omitempty" json:"npc_spells_section_migration_done"`
 
+	// NPCBehaviorSectionMigrationDone marks that the one-time migration which
+	// turns the (later-added) Behavior section on for pre-existing configs has
+	// run. Same rationale as the Faction and Spells markers above.
+	NPCBehaviorSectionMigrationDone bool `yaml:"npc_behavior_section_migration_done,omitempty" json:"npc_behavior_section_migration_done"`
+
 	// OverlayLockedModes maps each popout overlay (by its canonical name:
 	// "dps", "hps", "buffTimer", "detrimTimer", "npc", "rollTracker",
 	// "respawnTimer") to how it behaves while locked:
@@ -805,6 +810,8 @@ type NPCOverlaySections struct {
 	Attributes       bool `yaml:"attributes" json:"attributes"`
 	SpecialAbilities bool `yaml:"special_abilities" json:"special_abilities"`
 	Faction          bool `yaml:"faction" json:"faction"`
+	// Behavior is the aggro radius / assist radius / attack delay section.
+	Behavior bool `yaml:"behavior" json:"behavior"`
 	// Spells is the master toggle for the caster-summary section (highlights are
 	// always shown when it's on). SpellsProcs / SpellsSignature / SpellsClass are
 	// the per-group sub-toggles for procs, named signature spells, and the
@@ -1013,6 +1020,7 @@ func DefaultNPCOverlaySections() NPCOverlaySections {
 		Attributes:       true,
 		SpecialAbilities: true,
 		Faction:          true,
+		Behavior:         true,
 		Spells:           true,
 		SpellsProcs:      true,
 		SpellsSignature:  true,
@@ -1282,6 +1290,15 @@ func applyDefaults(cfg *Config) bool {
 			s.SpellsClass = true
 		}
 		cfg.Preferences.NPCSpellsSectionMigrationDone = true
+		changed = true
+	}
+	// One-time migration for the later-added Behavior section. Same pattern as
+	// Faction and Spells above: turn it on once to match the fresh-install
+	// default, then never override an explicit choice.
+	if !cfg.Preferences.NPCBehaviorSectionMigrationDone {
+		cfg.Preferences.NPCOverlayDashboardSections.Behavior = true
+		cfg.Preferences.NPCOverlayPopoutSections.Behavior = true
+		cfg.Preferences.NPCBehaviorSectionMigrationDone = true
 		changed = true
 	}
 	// Respawn-alert TTS spelling: a config saved with the exact legacy default
