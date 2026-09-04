@@ -49,7 +49,15 @@ func (h *progressHandler) buildOneRecap(name string, since, now time.Time) (prog
 	if err != nil {
 		return progress.CharacterRecap{}, err
 	}
-	return progress.BuildRecap(name, events, loginDays, startSnap, endSnap, since, now), nil
+	rec := progress.BuildRecap(name, events, loginDays, startSnap, endSnap, since, now)
+	// Stamp the current camp location — a character fact, not a window
+	// aggregate — so the Recap tab can show "Camped in …" without a second
+	// round trip. A missing character row just leaves the fields zero.
+	if c, ok, err := h.charStore.GetByName(name); err == nil && ok {
+		rec.LastZone = c.LastZone
+		rec.LastZoneAt = c.LastZoneAt
+	}
+	return rec, nil
 }
 
 // GET /api/progress/recap?days=30[&character=X]

@@ -34,5 +34,10 @@ export interface CharacterRecap {
   coin_delta: number
   current_copper: number
 
+  // Current camp location: last zone this character was seen in, and the Unix
+  // time of that sighting. Absent/0 until the app has watched it zone once.
+  last_zone?: string
+  last_zone_at?: number
+
   daily_activity: DayBucket[] | null
 }

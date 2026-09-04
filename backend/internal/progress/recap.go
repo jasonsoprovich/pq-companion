@@ -51,6 +51,13 @@ type CharacterRecap struct {
 	CoinDelta       int64 `json:"coin_delta"`
 	CurrentCopper   int64 `json:"current_copper"` // absolute total (on person + bank) as of WindowEnd
 
+	// Current camp location: the last zone this character was seen in and the
+	// Unix time of that sighting. Independent of the recap window — it answers
+	// "where did I leave this alt?" Zero/empty until the app has watched the
+	// character zone at least once. Populated by the API layer, not BuildRecap.
+	LastZone   string `json:"last_zone,omitempty"`
+	LastZoneAt int64  `json:"last_zone_at,omitempty"`
+
 	DailyActivity []DayBucket `json:"daily_activity"`
 }
 

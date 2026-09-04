@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { Sparkles, Coins } from 'lucide-react'
+import { Sparkles, Coins, MapPin } from 'lucide-react'
 import { getProgressRecapAll, getProgressRecapFor } from '../services/api'
 import type { CharacterRecap } from '../types/progress'
 import { useWebSocket, type WsMessage } from '../hooks/useWebSocket'
@@ -55,6 +55,21 @@ function formatCoinDelta(copper: number): string {
   return `${sign}${formatCoinTotal(copper)}`
 }
 
+// Short relative age of a Unix-second timestamp, e.g. "3h ago". Empty string
+// for a zero/absent time so the caller can drop the suffix.
+function formatAge(unix: number | undefined): string {
+  if (!unix) return ''
+  const diffMs = Date.now() - unix * 1000
+  if (diffMs < 60_000) return 'just now'
+  const mins = Math.floor(diffMs / 60_000)
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  if (days < 30) return `${days}d ago`
+  return new Date(unix * 1000).toLocaleDateString()
+}
+
 export default function CharacterRecapPanel({ characterName }: CharacterRecapPanelProps): React.ReactElement {
   const [windowDays, setWindowDays] = useState<WindowDays>(30)
   const [scope, setScope] = useState<Scope>('character')
@@ -81,7 +96,13 @@ export default function CharacterRecapPanel({ characterName }: CharacterRecapPan
   // lands — the same load() call re-fetches without resetting recap/allRecaps
   // to null first.
   const handleWs = useCallback((msg: WsMessage) => {
-    if (msg.type === WSEvent.ProgressEvent || msg.type === WSEvent.ZealQuarmy) load()
+    if (
+      msg.type === WSEvent.ProgressEvent ||
+      msg.type === WSEvent.ZealQuarmy ||
+      msg.type === WSEvent.CharacterZone
+    ) {
+      load()
+    }
   }, [load])
   useWebSocket(handleWs)
 
@@ -135,25 +156,45 @@ export default function CharacterRecapPanel({ characterName }: CharacterRecapPan
   )
 }
 
+function CampedRow({ recap }: { recap: CharacterRecap }): React.ReactElement | null {
+  if (!recap.last_zone) return null
+  return (
+    <div
+      className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg px-4 py-2.5 text-sm"
+      style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+    >
+      <MapPin size={14} style={{ color: 'var(--color-primary)' }} />
+      <span style={{ color: 'var(--color-muted-foreground)' }}>Camped in:</span>
+      <span style={{ color: 'var(--color-foreground)', fontWeight: 500 }}>{recap.last_zone}</span>
+      {formatAge(recap.last_zone_at) && (
+        <span style={{ color: 'var(--color-muted)' }}>· {formatAge(recap.last_zone_at)}</span>
+      )}
+    </div>
+  )
+}
+
 function SingleCharacterRecap({ recap, windowDays }: { recap: CharacterRecap; windowDays: number }): React.ReactElement {
   if (!hasActivity(recap)) {
     return (
-      <div
-        className="flex flex-col items-center gap-3 rounded-lg py-12 text-center"
-        style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
-      >
-        <Sparkles size={28} style={{ color: 'var(--color-muted)' }} />
-        <div>
-          <p className="text-sm font-medium" style={{ color: 'var(--color-foreground)' }}>
-            No progression activity in the last {windowDays} days
-          </p>
-          <p className="mt-1 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-            Level, AA, spell, and skill milestones are parsed from this character's log as they happen.
-          </p>
-        </div>
-        <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-          Have older activity in your log file?
-          <BackfillLink />
+      <div className="space-y-4">
+        <CampedRow recap={recap} />
+        <div
+          className="flex flex-col items-center gap-3 rounded-lg py-12 text-center"
+          style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+        >
+          <Sparkles size={28} style={{ color: 'var(--color-muted)' }} />
+          <div>
+            <p className="text-sm font-medium" style={{ color: 'var(--color-foreground)' }}>
+              No progression activity in the last {windowDays} days
+            </p>
+            <p className="mt-1 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+              Level, AA, spell, and skill milestones are parsed from this character's log as they happen.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+            Have older activity in your log file?
+            <BackfillLink />
+          </div>
         </div>
       </div>
     )
@@ -206,6 +247,8 @@ function SingleCharacterRecap({ recap, windowDays }: { recap: CharacterRecap; wi
           character has played a bit more.
         </p>
       )}
+
+      <CampedRow recap={recap} />
 
       <DailyActivityStrip recap={recap} windowDays={windowDays} />
 
