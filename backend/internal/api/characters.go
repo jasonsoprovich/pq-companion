@@ -1645,6 +1645,12 @@ func (h *charactersHandler) deriveBlock(
 	dmgShield := item.DmgShield
 	spellHaste := spellHasteSrc.item + spellHasteSrc.aa
 
+	// Bards do not receive mana regen from buff sources on Quarm — only from
+	// worn items (Flowing Thought) and AAs, both already folded in above. Every
+	// other class gets buff-sourced mana regen (Clarity, KEI, …) as normal.
+	const bardClassIdx = 7 // 0-based EQ class index
+	buffManaRegenAllowed := class != bardClassIdx
+
 	// Buff-only sums for the source breakdown (issue #128) — kept alongside the
 	// running totals so the UI can split a stat into Equip / Buffs / AA.
 	buffAttack, buffRegen, buffManaRegen := 0, 0, 0
@@ -1671,12 +1677,14 @@ func (h *charactersHandler) deriveBlock(
 		spellAC += d.AC
 		attack += d.Attack
 		regen += d.Regen
-		manaRegen += d.ManaRegen
 		dmgShield += d.DmgShield
 		spellHaste += d.SpellHaste
 		buffAttack += d.Attack
 		buffRegen += d.Regen
-		buffManaRegen += d.ManaRegen
+		if buffManaRegenAllowed {
+			manaRegen += d.ManaRegen
+			buffManaRegen += d.ManaRegen
+		}
 		buffDmgShield += d.DmgShield
 		buffSpellHaste += d.SpellHaste
 		if d.Haste > 0 {

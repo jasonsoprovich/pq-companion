@@ -73,6 +73,53 @@ func TestDeriveBlock_Compounding(t *testing.T) {
 	}
 }
 
+// bard is a level-60 Half Elf (race 7) Bard (class 8, but 7 when 0-indexed).
+// Attribute values are placeholders — only the class matters for these tests.
+func bard() character.Character {
+	return character.Character{
+		Name: "Fiddle", Level: 60, Class: 7, Race: 7,
+		BaseSTR: 75, BaseSTA: 75, BaseCHA: 90, BaseDEX: 85,
+		BaseINT: 80, BaseAGI: 85, BaseWIS: 70,
+	}
+}
+
+// TestDeriveBlock_BardBuffManaRegenExcluded verifies bards ignore buff-sourced
+// mana regen (Clarity/KEI) while every other class receives it, and that worn
+// item + AA mana regen and buff-sourced HP regen still apply to bards.
+func TestDeriveBlock_BardBuffManaRegenExcluded(t *testing.T) {
+	h := &charactersHandler{}
+
+	// Clarity-like buff: +12 mana/tick, +8 HP/tick.
+	clarity := []resolvedBuff{{id: 42, delta: db.BuffStatDelta{ManaRegen: 12, Regen: 8}}}
+	// Worn item + AA mana regen that must survive regardless of class.
+	item := statBlock{ManaRegen: 4}
+	aa := db.AABonuses{ManaRegen: 3}
+
+	enc := h.deriveBlock(osui(), aa, spellHasteSplit{}, skillCaps{defense: 100}, item, 0, clarity)
+	if enc.ManaRegen != 19 { // 4 item + 3 AA + 12 buff
+		t.Errorf("enchanter ManaRegen = %d, want 19", enc.ManaRegen)
+	}
+	if enc.Breakdown.ManaRegen.Buff != 12 {
+		t.Errorf("enchanter buff split = %d, want 12", enc.Breakdown.ManaRegen.Buff)
+	}
+
+	brd := h.deriveBlock(bard(), aa, spellHasteSplit{}, skillCaps{defense: 100}, item, 0, clarity)
+	if brd.ManaRegen != 7 { // 4 item + 3 AA, no buff
+		t.Errorf("bard ManaRegen = %d, want 7 (item+AA only, no buff)", brd.ManaRegen)
+	}
+	if brd.Breakdown.ManaRegen.Buff != 0 {
+		t.Errorf("bard buff split = %d, want 0", brd.Breakdown.ManaRegen.Buff)
+	}
+	if brd.Breakdown.ManaRegen.Item != 4 || brd.Breakdown.ManaRegen.AA != 3 {
+		t.Errorf("bard item/AA split = %d/%d, want 4/3",
+			brd.Breakdown.ManaRegen.Item, brd.Breakdown.ManaRegen.AA)
+	}
+	// HP regen from the same buff is not bard-excluded.
+	if brd.Breakdown.Regen.Buff != 8 {
+		t.Errorf("bard buff HP regen = %d, want 8 (not excluded)", brd.Breakdown.Regen.Buff)
+	}
+}
+
 // TestDeriveBlock_BuffStaRaisesHP isolates the compounding bug the old additive
 // model couldn't express: a pure +STA buff must raise HP beyond any flat HP it
 // carries, because base HP scales with STA.
