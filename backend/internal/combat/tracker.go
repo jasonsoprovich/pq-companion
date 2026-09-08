@@ -328,6 +328,13 @@ type Tracker struct {
 	// log-driven entries.
 	pipePetName string
 
+	// pipePetID is the player's pet spawn id from the Zeal v1.4.6+ MsgPlayer
+	// snapshot (nil = older Zeal, or no pet). A collision-proof identity that
+	// survives a same-name re-charm; when it changes we proactively revoke the
+	// stale pet-name binding rather than wait for the name label (which can be
+	// byte-identical across a charm rotation, e.g. "a sarnak" -> "a sarnak").
+	pipePetID *int
+
 	// selfClassFn resolves the canonical base class name (e.g. "Warrior")
 	// of the active character. May be nil — the tracker degrades to leaving
 	// Class empty on the player row when unset.
@@ -418,6 +425,32 @@ func (t *Tracker) SetPipePetName(name string) {
 	}
 }
 
+// SetPipePetID consumes the player's pet spawn id from the Zeal v1.4.6 MsgPlayer
+// snapshot. It is a no-op on older Zeal (id always nil). When the id changes to
+// a different non-nil value the previous pet is definitively gone, so any
+// pipe-registered owner binding for the old pet name is revoked immediately —
+// this closes the window where a charm rotation re-charms a mob with the same
+// display name and the stale binding would otherwise keep crediting the old
+// pet's damage to the player. The name-keyed binding for the *current* pet is
+// still (re)established by SetPipePetName from the pet-name label.
+func (t *Tracker) SetPipePetID(id *int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	prev := t.pipePetID
+	changed := prev != nil && id != nil && *prev != *id
+	t.pipePetID = id
+	if changed && t.pipePetName != "" {
+		owner := t.playerName()
+		if owner == "" {
+			owner = "You"
+		}
+		if existing, ok := t.petOwners[t.pipePetName]; ok && existing == owner {
+			delete(t.petOwners, t.pipePetName)
+		}
+		t.pipePetName = ""
+	}
+}
+
 // SetPipeTargetPetOwner records a pet→owner binding learned from Zeal's
 // LabelTargetPetOwner: when the player's current target is someone's pet, Zeal
 // reports that pet's owner. Targeting your own charm pet — which players do to
@@ -456,6 +489,7 @@ func (t *Tracker) ResetPipeState() {
 	}
 	t.pipeTarget = ""
 	t.pipePetName = ""
+	t.pipePetID = nil
 }
 
 // maxPendingCritsPerActor caps the per-actor crit queue. In practice the

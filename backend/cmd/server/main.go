@@ -1332,6 +1332,13 @@ func main() {
 			}
 			posTracker.Update(
 				zoneShort, p.Location.GameX(), p.Location.GameY(), p.Location.Z, p.Heading)
+			// Zeal v1.4.6+ pet spawn id: a stable, collision-proof identity for
+			// the player's pet. nil = older Zeal or no pet — consumers fall
+			// back to the pet-name label. pet_id going absent after being set
+			// is the authoritative "pet died / charm broke" signal EQ never
+			// writes to the log.
+			timerEngine.SetPipePetID(p.PetID)
+			combatTracker.SetPipePetID(p.PetID)
 			return
 		case zealpipe.MsgLabel:
 			// Fall through to the label aggregator below.
@@ -1433,6 +1440,7 @@ func main() {
 		hub.Broadcast(ws.Event{Type: "player:position", Data: nil})
 		timerEngine.SetPipeCasting("")
 		timerEngine.SetPipeBuffSlots(nil)
+		timerEngine.ResetPipePetID()
 		triggerEngine.HandlePipeReset()
 		hub.Broadcast(ws.Event{Type: "zeal:disconnected", Data: map[string]any{}})
 	})

@@ -2004,3 +2004,66 @@ func TestPipePetNameRespectsLogBindings(t *testing.T) {
 		t.Error("log-driven pet binding should survive pipe reset")
 	}
 }
+
+// TestPipePetIDRevokesStaleBindingOnRecharm covers the charm-rotation case the
+// v1.4.6 pet spawn id exists for: charm "a sarnak", it dies, charm another "a
+// sarnak". The pet-name label never changes, so SetPipePetName alone can't tell
+// the two pets apart — but the spawn id does, and a changed id revokes the
+// stale owner binding for the shared name.
+func TestPipePetIDRevokesStaleBindingOnRecharm(t *testing.T) {
+	hub := ws.NewHub()
+	go hub.Run()
+	tr := NewTracker(hub, func() string { return "Osui" })
+
+	id1, id2 := 7001, 7002
+
+	tr.SetPipePetID(&id1)
+	tr.SetPipePetName("a sarnak conscript")
+	tr.mu.Lock()
+	_, bound := tr.petOwners["a sarnak conscript"]
+	tr.mu.Unlock()
+	if !bound {
+		t.Fatal("first charm: expected owner binding for the pet name")
+	}
+
+	// Re-charm: a different spawn id, byte-identical display name.
+	tr.SetPipePetID(&id2)
+	tr.mu.Lock()
+	_, stillBound := tr.petOwners["a sarnak conscript"]
+	pipeName := tr.pipePetName
+	tr.mu.Unlock()
+	if stillBound {
+		t.Error("changed pet_id should have revoked the stale name binding")
+	}
+	if pipeName != "" {
+		t.Errorf("pipePetName should be cleared after id change, got %q", pipeName)
+	}
+
+	// The next pet-name label re-establishes the binding for the new pet.
+	tr.SetPipePetName("a sarnak conscript")
+	tr.mu.Lock()
+	_, rebound := tr.petOwners["a sarnak conscript"]
+	tr.mu.Unlock()
+	if !rebound {
+		t.Error("current pet should be re-bound once its name label arrives")
+	}
+}
+
+// TestPipePetIDNoopOnOlderZeal: a nil id every frame (Zeal < 1.4.6) must not
+// disturb an existing pet binding.
+func TestPipePetIDNoopOnOlderZeal(t *testing.T) {
+	hub := ws.NewHub()
+	go hub.Run()
+	tr := NewTracker(hub, func() string { return "Osui" })
+
+	tr.SetPipePetName("Wisp Watcher")
+	for i := 0; i < 5; i++ {
+		tr.SetPipePetID(nil)
+	}
+	tr.mu.Lock()
+	_, bound := tr.petOwners["Wisp Watcher"]
+	tr.mu.Unlock()
+	if !bound {
+		t.Error("nil pet_id (older Zeal) should not touch the pet binding")
+	}
+}

@@ -422,6 +422,13 @@ type Engine struct {
 	lastDivergenceFromPipe   string
 	lastDivergenceFromTimers string
 
+	// pipePetID is the player's pet spawn id from the Zeal v1.4.6+ MsgPlayer
+	// snapshot (nil when older Zeal, or when there is no pet). pipePetMisses
+	// counts consecutive nil observations since the last non-nil id so a
+	// single dropped frame doesn't read as "pet gone" — see SetPipePetID.
+	pipePetID     *int
+	pipePetMisses int
+
 	// nextStackIndex counts firings per spell name for stacking timers
 	// (StartExternal's stack param), giving each fired instance a unique,
 	// monotonically increasing suffix regardless of how many land in the
@@ -700,6 +707,70 @@ func (e *Engine) HandlePipeTarget(name string) {
 	if base, ok := parseCorpseTarget(name); ok {
 		e.removeOnKill(base, true)
 	}
+}
+
+// petLossMissThreshold is how many consecutive nil pet-id observations must
+// arrive before SetPipePetID treats the pet as gone. Zeal omits pet_id when
+// PetID <= 0, which is normally a real "no pet" but can flicker for a single
+// frame around a zone line or a gate; requiring a short streak rides that out.
+// At the default ~100 ms pipe cadence this is ~300 ms — imperceptible, but
+// enough to avoid clearing a still-valid charm timer on one dropped frame.
+const petLossMissThreshold = 3
+
+// SetPipePetID consumes the player's pet spawn id from the Zeal v1.4.6 MsgPlayer
+// snapshot. It is the one authoritative "the charmed pet is gone" signal we
+// have: EQ writes no "Your charm spell has worn off." line when a charmed pet
+// is killed under the player's control (confirmed with enchanters), so a charm
+// timer would otherwise linger to its natural expiry after the pet dies.
+//
+// Two transitions clear all charm timers (only one charm is active per
+// character, mirroring removeCharmTimers on EventCharmBroken):
+//   - had an id, now nil for petLossMissThreshold consecutive frames — the pet
+//     despawned (killed, /pet get lost, charm expired, zoned away from it);
+//   - the id changed to a different non-nil value — the previous pet is gone
+//     and a fresh charm has taken hold (the new charm's land line starts its
+//     own timer).
+//
+// A nil id when we already had nil (no pet, older Zeal) is a no-op, so this is
+// safe to call every frame and safe on any Zeal build.
+func (e *Engine) SetPipePetID(id *int) {
+	e.mu.Lock()
+	prev := e.pipePetID
+	var lost, changed bool
+	switch {
+	case id == nil:
+		if prev != nil {
+			e.pipePetMisses++
+			if e.pipePetMisses >= petLossMissThreshold {
+				lost = true
+				e.pipePetID = nil
+				e.pipePetMisses = 0
+			}
+		}
+	default: // id != nil
+		if prev != nil && *prev != *id {
+			changed = true
+		}
+		e.pipePetID = id
+		e.pipePetMisses = 0
+	}
+	e.mu.Unlock()
+
+	if lost || changed {
+		slog.Debug("timer-debug: pipe pet id signals charm end", "lost", lost, "changed", changed)
+		e.removeCharmTimers()
+	}
+}
+
+// ResetPipePetID drops the tracked pet id without firing the charm-end path.
+// Called when the Zeal pipe disconnects — the pet may still be alive; we've
+// just lost the feed, so falling back to the name-based path (and the timer's
+// own expiry) is correct, not clearing the timer.
+func (e *Engine) ResetPipePetID() {
+	e.mu.Lock()
+	e.pipePetID = nil
+	e.pipePetMisses = 0
+	e.mu.Unlock()
 }
 
 // SetPipeBuffSlots records the current self-buff slot snapshot from the pipe
