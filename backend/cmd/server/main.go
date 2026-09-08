@@ -36,6 +36,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/loot"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/maps"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/mystats"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/overlay"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/playerpos"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/players"
@@ -290,6 +291,18 @@ func main() {
 		progressStore = nil
 	} else {
 		defer progressStore.Close()
+	}
+
+	// Stat snapshots: parses Zeal's /mystats output blocks out of the log and
+	// stores each as a comparable snapshot. Non-fatal — failing here only
+	// disables the Character Info stat-snapshot view.
+	mystatsStore, err := mystats.OpenStore(filepath.Join(home, ".pq-companion", "user.db"))
+	var mystatsConsumer *mystats.Consumer
+	if err != nil {
+		slog.Warn("open stat snapshots (disabled)", "err", err)
+		mystatsStore = nil
+	} else {
+		defer mystatsStore.Close()
 	}
 
 	// Keyring tracker: persists per-character /keys snapshots. Master list
@@ -1132,6 +1145,13 @@ func main() {
 		})
 	}
 
+	if mystatsStore != nil {
+		mystatsConsumer = mystats.NewConsumer(mystatsStore, activeChar)
+		mystatsConsumer.SetOnUpdate(func(u mystats.Update) {
+			hub.Broadcast(ws.Event{Type: "character:stat_snapshot", Data: u})
+		})
+	}
+
 	// Backfill registry: powers Settings → Log Backfill. Each tracker that can
 	// be retroactively populated from a character's log registers a dedup-safe,
 	// timestamp-aware handler here. Upcoming trackers (loot, tradeskills) plug
@@ -1588,6 +1608,9 @@ func main() {
 		if progressConsumer != nil {
 			progressConsumer.HandleLine(ts, msg)
 		}
+		if mystatsConsumer != nil {
+			mystatsConsumer.HandleLine(ts, msg)
+		}
 	}
 
 	// Log tailer: reads new lines from the EQ log file and broadcasts parsed
@@ -1640,6 +1663,11 @@ func main() {
 		if !active {
 			timerEngine.ClearAll()
 			combatTracker.Reset()
+			// Finalize a /mystats block that ended exactly at the last replayed
+			// line (no following line to close it).
+			if mystatsConsumer != nil {
+				mystatsConsumer.Flush()
+			}
 		}
 	}, func(st logparser.ReplayStatus) {
 		hub.Broadcast(ws.Event{Type: "replay:status", Data: st})
@@ -1755,7 +1783,7 @@ func main() {
 	}
 	defer mapStore.Close()
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, replayer, npcTracker, combatTracker, historyStore, threatTracker, raidThreatAssembler, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, sb, savedQueryStore, skillsStore, traderStore, traderCapturer, popflagStore, wishlistWatcher, changelogEntries, factionEngine, emoteService, mapStore, mapAnnotations, progressStore, actualPort)
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, replayer, npcTracker, combatTracker, historyStore, threatTracker, raidThreatAssembler, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, sb, savedQueryStore, skillsStore, traderStore, traderCapturer, popflagStore, wishlistWatcher, changelogEntries, factionEngine, emoteService, mapStore, mapAnnotations, progressStore, mystatsStore, actualPort)
 
 	slog.Info("server starting", "addr", listener.Addr().String(), "db", *dbPath)
 	if err := http.Serve(listener, router); err != nil {

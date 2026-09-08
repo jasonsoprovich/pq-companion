@@ -29,6 +29,7 @@ import { ConfirmModal } from '../components/ConfirmModal'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { SpellIcon } from '../components/Icon'
 import CharacterRecapPanel from '../components/CharacterRecapPanel'
+import { StatSnapshotsPanel } from '../components/StatSnapshotsPanel'
 import { EquipmentPaperDoll } from '../components/EquipmentPaperDoll'
 import CharacterSubTabs from '../components/CharacterSubTabs'
 
@@ -132,7 +133,7 @@ function StatBar({ label, value, base, max = 255, raw }: StatBarProps): React.Re
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 
-type Tab = 'recap' | 'stats' | 'gear' | 'aas' | 'modifiers' | 'tradeskills' | 'skills'
+type Tab = 'recap' | 'stats' | 'statsnaps' | 'gear' | 'aas' | 'modifiers' | 'tradeskills' | 'skills'
 
 interface TabButtonProps {
   active: boolean
@@ -358,6 +359,7 @@ export default function CharacterProgressPage(): React.ReactElement {
           >
             <TabButton active={tab === 'recap'} onClick={() => setTab('recap')}>Recap</TabButton>
             <TabButton active={tab === 'stats'} onClick={() => setTab('stats')}>Stats</TabButton>
+            <TabButton active={tab === 'statsnaps'} onClick={() => setTab('statsnaps')}>Stat Snapshots</TabButton>
             <TabButton active={tab === 'gear'} onClick={() => setTab('gear')}>Gear</TabButton>
             <TabButton active={tab === 'aas'} onClick={() => setTab('aas')}>
               Alternate Advancement {trainedAAs.filter(t => t.rank > 0).length > 0 ? `(${trainedAAs.filter(t => t.rank > 0).length})` : ''}
@@ -382,6 +384,11 @@ export default function CharacterProgressPage(): React.ReactElement {
               )}
               {tab === 'stats' && (
                 <StatsPanel stats={statsSource} hasStats={!!hasStats} characterID={activeChar?.id ?? null} characterName={viewedCharacter} />
+              )}
+              {tab === 'statsnaps' && (
+                <ErrorBoundary label="Stat Snapshots">
+                  <StatSnapshotsPanel characterID={activeChar?.id ?? null} />
+                </ErrorBoundary>
               )}
               {tab === 'gear' && (
                 <GearPanel gear={equippedGear} hasQuarmy={!!quarmy} onLookup={handleLookup} />

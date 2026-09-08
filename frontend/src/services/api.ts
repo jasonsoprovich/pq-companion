@@ -1918,6 +1918,71 @@ export function getCharacterAAs(id: number): Promise<CharacterAAsResponse> {
   return get<CharacterAAsResponse>(`/api/characters/${id}/aas`)
 }
 
+// One "---- Melee <slot>: <weapon> ----" section from a /mystats snapshot.
+export interface MyStatsMeleeBlock {
+  slot: string
+  weapon: string
+  offense: number
+  offense_skill: number
+  offense_stat: number
+  offense_spell_atk: number
+  offense_item_atk: number
+  offense_class: number
+  to_hit: number
+  display_atk?: number
+  bonus_dmg: number
+  base_dmg: number
+  dmg_mult_max: number
+  dmg_mult_avg: number
+  dmg_min: number
+  dmg_max: number
+  dmg_avg: number
+  dps_min: number
+  dps_max: number
+  dps_avg: number
+  haste_pct?: number
+  dps_haste_min?: number
+  dps_haste_max?: number
+  dps_haste_avg?: number
+}
+
+// A parsed Zeal `/mystats` block.
+export interface MyStatsSnapshot {
+  movement_speed_pct: number
+  movement_modifier_pct: number
+  ac_display: number
+  ac_raw_mit: number
+  ac_raw_avoid: number
+  mitigation: number
+  mitigation_cap: number
+  mitigation_cap_kind: string // "softcap" | "hardcap"
+  avoidance: number
+  melee: MyStatsMeleeBlock[]
+}
+
+export interface StoredStatSnapshot {
+  id: number
+  character: string
+  captured_at: number // unix seconds
+  raw: string
+  snapshot: MyStatsSnapshot
+}
+
+export interface StatSnapshotsResponse {
+  character: string
+  snapshots: StoredStatSnapshot[]
+}
+
+// Zeal `/mystats` captures for a character, newest first. Captured automatically
+// from the log — there is no create endpoint.
+export function getCharacterStatSnapshots(id: number): Promise<StatSnapshotsResponse> {
+  return get<StatSnapshotsResponse>(`/api/characters/${id}/stat-snapshots`)
+}
+
+export function deleteCharacterStatSnapshot(id: number, snapID: number): Promise<void> {
+  return del(`/api/characters/${id}/stat-snapshots/${snapID}`)
+}
+
 // ── Gear Upgrade Finder ───────────────────────────────────────────────────────
 
 // UpgradeWeights mirrors backend internal/upgrade.Weights — a per-stat scoring

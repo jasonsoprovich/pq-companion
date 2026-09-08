@@ -23,6 +23,9 @@ export const WSEvent = {
   // Broadcast when the active character zones — carries {name, last_zone,
   // last_zone_at} so the Characters page can update its "Camped in …" line.
   CharacterZone: 'character:zone',
+  // Fired when a new Zeal /mystats snapshot is captured from the log —
+  // carries {character, snapshot_id, captured_at}.
+  CharacterStatSnapshot: 'character:stat_snapshot',
   SkillsUpdate: 'skills:update',
   ProgressEvent: 'progress:event',
   BackfillProgress: 'backfill:progress',
