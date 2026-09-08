@@ -551,3 +551,174 @@ func TestNPCTracker_VariantSpecialAbilitiesNeverNull(t *testing.T) {
 		t.Error("payload contains special_abilities:null, want []")
 	}
 }
+
+// ── Zeal v1.4.6 target_id: sticky variant resolution ─────────────────────────
+
+func ptrInt(n int) *int { return &n }
+
+func TestEqIntPtr(t *testing.T) {
+	a, b := 5, 5
+	c := 6
+	cases := []struct {
+		x, y *int
+		want bool
+	}{
+		{nil, nil, true},
+		{&a, nil, false},
+		{nil, &a, false},
+		{&a, &b, true},
+		{&a, &c, false},
+	}
+	for _, tc := range cases {
+		if got := eqIntPtr(tc.x, tc.y); got != tc.want {
+			t.Errorf("eqIntPtr(%v,%v) = %v, want %v", tc.x, tc.y, got, tc.want)
+		}
+	}
+}
+
+// A seeded cache entry for the current spawn id must be used verbatim by
+// setTarget instead of the (nil-DB) fresh lookup — proving the id-keyed result
+// wins over re-running disambiguation.
+func TestPipeTargetID_CacheHitUsedBySetTarget(t *testing.T) {
+	tr := newTestTracker()
+
+	seeded := resolvedTarget{
+		name: "a sarnak conscript",
+		npc:  &db.NPC{ID: 424242, Name: "a_sarnak_conscript"},
+	}
+	tr.mu.Lock()
+	tr.lastPipeTargetID = ptrInt(9001)
+	tr.variantCache[9001] = seeded
+	tr.mu.Unlock()
+
+	tr.SetPipeTarget("a sarnak conscript")
+
+	st := tr.GetState()
+	if st.NPCData == nil || st.NPCData.ID != 424242 {
+		t.Fatalf("setTarget ignored the id-keyed cache: NPCData=%v", st.NPCData)
+	}
+}
+
+// A cache entry only applies when its stored name still matches the live
+// target — a recycled/stale id pointing at a different name must not leak.
+func TestPipeTargetID_CacheRejectedOnNameMismatch(t *testing.T) {
+	tr := newTestTracker()
+	tr.mu.Lock()
+	tr.lastPipeTargetID = ptrInt(9001)
+	tr.variantCache[9001] = resolvedTarget{name: "a orc pawn", npc: &db.NPC{ID: 111}}
+	tr.mu.Unlock()
+
+	tr.SetPipeTarget("a sarnak conscript") // different name, same stale id
+
+	if st := tr.GetState(); st.NPCData != nil {
+		t.Fatalf("stale-id cache leaked across names: NPCData=%v", st.NPCData)
+	}
+}
+
+func TestPipeTargetID_MissResolvesAndCaches(t *testing.T) {
+	tr := newRealDBTracker(t)
+	tr.SetPipePlayerSnapshot(162, 1000, -325, 421) // ssratemple
+
+	tr.SetPipeTarget("A Shissar Revenant")
+	tr.SetPipeTargetID(ptrInt(7777))
+
+	tr.mu.RLock()
+	entry, ok := tr.variantCache[7777]
+	tr.mu.RUnlock()
+	if !ok {
+		t.Fatal("SetPipeTargetID (cache miss) did not store a resolution")
+	}
+	if entry.name != "A Shissar Revenant" {
+		t.Errorf("cached entry name = %q", entry.name)
+	}
+	if entry.npc == nil && len(entry.variants) == 0 {
+		t.Error("cached a completely empty resolution for a known NPC")
+	}
+
+	// Re-targeting the same spawn id is a hit — no new work, same result.
+	before := tr.GetState()
+	tr.ClearPipeTarget()
+	tr.SetPipeTargetID(nil)
+	tr.SetPipeTarget("A Shissar Revenant")
+	tr.SetPipeTargetID(ptrInt(7777))
+	after := tr.GetState()
+	if len(before.Variants) != len(after.Variants) {
+		t.Errorf("re-pull changed the variant count: %d -> %d", len(before.Variants), len(after.Variants))
+	}
+}
+
+func TestPipeTargetID_ZoneChangeFlushesCache(t *testing.T) {
+	tr := newTestTracker()
+	tr.mu.Lock()
+	tr.lastPipeTargetID = ptrInt(1)
+	tr.variantCache[1] = resolvedTarget{name: "x"}
+	tr.variantCache[2] = resolvedTarget{name: "y"}
+	tr.mu.Unlock()
+
+	// Log-driven zone change goes through setZone.
+	tr.Handle(logparser.LogEvent{
+		Type: logparser.EventZone,
+		Data: logparser.ZoneData{ZoneName: "The Deep"},
+	})
+
+	tr.mu.RLock()
+	n := len(tr.variantCache)
+	id := tr.lastPipeTargetID
+	tr.mu.RUnlock()
+	if n != 0 || id != nil {
+		t.Fatalf("zone change didn't flush: %d entries, id=%v", n, id)
+	}
+}
+
+func TestPipeTargetID_PipeZoneChangeFlushesCache(t *testing.T) {
+	tr := newTestTracker()
+	tr.SetPipePlayerSnapshot(100, 0, 0, 0)
+	tr.mu.Lock()
+	tr.variantCache[5] = resolvedTarget{name: "z"}
+	tr.lastPipeTargetID = ptrInt(5)
+	tr.mu.Unlock()
+
+	tr.SetPipePlayerSnapshot(101, 0, 0, 0) // zoned
+
+	tr.mu.RLock()
+	n := len(tr.variantCache)
+	tr.mu.RUnlock()
+	if n != 0 {
+		t.Fatalf("pipe zone change didn't flush the variant cache: %d entries", n)
+	}
+}
+
+func TestPipeTargetID_NilIsNoOp(t *testing.T) {
+	tr := newTestTracker()
+	tr.mu.Lock()
+	tr.variantCache[3] = resolvedTarget{name: "keep me"}
+	tr.mu.Unlock()
+
+	tr.SetPipeTargetID(nil)
+	tr.SetPipeTargetID(nil)
+
+	tr.mu.RLock()
+	_, kept := tr.variantCache[3]
+	tr.mu.RUnlock()
+	if !kept {
+		t.Error("nil target id wiped the cache")
+	}
+}
+
+func TestPipeTargetID_DisconnectFlushesCache(t *testing.T) {
+	tr := newTestTracker()
+	tr.mu.Lock()
+	tr.variantCache[8] = resolvedTarget{name: "q"}
+	tr.lastPipeTargetID = ptrInt(8)
+	tr.mu.Unlock()
+
+	tr.ResetPipeFields() // pipe disconnect
+
+	tr.mu.RLock()
+	n := len(tr.variantCache)
+	id := tr.lastPipeTargetID
+	tr.mu.RUnlock()
+	if n != 0 || id != nil {
+		t.Fatalf("disconnect didn't flush: %d entries, id=%v", n, id)
+	}
+}

@@ -110,7 +110,36 @@ type NPCTracker struct {
 	// never mistaken for the player's own pet. Mirrors combat.Tracker's
 	// verifiedPlayers set; preserved for the life of the tracker.
 	verifiedPlayers map[string]bool
+
+	// lastPipeTargetID is the current target's spawn id from the Zeal v1.4.6+
+	// MsgPlayer snapshot (nil = older Zeal, no target, or not yet reported for
+	// the current target). Held under mu.
+	lastPipeTargetID *int
+
+	// variantCache memoises the resolved NPC / variant set for a spawn id.
+	// Re-targeting the same live mob then reuses the first resolution instead
+	// of re-running the position + strength disambiguation, which can flip
+	// between same-name candidates as the player or the mob moves (the Vex Thal
+	// / Plane of Fear "coin-flip on re-pull"). Spawn ids are recycled on a zone
+	// reset, so the whole map is flushed on every zone change.
+	variantCache map[int]resolvedTarget
 }
+
+// resolvedTarget is a memoised lookupNPCVariants result, keyed in variantCache
+// by spawn id. name is the corpse-stripped display name it was resolved for —
+// a cache entry is only trusted when that still matches the live target name.
+type resolvedTarget struct {
+	name      string
+	npc       *db.NPC
+	abilities []db.SpecialAbility
+	summary   *db.NPCCasterSummary
+	variants  []TargetVariant
+}
+
+// variantCacheMax bounds variantCache within a single zone. Reaching it just
+// clears the map (next target re-resolves) — a soft cap, never a correctness
+// issue. A busy zone rarely has the player target this many distinct spawns.
+const variantCacheMax = 512
 
 // NewNPCTracker returns an initialised NPCTracker. Inject the WebSocket hub
 // and database so the tracker can broadcast and look up NPC data.
@@ -120,6 +149,7 @@ func NewNPCTracker(hub *ws.Hub, database *db.DB) *NPCTracker {
 		db:              database,
 		st:              TargetState{HPPercent: -1},
 		verifiedPlayers: make(map[string]bool),
+		variantCache:    make(map[int]resolvedTarget),
 	}
 }
 
@@ -245,6 +275,113 @@ func (t *NPCTracker) ClearPipeTarget() {
 	t.clearTarget()
 }
 
+// SetPipeTargetID records the current target's spawn id from the Zeal v1.4.6+
+// MsgPlayer snapshot. The target *name* arrives in a separate MsgLabel a beat
+// earlier and has already driven setTarget's first-look resolution; this is
+// the authoritative follow-up that keys the result to a stable id so a later
+// re-pull of the same spawn is sticky.
+//
+// On a change to a non-nil id with a live target: a cache hit swaps in the
+// memoised resolution (no DB, no re-disambiguation); a miss resolves once and
+// caches it under the id. nil (older Zeal, or no target) just clears the
+// tracked id — no re-resolution, no clearing of the overlay.
+func (t *NPCTracker) SetPipeTargetID(id *int) {
+	t.mu.Lock()
+	if eqIntPtr(t.lastPipeTargetID, id) {
+		t.mu.Unlock()
+		return
+	}
+	t.lastPipeTargetID = id
+	name, isCorpse := "", false
+	if t.st.HasTarget {
+		name, isCorpse = stripCorpseSuffix(t.st.TargetName)
+	}
+	zoneShort := t.pipeZoneShort
+	playerKnown := t.pipePlayerKnown
+	px, py := t.pipePlayerX, t.pipePlayerY
+	t.mu.Unlock()
+
+	if id == nil || name == "" {
+		return
+	}
+
+	t.mu.RLock()
+	cached, ok := t.variantCache[*id]
+	valid := ok && cached.name == name
+	t.mu.RUnlock()
+
+	r := cached
+	if !valid {
+		npc, abs, sum, vars := t.lookupNPCVariants(name, zoneShort, playerKnown, px, py)
+		r = resolvedTarget{name: name, npc: npc, abilities: abs, summary: sum, variants: vars}
+		t.mu.Lock()
+		if len(t.variantCache) >= variantCacheMax {
+			t.variantCache = make(map[int]resolvedTarget)
+		}
+		t.variantCache[*id] = r
+		t.mu.Unlock()
+	}
+
+	t.applyResolved(name, isCorpse, r)
+}
+
+// cachedResolve returns the memoised resolution for spawn id *id when one
+// exists and its stored name still matches lookupName. Safe for a nil id.
+func (t *NPCTracker) cachedResolve(id *int, lookupName string) (resolvedTarget, bool) {
+	if id == nil {
+		return resolvedTarget{}, false
+	}
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	r, ok := t.variantCache[*id]
+	if !ok || r.name != lookupName {
+		return resolvedTarget{}, false
+	}
+	return r, true
+}
+
+// applyResolved swaps a resolved NPC / variant set onto the current target,
+// preserving the live name / HP / corpse fields, and broadcasts only when the
+// headline NPC or the variant count actually changed (setTarget's first-look
+// resolution usually already matches, so this is a no-op in the common case).
+func (t *NPCTracker) applyResolved(lookupName string, isCorpse bool, r resolvedTarget) {
+	t.mu.Lock()
+	curName, _ := stripCorpseSuffix(t.st.TargetName)
+	if !t.st.HasTarget || curName != lookupName {
+		t.mu.Unlock()
+		return // target changed out from under us
+	}
+	if npcID(t.st.NPCData) == npcID(r.npc) && len(t.st.Variants) == len(r.variants) {
+		t.mu.Unlock()
+		return // nothing the overlay renders differently
+	}
+	t.st.NPCData = r.npc
+	t.st.SpecialAbilities = r.abilities
+	t.st.CasterSummary = r.summary
+	t.st.Variants = r.variants
+	t.st.LastUpdated = time.Now()
+	snap := t.st
+	t.mu.Unlock()
+	t.broadcast(snap)
+}
+
+// eqIntPtr reports whether two *int hold the same value (both nil counts as
+// equal).
+func eqIntPtr(a, b *int) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
+// npcID returns an NPC's id, or 0 for a nil NPC.
+func npcID(n *db.NPC) int {
+	if n == nil {
+		return 0
+	}
+	return n.ID
+}
+
 // SetPipeConnected records whether the Zeal pipe is currently live. Called
 // from the pipe supervisor's OnConnect/OnDisconnect hooks. While connected,
 // Handle() defers entirely to pipe-sourced targeting (see isPipeConnected);
@@ -296,6 +433,8 @@ func (t *NPCTracker) ResetPipeFields() {
 	t.pipeZoneIDNumber = 0
 	t.pipeZoneShort = ""
 	t.pipePlayerKnown = false
+	// Pipe gone: the spawn-id feed and the variant cache it keys are stale.
+	t.flushVariantCacheLocked()
 	if t.st.HPPercent == -1 && t.st.PetOwner == "" {
 		t.mu.Unlock()
 		return
@@ -330,6 +469,7 @@ func (t *NPCTracker) SetPipePlayerSnapshot(zoneIDNumber int, x, y, z float64) {
 	// DB call so concurrent readers aren't held up.
 	t.pipeZoneIDNumber = zoneIDNumber
 	t.pipeZoneShort = ""
+	t.flushVariantCacheLocked()
 	t.mu.Unlock()
 
 	if t.db == nil || zoneIDNumber == 0 {
@@ -393,7 +533,19 @@ func (t *NPCTracker) isOwnPet(name string) bool {
 func (t *NPCTracker) setZone(zoneName string) {
 	t.mu.Lock()
 	t.st.CurrentZone = zoneName
+	t.flushVariantCacheLocked()
 	t.mu.Unlock()
+}
+
+// flushVariantCacheLocked drops the spawn-id variant cache and the tracked
+// target id. Called on every zone change — the zone server recycles spawn ids
+// on a reset, so a cached entry for id N in the old zone must never satisfy a
+// lookup for id N in the new one. Caller holds t.mu.
+func (t *NPCTracker) flushVariantCacheLocked() {
+	if len(t.variantCache) > 0 {
+		t.variantCache = make(map[int]resolvedTarget)
+	}
+	t.lastPipeTargetID = nil
 }
 
 func (t *NPCTracker) setTarget(displayName string) {
@@ -405,6 +557,7 @@ func (t *NPCTracker) setTarget(displayName string) {
 	zoneShort := t.pipeZoneShort
 	playerKnown := t.pipePlayerKnown
 	px, py := t.pipePlayerX, t.pipePlayerY
+	targetID := t.lastPipeTargetID
 	t.mu.RUnlock()
 	if same {
 		return
@@ -420,7 +573,21 @@ func (t *NPCTracker) setTarget(displayName string) {
 	// lookup but keep the original name for display, and flag is_corpse so
 	// the overlay pins HP to 0%.
 	lookupName, isCorpse := stripCorpseSuffix(displayName)
-	primary, primaryAbilities, primarySummary, variants := t.lookupNPCVariants(lookupName, zoneShort, playerKnown, px, py)
+
+	// If the Zeal pipe has already given this exact spawn an id and we resolved
+	// it earlier in this zone, reuse that result rather than re-running the
+	// position/strength disambiguation — which would otherwise be free to land
+	// on a different same-name candidate now that the player (or the mob) has
+	// moved. Read-only here; SetPipeTargetID owns writing the cache.
+	var primary *db.NPC
+	var primaryAbilities []db.SpecialAbility
+	var primarySummary *db.NPCCasterSummary
+	var variants []TargetVariant
+	if r, ok := t.cachedResolve(targetID, lookupName); ok {
+		primary, primaryAbilities, primarySummary, variants = r.npc, r.abilities, r.summary, r.variants
+	} else {
+		primary, primaryAbilities, primarySummary, variants = t.lookupNPCVariants(lookupName, zoneShort, playerKnown, px, py)
+	}
 
 	hpPercent := -1
 	if isCorpse {

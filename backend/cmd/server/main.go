@@ -1339,6 +1339,10 @@ func main() {
 			// writes to the log.
 			timerEngine.SetPipePetID(p.PetID)
 			combatTracker.SetPipePetID(p.PetID)
+			// target_id: keys the NPC overlay's resolved variant to a stable
+			// spawn id so re-targeting the same same-named mob is sticky
+			// instead of re-rolling the position/strength disambiguation.
+			npcTracker.SetPipeTargetID(p.TargetID)
 			return
 		case zealpipe.MsgLabel:
 			// Fall through to the label aggregator below.
