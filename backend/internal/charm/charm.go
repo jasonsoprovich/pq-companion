@@ -143,33 +143,57 @@ func DPS(minDmg, maxDmg, attackDelay int) float64 {
 // of Tunare 63, Call of the Banshee 64), so they fall out automatically while the
 // pop_enabled flag is off and reappear when it's on (cap 65).
 //
-// Dire Charm is intentionally absent: it has no row in quarm.db (the spell isn't
-// in this era's spell table), so it can't be resolved, scored, or land-checked.
+// Dire Charm is included via its three per-class effect spells. It is an AA
+// (altadv_vars skill_id 145, aa_expansion 3 = Luclin, level 59), not a trained
+// spell — the server (EQMacEmu zone/aa.cpp) maps the AA to a class-specific
+// spell id: Necromancer -> 2759 "Undead Pact", Druid -> 2760 "Servant of
+// Nature", Enchanter -> 2761 "Dominating Gaze". Those quarm.db rows carry the
+// real charm data (SPA 22, max level 46, magic resist) and encode the body
+// gate the same way every other charm line does — targettype 10 (undead) for
+// the necro spell, 9 (animal) for the druid spell, 5 (any) for the enchanter
+// spell — so RestrictionForTargetType handles them with no special case. Only
+// the required level needs pinning (see grantedLevels): their spells_new
+// classesN columns read 254/255/bogus because they're AA-granted.
 var catalog = map[int][]string{
 	classEnchanter: {
 		"Charm", "Beguile", "Cajoling Whispers", "Allure",
 		"Boltran's Agacerie", "Beckon", "Dictate", "Command of Druzzil",
+		"Dominating Gaze", // Dire Charm (Enchanter)
 	},
 	classNecromancer: {
 		"Dominate Undead", "Beguile Undead", "Cajole Undead",
 		"Thrall of Bones", "Enslave Death", "Word of Terris",
+		"Undead Pact", // Dire Charm (Necromancer)
 	},
 	classDruid: {
 		"Befriend Animal", "Charm Animals", "Tunare's Request", "Beguile Animals",
 		"Allure of the Wild", "Call of Karana", "Command of Tunare",
+		"Servant of Nature", // Dire Charm (Druid)
 	},
 	classBard: {
 		"Solon's Song of the Sirens", "Solon's Bewitching Bravura", "Call of the Banshee",
 	},
 }
 
-// researchLevels overrides the required level for charm spells whose classesN
-// column reads 255 (not trainer-taught) but which are nonetheless obtainable in
-// the current pre-PoP era via spell research. Without this they'd be wrongly
-// dropped as "not castable". Boltran's Agacerie is the canonical case: a Luclin
-// research spell and the standard level-53 enchanter charm.
-var researchLevels = map[string]int{
+// direCharmDBNames are the three quarm.db spell names the Dire Charm AA casts,
+// one per class. The UI shows them all as "Dire Charm" (see DisplayName).
+var direCharmDBNames = map[string]bool{
+	"Undead Pact":       true, // Necromancer
+	"Servant of Nature": true, // Druid
+	"Dominating Gaze":   true, // Enchanter
+}
+
+// grantedLevels overrides the required level for charm spells a class gets from
+// something other than a trainer, whose spells_new classesN column therefore
+// reads 254/255 (or a bogus value) and can't be trusted:
+//   - Boltran's Agacerie: a Luclin spell-research enchanter charm (level 53).
+//   - The three Dire Charm effect spells: AA-granted at level 59 (altadv_vars
+//     skill_id 145, class_type 59, aa_expansion 3 = Luclin).
+var grantedLevels = map[string]int{
 	"Boltran's Agacerie": 53,
+	"Undead Pact":        59,
+	"Servant of Nature":  59,
+	"Dominating Gaze":    59,
 }
 
 // Classes returns the charm-capable class indices, highest-tier line last.
@@ -189,11 +213,24 @@ func SpellsForClass(classIdx int) []string {
 	return catalog[classIdx]
 }
 
-// ResearchLevel returns the pre-PoP usable level for a research charm spell
-// whose classesN column reads 255, and whether such an override exists.
-func ResearchLevel(name string) (int, bool) {
-	lvl, ok := researchLevels[name]
+// GrantedLevel returns the required level for a charm spell a class gets from
+// research or an AA rather than a trainer (so its spells_new classesN column is
+// unreliable), and whether such an override exists. Callers should prefer this
+// over the classesN value whenever it returns ok.
+func GrantedLevel(name string) (int, bool) {
+	lvl, ok := grantedLevels[name]
 	return lvl, ok
+}
+
+// DisplayName maps a catalog spell name to what the UI should show. The three
+// per-class Dire Charm effect spells ("Undead Pact", "Servant of Nature",
+// "Dominating Gaze") all display as "Dire Charm"; every other name is returned
+// unchanged.
+func DisplayName(name string) string {
+	if direCharmDBNames[name] {
+		return "Dire Charm"
+	}
+	return name
 }
 
 // CharmEffectSPA is exported so the api layer reads the same SPA id when pulling

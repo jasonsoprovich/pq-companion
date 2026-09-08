@@ -110,3 +110,50 @@ func TestRestrictionForTargetType(t *testing.T) {
 		}
 	}
 }
+
+func TestDireCharmCatalog(t *testing.T) {
+	// The Dire Charm AA casts a class-specific effect spell; each of the three
+	// charm-via-AA classes should carry exactly one, and Bard (no Dire Charm)
+	// none.
+	cases := map[int]string{
+		classEnchanter:   "Dominating Gaze",
+		classNecromancer: "Undead Pact",
+		classDruid:       "Servant of Nature",
+	}
+	for classIdx, dbName := range cases {
+		var found bool
+		for _, n := range SpellsForClass(classIdx) {
+			if n == dbName {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("class %d catalog is missing Dire Charm spell %q", classIdx, dbName)
+		}
+		lvl, ok := GrantedLevel(dbName)
+		if !ok || lvl != 59 {
+			t.Errorf("GrantedLevel(%q) = %d,%v; want 59,true", dbName, lvl, ok)
+		}
+		if got := DisplayName(dbName); got != "Dire Charm" {
+			t.Errorf("DisplayName(%q) = %q; want %q", dbName, got, "Dire Charm")
+		}
+	}
+
+	for _, n := range SpellsForClass(classBard) {
+		if n == "Dominating Gaze" || n == "Undead Pact" || n == "Servant of Nature" {
+			t.Errorf("Bard catalog should not contain a Dire Charm spell, has %q", n)
+		}
+	}
+
+	// Non-Dire names pass through DisplayName and carry no granted-level unless
+	// they're a known research spell.
+	if got := DisplayName("Beguile"); got != "Beguile" {
+		t.Errorf("DisplayName(%q) = %q", "Beguile", got)
+	}
+	if lvl, ok := GrantedLevel("Boltran's Agacerie"); !ok || lvl != 53 {
+		t.Errorf("GrantedLevel(Boltran's) = %d,%v; want 53,true", lvl, ok)
+	}
+	if _, ok := GrantedLevel("Charm"); ok {
+		t.Errorf("GrantedLevel(Charm) should be false")
+	}
+}

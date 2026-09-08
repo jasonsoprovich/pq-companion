@@ -104,22 +104,21 @@ func (h *charmHandler) spells(w http.ResponseWriter, r *http.Request) {
 		}
 		// Required level comes from the spell's own class column (quarm.db),
 		// which encodes era: PoP charms sit above the level-60 cap and so fall
-		// out while pop_enabled is off. A 255 means "not trainer-taught" —
-		// available only if it's a known pre-PoP research spell.
+		// out while pop_enabled is off. Research- and AA-granted charms
+		// (Boltran's, the three Dire Charm effect spells) read 254/255/bogus in
+		// that column, so the catalog pins their real level via GrantedLevel.
 		reqLevel := spell.ClassLevels[classIdx]
-		if reqLevel == 255 {
-			override, ok := charm.ResearchLevel(name)
-			if !ok {
-				continue
-			}
-			reqLevel = override
+		if lvl, ok := charm.GrantedLevel(name); ok {
+			reqLevel = lvl
+		} else if reqLevel == 255 {
+			continue
 		}
 		if reqLevel < 1 || reqLevel > maxLevel {
 			continue
 		}
 		opts = append(opts, charmSpellOption{
 			SpellID:       spell.ID,
-			Name:          name,
+			Name:          charm.DisplayName(name),
 			ReqLevel:      reqLevel,
 			MaxCharmLevel: charmMaxLevel(spell),
 			Restriction:   charm.RestrictionForTargetType(spell.TargetType).String(),
@@ -263,7 +262,7 @@ func (h *charmHandler) pets(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, charmPetsResponse{
 		Zone:          zone,
 		SpellID:       spell.ID,
-		SpellName:     spell.Name,
+		SpellName:     charm.DisplayName(spell.Name),
 		MaxCharmLevel: charmCap,
 		Restriction:   restriction.String(),
 		Count:         len(pets),
