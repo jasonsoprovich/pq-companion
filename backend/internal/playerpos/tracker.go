@@ -62,6 +62,35 @@ const (
 	headingEpsilon = 1.5 // of 512, i.e. ~1 degree
 )
 
+// GroupMemberInput is one groupmate's position in *game* coordinates, as it
+// arrives from a Zeal MsgGroup frame. Only members Zeal resolves in the local
+// player's own zone carry a position, so this is always the in-zone subset.
+type GroupMemberInput struct {
+	Name    string
+	GameX   float64
+	GameY   float64
+	GameZ   float64
+	Heading float64
+}
+
+// GroupMemberState is one groupmate's position in map space (same negation as
+// State), ready for the renderer.
+type GroupMemberState struct {
+	Name    string  `json:"name"`
+	X       float64 `json:"x"`
+	Y       float64 `json:"y"`
+	Z       float64 `json:"z"`
+	Heading float64 `json:"heading"`
+}
+
+// GroupState is the payload of the player:group_positions broadcast — the
+// groupmates who are on the same map as the local player, so the renderer can
+// draw a faint secondary arrow for each.
+type GroupState struct {
+	Zone    string             `json:"zone"`
+	Members []GroupMemberState `json:"members"`
+}
+
 // Tracker holds the latest position and rate-limits broadcasts.
 type Tracker struct {
 	mu        sync.Mutex
@@ -71,11 +100,23 @@ type Tracker struct {
 	lastAt    time.Time
 	broadcast func(State)
 	now       func() time.Time // injectable for tests
+
+	groupBroadcast func(GroupState)
+	lastGroupSent  GroupState
+	lastGroupAt    time.Time
 }
 
 // New returns a Tracker that calls broadcast when a position is worth sending.
 func New(broadcast func(State)) *Tracker {
 	return &Tracker{broadcast: broadcast, now: time.Now}
+}
+
+// SetGroupBroadcast registers the sink for group-position updates. Optional —
+// when unset, UpdateGroup is a no-op.
+func (t *Tracker) SetGroupBroadcast(fn func(GroupState)) {
+	t.mu.Lock()
+	t.groupBroadcast = fn
+	t.mu.Unlock()
 }
 
 // Update records a pipe player snapshot in *game* coordinates and broadcasts it
@@ -126,6 +167,82 @@ func (t *Tracker) shouldSendLocked(s State) bool {
 		return true
 	}
 	return math.Abs(s.Heading-t.lastSent.Heading) >= headingEpsilon
+}
+
+// UpdateGroup records the in-zone groupmate positions from a Zeal MsgGroup
+// frame and broadcasts them if the set changed enough to be worth a frame. An
+// empty member list still broadcasts once (so the renderer drops stale arrows
+// when the group scatters across zones or disbands), then stays quiet.
+func (t *Tracker) UpdateGroup(zone string, members []GroupMemberInput) {
+	gs := GroupState{Zone: zone, Members: make([]GroupMemberState, 0, len(members))}
+	for _, m := range members {
+		gs.Members = append(gs.Members, GroupMemberState{
+			Name:    m.Name,
+			X:       -m.GameX, // same negation as State
+			Y:       -m.GameY,
+			Z:       m.GameZ,
+			Heading: m.Heading,
+		})
+	}
+
+	t.mu.Lock()
+	fn := t.groupBroadcast
+	send := fn != nil && t.shouldSendGroupLocked(gs)
+	if send {
+		t.lastGroupSent = gs
+		t.lastGroupAt = t.now()
+	}
+	t.mu.Unlock()
+
+	if send {
+		fn(gs)
+	}
+}
+
+// shouldSendGroupLocked applies the same style of rate limit as the self
+// arrow: a hard floor, a heartbeat ceiling, and a between-those change test.
+// Caller holds the lock.
+func (t *Tracker) shouldSendGroupLocked(gs GroupState) bool {
+	elapsed := t.now().Sub(t.lastGroupAt)
+	if elapsed < minInterval {
+		return false
+	}
+	if elapsed >= heartbeat {
+		return true
+	}
+	if gs.Zone != t.lastGroupSent.Zone || len(gs.Members) != len(t.lastGroupSent.Members) {
+		return true
+	}
+	prev := make(map[string]GroupMemberState, len(t.lastGroupSent.Members))
+	for _, m := range t.lastGroupSent.Members {
+		prev[m.Name] = m
+	}
+	for _, m := range gs.Members {
+		p, ok := prev[m.Name]
+		if !ok {
+			return true
+		}
+		if math.Hypot(m.X-p.X, m.Y-p.Y) >= moveEpsilon ||
+			math.Abs(m.Z-p.Z) >= moveEpsilon ||
+			math.Abs(m.Heading-p.Heading) >= headingEpsilon {
+			return true
+		}
+	}
+	return false
+}
+
+// ResetGroup clears group state and, if a sink is set, emits one empty frame so
+// the renderer drops any lingering arrows. Called when the pipe drops.
+func (t *Tracker) ResetGroup() {
+	t.mu.Lock()
+	fn := t.groupBroadcast
+	had := len(t.lastGroupSent.Members) > 0
+	t.lastGroupSent = GroupState{}
+	t.lastGroupAt = time.Time{}
+	t.mu.Unlock()
+	if fn != nil && had {
+		fn(GroupState{})
+	}
 }
 
 // Snapshot returns the last known position.

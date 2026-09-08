@@ -129,3 +129,80 @@ func TestResetClearsSnapshot(t *testing.T) {
 		t.Error("Snapshot ok = true after Reset — a stale arrow looks authoritative")
 	}
 }
+
+// ── Group positions (Zeal MsgGroup) ─────────────────────────────────────────
+
+func newGroupTestTracker() (*Tracker, *[]GroupState, *time.Time) {
+	var sent []GroupState
+	clock := time.Unix(1_700_000_000, 0)
+	tr := New(func(State) {})
+	tr.now = func() time.Time { return clock }
+	tr.SetGroupBroadcast(func(gs GroupState) { sent = append(sent, gs) })
+	return tr, &sent, &clock
+}
+
+func TestUpdateGroupNegatesAndBroadcasts(t *testing.T) {
+	tr, sent, _ := newGroupTestTracker()
+	tr.UpdateGroup("akheva", []GroupMemberInput{
+		{Name: "Tank", GameX: 100, GameY: -250, GameZ: 42, Heading: 128},
+	})
+	if len(*sent) != 1 {
+		t.Fatalf("broadcasts = %d, want 1", len(*sent))
+	}
+	m := (*sent)[0].Members[0]
+	if m.Name != "Tank" || m.X != -100 || m.Y != 250 || m.Z != 42 || m.Heading != 128 {
+		t.Errorf("member = %+v", m)
+	}
+	if (*sent)[0].Zone != "akheva" {
+		t.Errorf("zone = %q", (*sent)[0].Zone)
+	}
+}
+
+func TestUpdateGroupRateLimitsAndDetectsChange(t *testing.T) {
+	tr, sent, clock := newGroupTestTracker()
+	mk := func(x float64) []GroupMemberInput {
+		return []GroupMemberInput{{Name: "Tank", GameX: x, GameY: 0, GameZ: 0, Heading: 0}}
+	}
+
+	tr.UpdateGroup("z", mk(0)) // 1: first
+	*clock = clock.Add(50 * time.Millisecond)
+	tr.UpdateGroup("z", mk(50)) // under minInterval — dropped
+	*clock = clock.Add(60 * time.Millisecond)
+	tr.UpdateGroup("z", mk(0)) // back at origin, past floor — no real move vs last SENT (still origin)
+	*clock = clock.Add(120 * time.Millisecond)
+	tr.UpdateGroup("z", mk(50)) // 2: moved
+	*clock = clock.Add(120 * time.Millisecond)
+	tr.UpdateGroup("z", mk(50)) // no change — dropped
+	*clock = clock.Add(120 * time.Millisecond)
+	tr.UpdateGroup("z", []GroupMemberInput{
+		{Name: "Tank", GameX: 50}, {Name: "Healer"},
+	}) // 3: member added
+
+	if len(*sent) != 3 {
+		t.Fatalf("broadcasts = %d, want 3 (first, moved, member-added)", len(*sent))
+	}
+}
+
+func TestUpdateGroupHeartbeat(t *testing.T) {
+	tr, sent, clock := newGroupTestTracker()
+	tr.UpdateGroup("z", []GroupMemberInput{{Name: "A"}})
+	*clock = clock.Add(3 * time.Second) // past heartbeat
+	tr.UpdateGroup("z", []GroupMemberInput{{Name: "A"}})
+	if len(*sent) != 2 {
+		t.Fatalf("broadcasts = %d, want 2 (heartbeat forces a resend)", len(*sent))
+	}
+}
+
+func TestResetGroupEmitsEmptyThenQuiet(t *testing.T) {
+	tr, sent, clock := newGroupTestTracker()
+	tr.UpdateGroup("z", []GroupMemberInput{{Name: "A"}})
+	*clock = clock.Add(time.Second)
+	tr.ResetGroup()
+	if len(*sent) != 2 || len((*sent)[1].Members) != 0 {
+		t.Fatalf("after reset: sent=%d, last members=%d; want 2 and an empty frame", len(*sent), len((*sent)[len(*sent)-1].Members))
+	}
+	tr.ResetGroup() // nothing to clear — must stay quiet
+	if len(*sent) != 2 {
+		t.Errorf("a second reset broadcast again: sent=%d", len(*sent))
+	}
+}

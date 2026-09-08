@@ -340,17 +340,37 @@ a future data source fix this?" column against the new capabilities.
 
 ## 5. Raid-scope data
 
-### 5.1 No information about raid members through Zeal
+### 5.1 Raid-member data through Zeal is roster + in-zone position, not buffs/cooldowns
 
-- **Limitation:** Zeal does not expose raid roster, raid members' HP, buffs,
-  cooldowns, or positions — only the player's own **group** (up to 5 others).
-- **Root cause:** ZealPipes mirrors one client's local state; the EQ client's
-  raid window data is not exposed over the pipe.
-- **Sources checked:** Log (only roster-join chat lines, if in-zone), Zeal
-  (group fields only).
-- **Could a future data source fix this?** **Maybe.** If a future Zeal version
-  exposes raid-window data, raid-scope features become possible. Until then,
-  raid-wide tracking is out of scope. Re-check on each Zeal release.
+**Substantially resolved by Zeal (confirmed 2026-09-08 against v1.4.6 —
+`Zeal/named_pipe.cpp`).** The earlier form of this entry ("Zeal does not
+expose raid roster … only the player's own group") was wrong: the pipe's
+`MsgRaid` (type 5) and `MsgGroup` (type 6) messages carry far more than we
+assumed — pq-companion had simply been dropping both message types.
+
+- **What Zeal now gives us (always, while in a raid / group):**
+  - **Full raid roster** — every member's name, level, class, group number
+    (1–12 / "0" ungrouped), and raid-/group-leader flag, for up to 72
+    members regardless of zone. Consumed since commit `<this batch>` into the
+    player-sightings store (Players tab auto-populates from a raid) and, via
+    combat's class resolver, into raid-threat class attribution.
+  - **Group + raid member positions + spawn id** — but only for members Zeal
+    can resolve in *your* zone (it dereferences the entity manager). Group
+    members' in-zone positions drive the faint secondary arrows on the live
+    map.
+  - **Member HP (`hp_current` / `hp_max`)** — only for in-zone members **and**
+    only when the user has run `/pipe verbose on` (`PipeVerbose`, default
+    **off**).
+- **What is still not available:** raid/group members' **buffs, detrimentals,
+  mana, spell/AA/disc cooldowns, or discipline state.** The `Buff*` labels are
+  the *local* client's own slots only. So cross-raid cure prioritization
+  (§2.3) and any "who has the group-heal cooldown up" feature remain out of
+  reach.
+- **Sources checked:** Zeal (`MsgRaid` / `MsgGroup` per-member fields;
+  `PipeVerbose` gate for HP), Log (roster-join chat lines only).
+- **Could a future data source fix the remainder?** Only a Zeal addition that
+  exposed other clients' buff/cooldown state — which would mean Zeal reading
+  data the EQ client itself doesn't have for other players. Not expected.
 
 ---
 

@@ -1289,6 +1289,17 @@ func main() {
 	posTracker := playerpos.New(func(s playerpos.State) {
 		hub.Broadcast(ws.Event{Type: "player:position", Data: s})
 	})
+	posTracker.SetGroupBroadcast(func(gs playerpos.GroupState) {
+		hub.Broadcast(ws.Event{Type: "player:group_positions", Data: gs})
+	})
+
+	// Serialized state for the pipe callback (readLoop calls onEvent from one
+	// goroutine, so plain vars are safe here). pipeZoneShort is the local
+	// player's current short zone name, stamped by MsgPlayer and read by
+	// MsgRaid to zone-stamp raid-roster sightings. lastRaidSeen dedupes those
+	// upserts to "on change" — key name -> "level:class".
+	var pipeZoneShort string
+	lastRaidSeen := map[string]string{}
 
 	pipeSupervisor := zealpipe.NewSupervisor(func(env zealpipe.Envelope) {
 		switch env.Type {
@@ -1330,6 +1341,7 @@ func main() {
 					zoneShort = z.ShortName
 				}
 			}
+			pipeZoneShort = zoneShort
 			posTracker.Update(
 				zoneShort, p.Location.GameX(), p.Location.GameY(), p.Location.Z, p.Heading)
 			// Zeal v1.4.6+ pet spawn id: a stable, collision-proof identity for
@@ -1343,6 +1355,75 @@ func main() {
 			// spawn id so re-targeting the same same-named mob is sticky
 			// instead of re-rolling the position/strength disambiguation.
 			npcTracker.SetPipeTargetID(p.TargetID)
+			return
+		case zealpipe.MsgGroup:
+			// Groupmates' live map positions. Only members Zeal resolved in the
+			// player's own zone carry loc — that's exactly the set we can place
+			// on the open map, so absence of loc is the "different zone" gate.
+			members, err := zealpipe.DecodeGroup(env.Data)
+			if err != nil {
+				slog.Debug("zealpipe: decode group failed", "err", err)
+				return
+			}
+			pts := make([]playerpos.GroupMemberInput, 0, len(members))
+			for _, m := range members {
+				if m.Name == "" || m.Loc == nil || m.Name == env.Character {
+					continue
+				}
+				h := 0.0
+				if m.Heading != nil {
+					h = *m.Heading
+				}
+				pts = append(pts, playerpos.GroupMemberInput{
+					Name:    m.Name,
+					GameX:   m.Loc.GameX(),
+					GameY:   m.Loc.GameY(),
+					GameZ:   m.Loc.Z,
+					Heading: h,
+				})
+			}
+			posTracker.UpdateGroup(pipeZoneShort, pts)
+			return
+		case zealpipe.MsgRaid:
+			// Raid roster: names / levels / classes / group numbers for every
+			// raid member (up to 72), regardless of zone. Feed them into the
+			// player-sightings store so the Players tab populates from a raid
+			// without anyone /who-ing, and combat's class resolver (which reads
+			// that store) can attribute raid-threat hate by class. Deduped to
+			// "on change" so a static roster doesn't churn sightings_count.
+			members, err := zealpipe.DecodeRaid(env.Data)
+			if err != nil {
+				slog.Debug("zealpipe: decode raid failed", "err", err)
+				return
+			}
+			if playerStore == nil {
+				return
+			}
+			now := time.Now()
+			selfName := activeChar()
+			for _, m := range members {
+				if m.Name == "" || m.Name == env.Character || m.Name == selfName {
+					continue
+				}
+				class := ""
+				if m.Class >= 1 && m.Class <= 15 {
+					class = players.ClassNameByIndex(m.Class - 1) // Zeal class ids are 1-indexed
+				}
+				fp := fmt.Sprintf("%d:%s", m.Level, class)
+				if lastRaidSeen[m.Name] == fp {
+					continue
+				}
+				lastRaidSeen[m.Name] = fp
+				if err := playerStore.Upsert(players.SightingInput{
+					Name:       m.Name,
+					Level:      m.Level,
+					Class:      class,
+					Zone:       pipeZoneShort,
+					ObservedAt: now,
+				}); err != nil {
+					slog.Debug("zealpipe: raid roster upsert failed", "player", m.Name, "err", err)
+				}
+			}
 			return
 		case zealpipe.MsgLabel:
 			// Fall through to the label aggregator below.
@@ -1441,6 +1522,8 @@ func main() {
 		combatTracker.ResetPipeState()
 		respawnEngine.ResetPipeZone()
 		posTracker.Reset()
+		posTracker.ResetGroup()
+		lastRaidSeen = map[string]string{}
 		hub.Broadcast(ws.Event{Type: "player:position", Data: nil})
 		timerEngine.SetPipeCasting("")
 		timerEngine.SetPipeBuffSlots(nil)
