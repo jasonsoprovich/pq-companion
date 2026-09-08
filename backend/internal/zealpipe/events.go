@@ -37,11 +37,58 @@ type Gauge struct {
 }
 
 // Player is the per-tick player snapshot carried by MsgPlayer.
+//
+// SpawnID/TargetID/PetID were added in Zeal v1.4.6 (PR #229). They are
+// pointers because Zeal *omits* target_id/pet_id entirely when there is no
+// target / no pet (rather than sending 0 or -1), and because every field is
+// absent on any pre-1.4.6 Zeal — a nil pointer means "this Zeal build doesn't
+// report it, or there genuinely isn't one", and consumers must fall back to
+// the name-based path in both cases.
 type Player struct {
 	Zone       int      `json:"zone"`
 	Location   Location `json:"location"`
 	Heading    float64  `json:"heading"`
 	AutoAttack bool     `json:"autoattack"`
+	SpawnID    *int     `json:"spawn_id,omitempty"`
+	TargetID   *int     `json:"target_id,omitempty"`
+	PetID      *int     `json:"pet_id,omitempty"`
+}
+
+// RaidMember is one entry in a MsgRaid (type 5) payload. Zeal emits this
+// array whenever the client is in a raid; we drop the whole message today.
+//
+// name/level/class/group/rank are always present. spawn_id/loc/heading are
+// present only for members currently in your zone (Zeal resolves them through
+// the entity manager). hp_current/hp_max/zone_id are present only for in-zone
+// members AND only when the user has run "/pipe verbose on" (PipeVerbose,
+// which defaults off). SpawnID was added in v1.4.6.
+type RaidMember struct {
+	Name    string    `json:"name"`
+	Level   int       `json:"level"`
+	Class   int       `json:"class"`
+	Group   string    `json:"group"` // "0" = ungrouped, "1".."12"
+	Rank    string    `json:"rank"`  // "Raid Leader" | "Group Leader" | ""
+	SpawnID *int      `json:"spawn_id,omitempty"`
+	Loc     *Location `json:"loc,omitempty"`
+	Heading *float64  `json:"heading,omitempty"`
+	HPCur   *int      `json:"hp_current,omitempty"` // PipeVerbose only
+	HPMax   *int      `json:"hp_max,omitempty"`     // PipeVerbose only
+	ZoneID  *int      `json:"zone_id,omitempty"`    // PipeVerbose only
+}
+
+// GroupMember is one entry in a MsgGroup (type 6) payload. name/spawn_id/
+// loc/heading are always present; hp_current/hp_max/class/level/zone_id are
+// PipeVerbose-only. SpawnID was added in v1.4.6.
+type GroupMember struct {
+	Name    string    `json:"name"`
+	SpawnID *int      `json:"spawn_id,omitempty"`
+	Loc     *Location `json:"loc,omitempty"`
+	Heading *float64  `json:"heading,omitempty"`
+	HPCur   *int      `json:"hp_current,omitempty"` // PipeVerbose only
+	HPMax   *int      `json:"hp_max,omitempty"`     // PipeVerbose only
+	Class   *int      `json:"class,omitempty"`      // PipeVerbose only
+	Level   *int      `json:"level,omitempty"`      // PipeVerbose only
+	ZoneID  *int      `json:"zone_id,omitempty"`    // PipeVerbose only
 }
 
 // Location is a 3D world position, with Zeal's field names.
@@ -128,4 +175,29 @@ func DecodePipeCmd(payload string) (PipeCmd, error) {
 		return c, fmt.Errorf("zealpipe: decode cmd: %w", err)
 	}
 	return c, nil
+}
+
+// DecodeRaid parses a MsgRaid (type 5) payload — an array of RaidMember.
+// Returns nil (not an error) for an empty/null payload, matching DecodeLabels.
+func DecodeRaid(payload string) ([]RaidMember, error) {
+	if payload == "" || payload == "null" {
+		return nil, nil
+	}
+	var members []RaidMember
+	if err := json.Unmarshal([]byte(payload), &members); err != nil {
+		return nil, fmt.Errorf("zealpipe: decode raid: %w", err)
+	}
+	return members, nil
+}
+
+// DecodeGroup parses a MsgGroup (type 6) payload — an array of GroupMember.
+func DecodeGroup(payload string) ([]GroupMember, error) {
+	if payload == "" || payload == "null" {
+		return nil, nil
+	}
+	var members []GroupMember
+	if err := json.Unmarshal([]byte(payload), &members); err != nil {
+		return nil, fmt.Errorf("zealpipe: decode group: %w", err)
+	}
+	return members, nil
 }

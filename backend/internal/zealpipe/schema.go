@@ -11,8 +11,11 @@
 // We treat the schema as best-effort — Zeal is upstream-developed and IDs can
 // shift between releases. Unknown enum values are ignored rather than rejected.
 //
-// Verified against Zeal HEAD on 2026-05-15. Canonical schema source:
+// Verified against Zeal v1.4.6 (release 5ae20e3, 2026-09-07) on 2026-09-08.
+// Canonical schema source:
 // https://github.com/OkieDan/ZealPipes/blob/master/ZealPipes.Common/Enums.cs
+// plus CoastalRedwood/Zeal Zeal/named_pipe.cpp for fields ZealPipes' C# mirror
+// doesn't carry (the raid/group roster fields, and the v1.4.6 spawn ids).
 package zealpipe
 
 // PipeMessageType is the top-level "type" tag on every envelope. Values match
@@ -23,10 +26,12 @@ const (
 	MsgLog    PipeMessageType = 0 // log line entry
 	MsgLabel  PipeMessageType = 1 // array of Label values
 	MsgGauge  PipeMessageType = 2 // array of Gauge values
-	MsgPlayer PipeMessageType = 3 // player state snapshot
+	MsgPlayer PipeMessageType = 3 // player state snapshot (DecodePlayer)
 	MsgCmd    PipeMessageType = 4 // custom string sent via in-game /pipe
-	MsgRaid   PipeMessageType = 5 // raid roster
-	MsgGroup  PipeMessageType = 6 // group roster
+	MsgRaid   PipeMessageType = 5 // raid roster (DecodeRaid) — name/level/class/
+	//                               group/rank always, loc/hp for in-zone members
+	MsgGroup PipeMessageType = 6 // group roster (DecodeGroup) — name/loc always,
+	//                              hp/class/level only under "/pipe verbose on"
 )
 
 // String returns a human-readable name for logging.
