@@ -65,6 +65,14 @@ a future data source fix this?" column against the new capabilities.
   `TargetName` stream makes *single-target* trash attribution near-perfect
   (hits within ±200 ms of a target switch are attributable). True AoE splitting
   across same-named mobs remains impossible without spawn IDs.
+- **Zeal 1.4.6 update (2026-09-08):** the pipe now emits `target_id` (your
+  current target's spawn id). The NPC overlay uses it to make same-name
+  *variant* resolution sticky (§3.1). It does **not** improve the DPS/threat
+  meters' per-hit attribution — the log line still carries only a name, and
+  the id covers *your* target only, not the mob behind every "You slash a
+  gnoll" line. Combat holding distinct per-instance rows keyed by `target_id`
+  is a possible future step; true multi-same-name AoE splitting still needs a
+  per-hit id the log will never have.
 
 ### 1.4 Pet / charmed-pet damage attribution requires inference
 
@@ -73,10 +81,24 @@ a future data source fix this?" column against the new capabilities.
 - **Root cause:** Logs don't link a pet's hits to its owner except at bind time
   ("My leader is X."). Charm breaks/re-charms need re-inference.
 - **Sources checked:** Log (bind-time only), Zeal (`PlayerPetName`,
-  `TargetPetOwner`).
+  `TargetPetOwner`, and — Zeal 1.4.6 — `pet_id`).
 - **Could a future data source fix this?** **Yes (your pet only).** Zeal's
   `PlayerPetName` is always the current pet, enabling automatic owner-merge for
   *your* pet/charm. Other players' pet ownership is still log-inference only.
+- **Zeal 1.4.6 update (2026-09-08):** the pipe now emits `pet_id`, a stable
+  spawn id for your pet.
+  - **Charm timers (resolved):** `pet_id` *disappearing* from the MsgPlayer
+    snapshot is the authoritative "the charmed pet died / charm broke" signal
+    EQ never writes to the log — previously a charm timer lingered to its
+    natural expiry after the pet died. A changed `pet_id` (re-charm) also
+    clears the old timer at once. Falls back to today's expiry-only behaviour
+    on older Zeal or with no pipe.
+  - **Combat name-binding (improved):** a changed `pet_id` revokes the stale
+    pipe pet→owner binding so a same-name charm rotation ("a sarnak" → "a
+    sarnak") can't keep crediting the old pet's damage to the player.
+  - **Still not done:** combat does not yet hold *distinct damage rows* per
+    `pet_id`, so consecutive same-named charmed pets still fold into one
+    combatant row for the fight.
 
 ---
 
@@ -150,6 +172,12 @@ a future data source fix this?" column against the new capabilities.
   `GroupMemberXHPPerc` deltas can *infer* healing landing on group members (HP%
   rising between ticks), but it can't attribute *which* healer did it, can't
   separate overheal, and works for group members only — not raid.
+- **Zeal 1.4.6 update (2026-09-08):** with `/pipe verbose on`, `MsgRaid` /
+  `MsgGroup` carry absolute `hp_current` / `hp_max` for every raid/group member
+  *in your zone* — widening the HP-delta inference net from group-only to the
+  whole in-zone raid. The blockers are unchanged: still can't say which healer,
+  still can't see overheal, and nothing for members in another zone. Not wired
+  into an HPS estimate yet.
 
 ### 2.2 Heal-over-time (HoT) ticks on others are invisible
 
@@ -159,7 +187,9 @@ a future data source fix this?" column against the new capabilities.
   client-side.
 - **Sources checked:** Log, Zeal.
 - **Could a future data source fix this?** **Partially.** Same HP-delta
-  inference as 2.1 (group only), with the same attribution/overheal caveats.
+  inference as 2.1, with the same attribution/overheal caveats — and, per the
+  Zeal 1.4.6 note in §2.1, now extendable from group to the whole in-zone raid
+  when `/pipe verbose on` is set.
 
 ### 2.3 Cross-raid cure prioritization is not feasible
 
@@ -247,10 +277,21 @@ a future data source fix this?" column against the new capabilities.
   same `name`, and nothing in the log/Zeal feed disambiguates which row is the
   live spawn.
 - **Sources checked:** Log (name only), DB (multiple rows, no live binding),
-  Zeal (`TargetName` is the same display label).
-- **Could a future data source fix this?** **No** with current Zeal. Would
-  require Zeal to expose the target's actual spawn/NPC ID. Re-check on each Zeal
-  release.
+  Zeal (`TargetName` is the same display label; `target_id` since 1.4.6).
+- **Could a future data source fix this?** **Partially, since Zeal 1.4.6
+  (2026-09-08).** The pipe now emits `target_id` — the zone server's live
+  spawn id for your current target. It is **not** `npc_types.id`: it does not
+  by itself name a DB row, a loot table, or a level, so the *initial* pick
+  among same-name `npc_types` candidates still relies on the existing
+  heuristic (position vs `spawn2`, placeholder prefix, `raid_target` / HP
+  strength sort). What it buys is **sticky resolution**: the NPC overlay
+  resolves the variant once, pins it to that `target_id` for the life of the
+  spawn (flushed on zone change — spawn ids are recycled on a zone reset), and
+  reuses it instead of re-rolling the disambiguation every time you re-target.
+  That kills the Vex Thal / Plane of Fear "coin-flip on re-pull" where moving
+  (or the mob being dragged) flipped which candidate the overlay showed.
+  Telling two *live* same-named targets apart within a session is now possible;
+  binding either one to the correct DB row is not.
 
 ### 3.2 Cannot determine level / class of duplicate-named NPCs
 
@@ -260,9 +301,12 @@ a future data source fix this?" column against the new capabilities.
 - **Root cause:** Same as 3.1 — no way to bind the live target to a specific DB
   row. Level/class are only visible if the user `/con`s and the parser maps it,
   and even then ambiguity remains across same-named rows.
-- **Sources checked:** Log, DB, Zeal.
-- **Could a future data source fix this?** **No** without a target spawn/NPC ID
-  from Zeal.
+- **Sources checked:** Log, DB, Zeal (`target_id` since 1.4.6).
+- **Could a future data source fix this?** **No.** Zeal 1.4.6's `target_id`
+  (see §3.1) tells two *live* same-named targets apart but does not bind either
+  to a `npc_types` row, so it can't say which row's level/class/resists to
+  show. Still needs a `/con` (or a future Zeal field carrying the actual NPC
+  id, not just the spawn id).
 
 ### 3.3 Loot tables for duplicate-named bosses are ambiguous
 
@@ -272,8 +316,11 @@ a future data source fix this?" column against the new capabilities.
 - **Root cause:** Loot tables are keyed off `npc_types.id` (via
   `loottable`/`loottable_entries`), but we can't resolve the live spawn to one
   ID. See 3.1.
-- **Sources checked:** DB (loot tables exist per ID), Log/Zeal (no ID binding).
-- **Could a future data source fix this?** **No** without a target NPC ID.
+- **Sources checked:** DB (loot tables exist per ID), Log/Zeal (no ID binding;
+  Zeal 1.4.6's `target_id` is a *spawn* id, not `npc_types.id`).
+- **Could a future data source fix this?** **No.** Loot is keyed off
+  `npc_types.id` and `target_id` doesn't resolve to one (see §3.1) — a future
+  Zeal field exposing the target's actual NPC id would.
 
 ### 3.4 NPC database stats are templates, not live state
 
@@ -305,9 +352,12 @@ a future data source fix this?" column against the new capabilities.
   This is a heuristic, not a resolution — if a group fought a low-HP variant the
   headline would still show the raid row.
 - **Sources checked:** DB (`npc_types` name/hp/raid_target, `spawn2`/`spawnentry`
-  per zone), Log (name only), Zeal (`TargetName` + HP%, no ID).
-- **Could a future data source fix this?** **No** without a target spawn/NPC ID
-  from Zeal. Re-check on each Zeal release.
+  per zone), Log (name only), Zeal (`TargetName` + HP%; `target_id` since 1.4.6).
+- **Could a future data source fix this?** **No.** Zeal 1.4.6's `target_id`
+  makes the heuristic *pick* sticky (see §3.1) so the headline stops flipping
+  between the raid row and a 32k sibling on re-target, but it still cannot
+  *prove* which row the live spawn is — that needs the actual NPC id, not the
+  spawn id. Re-check on each Zeal release.
 
 ---
 
@@ -383,7 +433,10 @@ These are inherent to log-file parsing and affect multiple features:
 - **Limitation:** The log never states your current target; it must be inferred
   from combat/spell context.
 - **Could a future data source fix this?** **Yes.** Zeal's `TargetName` provides
-  authoritative live target detection (see 1.3).
+  authoritative live target detection (see 1.3), and since Zeal 1.4.6 the pipe
+  also carries `target_id` (the spawn id), making the live target
+  collision-proof for same-name mobs — used by the NPC overlay's sticky
+  variant resolution (§3.1).
 
 ### 6.2 No backfill for events before the app started
 
@@ -418,6 +471,15 @@ These are inherent to log-file parsing and affect multiple features:
 - **Could a future data source fix this?** **Partially.** A future Zeal field
   exposing live skill values and the equipped-weapon type would let us use the
   character's actual skills instead of the cap assumption.
+- **Zeal `/mystats` update (2026-09-08):** the always-on Stats-tab derivation
+  still uses the cap assumption, but the new **Stat Snapshots** tab
+  (`internal/mystats`, issue #154) captures Zeal's `/mystats` output, whose
+  `Offense:` line carries the character's *actual* trained weapon-skill value
+  (plus the STR / spell-ATK / item-ATK split) and whose defensive block gives
+  the client's real post-softcap mitigation and avoidance. So a ground-truth
+  cross-check now exists on demand — it just isn't fed back into the derived
+  Stats tab. `/mystats` is Zeal Beta (disciplines / double-attack not
+  modelled) and its numbers are the client's own estimate, not server truth.
 
 ### 7.2 Skill Tracker has no full skill snapshot — DISABLED behind a dev flag
 
