@@ -174,6 +174,10 @@ export default function CharacterProgressPage(): React.ReactElement {
   const [quarmy, setQuarmy] = useState<QuarmyData | null>(null)
   const [trainedAAs, setTrainedAAs] = useState<CharacterAA[]>([])
   const [availableAAs, setAvailableAAs] = useState<AAInfo[]>([])
+  // Unspent AA pool + when it was last observed (-1 = never). From the live
+  // Zeal pipe, with the AA-gain log line as a stale fallback.
+  const [unspentAA, setUnspentAA] = useState<number>(-1)
+  const [unspentAAAt, setUnspentAAAt] = useState<number>(0)
   const [modifiers, setModifiers] = useState<SpellModifier[] | null>(null)
   const [activeChar, setActiveChar] = useState<Character | null>(null)
   const [loading, setLoading] = useState(true)
@@ -216,6 +220,8 @@ export default function CharacterProgressPage(): React.ReactElement {
         const aaResp = await getCharacterAAs(found.id)
         setTrainedAAs(aaResp.trained ?? [])
         setAvailableAAs(aaResp.available ?? [])
+        setUnspentAA(aaResp.unspent_aa ?? -1)
+        setUnspentAAAt(aaResp.unspent_aa_at ?? 0)
         try {
           const modResp = await getCharacterSpellModifiers(found.id)
           setModifiers(modResp.contributors ?? [])
@@ -226,6 +232,8 @@ export default function CharacterProgressPage(): React.ReactElement {
       } else {
         setTrainedAAs([])
         setAvailableAAs([])
+        setUnspentAA(-1)
+        setUnspentAAAt(0)
         setModifiers(null)
       }
     } catch (err: unknown) {
@@ -379,7 +387,12 @@ export default function CharacterProgressPage(): React.ReactElement {
                 <GearPanel gear={equippedGear} hasQuarmy={!!quarmy} onLookup={handleLookup} />
               )}
               {tab === 'aas' && (
-                <AAPanel trained={trainedAAs} available={availableAAs} />
+                <AAPanel
+                  trained={trainedAAs}
+                  available={availableAAs}
+                  unspentAA={unspentAA}
+                  unspentAAAt={unspentAAAt}
+                />
               )}
               {tab === 'modifiers' && (
                 <ErrorBoundary label="Spell Modifiers">
@@ -1423,9 +1436,28 @@ function cumulativeCost(cost: number, costInc: number, rank: number): number {
 interface AAPanelProps {
   trained: CharacterAA[]
   available: AAInfo[]
+  unspentAA: number
+  unspentAAAt: number
 }
 
-function AAPanel({ trained, available }: AAPanelProps): React.ReactElement {
+// Compact "3 hours ago" / "Sep 6" for the unspent-AA freshness qualifier.
+function relativeAge(unixSeconds: number): string {
+  if (!unixSeconds) return ''
+  const diffMs = Date.now() - unixSeconds * 1000
+  const mins = Math.round(diffMs / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.round(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  const days = Math.round(hrs / 24)
+  if (days < 30) return `${days}d ago`
+  return new Date(unixSeconds * 1000).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
+function AAPanel({ trained, available, unspentAA, unspentAAAt }: AAPanelProps): React.ReactElement {
   const [category, setCategory] = useState<AACategoryKey>('general')
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<AARow | null>(null)
@@ -1490,12 +1522,29 @@ function AAPanel({ trained, available }: AAPanelProps): React.ReactElement {
 
   return (
     <div className="flex flex-col gap-3" style={{ minHeight: 0 }}>
-      {/* Header: points spent + search */}
+      {/* Header: points spent + unspent + search */}
       <div className="flex items-center justify-between gap-4">
-        <div className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
-          AA Points Spent:{' '}
-          <span className="font-semibold" style={{ color: 'var(--color-foreground)' }}>
-            {totalPointsSpent}
+        <div className="flex items-center gap-4 text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+          <span>
+            AA Points Spent:{' '}
+            <span className="font-semibold" style={{ color: 'var(--color-foreground)' }}>
+              {totalPointsSpent}
+            </span>
+          </span>
+          <span
+            title={
+              unspentAA < 0
+                ? 'Seen automatically while EverQuest is running with the Zeal pipe connected, or from a "You have gained an ability point!" log line.'
+                : `Last observed ${relativeAge(unspentAAAt)}. This value can only go stale — spending points is never logged — so it refreshes on your next login with Zeal running.`
+            }
+          >
+            Unspent:{' '}
+            <span className="font-semibold" style={{ color: 'var(--color-foreground)' }}>
+              {unspentAA < 0 ? '—' : unspentAA}
+            </span>
+            {unspentAA >= 0 && unspentAAAt > 0 && (
+              <span style={{ color: 'var(--color-muted)' }}> (as of {relativeAge(unspentAAAt)})</span>
+            )}
           </span>
         </div>
         <div

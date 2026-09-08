@@ -274,6 +274,12 @@ func (h *charactersHandler) aas(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"trained":   trained,
 		"available": available,
+		// Unspent (bankable) AA pool, observed live from the Zeal pipe (or the
+		// AA-gain log line as a fallback). -1 = never seen. unspent_aa_at is the
+		// Unix time it was last observed — the UI shows it as "as of <time>"
+		// because the value silently goes stale when points are spent.
+		"unspent_aa":    char.UnspentAA,
+		"unspent_aa_at": char.UnspentAAAt,
 	})
 }
 

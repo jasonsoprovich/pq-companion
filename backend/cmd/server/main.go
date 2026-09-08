@@ -1353,6 +1353,16 @@ func main() {
 				targetPetOwner = l.Value
 			case zealpipe.LabelPlayerPetName:
 				combatTracker.SetPipePetName(l.Value)
+			case zealpipe.LabelCurrentAAPoints:
+				// Unspent AA-point pool (label 71). Persist it against the
+				// active character so the Character Info -> AA tab can show
+				// "Unspent: N" even offline, refreshed on the next login.
+				// The only live source — no file export carries it.
+				if n, err := strconv.Atoi(strings.TrimSpace(l.Value)); err == nil && n >= 0 {
+					if err := charStore.SetUnspentAA(env.Character, n, time.Now().Unix()); err != nil {
+						slog.Debug("zealpipe: persist unspent AA failed", "err", err)
+					}
+				}
 			case zealpipe.LabelCastingName:
 				castingName = l.Value
 			default:
@@ -1500,6 +1510,22 @@ func main() {
 							"last_zone":    zd.ZoneName,
 							"last_zone_at": at,
 						}})
+					}
+				}
+			}
+		}
+
+		// Unspent-AA fallback seed: "You have gained an ability point!  You now
+		// have <N> ability points." reports the unspent pool at that instant.
+		// Persist it as the staleness-flagged fallback for the AA tab when the
+		// live Zeal pipe (label 71) has never populated a fresher value.
+		// SetUnspentAA only writes when this timestamp is >= the stored one, so
+		// a log backfill of old dings can't overwrite a current pipe reading.
+		if ev.Type == logparser.EventAAGain {
+			if ad, ok := ev.Data.(logparser.AAGainData); ok {
+				if name := activeChar(); name != "" {
+					if err := charStore.SetUnspentAA(name, ad.Points, ev.Timestamp.Unix()); err != nil {
+						slog.Debug("seed unspent AA from log", "character", name, "err", err)
 					}
 				}
 			}

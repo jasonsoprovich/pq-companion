@@ -1830,6 +1830,13 @@ export interface AAInfo {
 export interface CharacterAAsResponse {
   trained: CharacterAA[]
   available: AAInfo[]
+  // Unspent (bankable) AA-point pool, observed live from the Zeal pipe (label
+  // 71), with the "You now have N ability points." log line as a fallback.
+  // -1 = never observed. unspent_aa_at is the Unix seconds it was last seen;
+  // the value silently goes stale when points are spent, so it's shown with an
+  // "as of <time>" qualifier.
+  unspent_aa: number
+  unspent_aa_at: number
 }
 
 export interface QuarmyStats {

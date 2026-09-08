@@ -76,6 +76,8 @@ const (
 	LabelSpellSlot7       LabelType = 67
 	LabelPlayerPetName    LabelType = 68
 	LabelPlayerPetHPPerc  LabelType = 69
+	LabelCurrentAAPoints  LabelType = 71 // unspent (bankable) AA point pool
+	LabelCurrentAAPerc    LabelType = 72 // % progress to the next AA point
 	LabelTargetPetOwner   LabelType = 82
 	LabelMana             LabelType = 124
 	LabelMaxMana          LabelType = 125

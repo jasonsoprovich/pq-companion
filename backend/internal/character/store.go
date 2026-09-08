@@ -33,6 +33,16 @@ type Character struct {
 	LastZone   string `json:"last_zone"`
 	LastZoneAt int64  `json:"last_zone_at"`
 
+	// UnspentAA is the character's pool of unspent (bankable) AA points, and
+	// UnspentAAAt the Unix time it was last observed. It has no file-export
+	// source — it comes from the live Zeal pipe (label 71 "CurrentAAPoints")
+	// while the game is running, with the log's "You now have <N> ability
+	// points." line as a staleness-flagged fallback. -1 = never observed; the
+	// value only decreases when points are spent, which is never logged, so
+	// the UI always shows it with an "as of <time>" qualifier.
+	UnspentAA   int   `json:"unspent_aa"`
+	UnspentAAAt int64 `json:"unspent_aa_at"`
+
 	// Hidden is true when the user has chosen to hide this character from the
 	// character tab strips and the sidebar switcher (e.g. mule accounts they
 	// never play). It is stored by name in the hidden_characters table rather
@@ -116,6 +126,8 @@ func (s *Store) migrate() error {
 		`ALTER TABLE characters ADD COLUMN base_wis INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE characters ADD COLUMN last_zone TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE characters ADD COLUMN last_zone_at INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE characters ADD COLUMN unspent_aa INTEGER NOT NULL DEFAULT -1`,
+		`ALTER TABLE characters ADD COLUMN unspent_aa_at INTEGER NOT NULL DEFAULT 0`,
 	}
 	for _, stmt := range addColumns {
 		if _, err := s.db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
@@ -208,7 +220,7 @@ func (s *Store) List() ([]Character, error) {
 	rows, err := s.db.Query(`
 		SELECT id, name, class, race, level,
 		       base_str, base_sta, base_cha, base_dex, base_int, base_agi, base_wis,
-		       last_zone, last_zone_at
+		       last_zone, last_zone_at, unspent_aa, unspent_aa_at
 		FROM characters ORDER BY name`)
 	if err != nil {
 		return nil, err
@@ -219,7 +231,7 @@ func (s *Store) List() ([]Character, error) {
 		var c Character
 		if err := rows.Scan(&c.ID, &c.Name, &c.Class, &c.Race, &c.Level,
 			&c.BaseSTR, &c.BaseSTA, &c.BaseCHA, &c.BaseDEX, &c.BaseINT, &c.BaseAGI, &c.BaseWIS,
-			&c.LastZone, &c.LastZoneAt); err != nil {
+			&c.LastZone, &c.LastZoneAt, &c.UnspentAA, &c.UnspentAAAt); err != nil {
 			return nil, err
 		}
 		out = append(out, c)
@@ -292,12 +304,12 @@ func (s *Store) Get(id int) (Character, bool, error) {
 	err := s.db.QueryRow(
 		`SELECT id, name, class, race, level,
 		        base_str, base_sta, base_cha, base_dex, base_int, base_agi, base_wis,
-		        last_zone, last_zone_at
+		        last_zone, last_zone_at, unspent_aa, unspent_aa_at
 		 FROM characters WHERE id = ?`,
 		id,
 	).Scan(&c.ID, &c.Name, &c.Class, &c.Race, &c.Level,
 		&c.BaseSTR, &c.BaseSTA, &c.BaseCHA, &c.BaseDEX, &c.BaseINT, &c.BaseAGI, &c.BaseWIS,
-		&c.LastZone, &c.LastZoneAt)
+		&c.LastZone, &c.LastZoneAt, &c.UnspentAA, &c.UnspentAAAt)
 	if err == sql.ErrNoRows {
 		return Character{}, false, nil
 	}
@@ -313,12 +325,12 @@ func (s *Store) GetByName(name string) (Character, bool, error) {
 	err := s.db.QueryRow(
 		`SELECT id, name, class, race, level,
 		        base_str, base_sta, base_cha, base_dex, base_int, base_agi, base_wis,
-		        last_zone, last_zone_at
+		        last_zone, last_zone_at, unspent_aa, unspent_aa_at
 		 FROM characters WHERE name = ? COLLATE NOCASE`,
 		name,
 	).Scan(&c.ID, &c.Name, &c.Class, &c.Race, &c.Level,
 		&c.BaseSTR, &c.BaseSTA, &c.BaseCHA, &c.BaseDEX, &c.BaseINT, &c.BaseAGI, &c.BaseWIS,
-		&c.LastZone, &c.LastZoneAt)
+		&c.LastZone, &c.LastZoneAt, &c.UnspentAA, &c.UnspentAAAt)
 	if err == sql.ErrNoRows {
 		return Character{}, false, nil
 	}
@@ -350,6 +362,28 @@ func (s *Store) UpdateLastZone(name, zone string, ts int64) error {
 	_, err := s.db.Exec(
 		`UPDATE characters SET last_zone=?, last_zone_at=? WHERE name=? COLLATE NOCASE`,
 		zone, ts, name,
+	)
+	return err
+}
+
+// SetUnspentAA records a character's unspent-AA-point pool, keyed by name
+// (case-insensitive) so the live log/pipe active-character name maps straight
+// to the row. ts is the Unix time the value was observed.
+//
+// The write only lands when ts is at least as new as what's already stored, so
+// a stale source can't clobber a fresher one: a live Zeal pipe reading always
+// wins over an older "You now have N ability points." log line, and a log
+// backfill replaying old dings never overwrites a current pipe value. A no-op
+// when no character row matches the name (not imported yet) or the stored
+// value is newer.
+func (s *Store) SetUnspentAA(name string, points int, ts int64) error {
+	if name == "" || points < 0 {
+		return nil
+	}
+	_, err := s.db.Exec(
+		`UPDATE characters SET unspent_aa=?, unspent_aa_at=?
+		   WHERE name=? COLLATE NOCASE AND ? >= unspent_aa_at`,
+		points, ts, name, ts,
 	)
 	return err
 }
