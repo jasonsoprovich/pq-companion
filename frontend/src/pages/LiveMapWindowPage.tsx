@@ -20,6 +20,7 @@ import OverlayLockButton from '../components/OverlayLockButton'
 import { useLiveZone } from '../hooks/useLiveZone'
 import { useMapStyle } from '../hooks/useMapStyle'
 import { usePlayerPosition } from '../hooks/usePlayerPosition'
+import { useGroupPositions } from '../hooks/useGroupPositions'
 import { useZoneMap } from '../hooks/useZoneMap'
 import { ZoneMap } from '../components/maps/ZoneMap'
 import { ErrorBoundary } from '../components/ErrorBoundary'
@@ -40,6 +41,7 @@ export default function LiveMapWindowPage(): React.ReactElement {
 
   const { zone: zoneName, live } = useLiveZone()
   const playerPos = usePlayerPosition()
+  const groupMembers = useGroupPositions()
   const { poiIgnoreZFade } = useMapStyle()
   const [enabled] = useCachedState<MapPOICategory[]>('maps.layers', DEFAULT_LAYERS)
   // Outline mode only. At overlay size the detailed layers are illegible, and
@@ -129,6 +131,7 @@ export default function LiveMapWindowPage(): React.ReactElement {
               visibleCategories={visible}
               poiIgnoreZFade={poiIgnoreZFade}
               playerPos={playerPos}
+              groupMembers={groupMembers}
               // Follow starts on — an overlay you have to pan by hand every time
               // you move is worse than no overlay — but it is not forced. The
               // in-game map pans, so this one has to as well; dragging releases

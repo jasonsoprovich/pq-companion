@@ -26,6 +26,9 @@ export const WSEvent = {
   // Fired when a new Zeal /mystats snapshot is captured from the log —
   // carries {character, snapshot_id, captured_at}.
   CharacterStatSnapshot: 'character:stat_snapshot',
+  // Groupmates' live map positions (Zeal MsgGroup, in-zone members only) —
+  // carries playerpos.GroupState {zone, members[]}. Empty members = drop.
+  PlayerGroupPositions: 'player:group_positions',
   SkillsUpdate: 'skills:update',
   ProgressEvent: 'progress:event',
   BackfillProgress: 'backfill:progress',

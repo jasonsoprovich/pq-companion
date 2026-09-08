@@ -9,6 +9,7 @@ import type {
   MapZone,
 } from '../../types/map'
 import type { PlayerPosition } from '../../hooks/usePlayerPosition'
+import type { GroupMemberPosition } from '../../hooks/useGroupPositions'
 
 // MapHighlight is a prominent marker drawn over the map, independent of the
 // generated POI set — an NPC's spawn point, or the POI the user just clicked.
@@ -63,6 +64,10 @@ export interface ZoneMapProps {
   // not be drawn — it would put the arrow at plausible-looking coordinates on
   // the wrong map, which is worse than showing nothing.
   playerPos?: PlayerPosition | null
+  // groupMembers are the in-zone groupmates' live positions from Zeal
+  // (MsgGroup), drawn as faint secondary arrows. Only rendered when the local
+  // player's own position places them on this same map.
+  groupMembers?: GroupMemberPosition[]
   // followDepth drives the depth window from the player's height (5b).
   followDepth?: boolean
   // followPlayer keeps the view centred on the player.
@@ -287,6 +292,7 @@ export function ZoneMap({
   poiIgnoreZFade = false,
   highlights,
   playerPos,
+  groupMembers,
   followDepth = true,
   followPlayer = false,
   onUserPan,
@@ -712,6 +718,42 @@ export function ZoneMap({
       }
     }
 
+    // ── group members ──
+    // Only when the local player's own position places this map on screen —
+    // the backend already filters to same-zone groupmates, so "player is on
+    // this map" is the check that they belong here too.
+    if (playerPos && playerPos.zone === zone.zone && groupMembers && groupMembers.length > 0) {
+      for (const gm of groupMembers) {
+        const [gx, gy] = toScreen(gm.x, gm.y)
+        ctx.save()
+        ctx.translate(gx, gy)
+        ctx.rotate(-((gm.heading ?? 0) / 512) * Math.PI * 2)
+        ctx.beginPath()
+        ctx.moveTo(0, -5.5)
+        ctx.lineTo(3.5, 4.5)
+        ctx.lineTo(0, 2.5)
+        ctx.lineTo(-3.5, 4.5)
+        ctx.closePath()
+        ctx.lineWidth = 2.5
+        ctx.strokeStyle = 'rgba(0,0,0,0.6)'
+        ctx.stroke()
+        ctx.fillStyle = 'rgba(125,211,252,0.8)' // sky-300, dimmer than the player's near-white
+        ctx.fill()
+        ctx.restore()
+        if (showLabels) {
+          ctx.save()
+          ctx.font = '9px system-ui, sans-serif'
+          ctx.textAlign = 'center'
+          ctx.lineWidth = 3
+          ctx.strokeStyle = 'rgba(0,0,0,0.7)'
+          ctx.strokeText(gm.name, gx, gy - 9)
+          ctx.fillStyle = 'rgba(186,230,253,0.9)'
+          ctx.fillText(gm.name, gx, gy - 9)
+          ctx.restore()
+        }
+      }
+    }
+
     // ── player ──
     if (playerPos && playerPos.zone === zone.zone) {
       const [px, py] = toScreen(playerPos.x, playerPos.y)
@@ -734,7 +776,7 @@ export function ZoneMap({
       ctx.fill()
       ctx.restore()
     }
-  }, [geometry, shown, zone, size, toScreen, view.zoom, depth, highlights, playerPos, showLabels, detail, showDetail, outline, external, mode, zScale, paths])
+  }, [geometry, shown, zone, size, toScreen, view.zoom, depth, highlights, playerPos, groupMembers, showLabels, detail, showDetail, outline, external, mode, zScale, paths])
 
   // Wheel zoom is attached natively with passive:false. React registers wheel
   // as a passive listener, so preventDefault() there is ignored — it never

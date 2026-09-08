@@ -5,6 +5,7 @@ import { useCachedState } from '../../hooks/useCachedState'
 import { useLiveZone } from '../../hooks/useLiveZone'
 import { useMapStyle } from '../../hooks/useMapStyle'
 import { usePlayerPosition } from '../../hooks/usePlayerPosition'
+import { useGroupPositions } from '../../hooks/useGroupPositions'
 import { useZoneMap } from '../../hooks/useZoneMap'
 import { ZoneMap } from '../maps/ZoneMap'
 import { ErrorBoundary } from '../ErrorBoundary'
@@ -43,6 +44,7 @@ export default function LiveMapPanel({
 }: LiveMapPanelProps): React.ReactElement {
   const { zone: zoneName, live } = useLiveZone()
   const playerPos = usePlayerPosition()
+  const groupMembers = useGroupPositions()
   const { poiIgnoreZFade } = useMapStyle()
   const [enabled] = useCachedState<MapPOICategory[]>('maps.layers', DEFAULT_LAYERS)
   const { zone, outline, pois } = useZoneMap(zoneName, 'outline')
@@ -96,6 +98,7 @@ export default function LiveMapPanel({
             visibleCategories={visible}
             poiIgnoreZFade={poiIgnoreZFade}
             playerPos={playerPos}
+            groupMembers={groupMembers}
             followPlayer={follow}
             onUserPan={() => setFollow(false)}
             onFollowRequest={() => setFollow(true)}

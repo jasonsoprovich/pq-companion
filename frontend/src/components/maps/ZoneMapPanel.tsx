@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, Check, Copy, Plus, X } from 'lucide-react'
 import { useCachedState } from '../../hooks/useCachedState'
 import { usePlayerPosition } from '../../hooks/usePlayerPosition'
+import { useGroupPositions } from '../../hooks/useGroupPositions'
 import { useMapStyle } from '../../hooks/useMapStyle'
 import { useZoneMap } from '../../hooks/useZoneMap'
 import { ZoneMap } from './ZoneMap'
@@ -193,6 +194,7 @@ export function ZoneMapPanel({
   // Live position from Zeal. Null whenever we don't know — Zeal not running,
   // pipe stalled, not on Windows — so every consumer has one thing to check.
   const playerPos = usePlayerPosition()
+  const groupMembers = useGroupPositions()
   // Follow the view to the player. Off by default: it takes pan away from you,
   // which is the wrong default while browsing a map you are not standing in.
   const [followPlayer, setFollowPlayer] = useCachedState(
@@ -694,6 +696,7 @@ export function ZoneMapPanel({
             mode={mode}
             colorByHeight={heightColor}
             playerPos={playerPos}
+            groupMembers={groupMembers}
             followPlayer={followPlayer}
             // Panning is a deliberate act; treat it as "I want to look
             // somewhere else" and stop following. The Follow me toggle above is
