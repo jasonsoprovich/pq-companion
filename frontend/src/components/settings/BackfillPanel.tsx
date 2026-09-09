@@ -1,6 +1,13 @@
 import React, { useEffect, useState } from 'react'
 import { DatabaseBackup, RefreshCw, AlertTriangle, CheckCircle2, AlertCircle, Clock } from 'lucide-react'
-import { getBackfillInfo, getConfig, updateConfig, type BackfillSection } from '../../services/api'
+import {
+  getBackfillInfo,
+  getConfig,
+  updateConfig,
+  type BackfillSection,
+  type BackfillArchiveInfo,
+  type BackfillScope,
+} from '../../services/api'
 import { DEV_SKILLS } from '../../lib/devFlags'
 import { useEscapeToClose } from '../../hooks/useEscapeToClose'
 import { useBackfill } from '../../contexts/BackfillContext'
@@ -8,8 +15,10 @@ import { useBackfill } from '../../contexts/BackfillContext'
 export default function BackfillPanel(): React.ReactElement {
   const [sections, setSections] = useState<BackfillSection[]>([])
   const [characters, setCharacters] = useState<string[]>([])
+  const [archives, setArchives] = useState<Record<string, BackfillArchiveInfo>>({})
   const [selChars, setSelChars] = useState<Set<string>>(new Set())
   const [selSections, setSelSections] = useState<Set<string>>(new Set())
+  const [scope, setScope] = useState<BackfillScope>('current')
   const [loading, setLoading] = useState(true)
   const [loadErr, setLoadErr] = useState<string | null>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -29,6 +38,7 @@ export default function BackfillPanel(): React.ReactElement {
           : info.sections.filter((s) => s.key !== 'skills')
         setSections(sections)
         setCharacters(info.characters)
+        setArchives(info.archives ?? {})
         // Default: the active character selected, all sections selected.
         setSelChars(new Set(info.active && info.characters.includes(info.active) ? [info.active] : []))
         setSelSections(new Set(sections.map((s) => s.key)))
@@ -46,9 +56,26 @@ export default function BackfillPanel(): React.ReactElement {
 
   const canRun = selChars.size > 0 && selSections.size > 0 && !running
 
+  // Archive totals across the currently-selected characters — drives the
+  // "scan archives too" option (hidden when the selection has none).
+  const selArchive = Array.from(selChars).reduce(
+    (acc, c) => {
+      const a = archives[c]
+      if (a) {
+        acc.count += a.count
+        acc.bytes += a.bytes
+        if (a.oldest && (!acc.oldest || a.oldest < acc.oldest)) acc.oldest = a.oldest
+      }
+      return acc
+    },
+    { count: 0, bytes: 0, oldest: '' },
+  )
+  const hasArchives = selArchive.count > 0
+  const effectiveScope: BackfillScope = hasArchives ? scope : 'current'
+
   function doRun() {
     setConfirmOpen(false)
-    startBackfill(Array.from(selChars), Array.from(selSections))
+    startBackfill(Array.from(selChars), Array.from(selSections), effectiveScope)
   }
 
   const labelFor = (key: string) => sections.find((s) => s.key === key)?.label ?? key
@@ -132,6 +159,37 @@ export default function BackfillPanel(): React.ReactElement {
               )}
             </div>
 
+            {/* Scope — only meaningful when the selected characters have
+                archived logs sitting next to the live one. */}
+            {hasArchives && (
+              <div>
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+                  Log files to scan
+                </p>
+                <div className="flex flex-col gap-1.5">
+                  <RadioRow
+                    label="Current log only"
+                    checked={scope === 'current'}
+                    onChange={() => setScope('current')}
+                  />
+                  <RadioRow
+                    label={
+                      `Current log + archives — ${selArchive.count} file${selArchive.count === 1 ? '' : 's'}` +
+                      `, ~${fmtBytes(selArchive.bytes)}` +
+                      (selArchive.oldest ? `, back to ${selArchive.oldest}` : '') +
+                      ' (slower)'
+                    }
+                    checked={scope === 'all'}
+                    onChange={() => setScope('all')}
+                  />
+                </div>
+                <p className="mt-1.5 text-[11px] leading-relaxed" style={{ color: 'var(--color-muted-foreground)' }}>
+                  Archives are the compressed backups Archive &amp; Trim makes when it trims the live log. Scanning
+                  them recovers milestones from before the trim. Safe to re-run — overlapping entries are skipped.
+                </p>
+              </div>
+            )}
+
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setConfirmOpen(true)}
@@ -184,6 +242,7 @@ export default function BackfillPanel(): React.ReactElement {
         <ConfirmModal
           characters={Array.from(selChars)}
           sections={Array.from(selSections).map(labelFor)}
+          archiveFiles={effectiveScope === 'all' ? selArchive.count : 0}
           onCancel={() => setConfirmOpen(false)}
           onConfirm={doRun}
         />
@@ -206,6 +265,31 @@ function CheckRow({
       {label}
     </label>
   )
+}
+
+function RadioRow({
+  label, checked, onChange,
+}: {
+  label: string
+  checked: boolean
+  onChange: () => void
+}): React.ReactElement {
+  return (
+    <label className="flex cursor-pointer items-center gap-2 text-sm" style={{ color: 'var(--color-foreground)' }}>
+      <input type="radio" name="backfill-scope" checked={checked} onChange={onChange} />
+      {label}
+    </label>
+  )
+}
+
+// fmtBytes renders a rough human size for the archive-scan estimate.
+function fmtBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  const kb = n / 1024
+  if (kb < 1024) return `${Math.round(kb)} KB`
+  const mb = kb / 1024
+  if (mb < 1024) return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`
+  return `${(mb / 1024).toFixed(1)} GB`
 }
 
 // ChatRetentionCard controls how long Chat History is kept before the daily
@@ -299,10 +383,11 @@ function ChatRetentionCard(): React.ReactElement {
 }
 
 function ConfirmModal({
-  characters, sections, onCancel, onConfirm,
+  characters, sections, archiveFiles, onCancel, onConfirm,
 }: {
   characters: string[]
   sections: string[]
+  archiveFiles: number
   onCancel: () => void
   onConfirm: () => void
 }): React.ReactElement {
@@ -323,7 +408,9 @@ function ConfirmModal({
         </div>
         <p className="text-xs leading-relaxed" style={{ color: 'var(--color-muted-foreground)' }}>
           This reads the full log file for {characters.length} character{characters.length === 1 ? '' : 's'}
-          {' '}({characters.join(', ')}) and populates: {sections.join(', ')}. It runs in the background — you
+          {' '}({characters.join(', ')})
+          {archiveFiles > 0 && ` plus ${archiveFiles} archived log${archiveFiles === 1 ? '' : 's'} (may take several minutes)`}
+          {' '}and populates: {sections.join(', ')}. It runs in the background — you
           can keep using the app while a progress bar at the bottom tracks it. Re-running is safe —
           already-recorded entries are skipped.
         </p>

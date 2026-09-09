@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
-import { runBackfill } from '../services/api'
+import { runBackfill, type BackfillScope } from '../services/api'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
 
@@ -25,8 +25,9 @@ interface BackfillContextValue {
   elapsed: number
   /** Per-character results once each finishes (accumulates during the run). */
   results: BackfillRunResult[] | null
-  /** Kick off a backfill. No-op if one is already running. */
-  startBackfill: (chars: string[], sections: string[]) => void
+  /** Kick off a backfill. No-op if one is already running. scope 'all' also
+   *  replays each character's archived logs; defaults to 'current'. */
+  startBackfill: (chars: string[], sections: string[], scope?: BackfillScope) => void
   /** Clear the finished-run results (dismisses the completion bar). */
   dismissResults: () => void
 }
@@ -60,7 +61,7 @@ export function BackfillProvider({ children }: { children: React.ReactNode }): R
     return () => clearInterval(t)
   }, [running])
 
-  const startBackfill = useCallback((chars: string[], sections: string[]) => {
+  const startBackfill = useCallback((chars: string[], sections: string[], scope: BackfillScope = 'current') => {
     if (runningRef.current || chars.length === 0 || sections.length === 0) return
     runningRef.current = true
     setRunChars(chars)
@@ -74,7 +75,7 @@ export function BackfillProvider({ children }: { children: React.ReactNode }): R
         setElapsed(0)
         setProg({ character: c, done: 0, total: 0 })
         try {
-          const r = await runBackfill(c, sections)
+          const r = await runBackfill(c, sections, scope)
           out.push({ character: c, results: r.results })
         } catch (e) {
           out.push({ character: c, results: {}, error: (e as Error).message })

@@ -1381,11 +1381,23 @@ export interface BackfillSection {
   label: string
 }
 
+// Rotated-out .bak.zip / .bak.txt logs Archive & Trim left next to the live
+// one, per character (only present for characters that have any).
+export interface BackfillArchiveInfo {
+  count: number
+  bytes: number // total uncompressed size
+  oldest: string // YYYY-MM-DD, or ''
+}
+
 export interface BackfillInfo {
   sections: BackfillSection[]
   characters: string[]
+  archives: Record<string, BackfillArchiveInfo>
   active: string
 }
+
+// 'current' scans only the live log; 'all' also replays every archived log.
+export type BackfillScope = 'current' | 'all'
 
 export function getBackfillInfo(): Promise<BackfillInfo> {
   return get<BackfillInfo>('/api/backfill')
@@ -1394,10 +1406,12 @@ export function getBackfillInfo(): Promise<BackfillInfo> {
 export function runBackfill(
   character: string,
   sections: string[],
+  scope: BackfillScope = 'current',
 ): Promise<{ results: Record<string, number>; character: string }> {
   return post<{ results: Record<string, number>; character: string }>('/api/backfill', {
     character,
     sections,
+    scope,
   })
 }
 

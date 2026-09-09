@@ -3,6 +3,12 @@
 **Created 2026-09-09.** From a Discord thread on the Character Info → Recap
 "AA Points" stat reading `+0` / undercounting.
 
+**Status: implemented (issue #155).** `logparser.DiscoverArchives` /
+`OpenArchive` / `ArchiveUncompressedSize`, `backfill.Registry.RunMulti`
+(with `Run` now a one-path wrapper), `scope` on `POST /api/backfill` +
+per-character `archives` summary on the GET, and the "Log files to scan"
+radio in `BackfillPanel`. The notes below are the as-built design.
+
 The immediate cause of that report was a parser bug (Quarm's client prints
 `ability point(s).` literally; `reAAGain` only matched `point`/`points`) —
 fixed in `f7889d5e`. But it surfaced a real limitation: **backfill only
