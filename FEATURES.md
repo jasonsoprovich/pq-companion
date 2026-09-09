@@ -1806,8 +1806,93 @@ hardening — no new features, but a broad sweep of reliability fixes.
   rebalance, 1 spawn2 point enabled. Verified via full row-level diff
   and the backend test suite against the new db.
 
-## Unreleased
+## v0.21.0 — Zeal 1.4.6 Adoption: Unspent AA, Stat Snapshots, Group Map, Raid Roster
 
+Adopts Zeal v1.4.6 (PR #229): the named pipe now carries spawn ids on the
+player / target / pet snapshot and on every raid- and group-roster member.
+The decode layer takes all of it (`zealpipe.Player.{SpawnID,TargetID,PetID}`,
+`DecodeRaid` / `DecodeGroup`); every consumer degrades to the prior
+name-based path when a field is nil, so older Zeal is unaffected.
+
+- **Unspent AA points** on Character Info → AA. Read from the pipe's
+  `CurrentAAPoints` label (71), with the "You now have N ability points."
+  log line (`EventAAGain`) as a stale fallback. Persisted per character
+  (`characters.unspent_aa` / `unspent_aa_at`, additive migration, -1 =
+  never seen); `SetUnspentAA` only writes a newer-or-equal timestamp so a
+  stale source can't clobber a live one. Shown with an "as of" time since
+  spending is never logged.
+- **Stat Snapshots** (`internal/mystats`) — a line-stream parser for Zeal's
+  multi-section `/mystats` block (Misc / Defensive / per-weapon Melee),
+  best-effort with the raw block stored for re-parse. Consumer buffers the
+  block from its `---- Misc stats ----` marker, closes it on the next
+  non-matching line / new block / >5s gap, stores one row per capture in
+  `character_stat_snapshots` (raw text + parsed JSON, byte-identical
+  back-to-back de-duped). `GET/DELETE /api/characters/{id}/stat-snapshots`;
+  capture is automatic from the log (live + replay). Character Info tab
+  diffs two captures field-by-field with plain-English labels. Closes #154.
+- **Dire Charm in the Charm Pet Finder** — the AA (`altadv_vars` skill_id
+  145, level 59, Luclin, Dru/Nec/Enc) casts a per-class effect spell that
+  *is* in quarm.db: 2759 "Undead Pact" (undead), 2760 "Servant of Nature"
+  (animal), 2761 "Dominating Gaze" (any), all charm-cap 46. Body gate falls
+  out of `RestrictionForTargetType`; `researchLevels` generalised to
+  `grantedLevels` to pin their level. `charm.DisplayName` shows all three
+  as "Dire Charm".
+- **Groupmates on the Live Map** — `MsgGroup` in-zone member positions
+  (`loc` present) → `playerpos.Tracker.UpdateGroup` → `player:group_positions`
+  (rate-limited like the self arrow), drawn as faint sky-blue arrows with a
+  name label below the player's own. New `map_show_group` preference
+  (default on, no `omitempty` so an explicit off survives the YAML
+  round-trip), toggled in Settings → Maps.
+- **Raid roster → Players tab** — `MsgRaid` carries name/level/class/group
+  for every member regardless of zone (roster fields predate PR #229; the
+  app had been dropping the whole message type). Each member upserts a
+  player sighting (deduped to "on change"), which also feeds `combat`'s
+  class resolver for raid-threat attribution. `LIMITATIONS.md` §5.1
+  rewritten.
+- **Disk-only macro mules on the Active Characters page** — `GET
+  /api/characters/macro-only` returns names with a `_pq.proj.ini` on disk
+  but no character record and no log file, each hide-toggleable. The Macros
+  ribbon's own right-click hide menu and "Hidden" toggle are removed —
+  ribbon hiding is now managed only from the Active Characters page, like
+  every other character strip.
+- **NPC swing timer & assist radius** — `attack_delay` and `assistradius`
+  plumbed onto `db.NPC`; shown on the NPC page's Behavior section and a new
+  "Behavior" NPC-overlay section (own Settings toggle, defaults on for new
+  configs and a one-time on-migration for existing ones). Appended to the
+  copy-target-stats raid callout (`DMG: … @1.8s`).
+- **"Camped in …" on the Character Info → Recap tab** — `characters.last_zone`
+  / `last_zone_at`, stamped on every zone-in (and on replay/backfill), plus
+  a startup pass that seeds each stored character from a bounded backward
+  scan of its log tail (`logparser.LastZoneInLog`). Moved here from the
+  Characters list page.
+- **"Hide NO DROP" filter** in Item Search (`hide_nodrop=1` → `AND nodrop
+  != 0`), with an active-filter chip.
+
+### Fixes
+
+- **Charm timers clear on pet death (Zeal 1.4.6)** — `pet_id` absent for 3
+  consecutive `MsgPlayer` frames (debounced) or changed to a new value
+  clears charm timers via `removeCharmTimers` — the "pet killed under your
+  control" signal EQ never writes. `ResetPipePetID` on disconnect drops the
+  id without clearing. `combat.SetPipePetID` is store-only (a
+  revoke-on-change opened a one-pulse unbound window on every re-summon).
+- **NPC overlay same-name resolution is sticky (Zeal 1.4.6)** — `target_id`
+  keys a per-zone `variantCache` in `overlay/npc.go`; `SetPipeTargetID`
+  applies a memoised resolution on a hit, resolves once and caches on a
+  miss, and `setTarget` reads it so the common re-pull doesn't re-run the
+  position/strength disambiguation. Flushed on every zone change and
+  disconnect (spawn ids recycle on a zone reset). It's a spawn id, not
+  `npc_types.id` — it can't bind a spawn to a DB row, so a multi-row name
+  still lists every candidate.
+- **Bard mana regen excludes buffs** — `deriveBlock` gates buff-loop
+  mana-regen accumulation on `class != bard` (0-indexed 7); worn-item / AA
+  mana regen and buff-sourced HP regen unchanged.
+- **Other players' illusions** no longer resolve to the local player's
+  illusion clicky — `resolveLandedSpellName`'s clicky fallback is gated to
+  self-lands (`Kind != SpellLandedKindOther`), and a combined-name
+  "Illusion" ambiguous-land group (every candidate carries SPA 58,
+  `db.IllusionSpellIDs`) collapses to one generic 360-tick timer instead of
+  mislabelling it.
 - **Fade-soon timer alerts fire reliably at 0 seconds remaining** — the
   client fires a threshold alert when it sees a timer's remaining time
   cross the threshold on an `overlay:timers` broadcast, but the engine
