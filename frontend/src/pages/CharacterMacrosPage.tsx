@@ -5,8 +5,6 @@ import {
   Check,
   Copy,
   Download,
-  Eye,
-  EyeOff,
   GripVertical,
   Keyboard,
   Plus,
@@ -33,7 +31,6 @@ import {
   getTextColors,
   listCharacters,
   parseMacrosFile,
-  setCharacterVisibility,
   updateMacros,
   type Character,
 } from '../services/api'
@@ -608,38 +605,21 @@ function ButtonEditor({
 
 // ── Character sub-tabs ───────────────────────────────────────────────────────
 
+// Ribbon of one tab per character with an on-disk macro file. Characters hidden
+// from the Active Characters page are already filtered out server-side (the
+// fetch omits ?include_hidden=1), so this list is exactly the visible set —
+// hiding is managed in one place, the Active Characters page, not here.
 function CharacterTabs({
   value,
   onChange,
   characters,
   active,
-  hiddenNames,
-  onSetHidden,
 }: {
   value: string
   onChange: (next: string) => void
   characters: string[]
   active: string
-  hiddenNames: Set<string>
-  // Hide or unhide a character's ribbon tab. Persists via
-  // setCharacterVisibility; unhidden characters reappear on the next reload.
-  onSetHidden: (name: string, hidden: boolean) => void
 }): React.ReactElement {
-  const [menu, setMenu] = useState<{ name: string; x: number; y: number } | null>(null)
-
-  useEffect(() => {
-    if (!menu) return
-    const close = (): void => setMenu(null)
-    window.addEventListener('mousedown', close)
-    window.addEventListener('resize', close)
-    window.addEventListener('blur', close)
-    return () => {
-      window.removeEventListener('mousedown', close)
-      window.removeEventListener('resize', close)
-      window.removeEventListener('blur', close)
-    }
-  }, [menu])
-
   return (
     <div
       className="flex shrink-0 items-center gap-1 overflow-x-auto border-b px-4"
@@ -648,30 +628,17 @@ function CharacterTabs({
       {characters.map((name) => {
         const isActive = name === value
         const isLogged = name === active
-        const isHidden = hiddenNames.has(name)
         return (
           <button
             key={name}
             onClick={() => onChange(name)}
-            onContextMenu={(e) => {
-              e.preventDefault()
-              setMenu({ name, x: e.clientX, y: e.clientY })
-            }}
             className="flex items-center gap-1 whitespace-nowrap px-3 py-2 text-xs font-medium transition-colors"
             style={{
               color: isActive ? 'var(--color-primary)' : 'var(--color-muted-foreground)',
               borderBottom: isActive ? '2px solid var(--color-primary)' : '2px solid transparent',
-              opacity: isHidden ? 0.5 : 1,
             }}
-            title={
-              isHidden
-                ? `${name} — hidden (right-click to show)`
-                : isLogged
-                  ? `${name} (active character) — right-click to hide`
-                  : `${name} — right-click to hide`
-            }
+            title={isLogged ? `${name} (active character)` : name}
           >
-            {isHidden && <EyeOff size={11} style={{ color: 'var(--color-muted)' }} />}
             {name}
             {isLogged && (
               <span
@@ -684,38 +651,6 @@ function CharacterTabs({
           </button>
         )
       })}
-
-      {menu && (
-        <div
-          className="fixed z-50 min-w-[160px] rounded-md border py-1 text-xs shadow-lg"
-          style={{
-            left: menu.x,
-            top: menu.y,
-            backgroundColor: 'var(--color-surface)',
-            borderColor: 'var(--color-border)',
-          }}
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          <button
-            onClick={() => {
-              onSetHidden(menu.name, !hiddenNames.has(menu.name))
-              setMenu(null)
-            }}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-(--color-surface-2)"
-            style={{ color: 'var(--color-foreground)' }}
-          >
-            {hiddenNames.has(menu.name) ? (
-              <>
-                <Eye size={12} /> Show {menu.name} in ribbon
-              </>
-            ) : (
-              <>
-                <EyeOff size={12} /> Hide {menu.name} from ribbon
-              </>
-            )}
-          </button>
-        </div>
-      )}
     </div>
   )
 }
@@ -993,11 +928,6 @@ export default function CharacterMacrosPage(): React.ReactElement {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  // When on, hidden characters' tabs are shown (dimmed) so they can be
-  // unhidden from the ribbon's right-click menu without visiting the
-  // Characters page.
-  const [showHidden, setShowHidden] = useState(false)
-
   const [editing, setEditing] = useState<{ page: number; button: number } | null>(null)
   const [confirmAction, setConfirmAction] = useState<
     | { type: 'save' }
@@ -1026,11 +956,12 @@ export default function CharacterMacrosPage(): React.ReactElement {
   const load = useCallback(() => {
     setLoading(true)
     setError(null)
-    // include_hidden on both calls so the ribbon can optionally show hidden
-    // tabs and so `characters` carries the hidden flag for every name.
+    // Neither call passes include_hidden: characters hidden from the Active
+    // Characters page are excluded from the ribbon here, same as every other
+    // page's character strip.
     Promise.all([
-      getAllMacros(showHidden),
-      listCharacters({ includeHidden: true }),
+      getAllMacros(),
+      listCharacters(),
       getTextColors(),
     ])
       .then(([macros, chars, tc]) => {
@@ -1044,7 +975,7 @@ export default function CharacterMacrosPage(): React.ReactElement {
       })
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false))
-  }, [showHidden])
+  }, [])
 
   useEffect(() => { load() }, [load])
 
@@ -1062,19 +993,6 @@ export default function CharacterMacrosPage(): React.ReactElement {
   const viewedChar = characters.find((c) => c.name === viewed) ?? null
   const classIndex = viewedChar?.class ?? -1
   const filenames = useMemo(() => files.map((f) => f.character), [files])
-  const hiddenNames = useMemo(
-    () => new Set(characters.filter((c) => c.hidden).map((c) => c.name)),
-    [characters],
-  )
-
-  const handleSetHidden = useCallback(
-    (name: string, hidden: boolean) => {
-      setCharacterVisibility(name, hidden)
-        .then(() => load())
-        .catch((err: Error) => setError(err.message))
-    },
-    [load],
-  )
   const originalViewedFile = originalFiles.find((f) => f.character === viewed) ?? null
   const dirty = fileIsDirty(viewedFile, originalViewedFile)
 
@@ -1302,8 +1220,6 @@ export default function CharacterMacrosPage(): React.ReactElement {
           onChange={setViewed}
           characters={filenames}
           active={active}
-          hiddenNames={hiddenNames}
-          onSetHidden={handleSetHidden}
         />
       )}
 
@@ -1355,24 +1271,6 @@ export default function CharacterMacrosPage(): React.ReactElement {
         >
           <Download size={12} className={importing ? 'animate-pulse' : ''} /> Import
         </button>
-        {(hiddenNames.size > 0 || showHidden) && (
-          <button
-            onClick={() => setShowHidden((v) => !v)}
-            disabled={saving}
-            className="flex items-center gap-1 rounded px-2 py-1 text-xs disabled:opacity-40"
-            style={{
-              color: showHidden ? 'var(--color-primary)' : 'var(--color-muted-foreground)',
-              border: '1px solid var(--color-border)',
-            }}
-            title={
-              showHidden
-                ? 'Hide the dimmed tabs again'
-                : 'Show hidden character tabs (right-click one to unhide it)'
-            }
-          >
-            {showHidden ? <Eye size={12} /> : <EyeOff size={12} />} Hidden
-          </button>
-        )}
         <button
           onClick={load}
           disabled={saving}
