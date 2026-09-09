@@ -3,9 +3,22 @@ package trader
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
+
+// writeExport writes a synthetic tab-delimited inventory export to a temp file
+// and returns its path.
+func writeExport(t *testing.T, lines ...string) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "T-Inventory.txt")
+	body := "Location\tName\tID\tCount\tSlots\n" + strings.Join(lines, "\n") + "\n"
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
 
 // testdataDir points at the shared game-directory fixture (Feane is the trader).
 // These are real game exports under the gitignored testdata/ tree, so they are
@@ -200,6 +213,84 @@ func TestInferSalesReconcilesAcrossBanking(t *testing.T) {
 	}
 	if !sess.Reconciles {
 		t.Errorf("session should reconcile against the total coin delta despite the negative on-person delta")
+	}
+}
+
+// Bank Trader's Satchels are parsed and tagged Vault; items in a non-satchel
+// bank bag (a Backpack) are still excluded.
+func TestParseSnapshotBankSatchel(t *testing.T) {
+	path := writeExport(t,
+		"General1\tTrader's Satchel\t17899\t1\t10",
+		"General1-Slot1\tBrick of Ore\t5001\t4\t0",
+		"General1-Slot2\tEmpty\t0\t0\t0",
+		"Bank1\tTrader's Satchel\t17899\t1\t10",
+		"Bank1-Slot1\tRusty Dagger\t5002\t1\t0",
+		"Bank2\tBackpack\t17005\t1\t8",
+		"Bank2-Slot1\tPearl\t5003\t9\t0",
+		"General-Coin\tCurrency\t0\t0\t0",
+		"Bank-Coin\tCurrency\t0\t123456\t0",
+	)
+	snap, err := ParseSnapshot(path, "T")
+	if err != nil {
+		t.Fatalf("ParseSnapshot: %v", err)
+	}
+
+	var bar, vault []SatchelItem
+	for _, it := range snap.Satchel {
+		if it.OnBar() {
+			bar = append(bar, it)
+		} else {
+			vault = append(vault, it)
+		}
+	}
+	if len(bar) != 1 || bar[0].ItemID != 5001 || bar[0].Count != 4 {
+		t.Errorf("on-bar = %+v, want one Brick of Ore x4", bar)
+	}
+	if len(vault) != 1 || vault[0].ItemID != 5002 {
+		t.Errorf("vault = %+v, want one Rusty Dagger", vault)
+	}
+	for _, it := range snap.Satchel {
+		if it.ItemID == 5003 {
+			t.Errorf("Pearl is in a bank Backpack, not a Trader's Satchel — should be excluded")
+		}
+	}
+	if snap.BankCopper != 123456 {
+		t.Errorf("BankCopper = %d, want 123456", snap.BankCopper)
+	}
+}
+
+// Pulling an unsold item off the bar into a bank satchel must not read as a
+// sale: only the copy that actually left the character's satchels counts.
+func TestInferSalesNetsBarToVaultMove(t *testing.T) {
+	listing := &BZRListing{
+		Character: "T",
+		Items:     []PricedItem{{Name: "Widget", Price: 5000}},
+	}
+	prev := &Snapshot{
+		Satchel: []SatchelItem{
+			{Bag: 1, Slot: 1, ItemID: 1, Name: "Widget", Count: 2},
+			{Bag: 1, Slot: 2, ItemID: 2, Name: "Gadget", Count: 1},
+		},
+	}
+	next := &Snapshot{
+		TakenAt: prev.TakenAt.Add(time.Hour),
+		Satchel: []SatchelItem{
+			{Bag: 1, Slot: 1, ItemID: 1, Name: "Widget", Count: 1, Vault: true},
+			{Bag: 1, Slot: 2, ItemID: 2, Name: "Gadget", Count: 1},
+		},
+		OnPersonCopper: 5000, // one Widget sold
+	}
+
+	sess := InferSales(prev, next, listing)
+
+	if len(sess.Sold) != 1 || sess.Sold[0].ItemID != 1 || sess.Sold[0].Qty != 1 {
+		t.Fatalf("Sold = %+v, want exactly one Widget qty 1 (the bar→vault move must not count)", sess.Sold)
+	}
+	if len(sess.Restocked) != 0 {
+		t.Errorf("Restocked = %+v, want none", sess.Restocked)
+	}
+	if sess.EstimatedRevenue != 5000 || !sess.Reconciles {
+		t.Errorf("revenue = %d reconciles = %v, want 5000/true", sess.EstimatedRevenue, sess.Reconciles)
 	}
 }
 

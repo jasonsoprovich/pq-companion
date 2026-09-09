@@ -71,15 +71,28 @@ func (l *BZRListing) priceOf(name string) (int64, bool) {
 
 // SatchelItem is one item occupying a Trader's Satchel slot at snapshot time.
 type SatchelItem struct {
-	Bag    int    `json:"bag"`  // which General bag holds the satchel (1-based)
+	Bag    int    `json:"bag"`  // which bag holds the satchel (1-based)
 	Slot   int    `json:"slot"` // slot within the satchel (1-based)
 	ItemID int    `json:"item_id"`
 	Name   string `json:"name"`
 	Count  int    `json:"count"`
+	// Vault is true when the satchel sits in a Bank slot rather than the
+	// inventory. Bank Trader's Satchels do not list on the bazaar bar, but
+	// traders routinely shuffle unsold stock between an inventory satchel and a
+	// bank satchel on relog. Tracking both locations means such a move nets to
+	// zero in the diff instead of reading as a sale + a restock. Consumers that
+	// care about "what is on the bar" (the listings stock count, snapshot item
+	// counts) filter these out; the sale inference counts them.
+	Vault bool `json:"vault,omitempty"`
 }
 
+// OnBar reports whether the item is in an inventory (bazaar-listed) Trader's
+// Satchel rather than a bank one.
+func (it SatchelItem) OnBar() bool { return !it.Vault }
+
 // Snapshot is the trader-relevant state captured from one inventory/quarmy
-// export: the contents of every Trader's Satchel plus the character's coin.
+// export: the contents of every Trader's Satchel (inventory and bank) plus the
+// character's coin.
 type Snapshot struct {
 	Character      string        `json:"character"`
 	TakenAt        time.Time     `json:"taken_at"`
@@ -275,8 +288,8 @@ func sessionCaveats(s *Session) []string {
 // --- Parsing -------------------------------------------------------------
 
 var (
-	bagRe  = regexp.MustCompile(`^General(\d+)$`)
-	slotRe = regexp.MustCompile(`^General(\d+)-Slot(\d+)$`)
+	bagRe  = regexp.MustCompile(`^(General|Bank)(\d+)$`)
+	slotRe = regexp.MustCompile(`^(General|Bank)(\d+)-Slot(\d+)$`)
 )
 
 // isTraderSatchel reports whether an inventory bag row is a Trader's Satchel,
@@ -316,17 +329,20 @@ func ParseSnapshot(path, character string) (*Snapshot, error) {
 		SourcePath: path,
 	}
 
-	// First gather raw rows so we can resolve which General bags are satchels
-	// before reading their slot children (bag row precedes its slots, but a
-	// two-pass approach is robust to ordering).
+	// First gather raw rows so we can resolve which bags are satchels before
+	// reading their slot children (bag row precedes its slots, but a two-pass
+	// approach is robust to ordering). Both General* (on the bar) and Bank*
+	// (vault storage) Trader's Satchels are tracked.
 	type row struct {
-		loc   string
+		area  string // "General" or "Bank"
+		bag   int
+		slot  int
 		name  string
 		id    int
 		count int
 	}
 	var rows []row
-	satchelBags := make(map[int]bool) // bag number -> is a trader satchel
+	satchelBags := make(map[string]bool) // "General2" / "Bank5" -> is a trader satchel
 
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -357,14 +373,18 @@ func ParseSnapshot(path, character string) (*Snapshot, error) {
 		}
 
 		if m := bagRe.FindStringSubmatch(loc); m != nil {
-			bag, _ := strconv.Atoi(m[1])
 			if isTraderSatchel(id, name) {
-				satchelBags[bag] = true
+				satchelBags[m[1]+m[2]] = true
 			}
 			continue
 		}
-		if slotRe.MatchString(loc) {
-			rows = append(rows, row{loc: loc, name: name, id: id, count: count})
+		if m := slotRe.FindStringSubmatch(loc); m != nil {
+			bag, _ := strconv.Atoi(m[2])
+			slot, _ := strconv.Atoi(m[3])
+			rows = append(rows, row{
+				area: m[1], bag: bag, slot: slot,
+				name: name, id: id, count: count,
+			})
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -372,10 +392,7 @@ func ParseSnapshot(path, character string) (*Snapshot, error) {
 	}
 
 	for _, r := range rows {
-		m := slotRe.FindStringSubmatch(r.loc)
-		bag, _ := strconv.Atoi(m[1])
-		slot, _ := strconv.Atoi(m[2])
-		if !satchelBags[bag] {
+		if !satchelBags[fmt.Sprintf("%s%d", r.area, r.bag)] {
 			continue // slot belongs to a normal bag, not a Trader's Satchel
 		}
 		if r.id == 0 || strings.EqualFold(r.name, "Empty") {
@@ -386,19 +403,24 @@ func ParseSnapshot(path, character string) (*Snapshot, error) {
 			cnt = 1
 		}
 		snap.Satchel = append(snap.Satchel, SatchelItem{
-			Bag:    bag,
-			Slot:   slot,
+			Bag:    r.bag,
+			Slot:   r.slot,
 			ItemID: r.id,
 			Name:   r.name,
 			Count:  cnt,
+			Vault:  r.area == "Bank",
 		})
 	}
 
 	sort.Slice(snap.Satchel, func(i, j int) bool {
-		if snap.Satchel[i].Bag != snap.Satchel[j].Bag {
-			return snap.Satchel[i].Bag < snap.Satchel[j].Bag
+		a, b := snap.Satchel[i], snap.Satchel[j]
+		if a.Vault != b.Vault {
+			return !a.Vault // on-bar satchels first
 		}
-		return snap.Satchel[i].Slot < snap.Satchel[j].Slot
+		if a.Bag != b.Bag {
+			return a.Bag < b.Bag
+		}
+		return a.Slot < b.Slot
 	})
 	return snap, nil
 }

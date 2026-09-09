@@ -123,6 +123,9 @@ func (h *traderHandler) listings(w http.ResponseWriter, r *http.Request) {
 	itemIDByName := map[string]int{}
 	if latest, ok, err := h.store.LatestSnapshot(char); err == nil && ok {
 		for _, it := range latest.Satchel {
+			if !it.OnBar() {
+				continue // bank storage doesn't list on the bazaar bar
+			}
 			stock[normName(it.Name)] += it.Count
 			itemIDByName[normName(it.Name)] = it.ItemID
 		}
@@ -222,11 +225,16 @@ func (h *traderHandler) snapshots(w http.ResponseWriter, r *http.Request) {
 	for _, s := range snaps {
 		info := traderSnapshotInfo{
 			TakenAt:    s.TakenAt.Unix(),
-			ItemCount:  len(s.Satchel),
 			OnPerson:   s.OnPersonCopper,
 			BankCopper: s.BankCopper,
 		}
+		// Counts describe what was on the bar; bank Trader's Satchels are
+		// tracked for the diff but don't list for sale.
 		for _, it := range s.Satchel {
+			if !it.OnBar() {
+				continue
+			}
+			info.ItemCount++
 			info.TotalQty += it.Count
 		}
 		out = append(out, info)
@@ -262,10 +270,16 @@ func (h *traderHandler) capture(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	onBar := 0
+	for _, it := range snap.Satchel {
+		if it.OnBar() {
+			onBar++
+		}
+	}
 	resp := captureResponse{
 		Captured:  stored,
 		TakenAt:   snap.TakenAt.Unix(),
-		ItemCount: len(snap.Satchel),
+		ItemCount: onBar,
 	}
 	if !stored {
 		resp.Reason = "No change since the last snapshot."
