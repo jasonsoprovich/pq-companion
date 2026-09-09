@@ -32,6 +32,7 @@ export default function MapSettingsPanel(): React.ReactElement {
   const [config, setConfig] = useState<Config | null>(null)
   const [style, setStyle] = useState<MapRenderMode>('detailed')
   const [poiIgnoreZFade, setPoiIgnoreZFade] = useState(false)
+  const [showGroup, setShowGroup] = useState(true)
   const [pack, setPack] = useState<ExternalMapStatus | null>(null)
   const [saved, setSaved] = useState(false)
   const [checking, setChecking] = useState(false)
@@ -50,6 +51,7 @@ export default function MapSettingsPanel(): React.ReactElement {
         setConfig(c)
         setStyle(c.preferences.map_style ?? 'detailed')
         setPoiIgnoreZFade(c.preferences.map_poi_ignore_zfade ?? false)
+        setShowGroup(c.preferences.map_show_group ?? true)
       })
       .catch(() => {})
     loadPack()
@@ -87,6 +89,23 @@ export default function MapSettingsPanel(): React.ReactElement {
         setTimeout(() => setSaved(false), 2000)
       })
       .catch(() => setPoiIgnoreZFade(!next))
+  }
+
+  const toggleShowGroup = (): void => {
+    if (!config) return
+    const next = !showGroup
+    setShowGroup(next)
+    const updated: Config = {
+      ...config,
+      preferences: { ...config.preferences, map_show_group: next },
+    }
+    updateConfig(updated)
+      .then((c) => {
+        setConfig(c)
+        setSaved(true)
+        setTimeout(() => setSaved(false), 2000)
+      })
+      .catch(() => setShowGroup(!next))
   }
 
   const options = [
@@ -197,6 +216,53 @@ export default function MapSettingsPanel(): React.ReactElement {
               position: 'absolute',
               top: 2,
               left: poiIgnoreZFade ? 20 : 2,
+              width: 16,
+              height: 16,
+              borderRadius: '50%',
+              backgroundColor: '#fff',
+              transition: 'left 0.15s',
+            }}
+          />
+        </div>
+      </label>
+
+      <h3
+        className="mb-2 text-xs font-semibold uppercase tracking-widest"
+        style={{ color: 'var(--color-muted)' }}
+      >
+        Group
+      </h3>
+      <label className="mb-6 flex max-w-3xl cursor-pointer items-center justify-between gap-3 py-1">
+        <div>
+          <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+            Show groupmates on the map
+          </p>
+          <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+            Draws a faint arrow for each groupmate who is in your zone, from
+            Zeal's live group positions. Only members Zeal can see in-zone
+            appear — anyone in another zone is left off. Needs Zeal running in
+            game.
+          </p>
+        </div>
+        <div
+          onClick={toggleShowGroup}
+          style={{
+            width: 40,
+            height: 22,
+            borderRadius: 11,
+            backgroundColor: showGroup ? 'var(--color-primary)' : 'var(--color-surface-2)',
+            border: '1px solid var(--color-border)',
+            cursor: 'pointer',
+            position: 'relative',
+            flexShrink: 0,
+            transition: 'background-color 0.15s',
+          }}
+        >
+          <div
+            style={{
+              position: 'absolute',
+              top: 2,
+              left: showGroup ? 20 : 2,
               width: 16,
               height: 16,
               borderRadius: '50%',

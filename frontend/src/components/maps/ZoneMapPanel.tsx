@@ -166,7 +166,7 @@ export function ZoneMapPanel({
   // The saved default from Settings, plus whether a map pack is installed.
   // `style` is already resolved — it falls back when a stored 'external'
   // outlives the files it names.
-  const { style, pack, poiIgnoreZFade, ready } = useMapStyle()
+  const { style, pack, poiIgnoreZFade, showGroup, ready } = useMapStyle()
   // Session override. Starts unset so the saved default wins; switching the
   // mode here is for a look, not a preference change, so it lasts the session
   // and Settings stays the one place a default is decided.
@@ -696,7 +696,7 @@ export function ZoneMapPanel({
             mode={mode}
             colorByHeight={heightColor}
             playerPos={playerPos}
-            groupMembers={groupMembers}
+            groupMembers={showGroup ? groupMembers : []}
             followPlayer={followPlayer}
             // Panning is a deliberate act; treat it as "I want to look
             // somewhere else" and stop following. The Follow me toggle above is

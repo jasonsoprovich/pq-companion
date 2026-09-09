@@ -2005,12 +2005,12 @@ func TestPipePetNameRespectsLogBindings(t *testing.T) {
 	}
 }
 
-// TestPipePetIDRevokesStaleBindingOnRecharm covers the charm-rotation case the
-// v1.4.6 pet spawn id exists for: charm "a sarnak", it dies, charm another "a
-// sarnak". The pet-name label never changes, so SetPipePetName alone can't tell
-// the two pets apart — but the spawn id does, and a changed id revokes the
-// stale owner binding for the shared name.
-func TestPipePetIDRevokesStaleBindingOnRecharm(t *testing.T) {
+// SetPipePetID is store-only: it records the id and must never disturb the
+// pet-name owner binding. A re-summon changes the id in the same pulse the new
+// pet-name label arrives (label is written before the player frame), so touching
+// petOwners / pipePetName here would open a one-pulse window where the current
+// pet is unbound — a regression the store-only form avoids.
+func TestPipePetIDIsStoreOnly(t *testing.T) {
 	hub := ws.NewHub()
 	go hub.Run()
 	tr := NewTracker(hub, func() string { return "Osui" })
@@ -2018,34 +2018,22 @@ func TestPipePetIDRevokesStaleBindingOnRecharm(t *testing.T) {
 	id1, id2 := 7001, 7002
 
 	tr.SetPipePetID(&id1)
-	tr.SetPipePetName("a sarnak conscript")
-	tr.mu.Lock()
-	_, bound := tr.petOwners["a sarnak conscript"]
-	tr.mu.Unlock()
-	if !bound {
-		t.Fatal("first charm: expected owner binding for the pet name")
-	}
-
-	// Re-charm: a different spawn id, byte-identical display name.
+	tr.SetPipePetName("Xarosk")
+	// Re-summon: new name label first, then the changed id (Zeal's write order).
+	tr.SetPipePetName("Gybok")
 	tr.SetPipePetID(&id2)
-	tr.mu.Lock()
-	_, stillBound := tr.petOwners["a sarnak conscript"]
-	pipeName := tr.pipePetName
-	tr.mu.Unlock()
-	if stillBound {
-		t.Error("changed pet_id should have revoked the stale name binding")
-	}
-	if pipeName != "" {
-		t.Errorf("pipePetName should be cleared after id change, got %q", pipeName)
-	}
 
-	// The next pet-name label re-establishes the binding for the new pet.
-	tr.SetPipePetName("a sarnak conscript")
 	tr.mu.Lock()
-	_, rebound := tr.petOwners["a sarnak conscript"]
+	_, bound := tr.petOwners["Gybok"]
+	name := tr.pipePetName
+	gotID := tr.pipePetID
 	tr.mu.Unlock()
-	if !rebound {
-		t.Error("current pet should be re-bound once its name label arrives")
+
+	if !bound || name != "Gybok" {
+		t.Errorf("id change disturbed the current pet binding: bound=%v name=%q", bound, name)
+	}
+	if gotID == nil || *gotID != id2 {
+		t.Errorf("pipePetID = %v, want %d", gotID, id2)
 	}
 }
 

@@ -312,6 +312,14 @@ type Preferences struct {
 	// the one thing you'd want visible from any height — a way out.
 	MapPOIIgnoreZFade bool `yaml:"map_poi_ignore_zfade,omitempty" json:"map_poi_ignore_zfade"`
 
+	// MapShowGroup draws a faint secondary arrow for each in-zone groupmate on
+	// the live map, from Zeal's MsgGroup positions (v1.4.6+, or any Zeal that
+	// emits the group message with per-member loc). ON by default. NOT
+	// omitempty: this defaults true, so an explicit "off" has to survive a
+	// round-trip through the YAML file — omitempty would drop it and defaults()
+	// would flip it back on next launch.
+	MapShowGroup bool `yaml:"map_show_group" json:"map_show_group"`
+
 	// OverlayFadeEnabled fades overlay chrome (background, border, title
 	// bar) to fully transparent a few seconds after the cursor leaves an
 	// overlay window, leaving only the content (timer bars, NPC stats)
@@ -1044,6 +1052,7 @@ func defaults() Config {
 			// in the large majority of zones; outline omits anything that is
 			// not a wall, which loses features like Oasis of Marr's lake.
 			MapStyle:                    MapStyleDetailed,
+			MapShowGroup:                true,
 			OverlayFadeDelaySecs:        2.5,
 			MinimizeToTray:              true,
 			ParseCombatLog:              true,

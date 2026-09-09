@@ -42,7 +42,7 @@ export default function LiveMapWindowPage(): React.ReactElement {
   const { zone: zoneName, live } = useLiveZone()
   const playerPos = usePlayerPosition()
   const groupMembers = useGroupPositions()
-  const { poiIgnoreZFade } = useMapStyle()
+  const { poiIgnoreZFade, showGroup } = useMapStyle()
   const [enabled] = useCachedState<MapPOICategory[]>('maps.layers', DEFAULT_LAYERS)
   // Outline mode only. At overlay size the detailed layers are illegible, and
   // this is the surface where legibility at a glance matters most.
@@ -131,7 +131,7 @@ export default function LiveMapWindowPage(): React.ReactElement {
               visibleCategories={visible}
               poiIgnoreZFade={poiIgnoreZFade}
               playerPos={playerPos}
-              groupMembers={groupMembers}
+              groupMembers={showGroup ? groupMembers : []}
               // Follow starts on — an overlay you have to pan by hand every time
               // you move is worse than no overlay — but it is not forced. The
               // in-game map pans, so this one has to as well; dragging releases

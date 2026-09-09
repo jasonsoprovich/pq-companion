@@ -45,7 +45,7 @@ export default function LiveMapPanel({
   const { zone: zoneName, live } = useLiveZone()
   const playerPos = usePlayerPosition()
   const groupMembers = useGroupPositions()
-  const { poiIgnoreZFade } = useMapStyle()
+  const { poiIgnoreZFade, showGroup } = useMapStyle()
   const [enabled] = useCachedState<MapPOICategory[]>('maps.layers', DEFAULT_LAYERS)
   const { zone, outline, pois } = useZoneMap(zoneName, 'outline')
   const visible = useMemo(() => new Set(enabled), [enabled])
@@ -98,7 +98,7 @@ export default function LiveMapPanel({
             visibleCategories={visible}
             poiIgnoreZFade={poiIgnoreZFade}
             playerPos={playerPos}
-            groupMembers={groupMembers}
+            groupMembers={showGroup ? groupMembers : []}
             followPlayer={follow}
             onUserPan={() => setFollow(false)}
             onFollowRequest={() => setFollow(true)}

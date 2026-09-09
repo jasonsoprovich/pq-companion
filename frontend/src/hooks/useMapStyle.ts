@@ -25,6 +25,9 @@ export function useMapStyle(): {
   // poiIgnoreZFade mirrors preferences.map_poi_ignore_zfade — false (the
   // default) until the config is loaded.
   poiIgnoreZFade: boolean
+  // showGroup mirrors preferences.map_show_group — true (the default) unless
+  // the user has turned groupmate arrows off.
+  showGroup: boolean
   // ready is false until both answers are in. Surfaces that pick an initial
   // mode wait for it, or they would mount in the wrong style and switch under
   // the user — which reads as a flicker and costs a wasted geometry fetch.
@@ -33,6 +36,7 @@ export function useMapStyle(): {
   const [style, setStyle] = useState<MapRenderMode>(DEFAULT_STYLE)
   const [pack, setPack] = useState<ExternalMapStatus | null>(null)
   const [poiIgnoreZFade, setPoiIgnoreZFade] = useState(false)
+  const [showGroup, setShowGroup] = useState(true)
   const [ready, setReady] = useState(false)
 
   useEffect(() => {
@@ -50,10 +54,11 @@ export function useMapStyle(): {
         setStyle(saved)
       }
       setPoiIgnoreZFade(cfg?.preferences.map_poi_ignore_zfade ?? false)
+      setShowGroup(cfg?.preferences.map_show_group ?? true)
       setReady(true)
     })
     return () => { cancelled = true }
   }, [])
 
-  return { style, pack, poiIgnoreZFade, ready }
+  return { style, pack, poiIgnoreZFade, showGroup, ready }
 }

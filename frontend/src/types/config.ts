@@ -112,6 +112,9 @@ export interface Preferences {
   // regardless of the depth window, instead of fading them with geometry
   // outside the focused height range. Off by default.
   map_poi_ignore_zfade?: boolean
+  // Draw a faint arrow for each in-zone groupmate on the live map, from Zeal's
+  // group positions. On by default (undefined is treated as true).
+  map_show_group?: boolean
   // Fade overlay chrome (background, border, title bar) to transparent a few
   // seconds after the cursor leaves an overlay window; content stays visible.
   // Hovering restores overlay_opacity. Off by default.
