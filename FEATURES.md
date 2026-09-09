@@ -1916,6 +1916,31 @@ name-based path when a field is nil, so older Zeal is unaffected.
   rather than clearing early — a deliberate trade against it vanishing
   while the pet is still alive.
 
+## v0.21.1 — Backfill From Archived Logs
+
+- **Log Backfill can replay rotated archives** — the Settings → Backfill
+  panel gains a "Log files to scan" choice: the current log only (default,
+  unchanged) or the current log plus every `.bak.zip` / legacy `.bak.txt`
+  that Archive & Trim has rotated out. `logparser.DiscoverArchives` globs
+  and date-sorts them; `OpenArchive` streams the `.txt` entry straight out
+  of a `.bak.zip`. `backfill.Registry.RunMulti` fans all the paths through
+  one shared handler set, oldest first, so it behaves like a single
+  concatenated log, and the ~30-day archive/live overlap de-dups on each
+  handler's natural key so a re-run stays safe. A path that won't open is
+  logged and skipped with its byte budget still credited. `POST
+  /api/backfill` takes `{scope}`; the panel shows a size/date estimate and
+  hides the radio when the selection has no archives. Closes #155.
+
+### Fixes
+
+- **AA point gains parsed on the Quarm client** — eqstr 446 is "You now
+  have %1 ability point%2."; TAKP resolves `%2` to ""/"s" but the Quarm
+  client leaves it literal as "(s)". `reAAGain` only accepted "point." /
+  "points.", so every AA ding that left an unspent pool greater than 1 was
+  dropped — the Progression Recap's "AA Points" stat and the unspent-AA log
+  seed (v0.21.0) only caught the rare ding back to exactly 1. The regex now
+  accepts the "(s)" ending.
+
 ## Phase 11 — Project Website
 _Planned_
 
