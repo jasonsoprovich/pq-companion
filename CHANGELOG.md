@@ -9,10 +9,9 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
-## Unreleased
+## v0.21.0 — 2026-09-08
 
-Staged notes for the next release. `/newrelease` folds these into the dated
-version section.
+Zeal 1.4.6 unlocks unspent-AA display, `/mystats` stat snapshots, groupmates on the live map, and a self-populating raid roster — plus Dire Charm in the Charm Pet Finder, NPC swing timers, and a "Camped in …" line for finding where you left each alt.
 
 ### Highlights
 - **Unspent AA points on the Character Info → AA tab** — the pool of points you have left to spend now shows next to "AA Points Spent". It's picked up automatically while EverQuest is running with Zeal (or from a "You have gained an ability point!" log line), and shown with an "as of" time because the number only goes stale when you spend points — which the game never logs — so it refreshes on your next login.
@@ -20,13 +19,18 @@ version section.
 - **Dire Charm in the Charm Pet Finder** — available to Druids, Necromancers and Enchanters at level 59, caps at charming level-46 NPCs, with the same animal / undead / any body restriction the class's other charm line uses.
 - **Groupmates on the Live Map** — with Zeal running, a faint arrow marks each groupmate who is in your zone. Toggle it in Settings → Maps → "Show groupmates on the map".
 - **Raid roster fills the Players tab** — while you're in a raid, Zeal reports the full roster, so every member's name, level and class lands in the Players tab without anyone having to `/who`.
+- **NPC swing timer and assist radius** — the NPCs tab's Behavior section and the NPC overlay now show a mob's base Attack Delay (its swing timer, e.g. 1.8s) and Assist Radius alongside the aggro radius. The NPC overlay gets a new "Behavior" section grouping the three, with its own on/off toggle in Settings (on by default). The "copy target stats" raid callout appends the swing timer to the damage line (`DMG: 294-1054 @1.8s`).
+- **"Camped in …" — where you left each alt** — the Character Info → Recap tab now shows the zone a character was last seen in, with a relative time. It's stamped on every zone-in and stays put at the camp zone when you switch away. Characters you haven't zoned since opening the app are seeded from the tail of their log file at startup.
 - **Hide characters from the tab ribbons** — the Active Characters page has a show/hide control for each character that removes it from the character ribbon on every page (Macros, Spellbook, Bandolier, …) and the sidebar switcher, for mules and alts you never play. It's managed in that one place — the earlier right-click menu on the Macros ribbon has been removed so there's a single control — and a mule that only has a macro file on disk (no log yet) is now listed on that page too so its ribbon tab can be hidden.
+- **"Hide NO DROP" toggle in Item Search** — filters out untradeable items, so when you're hunting for gear to hand to a charmed pet or trade to an alt, the NO DROP results drop out of the list.
 
 ### Fixes
 - **Fade-soon / "0 seconds" alerts fire reliably again** — a timer alert set to speak or play at 0 seconds remaining only fired sporadically, because the timer was removed the instant it expired, a beat before the overlay could report it hitting zero. Expired timers now stay visible for one extra beat at 0:00 so the alert always fires. The workaround of padding the duration by a second and alerting at 1s is no longer needed.
 - **Charm timers no longer vanish when a same-named creature dies** — a bard's Solon's Bewitching Bravura (or any charm timer) disappeared whenever another creature sharing the charmed pet's name was killed nearby — a groupmate's kill, an add, or the mob the pet was tanking — because the game log can't tell two same-named creatures apart. Charm timers now ignore those kills and clear only when the charm actually breaks, the timer runs out, or you kill your own targeted pet.
 - **Charm timers clear when your charmed pet dies** — EverQuest writes no "your charm has worn off" line when a charmed pet is killed while you control it, so the charm timer used to hang around until it would have run out on its own. With a current Zeal build the app now sees the pet's spawn id vanish and clears the timer right away. On older Zeal builds the timer still runs to its natural expiry.
 - **NPC overlay stops second-guessing which same-named database entry to show** — for a mob whose name matches more than one database row (the two Vex Thal bosses, Netherbian Lair's drones, the Shissar Revenants), the overlay's "best guess" for the headline entry could change every time you re-targeted the same mob as you or it moved. With a current Zeal build it now pins that guess to the specific creature for as long as it's alive. This does **not** let the app read a spawn's exact class or level, or pick one of two same-named bosses' loot tables — Zeal's new data identifies a living creature, not which database row it came from, so when a name maps to several rows the overlay still lists them all.
+- **Bard mana regen no longer counts buffs** — Bards get mana regen only from worn items (Flowing Thought) and AAs on Quarm, never from buffs like Clarity or KEI. The Character Info → Stats "Mana Regen" row was crediting bards with buff-sourced regen anyway; it now excludes it for bards.
+- **Other players' illusions no longer all show as your illusion clicky** — an illusion cast by anyone else logs only "\<name>'s image shimmers." with no race, and ~34 illusion spells share that text. If you carried a single illusion clicky (a Mask of Deception is the common one), every other player's illusion — any race, any class — resolved to *your* clicky's spell in the buff and NPC-target overlays. Other players' illusions now show as one generic "Illusion" timer with the correct 6-minute countdown; your own self-cast illusions still resolve to the specific race.
 
 ## v0.20.1 — 2026-08-25
 
