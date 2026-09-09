@@ -1914,6 +1914,19 @@ export function discoverCharacters(): Promise<{ names: string[] }> {
   return get<{ names: string[] }>('/api/characters/discover')
 }
 
+// MacroOnlyCharacter is a name with a <Name>_pq.proj.ini on disk (so it has a
+// Macros-ribbon tab) but no character record — a mule you made macros for but
+// never logged in. Surfaced on the Active Characters page so its ribbon tab
+// can still be hidden/shown from the one place that controls hiding.
+export interface MacroOnlyCharacter {
+  name: string
+  hidden: boolean
+}
+
+export function getMacroOnlyCharacters(): Promise<MacroOnlyCharacter[]> {
+  return get<MacroOnlyCharacter[]>('/api/characters/macro-only')
+}
+
 export function getCharacterAAs(id: number): Promise<CharacterAAsResponse> {
   return get<CharacterAAsResponse>(`/api/characters/${id}/aas`)
 }

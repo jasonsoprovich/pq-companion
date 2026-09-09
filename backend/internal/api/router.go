@@ -278,6 +278,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/", charactersH.list)
 			r.Post("/", charactersH.create)
 			r.Get("/discover", charactersH.discover)
+			r.Get("/macro-only", charactersH.macroOnly)
 			r.Post("/visibility", charactersH.setVisibility)
 			r.Delete("/{id}", charactersH.del)
 			r.Get("/{id}/aas", charactersH.aas)

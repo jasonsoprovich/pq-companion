@@ -133,6 +133,63 @@ func (h *charactersHandler) discover(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string][]string{"names": untracked})
 }
 
+// macroOnlyCharacter is a name that has a <Name>_pq.proj.ini on disk (so it
+// gets a Macros-ribbon tab) but no row in the characters table — a mule the
+// user made macros for but never logged in / imported.
+type macroOnlyCharacter struct {
+	Name   string `json:"name"`
+	Hidden bool   `json:"hidden"`
+}
+
+// macroOnly returns those on-disk-only macro names plus their hidden state, so
+// the Active Characters page can offer a hide/unhide toggle for them too —
+// otherwise a disk-only mule could never be hidden from (or shown back on) the
+// Macros ribbon now that the ribbon's own right-click menu is gone.
+func (h *charactersHandler) macroOnly(w http.ResponseWriter, r *http.Request) {
+	if h.watcher == nil {
+		writeJSON(w, http.StatusOK, []macroOnlyCharacter{})
+		return
+	}
+	macros, err := h.watcher.AllMacros()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to scan macros")
+		return
+	}
+	storedRaw, err := h.store.Names()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	// "Known" = has a character record OR shows up in the log-directory scan
+	// (those are offered for import via the Discover button instead). What's
+	// left is a .ini with no log — a mule you made macros for but never played.
+	known := make(map[string]struct{}, len(storedRaw))
+	for name := range storedRaw {
+		known[strings.ToLower(name)] = struct{}{}
+	}
+	for _, d := range logparser.DiscoverCharacters(h.mgr.Get().EQPath) {
+		known[strings.ToLower(d.Name)] = struct{}{}
+	}
+	hidden, err := h.store.HiddenNames()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	out := []macroOnlyCharacter{}
+	for _, mf := range macros.Characters {
+		if mf == nil || mf.Character == "" {
+			continue
+		}
+		if _, isKnown := known[strings.ToLower(mf.Character)]; isKnown {
+			continue
+		}
+		_, isHidden := hidden[strings.ToLower(mf.Character)]
+		out = append(out, macroOnlyCharacter{Name: mf.Character, Hidden: isHidden})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 type characterRequest struct {
 	Name  string `json:"name"`
 	Class int    `json:"class"`

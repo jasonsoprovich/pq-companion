@@ -5,10 +5,12 @@ import {
   createCharacter,
   deleteCharacter,
   discoverCharacters,
+  getMacroOnlyCharacters,
   setCharacterVisibility,
   getConfig,
   updateConfig,
   type Character,
+  type MacroOnlyCharacter,
 } from '../services/api'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
 import { usePoPEnabled } from '../hooks/usePoPEnabled'
@@ -261,16 +263,25 @@ export default function CharactersPage(): React.ReactElement {
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null)
   const [discovered, setDiscovered] = useState<string[] | null>(null)
   const [discovering, setDiscovering] = useState(false)
+  // Names with a _pq.proj.ini on disk (so a Macros-ribbon tab) but no character
+  // record — surfaced here so their ribbon tab can be hidden/shown from the one
+  // place hiding is managed.
+  const [macroOnly, setMacroOnly] = useState<MacroOnlyCharacter[]>([])
 
   const load = useCallback(() => {
     // include_hidden so this management page can list (and unhide) hidden
     // characters — every other consumer gets them filtered out.
-    return listCharacters({ includeHidden: true })
+    const chars = listCharacters({ includeHidden: true })
       .then((resp) => {
         setCharacters(resp.characters)
         setActive(resp.active, resp.manual)
       })
       .catch((err: Error) => setLoadError(err.message))
+    // Best-effort — a scan failure or no EQ path just leaves the section empty.
+    getMacroOnlyCharacters()
+      .then(setMacroOnly)
+      .catch(() => setMacroOnly([]))
+    return chars
   }, [setActive])
 
   useEffect(() => {
@@ -326,6 +337,15 @@ export default function CharactersPage(): React.ReactElement {
   async function handleToggleHidden(char: Character) {
     try {
       await setCharacterVisibility(char.name, !char.hidden)
+      await load()
+    } catch (err: unknown) {
+      setLoadError(err instanceof Error ? err.message : 'Failed to update visibility')
+    }
+  }
+
+  async function handleToggleMacroOnlyHidden(entry: MacroOnlyCharacter) {
+    try {
+      await setCharacterVisibility(entry.name, !entry.hidden)
       await load()
     } catch (err: unknown) {
       setLoadError(err instanceof Error ? err.message : 'Failed to update visibility')
@@ -533,6 +553,52 @@ export default function CharactersPage(): React.ReactElement {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {macroOnly.length > 0 && (
+        <div
+          className="mt-6 rounded-lg p-4"
+          style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+        >
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+            Macro files without a character record
+          </p>
+          <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+            These have a <code>_pq.proj.ini</code> in your EQ folder — so a tab on the
+            Macros page — but no log yet, so they aren't tracked as characters.
+            You can still hide their ribbon tab from here.
+          </p>
+          <div className="space-y-1">
+            {macroOnly.map((entry) => (
+              <div
+                key={entry.name}
+                className="flex items-center justify-between rounded px-3 py-1.5"
+                style={{ backgroundColor: 'var(--color-surface-2)', opacity: entry.hidden ? 0.55 : 1 }}
+              >
+                <span className="flex items-center gap-2 text-sm" style={{ color: 'var(--color-foreground)' }}>
+                  {entry.name}
+                  {entry.hidden && (
+                    <span
+                      className="rounded px-1 text-[10px] uppercase tracking-wide"
+                      style={{ backgroundColor: 'var(--color-border)', color: 'var(--color-muted-foreground)' }}
+                    >
+                      Hidden
+                    </span>
+                  )}
+                </span>
+                <button
+                  onClick={() => handleToggleMacroOnlyHidden(entry)}
+                  className="flex items-center gap-1 rounded px-2 py-0.5 text-xs"
+                  style={{ border: '1px solid var(--color-border)', color: 'var(--color-muted-foreground)', cursor: 'pointer' }}
+                  title={entry.hidden ? `Show ${entry.name} on the Macros ribbon` : `Hide ${entry.name} from the Macros ribbon`}
+                >
+                  {entry.hidden ? <Eye size={12} /> : <EyeOff size={12} />}
+                  {entry.hidden ? 'Show' : 'Hide'}
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
