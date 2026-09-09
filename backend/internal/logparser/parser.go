@@ -317,10 +317,13 @@ var (
 
 	// AA point gain, from eqstr_en.txt string 446. Note the double space
 	// after the first "!" — that's in the client string, not a typo here.
-	// Points is the unspent pool ("point" singular at 1, "points" plural
-	// otherwise), so the trailing word is matched loosely rather than
-	// pinned to one spelling.
-	reAAGain = regexp.MustCompile(`^You have gained an ability point!  You now have (\d+) ability points?\.$`)
+	// Points is the unspent pool. The trailing pluralization varies by
+	// client: TAKP resolves the %2 token to "" / "s" ("1 ability point.",
+	// "5 ability points."), but the Project Quarm client leaves it literal
+	// as "(s)" for the plural case ("5 ability point(s)."), so all three
+	// endings are accepted. Missing the "(s)" form silently drops every AA
+	// ding whose resulting pool is >1 on Quarm.
+	reAAGain = regexp.MustCompile(`^You have gained an ability point!  You now have (\d+) ability point(?:s|\(s\))?\.$`)
 
 	// Spell scribed into the spellbook, from eqstr_en.txt string 12006.
 	reSpellScribed = regexp.MustCompile(`^You have finished scribing (.+)\.$`)

@@ -108,6 +108,14 @@ func TestParseLine(t *testing.T) {
 			wantType: EventAAGain,
 			wantData: AAGainData{Points: 1},
 		},
+		{
+			// Project Quarm's client leaves the pluralization token literal.
+			name:     "aa gain: quarm literal (s) plural pool",
+			line:     "[Mon Apr 13 06:00:00 2026] You have gained an ability point!  You now have 29 ability point(s).",
+			wantOK:   true,
+			wantType: EventAAGain,
+			wantData: AAGainData{Points: 29},
+		},
 
 		// --- Spell scribed ---
 		{
