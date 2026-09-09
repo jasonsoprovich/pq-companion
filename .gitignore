@@ -20,6 +20,7 @@
 !/docs/maps-feasibility.md
 !/docs/item-recharge-feasibility.md
 !/docs/zeal-1.4.6-plan.md
+!/docs/log-backfill-archives-plan.md
 
 # ── Environment & secrets ─────────────────────────────────────────────────────
 .env
