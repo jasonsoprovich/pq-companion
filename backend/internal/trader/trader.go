@@ -157,12 +157,19 @@ type Session struct {
 	TotalCoinDelta   int64      `json:"total_coin_delta"`
 	CoinGained       int64      `json:"coin_gained"` // best estimate of coin taken in, bank-aware
 	Reconciles       bool       `json:"reconciles"`  // estimated revenue ≈ coin gained
+	Suspect          bool       `json:"suspect"`     // likely diffing a stale "before" snapshot
 	Caveats          []string   `json:"caveats"`
 }
 
 // reconcileToleranceCopper allows for rounding / minor incidental coin movement
 // when deciding whether estimated revenue matches the coin gained.
 const reconcileToleranceCopper = 1000 // 1 platinum
+
+// staleSnapshotGap is how far apart two snapshots must be before the session is
+// flagged as possibly diffing against a leftover "before" export from an earlier
+// trip rather than a deliberate pre-park capture. A genuine park rarely runs
+// past two days between inventory exports.
+const staleSnapshotGap = 48 * time.Hour
 
 // InferSales diffs prev (older) against next (newer) and returns the inferred
 // sale session. listing may be nil (prices simply come back as 0/unlisted).
@@ -247,6 +254,16 @@ func InferSales(prev, next *Snapshot, listing *BZRListing) *Session {
 	}
 	sess.Reconciles = sess.EstimatedRevenue > 0 && diff <= reconcileToleranceCopper
 
+	// Stale-"before" heuristic. A leftover export from a previous trip diffs
+	// against a fresh one as a big pile of "sold" items with no matching coin
+	// and (often) no listed prices. Flag it either when the snapshots are days
+	// apart, or when items left but nothing priced moved and no coin came in
+	// anywhere — both point at a bad pairing rather than a real session.
+	gap := sess.ToTime.Sub(sess.FromTime)
+	noCoin := sess.OnPersonDelta <= 0 && sess.TotalCoinDelta <= 0
+	sess.Suspect = gap > staleSnapshotGap ||
+		(len(sess.Sold) > 0 && sess.EstimatedRevenue == 0 && noCoin)
+
 	sess.Caveats = sessionCaveats(sess)
 	return sess
 }
@@ -257,6 +274,15 @@ func sessionCaveats(s *Session) []string {
 	caveats := []string{
 		"Inferred from inventory differences — not a real sales log.",
 		"A satchel item that left can't be told apart from a manual delete, give-away, or vendor sale.",
+	}
+	if s.Suspect {
+		reason := "no coin or priced items moved"
+		if s.ToTime.Sub(s.FromTime) > staleSnapshotGap {
+			reason = fmt.Sprintf("they're %s apart", humanGap(s.ToTime.Sub(s.FromTime)))
+		}
+		caveats = append(caveats, fmt.Sprintf(
+			"This looks like it may be diffing against a stale \"before\" snapshot (%s). If the earlier snapshot is a leftover export from a previous trip, delete it on the Snapshots tab and capture a fresh one before parking.",
+			reason))
 	}
 	if s.OnPersonDelta < 0 && s.CoinGained > 0 {
 		caveats = append(caveats,
@@ -283,6 +309,15 @@ func sessionCaveats(s *Session) []string {
 			"Some items that left a satchel have no price in the BZR file, so they're unpriced here.")
 	}
 	return caveats
+}
+
+// humanGap renders a snapshot-to-snapshot gap for a caveat: whole days past two
+// days, otherwise whole hours.
+func humanGap(d time.Duration) string {
+	if d >= 48*time.Hour {
+		return fmt.Sprintf("%d days", int(d.Hours())/24)
+	}
+	return fmt.Sprintf("%d hours", int(d.Hours()))
 }
 
 // --- Parsing -------------------------------------------------------------

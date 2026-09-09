@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -240,6 +241,28 @@ func (h *traderHandler) snapshots(w http.ResponseWriter, r *http.Request) {
 		out = append(out, info)
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// DELETE /api/trader/{char}/snapshots/{ts}
+// Drops the snapshot captured at unix-second {ts}, so a stale "before" snapshot
+// can be removed and the next diff pairs against a fresh capture.
+func (h *traderHandler) deleteSnapshot(w http.ResponseWriter, r *http.Request) {
+	char := chi.URLParam(r, "char")
+	ts, err := strconv.ParseInt(chi.URLParam(r, "ts"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid snapshot timestamp")
+		return
+	}
+	n, err := h.store.DeleteSnapshot(char, ts)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if n == 0 {
+		writeError(w, http.StatusNotFound, "no snapshot at that time")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int64{"deleted": n})
 }
 
 // captureResponse reports the outcome of a manual capture.

@@ -1095,6 +1095,17 @@ export function captureTraderSnapshot(character: string): Promise<TraderCaptureR
   return post<TraderCaptureResponse>(`/api/trader/${encodeURIComponent(character)}/capture`)
 }
 
+// Drops one captured snapshot (by its taken_at unix second) so a stale "before"
+// snapshot can be removed and the next diff pairs against a fresh capture.
+export function deleteTraderSnapshot(
+  character: string,
+  takenAt: number,
+): Promise<{ deleted: number }> {
+  return del<{ deleted: number }>(
+    `/api/trader/${encodeURIComponent(character)}/snapshots/${takenAt}`,
+  )
+}
+
 // ── Keys ───────────────────────────────────────────────────────────────────────
 
 export function getKeys(): Promise<KeysResponse> {

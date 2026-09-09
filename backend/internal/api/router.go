@@ -185,6 +185,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 				r.Get("/{char}/listings", traderH.listings)
 				r.Get("/{char}/sessions", traderH.sessions)
 				r.Get("/{char}/snapshots", traderH.snapshots)
+				r.Delete("/{char}/snapshots/{ts}", traderH.deleteSnapshot)
 				r.Post("/{char}/capture", traderH.capture)
 			})
 		}

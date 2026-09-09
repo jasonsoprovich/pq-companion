@@ -150,6 +150,20 @@ func (s *Store) AppendSnapshot(snap *Snapshot) (int64, error) {
 	return res.LastInsertId()
 }
 
+// DeleteSnapshot removes the snapshot for a character taken at the given unix
+// second and returns how many rows were deleted (0 if none matched). Used to
+// drop a stale "before" snapshot so the next diff pairs against a fresh one.
+func (s *Store) DeleteSnapshot(character string, takenAtUnix int64) (int64, error) {
+	res, err := s.db.Exec(
+		`DELETE FROM trader_snapshots
+		 WHERE character = ? COLLATE NOCASE AND taken_at = ?`,
+		character, takenAtUnix)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 // SnapshotCount returns how many snapshots are stored for a character.
 func (s *Store) SnapshotCount(character string) (int, error) {
 	var n int

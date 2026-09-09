@@ -1,5 +1,14 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { Store, RefreshCw, Coins, AlertTriangle, Info, TrendingUp, CheckCircle2 } from 'lucide-react'
+import {
+  Store,
+  RefreshCw,
+  Coins,
+  AlertTriangle,
+  Info,
+  TrendingUp,
+  CheckCircle2,
+  Trash2,
+} from 'lucide-react'
 import { ItemIcon } from '../components/Icon'
 import {
   getTraderCharacters,
@@ -7,6 +16,7 @@ import {
   getTraderSessions,
   getTraderSnapshots,
   captureTraderSnapshot,
+  deleteTraderSnapshot,
 } from '../services/api'
 import { useWebSocket } from '../hooks/useWebSocket'
 import type {
@@ -124,6 +134,23 @@ export default function TraderTrackerPage(): React.ReactElement {
       })
       .catch((err: Error) => setCaptureMsg(err.message))
       .finally(() => setCapturing(false))
+  }
+
+  const onDeleteSnapshot = (takenAt: number): void => {
+    if (!selected) return
+    if (
+      !window.confirm(
+        'Delete this snapshot? Sale sessions are re-derived from the ' +
+          'remaining snapshots — use this to drop a stale "before" capture.',
+      )
+    )
+      return
+    deleteTraderSnapshot(selected, takenAt)
+      .then(() => {
+        loadDetail(selected)
+        loadCharacters()
+      })
+      .catch((err: Error) => setError(err.message))
   }
 
   const current = chars.find((c) => c.name === selected)
@@ -252,7 +279,7 @@ export default function TraderTrackerPage(): React.ReactElement {
           ) : tab === 'listings' ? (
             <ListingsTab listings={listings} />
           ) : (
-            <SnapshotsTab snapshots={snapshots} />
+            <SnapshotsTab snapshots={snapshots} onDelete={onDeleteSnapshot} />
           )}
         </>
       )}
@@ -364,13 +391,26 @@ function SessionCard({ session }: { session: TraderSession }): React.ReactElemen
   return (
     <div
       className="rounded-lg p-4"
-      style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+      style={{
+        backgroundColor: 'var(--color-surface)',
+        border: '1px solid var(--color-border)',
+        borderLeft: session.suspect ? '3px solid #fbbf24' : '1px solid var(--color-border)',
+      }}
     >
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <span className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
           {formatWhen(session.from_time)} → {formatWhen(session.to_time)}
         </span>
         <div className="flex items-center gap-3">
+          {session.suspect && (
+            <span
+              className="flex items-center gap-1 text-xs"
+              style={{ color: '#fbbf24' }}
+              title="This may be diffing against a stale &quot;before&quot; snapshot — see Caveats, and delete it on the Snapshots tab if so."
+            >
+              <AlertTriangle size={12} /> possibly stale
+            </span>
+          )}
           <span
             className="flex items-center gap-1.5 text-sm font-semibold"
             style={{ color: 'var(--color-foreground)' }}
@@ -516,7 +556,13 @@ function ListingsTab({ listings }: { listings: TraderListing[] }): React.ReactEl
   )
 }
 
-function SnapshotsTab({ snapshots }: { snapshots: TraderSnapshotInfo[] }): React.ReactElement {
+function SnapshotsTab({
+  snapshots,
+  onDelete,
+}: {
+  snapshots: TraderSnapshotInfo[]
+  onDelete: (takenAt: number) => void
+}): React.ReactElement {
   if (snapshots.length === 0) {
     return (
       <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
@@ -527,35 +573,53 @@ function SnapshotsTab({ snapshots }: { snapshots: TraderSnapshotInfo[] }): React
   // Newest first for display.
   const rows = [...snapshots].reverse()
   return (
-    <div className="overflow-hidden rounded-lg" style={{ border: '1px solid var(--color-border)' }}>
-      <table className="w-full text-sm">
-        <thead>
-          <tr
-            style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-muted)' }}
-            className="text-left text-xs uppercase"
-          >
-            <th className="px-3 py-2 font-medium">Captured</th>
-            <th className="px-3 py-2 text-right font-medium">Satchel items</th>
-            <th className="px-3 py-2 text-right font-medium">Total qty</th>
-            <th className="px-3 py-2 text-right font-medium">On-person</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((s, i) => (
+    <div className="flex flex-col gap-2">
+      <div className="overflow-hidden rounded-lg" style={{ border: '1px solid var(--color-border)' }}>
+        <table className="w-full text-sm">
+          <thead>
             <tr
-              key={`${s.taken_at}-${i}`}
-              style={{ color: 'var(--color-foreground)', borderTop: '1px solid var(--color-border)' }}
+              style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-muted)' }}
+              className="text-left text-xs uppercase"
             >
-              <td className="px-3 py-1.5">{formatWhen(s.taken_at)}</td>
-              <td className="px-3 py-1.5 text-right">{s.item_count}</td>
-              <td className="px-3 py-1.5 text-right">{s.total_qty}</td>
-              <td className="px-3 py-1.5 text-right" style={{ color: 'var(--color-muted-foreground)' }}>
-                {formatCoin(s.on_person)}
-              </td>
+              <th className="px-3 py-2 font-medium">Captured</th>
+              <th className="px-3 py-2 text-right font-medium">Satchel items</th>
+              <th className="px-3 py-2 text-right font-medium">Total qty</th>
+              <th className="px-3 py-2 text-right font-medium">On-person</th>
+              <th className="px-3 py-2" />
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((s, i) => (
+              <tr
+                key={`${s.taken_at}-${i}`}
+                style={{ color: 'var(--color-foreground)', borderTop: '1px solid var(--color-border)' }}
+              >
+                <td className="px-3 py-1.5">{formatWhen(s.taken_at)}</td>
+                <td className="px-3 py-1.5 text-right">{s.item_count}</td>
+                <td className="px-3 py-1.5 text-right">{s.total_qty}</td>
+                <td className="px-3 py-1.5 text-right" style={{ color: 'var(--color-muted-foreground)' }}>
+                  {formatCoin(s.on_person)}
+                </td>
+                <td className="px-3 py-1.5 text-right">
+                  <button
+                    type="button"
+                    onClick={() => onDelete(s.taken_at)}
+                    title="Delete this snapshot"
+                    className="rounded p-1"
+                    style={{ color: 'var(--color-muted)' }}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+        Delete a snapshot to drop a stale &ldquo;before&rdquo; capture left over
+        from an earlier trip &mdash; sessions are re-derived from what remains.
+      </p>
     </div>
   )
 }

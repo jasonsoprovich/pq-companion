@@ -294,6 +294,42 @@ func TestInferSalesNetsBarToVaultMove(t *testing.T) {
 	}
 }
 
+// A leftover "before" export from a previous trip diffs as a pile of items
+// leaving with no priced revenue and no coin — that pairing should be flagged.
+func TestInferSalesFlagsStaleBeforeSnapshot(t *testing.T) {
+	prev := &Snapshot{
+		Satchel: []SatchelItem{
+			{Bag: 1, Slot: 1, ItemID: 10, Name: "Old Relic", Count: 1},
+			{Bag: 1, Slot: 2, ItemID: 11, Name: "Dusty Tome", Count: 1},
+		},
+	}
+	next := &Snapshot{
+		TakenAt: prev.TakenAt.Add(30 * time.Minute), // recent gap, so the flag is content-driven
+		Satchel: []SatchelItem{},                    // everything "gone"
+	}
+
+	sess := InferSales(prev, next, nil) // no BZR listing → nothing priced
+
+	if !sess.Suspect {
+		t.Fatalf("expected Suspect=true for an unpriced, coinless mass-removal diff")
+	}
+	joined := strings.Join(sess.Caveats, " ")
+	if !strings.Contains(joined, "stale \"before\" snapshot") {
+		t.Errorf("caveats missing the stale-snapshot guidance: %q", joined)
+	}
+
+	// A normal reconciled session is not flagged.
+	listing := &BZRListing{Character: "T", Items: []PricedItem{{Name: "Old Relic", Price: 4000}}}
+	next2 := &Snapshot{
+		TakenAt:        prev.TakenAt.Add(time.Hour),
+		Satchel:        []SatchelItem{{Bag: 1, Slot: 2, ItemID: 11, Name: "Dusty Tome", Count: 1}},
+		OnPersonCopper: 4000,
+	}
+	if InferSales(prev, next2, listing).Suspect {
+		t.Errorf("a reconciled session should not be flagged Suspect")
+	}
+}
+
 func TestFingerprintStableAcrossOrder(t *testing.T) {
 	a := &Snapshot{
 		Satchel: []SatchelItem{

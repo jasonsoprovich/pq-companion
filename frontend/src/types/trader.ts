@@ -47,6 +47,8 @@ export interface TraderSession {
   total_coin_delta: number
   coin_gained: number // bank-aware estimate of coin taken in (max of the two deltas)
   reconciles: boolean
+  suspect: boolean // likely diffing against a stale "before" snapshot
+
   caveats: string[]
 }
 
