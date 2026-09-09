@@ -45,6 +45,7 @@ export interface TraderSession {
   estimated_revenue: number
   on_person_delta: number
   total_coin_delta: number
+  coin_gained: number // bank-aware estimate of coin taken in (max of the two deltas)
   reconciles: boolean
   caveats: string[]
 }

@@ -351,6 +351,16 @@ function SalesTab({
 }
 
 function SessionCard({ session }: { session: TraderSession }): React.ReactElement {
+  // Coin taken in this session, bank-aware: a trader who logs back in and banks
+  // their earnings shows a negative on-person delta even though sales happened,
+  // so lead with coin_gained (backend already picks the larger of the two
+  // deltas) and only fall back to the raw total when nothing came in.
+  const coinIn = session.coin_gained > 0
+  const coinLabel = coinIn ? 'Coin in' : 'Coin change'
+  const coinValue = formatCoin(coinIn ? session.coin_gained : session.total_coin_delta)
+  const coinTitle =
+    `On-person Δ ${formatCoin(session.on_person_delta)} · ` +
+    `incl. bank Δ ${formatCoin(session.total_coin_delta)}`
   return (
     <div
       className="rounded-lg p-4"
@@ -421,8 +431,11 @@ function SessionCard({ session }: { session: TraderSession }): React.ReactElemen
       )}
 
       <div className="mt-3 flex flex-wrap gap-4 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-        <span className="flex items-center gap-1">
-          <Coins size={12} /> On-person: {formatCoin(session.on_person_delta)}
+        <span className="flex items-center gap-1" title={coinTitle}>
+          <Coins size={12} /> {coinLabel}: {coinValue}
+          {coinIn && session.on_person_delta < 0 && (
+            <span style={{ color: 'var(--color-muted)' }}> (earnings banked)</span>
+          )}
         </span>
         {session.restocked.length > 0 && (
           <span>Restocked: {session.restocked.map((r) => `${r.name} ×${r.qty}`).join(', ')}</span>

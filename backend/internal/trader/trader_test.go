@@ -162,6 +162,47 @@ func TestInferSales(t *testing.T) {
 	}
 }
 
+// A trader who banks their earnings between snapshots shows a negative
+// on-person delta even though sales happened. Reconciliation must fall back to
+// the bank-inclusive total delta so the session still reads as "coin matches".
+func TestInferSalesReconcilesAcrossBanking(t *testing.T) {
+	listing := &BZRListing{
+		Character: "T",
+		Items:     []PricedItem{{Name: "Widget", Price: 5000}},
+	}
+	prev := &Snapshot{
+		Character:      "T",
+		Satchel:        []SatchelItem{{Bag: 1, Slot: 1, ItemID: 42, Name: "Widget", Count: 1}},
+		OnPersonCopper: 742222, // platinum carried in the pocket before parking
+		BankCopper:     100000,
+	}
+	next := &Snapshot{
+		Character:      "T",
+		TakenAt:        prev.TakenAt.Add(time.Hour),
+		Satchel:        []SatchelItem{},        // Widget sold
+		OnPersonCopper: 0,                      // logged back in, banked everything
+		BankCopper:     100000 + 742222 + 5000, // prior bank + pocket + sale
+	}
+
+	sess := InferSales(prev, next, listing)
+
+	if sess.OnPersonDelta != -742222 {
+		t.Errorf("OnPersonDelta = %d, want -742222", sess.OnPersonDelta)
+	}
+	if sess.TotalCoinDelta != 5000 {
+		t.Errorf("TotalCoinDelta = %d, want 5000", sess.TotalCoinDelta)
+	}
+	if sess.CoinGained != 5000 {
+		t.Errorf("CoinGained = %d, want 5000 (bank-inclusive)", sess.CoinGained)
+	}
+	if sess.EstimatedRevenue != 5000 {
+		t.Errorf("EstimatedRevenue = %d, want 5000", sess.EstimatedRevenue)
+	}
+	if !sess.Reconciles {
+		t.Errorf("session should reconcile against the total coin delta despite the negative on-person delta")
+	}
+}
+
 func TestFingerprintStableAcrossOrder(t *testing.T) {
 	a := &Snapshot{
 		Satchel: []SatchelItem{

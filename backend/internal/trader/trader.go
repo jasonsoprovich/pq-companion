@@ -142,7 +142,8 @@ type Session struct {
 	EstimatedRevenue int64      `json:"estimated_revenue"` // sum of listed line totals
 	OnPersonDelta    int64      `json:"on_person_delta"`
 	TotalCoinDelta   int64      `json:"total_coin_delta"`
-	Reconciles       bool       `json:"reconciles"` // estimated revenue ≈ coin gained
+	CoinGained       int64      `json:"coin_gained"` // best estimate of coin taken in, bank-aware
+	Reconciles       bool       `json:"reconciles"`  // estimated revenue ≈ coin gained
 	Caveats          []string   `json:"caveats"`
 }
 
@@ -217,10 +218,17 @@ func InferSales(prev, next *Snapshot, listing *BZRListing) *Session {
 		return sess.Restocked[i].Name < sess.Restocked[j].Name
 	})
 
-	// Reconciliation: does the estimated revenue line up with coin gained on
-	// person? Bazaar sales pay the trader directly, so on-person coin should
-	// rise by roughly the estimated revenue.
-	diff := sess.OnPersonDelta - sess.EstimatedRevenue
+	// Reconciliation: bazaar sales pay the trader directly, so the coin they
+	// took in should be roughly the estimated revenue. A trader who logs back
+	// in and banks their earnings before the next /output inventory shows a
+	// negative on-person delta even though sales happened — the bank-inclusive
+	// total delta survives that. Use whichever is larger so a banking trader
+	// still reconciles; on-person-only would flag every such session "coin off".
+	sess.CoinGained = sess.TotalCoinDelta
+	if sess.OnPersonDelta > sess.CoinGained {
+		sess.CoinGained = sess.OnPersonDelta
+	}
+	diff := sess.CoinGained - sess.EstimatedRevenue
 	if diff < 0 {
 		diff = -diff
 	}
@@ -237,12 +245,18 @@ func sessionCaveats(s *Session) []string {
 		"Inferred from inventory differences — not a real sales log.",
 		"A satchel item that left can't be told apart from a manual delete, give-away, or vendor sale.",
 	}
-	if s.OnPersonDelta < 0 {
+	if s.OnPersonDelta < 0 && s.CoinGained > 0 {
 		caveats = append(caveats,
-			"On-person coin went DOWN this session (banked or spent), so revenue can't be reconciled against it.")
-	} else if s.EstimatedRevenue > 0 && !s.Reconciles {
-		caveats = append(caveats,
-			"Estimated revenue does not match the coin gained — prices may be stale or some items sold/left without a listed price.")
+			"On-person coin fell but total coin (including the bank) rose — earnings were banked; reconciled against the total.")
+	}
+	if s.EstimatedRevenue > 0 && !s.Reconciles {
+		if s.CoinGained < s.EstimatedRevenue {
+			caveats = append(caveats,
+				"Coin taken in (including the bank) is less than the listed value of what left — items may have sold below list, been given away, or restock was bought from the bank.")
+		} else {
+			caveats = append(caveats,
+				"Coin taken in exceeds the listed value of what left — some items that sold have no BZR price, or the listed prices are stale.")
+		}
 	}
 	hasUnlisted := false
 	for _, it := range s.Sold {
