@@ -9,6 +9,16 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.21.1 — 2026-09-09
+
+Log Backfill can now replay your archived logs, not just the live file, and AA gains are counted correctly on the Project Quarm client.
+
+### Highlights
+- **Backfill from archived logs** — the Settings → Backfill panel that seeds the Faction Tracker, Roll Tracker, Progression Recap and the rest from your log history now has a "Log files to scan" choice: just the current log (unchanged default), or the current log plus every `.bak.zip` / `.bak.txt` that Archive & Trim has rotated out. The archives replay oldest-first as one continuous log, with a size-and-date estimate shown before you start, so milestones that were already trimmed out of the live file become recoverable.
+
+### Fixes
+- **AA point gains are no longer undercounted on Project Quarm** — v0.21.0's unspent-AA display and the Progression Recap's "AA Points" stat both read the game's "You now have N ability point(s)." line, but the Quarm client leaves the "(s)" literal where the parser only accepted "point." or "points." — so every AA ding that left you with more than one unspent point was silently dropped. The parser now accepts Quarm's wording.
+
 ## v0.21.0 — 2026-09-08
 
 Zeal 1.4.6 unlocks unspent-AA display, `/mystats` stat snapshots, groupmates on the live map, and a self-populating raid roster — plus Dire Charm in the Charm Pet Finder, NPC swing timers, and a "Camped in …" line for finding where you left each alt.
