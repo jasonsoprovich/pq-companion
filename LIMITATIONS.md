@@ -865,10 +865,19 @@ These are inherent to log-file parsing and affect multiple features:
 - **Limitation:** The Trader Tracker infers what sold by diffing the Trader's
   Satchel (item 17899) between two inventory snapshots. It cannot see an
   individual sale as it happens, cannot attribute a sale to a buyer, and cannot
-  distinguish "an item sold" from "the trader pulled the item off the bar" — both
-  read as a satchel count decrease. Prices come from the append-only `BZR_*.ini`
-  reference, so a sale is valued at the *listed* price, not the price it actually
-  went for if it had changed.
+  distinguish "an item sold" from "the item was deleted, vendored, given away, or
+  moved into a non-satchel bag" — all read as a satchel count decrease. Prices
+  come from the append-only `BZR_*.ini` reference, so a sale is valued at the
+  *listed* price, not the price it actually went for if it had changed.
+- **Partially mitigated:** Bank Trader's Satchels are now parsed alongside the
+  on-bar ones and folded into the same diff surface, so shuffling unsold stock
+  between an inventory satchel and a bank satchel on relog nets to zero instead
+  of reading as a sale + a restock. Reconciliation compares estimated revenue to
+  the *bank-inclusive* coin delta, so a trader who banks their takings between
+  snapshots still reconciles. A session that looks like it is diffing a leftover
+  "before" export from an earlier trip (snapshots far apart, or items gone with
+  no priced value and no coin movement) is flagged `Suspect`, and any snapshot
+  can be deleted from the Snapshots tab to re-pair the diff.
 - **Root cause:** Entering `/trader` reboots the client, so the normal
   export-on-camp never fires, and nothing — not the eqlog, not any bazaar file —
   writes a line when an item sells. The only durable signal is the inventory
