@@ -271,6 +271,22 @@ func (e *Engine) keyTargetTokenLocked(spell *db.Spell, targetName string, at tim
 	return targetName + targetIDKeySep + strconv.Itoa(e.lastCastTargetID)
 }
 
+// parseKeyTargetID extracts the disambiguating spawn-id suffix a timer's
+// composite key carries (see keyTargetTokenLocked), or 0 if the key has none
+// — either because it predates the disambiguation feature or because
+// keyTargetTokenLocked couldn't confidently attribute it to a self-cast.
+func parseKeyTargetID(key string) int {
+	idx := strings.LastIndex(key, targetIDKeySep)
+	if idx < 0 {
+		return 0
+	}
+	id, err := strconv.Atoi(key[idx+len(targetIDKeySep):])
+	if err != nil {
+		return 0
+	}
+	return id
+}
+
 // maxStackedPerName caps how many stacked rows a single trigger (by
 // SpellName) can have active at once. Guards against a misconfigured
 // trigger on a common log line spawning runaway timer counts — both for the
@@ -718,7 +734,11 @@ func (e *Engine) Handle(ev logparser.LogEvent) {
 		if !ok || data.Target == "" {
 			return
 		}
-		e.removeOnKill(data.Target, false)
+		// Only a self-kill ("You have slain X!") licenses using the pipe's
+		// last-known target spawn id to disambiguate below — it's the active
+		// character's own selected target, so it means nothing for a kill
+		// credited to a groupmate or reported passively (no killer at all).
+		e.removeOnKill(data.Target, false, data.Killer == "You")
 	}
 }
 
@@ -784,7 +804,7 @@ func (e *Engine) HandlePipeTarget(name string) {
 	e.mu.Unlock()
 
 	if base, ok := parseCorpseTarget(name); ok {
-		e.removeOnKill(base, true)
+		e.removeOnKill(base, true, true)
 	}
 }
 
@@ -2069,12 +2089,37 @@ func (e *Engine) removeSelfTimers() {
 // charm timer: the pipe only reports a corpse when the player had that exact
 // mob selected as it died — i.e. deliberately killed their own charmed pet —
 // which is positive evidence, not a same-name guess.
-func (e *Engine) removeOnKill(target string, viaCorpseTarget bool) {
+//
+// Spawn-id disambiguation. keyTargetTokenLocked may have tagged a timer's map
+// key with the spawn id of the specific mob the player's own cast landed on
+// (see its doc comment) — e.g. two identically-named mobs both slowed by the
+// player get independent keys "Slow@a bloodguard#id:100" and
+// "Slow@a bloodguard#id:200". Without checking that id, a kill on either one
+// would delete both merely because they share a display name (reported by
+// Grimrose/SoS: killing one of two same-named slowed mobs cleared both slow
+// timers). trustPipeTargetID licenses reading e.lastPipeTargetID as "the
+// spawn id of the mob that just died": true for the corpse-target signal
+// (the player had that exact mob selected as it died) and for a self-kill log
+// line ("You have slain X!", Killer == "You" — the active character's own
+// target). It's meaningless for a kill credited to someone else or reported
+// with no killer at all, since lastPipeTargetID only ever reflects the local
+// player's own target.
+//
+// When both the timer's key and the known-dead spawn id are present and they
+// disagree, the timer survives — it belongs to a different, still-living
+// instance of the same-named mob. Timers with no id suffix (the common case:
+// no self-cast could be attributed, or they predate the feature) fall back to
+// the original name-only match exactly as before, including its bluntness.
+func (e *Engine) removeOnKill(target string, viaCorpseTarget bool, trustPipeTargetID bool) {
 	if target == "" {
 		return
 	}
 	normTarget := normalizeNPCName(target)
 	e.mu.Lock()
+	knownDeadID := 0
+	if trustPipeTargetID {
+		knownDeadID = e.lastPipeTargetID
+	}
 	removed := 0
 	survivors := make([]string, 0, len(e.timers))
 	for k, t := range e.timers {
@@ -2089,8 +2134,12 @@ func (e *Engine) removeOnKill(target string, viaCorpseTarget bool) {
 		// Charm timers only match on the corpse-target signal, never a
 		// log-driven kill (see the doc comment) — a same-named mob dying
 		// elsewhere must not drop the pet's timer.
+		idMismatch := knownDeadID != 0 && func() bool {
+			keyID := parseKeyTargetID(k)
+			return keyID != 0 && keyID != knownDeadID
+		}()
 		match := !t.Stacked && normalizeNPCName(t.TargetName) == normTarget &&
-			(!t.IsCharm || viaCorpseTarget)
+			(!t.IsCharm || viaCorpseTarget) && !idMismatch
 		orphan := t.TargetName == "" && isDetrimentalCategory(t.Category) && !t.IsCharm
 		if match || orphan {
 			delete(e.timers, k)

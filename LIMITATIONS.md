@@ -83,6 +83,18 @@ a future data source fix this?" column against the new capabilities.
   their cast reaches this client) or an NPC-cast one (no cast-start line at
   all) — those still collide on name, for the same reason as everything
   else in this section.
+- **Spell-timer update (2026-09-19):** that same `target_id` disambiguation
+  had a gap on the *kill* side: `spelltimer.Engine.removeOnKill` matched a
+  dying mob's name against every timer's `TargetName` with no id check at
+  all, so killing one of two same-named slowed mobs deleted both slow timers
+  (reported by Grimrose/SoS against v0.22.0). Fixed by comparing the id
+  embedded in a timer's key (when it has one) against the player's
+  last-known pipe target id, trusted only for a self-kill log line
+  ("You have slain X!") or the corpse-target signal — both mean the dying
+  mob was the active character's own selected target. A kill credited to a
+  groupmate, or any timer with no id in its key, still falls back to the
+  original name-only match: the underlying limitation (no spawn id on a raid
+  member's cast, or on an NPC-cast detrimental) is unchanged.
 
 ### 1.4 Pet / charmed-pet damage attribution requires inference
 
