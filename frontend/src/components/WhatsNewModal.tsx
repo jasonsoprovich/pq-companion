@@ -85,7 +85,7 @@ export default function WhatsNewModal({ entries, onDismiss }: WhatsNewModalProps
           backgroundColor: 'var(--color-surface)',
           border: '1px solid var(--color-primary)',
           width: '100%',
-          maxWidth: 480,
+          maxWidth: 576,
           maxHeight: '80vh',
         }}
       >
