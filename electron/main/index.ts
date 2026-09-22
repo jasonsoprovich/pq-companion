@@ -777,6 +777,16 @@ const customTimerGroupWindows = new Map<string, BrowserWindow>()
 // (re)opened, so it's current as of the last open even across a rename.
 const customTimerGroupNames = new Map<string, string>()
 let triggerOverlayWindow: BrowserWindow | null = null
+// Periodically reasserts the trigger overlay's z-order while it's visible
+// (passthrough or interactive mode). Unlike every other overlay — which is
+// shown once and left up for the whole session, so a single setAlwaysOnTop
+// at creation sticks — the trigger overlay is natively hidden/shown on every
+// single alert fire, and Windows' topmost enforcement isn't reliably durable
+// across that, especially when the game is fullscreen on a non-primary
+// monitor. Same fix and reasoning as discordVoiceTopInterval below (issue
+// #150): setAlwaysOnTop's relativeLevel only affects macOS, so a plain
+// moveTop() interval is what actually holds topmost on Windows.
+let triggerOverlayTopInterval: ReturnType<typeof setInterval> | null = null
 let npcOverlayWindow: BrowserWindow | null = null
 let threatOverlayWindow: BrowserWindow | null = null
 let rollTrackerWindow: BrowserWindow | null = null
@@ -2015,6 +2025,7 @@ function createTriggerOverlay(): void {
     // Don't leave a global Escape capture dangling if the window goes away
     // mid-session — it would silently swallow Escape app-wide.
     setTriggerEscapeShortcut(false)
+    stopTriggerOverlayTopInterval()
   })
 }
 
@@ -2735,6 +2746,26 @@ function setTriggerEscapeShortcut(active: boolean): void {
   }
 }
 
+// Starts/stops the periodic moveTop() reassertion (see triggerOverlayTopInterval
+// above) to match the window's actual visibility — no point reasserting z-order
+// on a hidden window, and leaving the interval running app-wide would outlive
+// nearly every session (the overlay is hidden the vast majority of the time).
+function startTriggerOverlayTopInterval(): void {
+  if (triggerOverlayTopInterval) return
+  triggerOverlayTopInterval = setInterval(() => {
+    if (triggerOverlayWindow && !triggerOverlayWindow.isDestroyed() && triggerOverlayWindow.isVisible()) {
+      triggerOverlayWindow.moveTop()
+    }
+  }, 2000)
+}
+
+function stopTriggerOverlayTopInterval(): void {
+  if (triggerOverlayTopInterval) {
+    clearInterval(triggerOverlayTopInterval)
+    triggerOverlayTopInterval = null
+  }
+}
+
 ipcMain.handle('overlay:trigger:set-mode', (_event, mode: 'interactive' | 'passthrough' | 'hidden') => {
   const win = triggerOverlayWindow
   if (!win || win.isDestroyed()) return
@@ -2744,11 +2775,15 @@ ipcMain.handle('overlay:trigger:set-mode', (_event, mode: 'interactive' | 'passt
   if (mode === 'interactive') {
     win.setIgnoreMouseEvents(false)
     if (!win.isVisible()) win.showInactive()
+    win.moveTop()
+    startTriggerOverlayTopInterval()
     return
   }
   if (mode === 'passthrough') {
     win.setIgnoreMouseEvents(true, { forward: true })
     if (!win.isVisible()) win.showInactive()
+    win.moveTop()
+    startTriggerOverlayTopInterval()
     return
   }
   // hidden
@@ -2760,6 +2795,7 @@ ipcMain.handle('overlay:trigger:set-mode', (_event, mode: 'interactive' | 'passt
   const overlayHadFocus = win.isFocused()
   if (win.isVisible()) win.hide()
   if (overlayHadFocus && mainWindow && !mainWindow.isDestroyed()) mainWindow.focus()
+  stopTriggerOverlayTopInterval()
 })
 
 ipcMain.handle('overlay:trigger:close', () => {
@@ -3707,6 +3743,10 @@ app.whenReady().then(async () => {
   const resizeTriggerOverlay = (): void => {
     if (!triggerOverlayWindow || triggerOverlayWindow.isDestroyed()) return
     triggerOverlayWindow.setBounds(overlayDisplayBounds())
+    // A display-metrics-changed event (resolution/DPI change, a monitor
+    // waking) is also a plausible point where Windows resets the topmost
+    // z-order band — reassert it here too, not just on the interval.
+    if (triggerOverlayWindow.isVisible()) triggerOverlayWindow.moveTop()
   }
   screen.on('display-added', resizeTriggerOverlay)
   screen.on('display-removed', resizeTriggerOverlay)
