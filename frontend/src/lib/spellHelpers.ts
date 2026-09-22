@@ -358,9 +358,10 @@ const RESIST_NAMES: Record<number, string> = {
   46: 'Fire', 47: 'Cold', 48: 'Poison', 49: 'Disease', 50: 'Magic',
 }
 
-// Project Quarm classic-era player level cap. Used as the upper bound when
-// scaling level-formula effects past the highest castable class level.
-const SERVER_LEVEL_CAP = 60
+// Project Quarm Planes of Power-era player level cap. Used as the upper
+// bound when scaling level-formula effects past the highest castable class
+// level.
+const SERVER_LEVEL_CAP = 65
 
 // Mirrors EQMacEmu Mob::CalcSpellEffectValue_formula (zone/spell_effects.cpp).
 // Returns the effect value at a given caster level, applying updownsign and
@@ -437,8 +438,8 @@ function minCasterLevel(classLevels?: number[], levelCap = SERVER_LEVEL_CAP): nu
  * a level-scaling formula on SPA 3 (movement speed) or a resist SPA, the
  * description renders a pqdi-style "+N (Lx) to +M (Ly)" range.
  *
- * `levelCap` bounds the high end of those ranges to the active era cap (60
- * pre-PoP, 65 with pop_enabled); defaults to the pre-PoP cap.
+ * `levelCap` bounds the high end of those ranges to the active era cap
+ * (65, Planes of Power); defaults to the server cap.
  *
  * `spellNames` resolves spell IDs referenced by effect base values (SPA 85
  * Add Proc — see effectSpellRef) to display names; without it those slots

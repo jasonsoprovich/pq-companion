@@ -203,10 +203,6 @@ export interface Preferences {
   // reads/offsets, trigger fires, …) for diagnosing intermittent issues.
   // Off by default; toggled in Settings → Advanced → Diagnostics.
   debug_logging?: boolean
-  // Planes of Power era switch: level cap 65, PoP spells/AA tabs, PoK as a
-  // shopping source. Off until the expansion launches on Quarm; until then
-  // it's a preview toggle in the Developer tab. See lib/era.ts.
-  pop_enabled?: boolean
   // Static gear/AA hate modifier (signed %) applied to the Threat Meter's
   // generated hate. Logs can't reveal it, so the user supplies it.
   threat_hatemod_pct?: number

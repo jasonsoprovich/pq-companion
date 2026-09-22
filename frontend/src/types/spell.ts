@@ -158,6 +158,5 @@ export interface ShoppingRoute {
 export interface ShoppingRouteOptions {
   excludeAlignments?: ZoneAlignment[]
   startZone?: string
-  includePoK?: boolean
   excludeZones?: string[]
 }

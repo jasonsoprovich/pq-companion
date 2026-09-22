@@ -70,14 +70,9 @@ const resistFalloff = 67
 const effectCount = 12
 
 // Era captures the expansion-era flags the resist formula branches on. On
-// Project Quarm today the server is pre-Planes-of-Power and Luclin is live, so
-// the zero value of PoPEnabled (false) with LuclinEnabled=true is the current
-// state. These derive from internal/era at the call site.
+// Project Quarm today Luclin is live, so LuclinEnabled=true is the current
+// state. This derives from internal/era at the call site.
 type Era struct {
-	// PoPEnabled is Preferences.PoPEnabled. When false the classic resist
-	// system is active (EnableClassicResistSystem defaults on); PoP also
-	// flips lull spells to a fixed target resist of 15.
-	PoPEnabled bool
 	// LuclinEnabled gates the harsh "six-level rule" that pins level_mod to
 	// 1000 (effectively unresistable-to-land) for NPCs far above the caster.
 	// That rule only applies in the Classic→Velious window, i.e. before
@@ -402,7 +397,7 @@ func resistChanceFor(in Input) int {
 	}
 
 	// PoP-era lull/harmony spells ignore real resists and use a flat 15.
-	if in.Era.PoPEnabled && isHarmonySpell(s) {
+	if isHarmonySpell(s) {
 		target = 15
 	}
 
@@ -437,11 +432,10 @@ func effectivenessForRoll(in Input, resistChance, roll int) int {
 
 	casterLevel := in.CasterLevel
 	targetLevel := in.TargetLevel
-	useClassicResists := !in.Era.PoPEnabled
-	if targetLevel > casterLevel && targetLevel >= 17 && (casterLevel <= 50 || useClassicResists) {
+	if targetLevel > casterLevel && targetLevel >= 17 && casterLevel <= 50 {
 		partialModifier += 5
 	}
-	if targetLevel >= 30 && (casterLevel <= 50 || useClassicResists) {
+	if targetLevel >= 30 && casterLevel <= 50 {
 		partialModifier += casterLevel - 25
 	}
 	if targetLevel < 15 {

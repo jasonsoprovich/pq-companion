@@ -196,8 +196,8 @@ func (h *charactersHandler) upgrades(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	showAll := r.URL.Query().Get("show_all") == "1" || r.URL.Query().Get("show_all") == "true"
-	// PoP gear is hidden unless explicitly requested (independent of the global
-	// pop_enabled era flag, so the finder is predictable).
+	// PoP gear is hidden unless explicitly requested (independent of the app's
+	// era display elsewhere, so the finder is predictable).
 	excludePoP := !(r.URL.Query().Get("show_pop") == "1" || r.URL.Query().Get("show_pop") == "true")
 	// Crafted (tradeskill-made) gear is hidden by default; ?hide_crafted=0 keeps it.
 	excludeCrafted := r.URL.Query().Get("hide_crafted") != "0" && r.URL.Query().Get("hide_crafted") != "false"

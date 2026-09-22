@@ -248,6 +248,5 @@ export interface ItemShoppingRoute {
 export interface ItemShoppingRouteOptions {
   excludeAlignments?: ZoneAlignment[]
   startZone?: string
-  includePoK?: boolean
   excludeZones?: string[]
 }

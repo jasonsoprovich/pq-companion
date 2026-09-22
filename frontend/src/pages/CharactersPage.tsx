@@ -13,7 +13,6 @@ import {
   type MacroOnlyCharacter,
 } from '../services/api'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
-import { usePoPEnabled } from '../hooks/usePoPEnabled'
 import { maxLevel } from '../lib/era'
 import {
   charClassLabel,
@@ -141,7 +140,7 @@ interface CharacterFormProps {
 function CharacterForm({ initial, onSave, onCancel, saving, error }: CharacterFormProps): React.ReactElement {
   const [form, setForm] = useState<FormState>(initial)
   // Level cap follows the expansion era (60 pre-PoP, 65 once PoP is live).
-  const levelCap = maxLevel(usePoPEnabled())
+  const levelCap = maxLevel()
 
   return (
     <div

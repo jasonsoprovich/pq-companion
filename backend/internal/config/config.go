@@ -505,14 +505,6 @@ type Preferences struct {
 	// log. Applied to applog at startup and on every config save (no restart).
 	DebugLogging bool `yaml:"debug_logging,omitempty" json:"debug_logging"`
 
-	// PoPEnabled switches the app into Planes of Power era: level cap 65
-	// instead of 60, PoP spells in the class spell lists, the PoP AA tabs,
-	// and Plane of Knowledge as a shopping-route source. Off by default
-	// because the expansion isn't live on Project Quarm yet — until launch
-	// it's a preview toggle in the Developer tab (see internal/era). When
-	// PoP launches the default flips in a release and this becomes a no-op.
-	PoPEnabled bool `yaml:"pop_enabled,omitempty" json:"pop_enabled"`
-
 	// ThreatHatemodPct is a MANUAL hate modifier, as a signed percentage, that the
 	// Threat Meter adds to its spell- and heal-hate. The Spell Casting Subtlety AA
 	// is now auto-detected from the character's trained AAs, so this is for sources

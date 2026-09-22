@@ -123,7 +123,6 @@ func (h *resistHandler) check(w http.ResponseWriter, r *http.Request) {
 		TargetResist:     targetResist,
 		TargetImmunities: parseImmunities(body.TargetSpecialAbilities),
 		Era: resist.Era{
-			PoPEnabled: h.cfgMgr.Get().Preferences.PoPEnabled,
 			// Project Quarm is currently in the Luclin era, which disables
 			// the pre-Luclin "six-level rule". Flip this when era modeling
 			// gains a Luclin toggle.

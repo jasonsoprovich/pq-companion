@@ -123,7 +123,6 @@ type itemShoppingRoute struct {
 //	  "item_ids": [123, 456, ...],
 //	  "exclude_alignments": ["evil"],
 //	  "start_zone": "shadowhaven",
-//	  "include_pok": false,
 //	  "exclude_zones": []
 //	}
 //
@@ -132,18 +131,12 @@ type itemShoppingRoute struct {
 // to vendor/zone pairs via GetItemVendorOptions instead of the scroll-effect
 // join. Used by the recipe view's "find vendors for these components" action.
 //
-// Plane of Knowledge stays era-gated exactly like the spell route: it's only
-// offered as a source when the player has opted in (include_pok) or the PoP
-// preference flag is on. A recipe's components genuinely aren't purchasable
-// there on a pre-PoP server, so pinning it as an always-on source regardless
-// of era would route players to a vendor that doesn't exist yet on their
-// timeline.
+// Plane of Knowledge is a normal source (Planes of Power era).
 func (h *itemsHandler) shoppingRoute(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		ItemIDs           []int    `json:"item_ids"`
 		ExcludeAlignments []string `json:"exclude_alignments"`
 		StartZone         string   `json:"start_zone"`
-		IncludePoK        bool     `json:"include_pok"`
 		ExcludeZones      []string `json:"exclude_zones"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -170,7 +163,7 @@ func (h *itemsHandler) shoppingRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pokExcluded := !body.IncludePoK && !h.cfgMgr.Get().Preferences.PoPEnabled
+	pokExcluded := false
 
 	userExcluded := make(map[string]bool, len(body.ExcludeZones))
 	for _, z := range body.ExcludeZones {

@@ -995,7 +995,7 @@ func (h *charactersHandler) spellModifiers(w http.ResponseWriter, r *http.Reques
 			casterLevel = spellLevel
 		}
 		if casterLevel < 1 {
-			casterLevel = era.MaxLevel(h.mgr.Get().Preferences.PoPEnabled)
+			casterLevel = era.PoPMaxLevel
 		}
 		baseTicks := spelltimer.CalcDurationTicks(sp.BuffDurationFormula, sp.BuffDuration, casterLevel)
 		resolution := buffmod.Resolve(

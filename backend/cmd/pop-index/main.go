@@ -1,6 +1,7 @@
 // Command pop-index regenerates backend/internal/db/pop_gated.json — the
 // precomputed set of Planes-of-Power-gated item IDs the gear-upgrade finder
-// uses to hide not-yet-available gear while the pop_enabled flag is off.
+// uses to hide not-yet-available gear by default (its own show_pop filter,
+// independent of the app's era display).
 //
 // Building this set live is a multi-second pass over the loot/spawn join
 // tables, so the server reads this embedded result instead of recomputing it

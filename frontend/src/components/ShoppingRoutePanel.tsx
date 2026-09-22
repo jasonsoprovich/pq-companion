@@ -4,7 +4,6 @@ import { Map as MapIcon, MapPin, RefreshCw, AlertCircle, X, Navigation, BookOpen
 import { getShoppingRoute } from '../services/api'
 import type { ShoppingRoute, ShoppingStop, ShoppingSpell, ShoppingVendor, ShoppingCandidateZone, ZoneAlignment } from '../types/spell'
 import { useEscapeToClose } from '../hooks/useEscapeToClose'
-import { usePoPEnabled } from '../hooks/usePoPEnabled'
 import { formatNPCName } from './SourceNPCLink'
 
 interface Props {
@@ -38,7 +37,6 @@ const ALIGNMENTS: { key: ZoneAlignment; label: string }[] = [
 
 const LS_ALIGN = 'pq-companion:shop-exclude-alignments'
 const LS_START = 'pq-companion:shop-start-zone'
-const LS_POK = 'pq-companion:shop-include-pok'
 const LS_ZONES = 'pq-companion:shop-exclude-zones'
 
 const EMPTY_ROUTE: ShoppingRoute = {
@@ -267,17 +265,10 @@ function StopCard({
 export default function ShoppingRoutePanel({ spellIds, onRemoveSpell, onClose }: Props): React.ReactElement {
   useEscapeToClose(onClose)
 
-  // Once the Planes of Power era flag is on, PoK is a normal source (the
-  // backend ignores include_pok) and the opt-in toggle below is hidden.
-  const popEnabled = usePoPEnabled()
-
   const [excludeAlignments, setExcludeAlignments] = useState<ZoneAlignment[]>(() => loadJSON(LS_ALIGN, []))
   // Default to the Nexus: it's the common bind point and the teleport hub, so
   // out of the box the route reflects easy travel from there.
   const [startZone, setStartZone] = useState<string>(() => loadJSON<string>(LS_START, 'nexus'))
-  // Plane of Knowledge is off by default — the Planes of Power hub isn't on this
-  // server's timeline yet, so it shouldn't be a recommended source.
-  const [includePoK, setIncludePoK] = useState<boolean>(() => loadJSON<boolean>(LS_POK, false))
   // Towns the player never wants routed through (persisted preference).
   const [excludeZones, setExcludeZones] = useState<string[]>(() => loadJSON<string[]>(LS_ZONES, []))
   const [showZonePicker, setShowZonePicker] = useState(false)
@@ -295,7 +286,6 @@ export default function ShoppingRoutePanel({ spellIds, onRemoveSpell, onClose }:
   // the checklist page, per character.)
   useEffect(() => { saveJSON(LS_ALIGN, excludeAlignments) }, [excludeAlignments])
   useEffect(() => { saveJSON(LS_START, startZone) }, [startZone])
-  useEffect(() => { saveJSON(LS_POK, includePoK) }, [includePoK])
   useEffect(() => { saveJSON(LS_ZONES, excludeZones) }, [excludeZones])
 
   // Stable dependency keys so the fetch only re-runs on real changes.
@@ -318,13 +308,13 @@ export default function ShoppingRoutePanel({ spellIds, onRemoveSpell, onClose }:
     }
     setLoading(true)
     setError(null)
-    getShoppingRoute(spellIds, { excludeAlignments, startZone, includePoK, excludeZones })
+    getShoppingRoute(spellIds, { excludeAlignments, startZone, excludeZones })
       .then((r) => { if (!cancelled) { setRoute(r); setStale(false) } })
       .catch((err: Error) => { if (!cancelled) setError(err.message) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [alignKey, startZone, includePoK, zonesKey, replan])
+  }, [alignKey, startZone, zonesKey, replan])
 
   // Check a spell off the run: drop it from the frozen route locally and tell
   // the page (which persists the per-character selection), but leave the rest
@@ -436,25 +426,6 @@ export default function ShoppingRoutePanel({ spellIds, onRemoveSpell, onClose }:
               })}
             </div>
           </div>
-
-          {/* Plane of Knowledge source toggle (off by default — not on this
-              server's timeline yet). Once the PoP era flag is on, PoK is a
-              normal source server-side, so the opt-in toggle disappears. */}
-          {!popEnabled && <button
-            onClick={() => setIncludePoK((v) => !v)}
-            className="flex items-center gap-1.5 rounded px-2 py-0.5 text-[11px] transition-colors"
-            style={{
-              backgroundColor: includePoK ? 'var(--color-surface-2)' : 'transparent',
-              color: includePoK ? 'var(--color-primary)' : 'var(--color-muted)',
-              border: '1px solid var(--color-border)',
-            }}
-            title={includePoK
-              ? 'Including Plane of Knowledge as a source — click to disable'
-              : 'Plane of Knowledge is disabled (not on this server yet) — click to include it'}
-          >
-            <BookOpen size={11} />
-            Plane of Knowledge
-          </button>}
 
           {/* Skip-towns picker toggle */}
           <button

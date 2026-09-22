@@ -21,7 +21,6 @@ import type { Spell } from '../types/spell'
 import type { Item } from '../types/item'
 import type { SkillView, TradeskillView } from '../types/skill'
 import { DEV_SKILLS } from '../lib/devFlags'
-import { usePoPEnabled } from '../hooks/usePoPEnabled'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
 import ItemDetailModal from '../components/ItemDetailModal'
 import { BuffPicker } from '../components/BuffPicker'
@@ -1499,14 +1498,7 @@ function AAPanel({ trained, available, unspentAA, unspentAAAt }: AAPanelProps): 
     [allRows],
   )
 
-  // The PoP AA tabs stay hidden until the Planes of Power era flag is on —
-  // those abilities aren't trainable on the server before the expansion.
-  const popEnabled = usePoPEnabled()
-  const categories = popEnabled
-    ? AA_CATEGORIES
-    : AA_CATEGORIES.filter((c) => c.key !== 'pop_advance' && c.key !== 'pop_ability')
-
-  const cat = categories.find((c) => c.key === category) ?? categories[0]
+  const cat = AA_CATEGORIES.find((c) => c.key === category) ?? AA_CATEGORIES[0]
   const term = search.trim().toLowerCase()
 
   const visibleRows = useMemo(() => {
@@ -1576,7 +1568,7 @@ function AAPanel({ trained, available, unspentAA, unspentAAAt }: AAPanelProps): 
 
       {/* Category sub-tabs */}
       <div className="flex gap-1 border-b" style={{ borderColor: 'var(--color-border)' }}>
-        {categories.map((c) => (
+        {AA_CATEGORIES.map((c) => (
           <TabButton key={c.key} active={category === c.key} onClick={() => setCategory(c.key)}>
             {c.label}
           </TabButton>

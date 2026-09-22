@@ -86,11 +86,10 @@ export default function DeveloperTab(): React.ReactElement {
   )
 }
 
-// FlagsPanel hosts experimental era/feature switches. Currently just the
-// Planes of Power preview: flipping it raises the level cap to 65 and
-// reveals PoP spells, AA tabs, and Plane of Knowledge shopping app-wide
-// (see backend internal/era). Stored in config.yaml so it survives
-// restarts; consumers track changes live via the config:updated broadcast.
+// FlagsPanel hosts experimental feature switches that are still too raw
+// for the regular Settings UI. The Planes of Power preview graduated to
+// always-on (see internal/era) once the app moved to the PoP level cap
+// for all users ahead of the expansion's Quarm launch.
 function FlagsPanel(): React.ReactElement {
   const [config, setConfig] = useState<Config | null>(null)
   const [saving, setSaving] = useState(false)
@@ -101,21 +100,6 @@ function FlagsPanel(): React.ReactElement {
       .then(setConfig)
       .catch((err: Error) => setError(err.message))
   }, [])
-
-  const popEnabled = Boolean(config?.preferences?.pop_enabled)
-
-  const togglePoP = (): void => {
-    if (!config || saving) return
-    setSaving(true)
-    setError(null)
-    updateConfig({
-      ...config,
-      preferences: { ...config.preferences, pop_enabled: !popEnabled },
-    })
-      .then(setConfig)
-      .catch((err: Error) => setError(err.message))
-      .finally(() => setSaving(false))
-  }
 
   // savePrefs persists a Preferences patch (merged over the current config).
   const savePrefs = (patch: Record<string, unknown>): void => {
@@ -148,54 +132,6 @@ function FlagsPanel(): React.ReactElement {
           behavior, and breaking changes between releases. Enable them at your own risk.
         </p>
       </div>
-      <section
-        className="rounded-lg p-4"
-        style={{
-          backgroundColor: 'var(--color-surface)',
-          border: '1px solid var(--color-border)',
-        }}
-      >
-        <div className="mb-3 flex items-center gap-2">
-          <FlaskConical size={14} style={{ color: 'var(--color-primary)' }} />
-          <h2
-            className="text-sm font-semibold uppercase tracking-wide"
-            style={{ color: 'var(--color-muted)' }}
-          >
-            Planes of Power preview
-          </h2>
-        </div>
-        <div className="flex items-start justify-between gap-4">
-          <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
-            Switches the app into Planes of Power era before the expansion
-            launches on Project Quarm: level cap 65 instead of 60, PoP spells
-            in the class spell lists, the PoP AA tabs, and Plane of Knowledge
-            as a shopping-route source. The server itself is still pre-PoP, so
-            leave this off for normal play — it exists so PoP support can be
-            tested ahead of launch.
-          </p>
-          <button
-            type="button"
-            onClick={togglePoP}
-            disabled={!config || saving}
-            className="shrink-0 rounded px-3 py-1.5 text-xs font-medium transition-colors"
-            style={{
-              backgroundColor: popEnabled ? 'var(--color-primary)' : 'var(--color-surface-2)',
-              color: popEnabled ? 'var(--color-background)' : 'var(--color-muted-foreground)',
-              border: '1px solid var(--color-border)',
-              cursor: !config || saving ? 'default' : 'pointer',
-              opacity: !config || saving ? 0.6 : 1,
-            }}
-          >
-            {popEnabled ? 'Enabled' : 'Disabled'}
-          </button>
-        </div>
-        {error && (
-          <p className="mt-2 text-xs" style={{ color: '#f87171' }}>
-            {error}
-          </p>
-        )}
-      </section>
-
       {/* ── Raid-wide threat meter ────────────────────────────────────────── */}
       <section
         className="rounded-lg p-4"

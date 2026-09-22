@@ -21,8 +21,8 @@ const popExpansion = 4
 
 // IsPoPGated reports whether an item is Planes-of-Power-gated — i.e. not
 // obtainable in the current (pre-PoP) era — so the upgrade finder can hide it
-// while the pop_enabled flag is off. Safe default: an item we can't classify
-// is treated as available (false).
+// by default via its own show_pop filter. Safe default: an item we can't
+// classify is treated as available (false).
 func (db *DB) IsPoPGated(itemID int) bool {
 	db.ensurePoPIndex()
 	return db.popGated[itemID]

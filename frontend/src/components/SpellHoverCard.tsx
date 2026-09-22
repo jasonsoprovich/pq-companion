@@ -30,7 +30,6 @@ import {
   skillLabel,
   targetLabel,
 } from '../lib/spellHelpers'
-import { usePoPEnabled } from '../hooks/usePoPEnabled'
 import { useSpellRefNames } from '../hooks/useSpellRefNames'
 import { useItemRefNames } from '../hooks/useItemRefNames'
 import { maxLevel as eraMaxLevel } from '../lib/era'
@@ -209,7 +208,7 @@ function CardBody({
   effectsOnly?: boolean
   clickHint?: boolean
 }): React.ReactElement {
-  const levelCap = eraMaxLevel(usePoPEnabled())
+  const levelCap = eraMaxLevel()
   const refNames = useSpellRefNames(spell)
   const itemNames = useItemRefNames(spell)
 

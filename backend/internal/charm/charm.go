@@ -140,8 +140,8 @@ func DPS(minDmg, maxDmg, attackDelay int) float64 {
 // Era gating is data-driven: a charm's required level is read from the spell's
 // classesN column, which on Quarm encodes era — Planes-of-Power charms sit above
 // the level 60 cap (Beckon 62, Command of Druzzil 64, Word of Terris 65, Command
-// of Tunare 63, Call of the Banshee 64), so they fall out automatically while the
-// pop_enabled flag is off and reappear when it's on (cap 65).
+// of Tunare 63, Call of the Banshee 64), so they're included now that the app's
+// level cap is 65.
 //
 // Dire Charm is included via its three per-class effect spells. It is an AA
 // (altadv_vars skill_id 145, aa_expansion 3 = Luclin, level 59), not a trained

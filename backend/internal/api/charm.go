@@ -88,7 +88,7 @@ func (h *charmHandler) spells(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	maxLevel := era.MaxLevel(h.cfgMgr.Get().Preferences.PoPEnabled)
+	maxLevel := era.PoPMaxLevel
 
 	opts := []charmSpellOption{}
 	for _, name := range charm.SpellsForClass(classIdx) {
@@ -102,11 +102,10 @@ func (h *charmHandler) spells(w http.ResponseWriter, r *http.Request) {
 			// skip rather than surface a half-populated option.
 			continue
 		}
-		// Required level comes from the spell's own class column (quarm.db),
-		// which encodes era: PoP charms sit above the level-60 cap and so fall
-		// out while pop_enabled is off. Research- and AA-granted charms
-		// (Boltran's, the three Dire Charm effect spells) read 254/255/bogus in
-		// that column, so the catalog pins their real level via GrantedLevel.
+		// Required level comes from the spell's own class column (quarm.db).
+		// Research- and AA-granted charms (Boltran's, the three Dire Charm
+		// effect spells) read 254/255/bogus in that column, so the catalog
+		// pins their real level via GrantedLevel.
 		reqLevel := spell.ClassLevels[classIdx]
 		if lvl, ok := charm.GrantedLevel(name); ok {
 			reqLevel = lvl
@@ -170,7 +169,6 @@ func (h *charmHandler) pets(w http.ResponseWriter, r *http.Request) {
 	restriction := charm.RestrictionForTargetType(spell.TargetType)
 	resistSpell := toResistSpell(spell)
 	resistEra := resist.Era{
-		PoPEnabled: h.cfgMgr.Get().Preferences.PoPEnabled,
 		// Project Quarm is in the Luclin era (disables the pre-Luclin
 		// "six-level rule"), matching the resist calculator.
 		LuclinEnabled: true,

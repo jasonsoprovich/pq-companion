@@ -43,7 +43,7 @@ func (h *spellsHandler) byClass(w http.ResponseWriter, r *http.Request) {
 		limit = 1000
 	}
 	offset := queryInt(r, "offset", 0)
-	maxLevel := era.MaxLevel(h.cfgMgr.Get().Preferences.PoPEnabled)
+	maxLevel := era.PoPMaxLevel
 	result, err := h.db.GetSpellsByClass(classIndex, maxLevel, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -261,10 +261,6 @@ func (h *spellsHandler) shoppingRoute(w http.ResponseWriter, r *http.Request) {
 		SpellIDs          []int    `json:"spell_ids"`
 		ExcludeAlignments []string `json:"exclude_alignments"`
 		StartZone         string   `json:"start_zone"`
-		// IncludePoK opts Plane of Knowledge back in as a source. It's false by
-		// default because the Planes of Power book hub isn't on this server's
-		// timeline yet, so routing players there would be wrong.
-		IncludePoK bool `json:"include_pok"`
 		// ExcludeZones are zone short_names the player never wants routed
 		// through (faction, preference). Their spells re-route to the next-best
 		// town; a spell sold *only* in excluded towns is reported separately.
@@ -294,11 +290,8 @@ func (h *spellsHandler) shoppingRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Plane of Knowledge is dropped as a source while Planes of Power isn't
-	// live on this server (the PoP book hub sells a huge slice of the spell
-	// list, so leaving it in would route everyone there); pre-PoP it's opt-in
-	// via include_pok. Once the era flag is on, PoK is a normal source.
-	pokExcluded := !body.IncludePoK && !h.cfgMgr.Get().Preferences.PoPEnabled
+	// Plane of Knowledge is now a normal source (Planes of Power era).
+	pokExcluded := false
 
 	// Zones the player chose to skip. Their spells re-route elsewhere.
 	userExcluded := make(map[string]bool, len(body.ExcludeZones))

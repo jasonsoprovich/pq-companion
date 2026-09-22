@@ -23,7 +23,6 @@ import VariantLinks from '../components/VariantLinks'
 import SpellAcquisition from '../components/SpellAcquisition'
 import EmoteEditor from '../components/EmoteEditor'
 import { useCachedState } from '../hooks/useCachedState'
-import { usePoPEnabled } from '../hooks/usePoPEnabled'
 import { useDeveloperMode } from '../hooks/useDeveloperMode'
 import { useSpellRefNames } from '../hooks/useSpellRefNames'
 import { useItemRefNames } from '../hooks/useItemRefNames'
@@ -371,7 +370,7 @@ function visibleSpellTabs(
 
 function DetailPanel({ spell }: DetailPanelProps): React.ReactElement {
   const navigate = useNavigate()
-  const levelCap = eraMaxLevel(usePoPEnabled())
+  const levelCap = eraMaxLevel()
   const developerMode = useDeveloperMode()
   const [crossRefs, setCrossRefs] = useState<SpellCrossRefs | null>(null)
   const [showTriggerModal, setShowTriggerModal] = useState(false)

@@ -216,19 +216,20 @@ func TestSixLevelRuleOffUnderLuclin(t *testing.T) {
 }
 
 func TestPartialNukeDistribution(t *testing.T) {
-	// L60 caster vs L55 NPC, FR 150, ResistDiff -50, classic resists (PoP off):
+	// L60 caster vs L55 NPC, FR 150, ResistDiff -50, PoP era (caster >50, so
+	// the classic +35 partial bump no longer applies):
 	// levelMod = -(5*5/2) = -12, resist_chance = 150 - 12 - 50 = 88.
-	// partial_modifier(roll) = 150*(88-roll)/88 + (60-25)=35  [targetLevel>=30]
-	//   roll 0..49  -> >=100 -> full resist (50 rolls)
-	//   roll 50..88 -> partial            (39 rolls)
-	//   roll 89..200-> full damage        (112 rolls)
+	// partial_modifier(roll) = 150*(88-roll)/88 (integer division)
+	//   roll 0..29  -> >=100 -> full resist (30 rolls)
+	//   roll 30..87 -> partial              (58 rolls)
+	//   roll 88..200-> full damage          (113 rolls; partialModifier<=0 at 88)
 	r := ComputeChances(Input{
 		Spell:        nukeSpell(resistFire, -50),
 		CasterLevel:  60,
 		CasterClass:  11,
 		TargetLevel:  55,
 		TargetResist: 150,
-		Era:          Era{LuclinEnabled: true}, // PoP off
+		Era:          Era{LuclinEnabled: true},
 	})
 	if r.ResistChance != 88 {
 		t.Fatalf("resist_chance = %d, want 88", r.ResistChance)
@@ -236,13 +237,13 @@ func TestPartialNukeDistribution(t *testing.T) {
 	if r.Binary {
 		t.Fatalf("nuke should not be binary")
 	}
-	approx(t, "FullResist", r.FullResist, 50.0/201.0)
-	approx(t, "Partial", r.Partial, 39.0/201.0)
-	approx(t, "FullDamage", r.FullDamage, 112.0/201.0)
-	approx(t, "LandChance", r.LandChance, 151.0/201.0)
-	// roll 50 -> eff 1 (0.01); roll 88 -> eff 65 (0.65)
-	approx(t, "PartialMin", r.PartialMin, 0.01)
-	approx(t, "PartialMax", r.PartialMax, 0.65)
+	approx(t, "FullResist", r.FullResist, 30.0/201.0)
+	approx(t, "Partial", r.Partial, 58.0/201.0)
+	approx(t, "FullDamage", r.FullDamage, 113.0/201.0)
+	approx(t, "LandChance", r.LandChance, 171.0/201.0)
+	// roll 30 -> eff 2 (0.02); roll 87 -> eff 99 (0.99)
+	approx(t, "PartialMin", r.PartialMin, 0.02)
+	approx(t, "PartialMax", r.PartialMax, 0.99)
 }
 
 func TestEnchanterCharismaLowersMezResist(t *testing.T) {
