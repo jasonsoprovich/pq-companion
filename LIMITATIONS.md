@@ -878,6 +878,45 @@ These are inherent to log-file parsing and affect multiple features:
   click-through-reliability risk the current hide-when-idle design was built
   to avoid — only worth pursuing if (1) doesn't resolve it.
 
+### 13.3 Visual glitch on the other monitor while dragging the main window (unconfirmed)
+
+- **Limitation:** Reported via Discord (2026-09-21, dual-monitor Windows 10,
+  GTX 970, Zeal + eqw.dll fullscreen-borderless, dgvoodoo2 mod installed): a
+  brief on-screen graphical corruption appears on the *primary* monitor while
+  the reporter drags the main app window around on their *secondary* monitor.
+  Reporter says it's purely cosmetic — no input issues, the app is otherwise
+  fully usable — and only occurs during the drag itself.
+- **Ruled out:** Hardware acceleration on vs. off (reporter toggled the
+  Settings > Advanced > Diagnostics switch and restarted between attempts,
+  glitch reported both ways per their initial message).
+- **Root cause (leading theory, not yet confirmed):** Same upstream bug class
+  as [§13.2](#132-trigger-alert-overlay-may-cause-a-black-screen-flash-on-some-windows-systems-unconfirmed) —
+  Windows DWM/Chromium compositing glitches involving hardware-accelerated,
+  transparent, always-on-top `BrowserWindow`s (electron/electron#40515,
+  #37088, #10069). §13.2 was triggered by native `show()`/`hide()` on the
+  trigger overlay; this variant is triggered by `setBounds()`/native drag
+  on the *main* window instead, while one or more transparent overlay
+  windows (NPC overlay, buff timers, etc.) are already composited on the
+  primary monitor. Dragging a window across monitors with different
+  GPU/DWM composition state is a known trigger for this class of Chromium
+  bug independent of which window is transparent vs. which window moves.
+  dgvoodoo2 (a DirectX wrapper hooking into the swap chain) is a plausible
+  aggravating factor but unconfirmed — not present in the §13.2 reporter's
+  setup.
+- **Sources checked:** Full electron.log / server.log set (4 sessions,
+  `pq-companion-debug-logs-2026-09-21.zip`) from the reporter with verbose
+  logging on. No crash, no GPU process error, no error/warn lines at all —
+  the logs contain only normal startup, HTTP request, and Zeal-sync entries.
+  Consistent with §13.2: this bug class is a renderer/compositor-level
+  glitch that produces no application-level log signal.
+- **Could a future data source fix this?** **N/A (upstream Electron/Chromium
+  bug, not a data gap).** Same mitigation options as §13.2 apply. No new
+  mitigation attempted yet — awaiting confirmation this is actually the same
+  bug class (in particular, whether it reproduces with the hardware
+  acceleration toggle left off across a fresh app restart, since the
+  reporter's own account of testing on/off predates being asked to file
+  verbose logs).
+
 ---
 
 ## 14. Bazaar / Trader tracking
