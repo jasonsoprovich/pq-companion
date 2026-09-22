@@ -7,9 +7,21 @@ import { WSEvent } from '../lib/wsEvents'
 import BackfillLink from './BackfillLink'
 import CharacterRecapLoot from './CharacterRecapLoot'
 
-const WINDOW_OPTIONS = [7, 30, 90] as const
+const WINDOW_OPTIONS = [1, 7, 30, 90] as const
 type WindowDays = (typeof WINDOW_OPTIONS)[number]
 type Scope = 'character' | 'all'
+
+// Segmented-button label: "Today" reads better than "1d" for the single-day
+// preset; every other window just gets its day count.
+function windowButtonLabel(d: WindowDays): string {
+  return d === 1 ? 'Today' : `${d}d`
+}
+
+// "No progression activity {…}" tail — "today" for the single-day window,
+// otherwise "in the last N days".
+function windowRangeLabel(days: number): string {
+  return days === 1 ? 'today' : `in the last ${days} days`
+}
 
 interface CharacterRecapPanelProps {
   characterName: string
@@ -121,7 +133,7 @@ export default function CharacterRecapPanel({ characterName }: CharacterRecapPan
                 cursor: 'pointer',
               }}
             >
-              {d}d
+              {windowButtonLabel(d)}
             </button>
           ))}
         </div>
@@ -185,7 +197,7 @@ function SingleCharacterRecap({ recap, windowDays }: { recap: CharacterRecap; wi
           <Sparkles size={28} style={{ color: 'var(--color-muted)' }} />
           <div>
             <p className="text-sm font-medium" style={{ color: 'var(--color-foreground)' }}>
-              No progression activity in the last {windowDays} days
+              No progression activity {windowRangeLabel(windowDays)}
             </p>
             <p className="mt-1 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
               Level, AA, spell, and skill milestones are parsed from this character's log as they happen.
@@ -327,7 +339,7 @@ function AllCharactersRecap({ recaps, windowDays }: { recaps: CharacterRecap[]; 
       >
         <Sparkles size={28} style={{ color: 'var(--color-muted)' }} />
         <p className="text-sm font-medium" style={{ color: 'var(--color-foreground)' }}>
-          No progression activity across any character in the last {windowDays} days
+          No progression activity across any character {windowRangeLabel(windowDays)}
         </p>
       </div>
     )
