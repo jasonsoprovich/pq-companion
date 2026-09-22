@@ -188,40 +188,51 @@ export default function RaidSummaryPage(): React.ReactElement {
         </div>
       </div>
 
-      <div className="rounded-lg overflow-hidden" style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)' }}>
+      <div
+        className="rounded-lg flex flex-col min-h-0"
+        style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', maxHeight: '28rem' }}
+      >
         <div
-          className="px-3 py-2 text-sm font-semibold"
+          className="px-3 py-2 text-sm font-semibold shrink-0"
           style={{ borderBottom: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface-2)', color: 'var(--color-foreground)' }}
         >
           Members
         </div>
-        <div className="grid grid-cols-[1.4fr_60px_1fr_1fr_1fr] gap-3 px-3 py-1 text-[11px] uppercase tracking-wide" style={{ color: 'var(--color-muted-foreground)' }}>
-          <span>Name</span>
-          <span className="justify-self-end">Level</span>
-          <span>Class</span>
-          <span>Group</span>
-          <span>Rank</span>
-        </div>
-        {sortedMembers.length === 0 ? (
-          <div className="px-3 py-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-            No members yet.
+        {/* A fixed max-height + its own overflow-y-auto keeps a full 72-member
+            raid scrollable within this box on its own, independent of how
+            much room the stats/banner/class-count sections above take up. */}
+        <div className="overflow-y-auto min-h-0">
+          <div
+            className="grid grid-cols-[1.4fr_60px_1fr_1fr_1fr] gap-3 px-3 py-1 text-[11px] uppercase tracking-wide sticky top-0"
+            style={{ color: 'var(--color-muted-foreground)', backgroundColor: 'var(--color-surface)' }}
+          >
+            <span>Name</span>
+            <span className="justify-self-end">Level</span>
+            <span>Class</span>
+            <span>Group</span>
+            <span>Rank</span>
           </div>
-        ) : (
-          sortedMembers.map((m, i) => (
-            <div
-              key={`${m.name}-${i}`}
-              className={`grid grid-cols-[1.4fr_60px_1fr_1fr_1fr] gap-3 items-center px-3 py-1.5 ${i % 2 === 1 ? 'bg-(--color-surface-2)/50' : ''}`}
-            >
-              <span className="text-sm truncate" style={{ color: 'var(--color-foreground)' }}>{m.name}</span>
-              <span className="text-sm tabular-nums justify-self-end" style={{ color: 'var(--color-muted-foreground)' }}>{m.level ?? '—'}</span>
-              <span className="text-sm" style={{ color: m.code ? 'var(--color-foreground)' : 'var(--color-danger)' }}>
-                {m.code ? classLabel(taxonomy, m.code as ClassCode) : 'Unknown'}
-              </span>
-              <span className="text-sm truncate" style={{ color: 'var(--color-muted-foreground)' }}>{m.group ?? '—'}</span>
-              <span className="text-sm truncate" style={{ color: 'var(--color-muted-foreground)' }}>{m.rank ?? '—'}</span>
+          {sortedMembers.length === 0 ? (
+            <div className="px-3 py-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+              No members yet.
             </div>
-          ))
-        )}
+          ) : (
+            sortedMembers.map((m, i) => (
+              <div
+                key={`${m.name}-${i}`}
+                className={`grid grid-cols-[1.4fr_60px_1fr_1fr_1fr] gap-3 items-center px-3 py-1.5 ${i % 2 === 1 ? 'bg-(--color-surface-2)/50' : ''}`}
+              >
+                <span className="text-sm truncate" style={{ color: 'var(--color-foreground)' }}>{m.name}</span>
+                <span className="text-sm tabular-nums justify-self-end" style={{ color: 'var(--color-muted-foreground)' }}>{m.level ?? '—'}</span>
+                <span className="text-sm" style={{ color: m.code ? 'var(--color-foreground)' : 'var(--color-danger)' }}>
+                  {m.code ? classLabel(taxonomy, m.code as ClassCode) : 'Unknown'}
+                </span>
+                <span className="text-sm truncate" style={{ color: 'var(--color-muted-foreground)' }}>{m.group ?? '—'}</span>
+                <span className="text-sm truncate" style={{ color: 'var(--color-muted-foreground)' }}>{m.rank ?? '—'}</span>
+              </div>
+            ))
+          )}
+        </div>
       </div>
     </div>
   )
