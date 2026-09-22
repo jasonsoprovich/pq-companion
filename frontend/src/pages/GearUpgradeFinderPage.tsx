@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Wand2, ChevronDown, ChevronUp, ChevronRight, Star, Loader2, AlertTriangle, Sliders, RotateCcw, Save, Check, LayoutGrid, List, Target, Search, Info } from 'lucide-react'
 import CharacterSubTabs from '../components/CharacterSubTabs'
@@ -171,8 +171,9 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
   // NO DROP gear is shown by default — you can still farm it yourself — but the
   // toggle lets you hide it when you only care about tradeable upgrades.
   const [hideNoDrop, setHideNoDrop] = useState(false)
-  // Planes of Power gear is hidden by default (not yet obtainable on Quarm).
-  const [showPoP, setShowPoP] = useState(false)
+  // Planes of Power gear is shown by default — PoP launches on Quarm
+  // October 1st, 2026, so upgrade suggestions should lead with it.
+  const [showPoP, setShowPoP] = useState(true)
   // Crafted (tradeskill-made) gear is hidden by default — it's chased
   // deliberately, so it tends to be noise in a "what drops can I upgrade" list.
   const [hideCrafted, setHideCrafted] = useState(true)
@@ -597,6 +598,7 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
               sortDir={overviewSortDir}
               setSortCol={setOverviewSortCol}
               setSortDir={setOverviewSortDir}
+              charId={selected?.id ?? null}
             />
           ) : (
           /* Results */
@@ -1120,7 +1122,7 @@ function WishStar({ on, onClick }: { on: boolean; onClick: () => void }): React.
 
 function OverviewView({
   overview, loading, onOpen, onPickSlot, isWishlisted, onToggleWish,
-  sortCol, sortDir, setSortCol, setSortDir,
+  sortCol, sortDir, setSortCol, setSortDir, charId,
 }: {
   overview: UpgradesOverviewResponse | null
   loading: boolean
@@ -1135,6 +1137,9 @@ function OverviewView({
   sortDir: 'asc' | 'desc'
   setSortCol: React.Dispatch<React.SetStateAction<'slot' | 'best' | 'score' | null>>
   setSortDir: React.Dispatch<React.SetStateAction<'asc' | 'desc'>>
+  // Used only to detect a character switch, so row order resets to a fresh
+  // rank rather than carrying over another character's frozen order.
+  charId: number | null
 }): React.ReactElement {
 
   const handleSort = useCallback((col: 'slot' | 'best' | 'score') => {
@@ -1147,8 +1152,7 @@ function OverviewView({
     }
   }, [sortCol])
 
-  const sortedSlots = useMemo(() => {
-    const slots = overview?.slots ?? []
+  const rank = useCallback((slots: UpgradeOverviewSlot[]): UpgradeOverviewSlot[] => {
     if (!sortCol) return slots
     const dir = sortDir === 'asc' ? 1 : -1
     const indexed = slots.map((s, i) => ({ s, i }))
@@ -1175,7 +1179,46 @@ function OverviewView({
       return cmp * dir
     })
     return indexed.map((x) => x.s)
-  }, [overview, sortCol, sortDir])
+  }, [sortCol, sortDir])
+
+  // Row order is frozen against data-only refreshes (Show PoP gear, hide
+  // crafted/no-drop, weapon style, weight edits) so flipping a filter updates
+  // each row's Best upgrade/Score in place instead of reshuffling the table —
+  // only an explicit column-header click (a real re-sort request) or
+  // switching characters re-ranks from scratch.
+  const frozenOrderRef = useRef<string[] | null>(null)
+  const prevSortKeyRef = useRef<string>('')
+  const prevCharIdRef = useRef<number | null>(null)
+
+  const sortedSlots = useMemo(() => {
+    const slots = overview?.slots ?? []
+    if (slots.length === 0) return slots
+
+    const sortKey = `${sortCol ?? ''}|${sortDir}`
+    const explicitSort = sortKey !== prevSortKeyRef.current
+    const charChanged = charId !== prevCharIdRef.current
+    prevSortKeyRef.current = sortKey
+    prevCharIdRef.current = charId
+
+    if (explicitSort || charChanged || !frozenOrderRef.current) {
+      const fresh = rank(slots)
+      frozenOrderRef.current = fresh.map((s) => s.slot)
+      return fresh
+    }
+
+    const bySlot = new Map(slots.map((s) => [s.slot, s]))
+    const ordered: UpgradeOverviewSlot[] = []
+    for (const key of frozenOrderRef.current) {
+      const s = bySlot.get(key)
+      if (s) {
+        ordered.push(s)
+        bySlot.delete(key)
+      }
+    }
+    // Any slot not in the frozen order (shouldn't normally happen) goes last.
+    ordered.push(...bySlot.values())
+    return ordered
+  }, [overview, sortCol, sortDir, charId, rank])
 
   if (loading && !overview) {
     return (
