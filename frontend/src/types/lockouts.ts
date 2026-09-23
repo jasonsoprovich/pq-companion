@@ -1,6 +1,9 @@
 // Mirrors backend/internal/lockout Entry + handler responses.
 
-export type LockoutSection = 'loot' | 'legacy'
+// 'time' holds rows parsed from the '#timelockout' command (EQMacEmu PR
+// #418) — Plane of Time encounter availability, added ahead of the PoP
+// launch. Resolved the same way as 'loot' rows (both name raid-boss NPCs).
+export type LockoutSection = 'loot' | 'legacy' | 'time'
 
 // One persisted lockout row for a character. expires_at is unix seconds; 0
 // means the target was "Available" (no active lockout) at snapshot time. The

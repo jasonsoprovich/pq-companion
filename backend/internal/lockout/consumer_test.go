@@ -207,6 +207,108 @@ func TestConsumerSllSnapshotOverwritesIncurred(t *testing.T) {
 	}
 }
 
+// TestConsumerTimeBlockCommitsPerName verifies a '#timelockout' block commits
+// via per-name upsert, and that later Time syncs from OTHER phases don't
+// erase what an earlier sync already recorded.
+func TestConsumerTimeBlockCommitsPerName(t *testing.T) {
+	s := openTestStore(t)
+	c := NewConsumer(s, func() string { return "Tester" })
+	ts := time.Unix(1_700_000_000, 0)
+
+	c.HandleLine(ts, "=== Plane of Time Timeline ===")
+	c.HandleLine(ts, "Timeline: 12345")
+	c.HandleLine(ts, "Phase 1 encounter status:")
+	c.HandleLine(ts, "Terlok of Earth: Available")
+	c.HandleLine(ts, "Neimon of Air: Defeated - available again in 2 Days and 3 Hours")
+	c.HandleLine(ts, "You say, 'hello'") // ends the block
+
+	entries, err := s.ListByCharacter("Tester")
+	if err != nil {
+		t.Fatalf("ListByCharacter: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("got %d entries, want 2 (phase 1 only)", len(entries))
+	}
+	for _, e := range entries {
+		if e.Section != SectionTime {
+			t.Errorf("entry %+v should be section time", e)
+		}
+	}
+
+	// A later sync of a DIFFERENT phase must not erase phase 1's rows.
+	ts2 := ts.Add(time.Hour)
+	c.HandleLine(ts2, "=== Plane of Time Timeline ===")
+	c.HandleLine(ts2, "Phase 2 encounter status:")
+	c.HandleLine(ts2, "Windshapen Warlord of Air: Available")
+	c.HandleLine(ts2, "You say, 'hello'")
+
+	entries, err = s.ListByCharacter("Tester")
+	if err != nil {
+		t.Fatalf("ListByCharacter after phase 2 sync: %v", err)
+	}
+	names := map[string]bool{}
+	for _, e := range entries {
+		names[e.TargetName] = true
+	}
+	for _, want := range []string{"Terlok of Earth", "Neimon of Air", "Windshapen Warlord of Air"} {
+		if !names[want] {
+			t.Errorf("expected %q to survive the phase 2 sync, got %v", want, names)
+		}
+	}
+}
+
+// TestConsumerTimeAndSllIndependent verifies a '/sll' snapshot never touches
+// Time rows and vice versa — the two sections must coexist.
+func TestConsumerTimeAndSllIndependent(t *testing.T) {
+	s := openTestStore(t)
+	c := NewConsumer(s, func() string { return "Tester" })
+	ts := time.Unix(1_700_000_000, 0)
+
+	c.HandleLine(ts, "=== Plane of Time Timeline ===")
+	c.HandleLine(ts, "Terlok of Earth: Available")
+	c.HandleLine(ts, "You say, 'hello'")
+
+	c.HandleLine(ts, "=== Current Loot Lockouts ===")
+	c.HandleLine(ts, "== King Tranix: Available")
+	c.HandleLine(ts, "You say, 'hello'")
+
+	entries, err := s.ListByCharacter("Tester")
+	if err != nil {
+		t.Fatalf("ListByCharacter: %v", err)
+	}
+	var sawTime, sawLoot bool
+	for _, e := range entries {
+		if e.Section == SectionTime && e.TargetName == "Terlok of Earth" {
+			sawTime = true
+		}
+		if e.Section == SectionLoot && e.TargetName == "King Tranix" {
+			sawLoot = true
+		}
+	}
+	if !sawTime || !sawLoot {
+		t.Fatalf("expected both sections present, got %+v", entries)
+	}
+
+	// Now an /sll snapshot that DOESN'T mention Terlok must not remove it.
+	c.HandleLine(ts, "=== Current Loot Lockouts ===")
+	c.HandleLine(ts, "== Lord Nagafen: Available")
+	c.HandleLine(ts, "You say, 'hello'")
+
+	entries, err = s.ListByCharacter("Tester")
+	if err != nil {
+		t.Fatalf("ListByCharacter after second /sll: %v", err)
+	}
+	sawTime = false
+	for _, e := range entries {
+		if e.Section == SectionTime && e.TargetName == "Terlok of Earth" {
+			sawTime = true
+		}
+	}
+	if !sawTime {
+		t.Fatalf("an /sll snapshot should never remove Time rows, got %+v", entries)
+	}
+}
+
 func TestConsumerFlushesOnUnrelatedLine(t *testing.T) {
 	s := openTestStore(t)
 	c := NewConsumer(s, func() string { return "Tester" })

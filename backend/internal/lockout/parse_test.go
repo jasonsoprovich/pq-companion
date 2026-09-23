@@ -90,6 +90,90 @@ func TestParseIncurred(t *testing.T) {
 	}
 }
 
+func TestIsTimeHeader(t *testing.T) {
+	if !IsTimeHeader("=== Plane of Time Timeline ===") {
+		t.Error("expected the timeline header to match")
+	}
+	if IsTimeHeader("=== Current Loot Lockouts ===") {
+		t.Error("an /sll header should not match IsTimeHeader")
+	}
+	if IsTimeHeader("") {
+		t.Error("empty line should not match")
+	}
+}
+
+func TestParseTimeRow(t *testing.T) {
+	tests := []struct {
+		name      string
+		in        string
+		wantName  string
+		available bool
+		remaining time.Duration
+		ok        bool
+	}{
+		{"available", "Terlok of Earth: Available", "Terlok of Earth", true, 0, true},
+		{"defeated", "Kazrok of Fire: Defeated - available again in 2 Days and 3 Hours", "Kazrok of Fire", false, 2*24*time.Hour + 3*time.Hour, true},
+		{"not-yet-accessible", "Quarm: Not yet accessible", "", false, 0, false},
+		{"phase-summary-not-a-row", "Phase 3: 2 of 5 encounters available", "", false, 0, false},
+		{"chat-not-a-row", "Someone tells the guild, 'hi'", "", false, 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			row, ok := ParseTimeRow(tt.in)
+			if ok != tt.ok {
+				t.Fatalf("ParseTimeRow(%q) ok = %v, want %v", tt.in, ok, tt.ok)
+			}
+			if !ok {
+				return
+			}
+			if row.TargetName != tt.wantName {
+				t.Errorf("name = %q, want %q", row.TargetName, tt.wantName)
+			}
+			if row.Available != tt.available {
+				t.Errorf("available = %v, want %v", row.Available, tt.available)
+			}
+			if row.Remaining != tt.remaining {
+				t.Errorf("remaining = %v, want %v", row.Remaining, tt.remaining)
+			}
+		})
+	}
+}
+
+func TestIsTimeNoiseLine(t *testing.T) {
+	noise := []string{
+		"Timeline: 12345",
+		"Guild instance: 3",
+		"Guild instance: Legacy save; ownership will be recorded when restored.",
+		"Timeline retires in: 2 Days and 3 Hours",
+		"Timeline record expires in: 5 Days",
+		"Phase 3 encounter status:",
+		"Phase 3: 2 of 5 encounters available",
+		"Phase 3: Not yet accessible",
+		"Phase 3: Complete",
+		"Phase 3: Complete - first encounter returns in 1 Hour",
+		"Warning: Your character is bound to a different guild's copy of this timeline.",
+		"This timeline will retire after the active run ends. Your next entry will begin a fresh timeline.",
+		"Use #timelockout <1-6> to list a phase's encounters.",
+		"Quarm: Not yet accessible",
+	}
+	for _, line := range noise {
+		if !IsTimeNoiseLine(line) {
+			t.Errorf("IsTimeNoiseLine(%q) = false, want true", line)
+		}
+	}
+	notNoise := []string{
+		"Terlok of Earth: Available",
+		"Kazrok of Fire: Defeated - available again in 2 Days and 3 Hours",
+		"You slash a gnoll for 150 points of damage.",
+		"",
+	}
+	for _, line := range notNoise {
+		if IsTimeNoiseLine(line) {
+			t.Errorf("IsTimeNoiseLine(%q) = true, want false", line)
+		}
+	}
+}
+
 func TestParseRow(t *testing.T) {
 	tests := []struct {
 		name      string

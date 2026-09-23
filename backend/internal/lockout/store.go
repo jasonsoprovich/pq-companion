@@ -76,15 +76,25 @@ func (s *Store) migrate() error {
 	return nil
 }
 
-// Snapshot replaces the character's entire lockout set with rows. `/sll` prints
-// a full snapshot every time it runs, and the same target name can legitimately
-// appear more than once (distinct instances), so we never upsert by name — we
-// delete everything for the character and re-insert the ordered set in one
-// transaction. position preserves the original `/sll` ordering and keeps
-// duplicate names distinct. observedAt is stamped on every row.
+// Snapshot replaces the character's entire LOOT + LEGACY lockout set with
+// rows — `/sll` prints a full snapshot of both sections every time it runs
+// (even a section with nothing in it still gets its header), and the same
+// target name can legitimately appear more than once within a section
+// (distinct raid instances), so we never upsert by name here — we delete
+// everything in those two sections for the character and re-insert the
+// ordered set in one transaction. position preserves the original `/sll`
+// ordering and keeps duplicate names distinct. observedAt is stamped on every
+// row.
 //
-// An empty rows slice clears the character's lockouts (the consumer never
-// commits an empty burst, but the store handles it safely).
+// SectionTime is deliberately excluded from the delete: '#timelockout' is a
+// separate command with no opinion on loot lockouts, so an `/sll` resync must
+// never erase Time rows (and Time doesn't use this method anyway — a report
+// only covers the section(s) actually run, so it commits via the per-name
+// UpsertTimeEntries instead, which can't destroy a phase the player isn't
+// currently looking at).
+//
+// An empty rows slice clears the character's loot+legacy lockouts (the
+// consumer never commits an empty burst, but the store handles it safely).
 func (s *Store) Snapshot(character string, rows []Entry, observedAt time.Time) error {
 	if character == "" {
 		return fmt.Errorf("character required")
@@ -100,7 +110,10 @@ func (s *Store) Snapshot(character string, rows []Entry, observedAt time.Time) e
 	}
 	defer tx.Rollback() //nolint:errcheck
 
-	if _, err := tx.Exec(`DELETE FROM lockout_entries WHERE character = ?`, character); err != nil {
+	if _, err := tx.Exec(
+		`DELETE FROM lockout_entries WHERE character = ? AND section != ?`,
+		character, string(SectionTime),
+	); err != nil {
 		return fmt.Errorf("clear lockouts for %q: %w", character, err)
 	}
 	for i, r := range rows {
@@ -112,6 +125,24 @@ func (s *Store) Snapshot(character string, rows []Entry, observedAt time.Time) e
 		}
 	}
 	return tx.Commit()
+}
+
+// UpsertTimeEntries records a batch of '#timelockout' rows (see
+// SectionTime) via UpsertEntry — upsert by character+section+target_name —
+// rather than Snapshot's delete-and-reinsert-by-position. Unlike `/sll`,
+// which always reports the character's WHOLE loot-lockout state in one
+// command, '#timelockout' only reports the phase(s) the player actually ran;
+// replacing the entire Time section on every sync would erase phases synced
+// on a previous run. Time encounter names don't repeat within a character's
+// timeline, so upsert-by-name carries no risk of collapsing distinct rows
+// the way it would for `/sll`'s duplicate-named raid instances.
+func (s *Store) UpsertTimeEntries(character string, rows []Entry, observedAt time.Time) error {
+	for _, r := range rows {
+		if err := s.UpsertEntry(character, r.Section, r.TargetName, time.Unix(r.ExpiresAt, 0), observedAt); err != nil {
+			return fmt.Errorf("upsert time entry %q: %w", r.TargetName, err)
+		}
+	}
+	return nil
 }
 
 // UpsertEntry records a single target's lockout, independent of an `/sll`

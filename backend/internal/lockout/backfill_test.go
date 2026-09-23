@@ -76,6 +76,44 @@ func TestBackfillHandlerKillNotice(t *testing.T) {
 	}
 }
 
+// TestBackfillHandlerTimeBlock verifies a replayed '#timelockout' block
+// upserts per-row (via UpsertEntryIfNewer), and that a "Not yet accessible"
+// line and phase-summary/metadata noise don't split the block or get stored.
+func TestBackfillHandlerTimeBlock(t *testing.T) {
+	s := openTestStore(t)
+	h := NewBackfillHandler(s, "Tester")
+
+	ts := time.Unix(1_700_000_000, 0)
+	for _, line := range []string{
+		"=== Plane of Time Timeline ===",
+		"Timeline: 12345",
+		"Phase 1 encounter status:",
+		"Terlok of Earth: Available",
+		"Neimon of Air: Defeated - available again in 2 Days and 3 Hours",
+		"Rythor of the Undead: Not yet accessible",
+		"Use #timelockout <1-6> to list a phase's encounters.",
+	} {
+		h.HandleLine(ts, line)
+	}
+	h.Finalize()
+
+	entries, err := s.ListByCharacter("Tester")
+	if err != nil {
+		t.Fatalf("ListByCharacter: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("got %d entries, want 2 (Available + Defeated only, not-yet-accessible skipped)", len(entries))
+	}
+	if h.Inserted() != 2 {
+		t.Errorf("Inserted() = %d, want 2", h.Inserted())
+	}
+	for _, e := range entries {
+		if e.Section != SectionTime {
+			t.Errorf("entry %+v should be section time", e)
+		}
+	}
+}
+
 // TestBackfillHandlerNeverOverwritesNewerData is the whole reason backfill
 // uses UpsertEntryIfNewer instead of Store.Snapshot: replaying an old or
 // rotated log file must never clobber lockout data a live session already

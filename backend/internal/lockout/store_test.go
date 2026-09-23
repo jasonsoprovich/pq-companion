@@ -147,6 +147,106 @@ func TestUpsertEntryInsertsThenUpdates(t *testing.T) {
 	}
 }
 
+// TestUpsertTimeEntriesMergesAcrossSyncs verifies that syncing one phase's
+// entries and then another's accumulates rather than replaces — the key
+// difference from Snapshot's delete-and-reinsert model.
+func TestUpsertTimeEntriesMergesAcrossSyncs(t *testing.T) {
+	s := openTestStore(t)
+	now := time.Unix(1_700_000_000, 0)
+
+	phase1 := []Entry{
+		{Section: SectionTime, TargetName: "Terlok of Earth", ExpiresAt: 0},
+		{Section: SectionTime, TargetName: "Neimon of Air", ExpiresAt: now.Add(2 * 24 * time.Hour).Unix()},
+	}
+	if err := s.UpsertTimeEntries("Osui", phase1, now); err != nil {
+		t.Fatalf("UpsertTimeEntries (phase1): %v", err)
+	}
+
+	later := now.Add(time.Hour)
+	phase2 := []Entry{
+		{Section: SectionTime, TargetName: "Windshapen Warlord of Air", ExpiresAt: 0},
+	}
+	if err := s.UpsertTimeEntries("Osui", phase2, later); err != nil {
+		t.Fatalf("UpsertTimeEntries (phase2): %v", err)
+	}
+
+	got, err := s.ListByCharacter("Osui")
+	if err != nil {
+		t.Fatalf("ListByCharacter: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("got %d entries, want 3 (both phases present)", len(got))
+	}
+	names := map[string]int64{}
+	for _, e := range got {
+		if e.Section != SectionTime {
+			t.Errorf("entry %+v should be section time", e)
+		}
+		names[e.TargetName] = e.ExpiresAt
+	}
+	if exp, ok := names["Neimon of Air"]; !ok || exp != now.Add(2*24*time.Hour).Unix() {
+		t.Errorf("Neimon of Air = %v, want the phase1 expiry preserved", exp)
+	}
+	if _, ok := names["Windshapen Warlord of Air"]; !ok {
+		t.Error("Windshapen Warlord of Air missing after phase2 sync")
+	}
+
+	// Re-syncing phase 1 with Terlok now defeated should update in place, not
+	// duplicate.
+	phase1Again := []Entry{
+		{Section: SectionTime, TargetName: "Terlok of Earth", ExpiresAt: later.Add(3 * time.Hour).Unix()},
+	}
+	if err := s.UpsertTimeEntries("Osui", phase1Again, later); err != nil {
+		t.Fatalf("UpsertTimeEntries (phase1 re-sync): %v", err)
+	}
+	got, err = s.ListByCharacter("Osui")
+	if err != nil {
+		t.Fatalf("ListByCharacter after re-sync: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("got %d entries after re-sync, want 3 (updated in place, not duplicated)", len(got))
+	}
+}
+
+// TestSnapshotNeverTouchesTimeSection verifies Snapshot (the `/sll` path)
+// excludes SectionTime from its delete, so a loot resync can't erase Time
+// rows UpsertTimeEntries wrote.
+func TestSnapshotNeverTouchesTimeSection(t *testing.T) {
+	s := openTestStore(t)
+	now := time.Unix(1_700_000_000, 0)
+
+	if err := s.UpsertTimeEntries("Osui", []Entry{
+		{Section: SectionTime, TargetName: "Terlok of Earth", ExpiresAt: 0},
+	}, now); err != nil {
+		t.Fatalf("UpsertTimeEntries: %v", err)
+	}
+	if err := s.Snapshot("Osui", []Entry{
+		{Section: SectionLoot, TargetName: "King Tranix", ExpiresAt: 0},
+	}, now); err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+
+	got, err := s.ListByCharacter("Osui")
+	if err != nil {
+		t.Fatalf("ListByCharacter: %v", err)
+	}
+	var sawTime, sawLoot bool
+	for _, e := range got {
+		if e.Section == SectionTime && e.TargetName == "Terlok of Earth" {
+			sawTime = true
+		}
+		if e.Section == SectionLoot && e.TargetName == "King Tranix" {
+			sawLoot = true
+		}
+	}
+	if !sawTime {
+		t.Error("Snapshot (an /sll resync) should not remove Time rows")
+	}
+	if !sawLoot {
+		t.Error("Snapshot should still write its own loot row")
+	}
+}
+
 func TestCharactersAndDelete(t *testing.T) {
 	s := openTestStore(t)
 	now := time.Unix(1_700_000_000, 0)

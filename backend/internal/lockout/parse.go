@@ -43,6 +43,11 @@ type Section string
 const (
 	SectionLoot   Section = "loot"
 	SectionLegacy Section = "legacy"
+	// SectionTime holds rows from the '#timelockout' command (EQMacEmu PR
+	// #418), added ahead of the PoP launch to make Plane of Time encounter
+	// availability visible without a scripted controller lookup. See
+	// IsTimeHeader/ParseTimeRow below.
+	SectionTime Section = "time"
 )
 
 var (
@@ -70,7 +75,90 @@ var (
 	// (typically on a raid boss kill), independent of `/sll`:
 	// "You have incurred a lockout for <Name> that expires in <duration>."
 	reIncurred = regexp.MustCompile(`^You have incurred a lockout for (.+?) that expires in (.+?)\.?$`)
+
+	// Per-encounter '#timelockout' lines (zone/gm_commands/timelockout.cpp).
+	// Distinct format from `/sll`'s "== Name: ..." rows — no "==" prefix, and
+	// "Defeated - available again in X" instead of "Expires in X" — so these
+	// get their own regexes rather than folding into reRow. reTimeAvailable's
+	// "<Name>: Available" shape technically also matches an `/sll` row with
+	// its "== " prefix folded into the captured name; this is harmless in
+	// practice because Consumer.HandleLine/BackfillHandler always try ParseRow
+	// (the `/sll` parser) first, so a real "== Name: Available" line is
+	// already claimed before ParseTimeRow ever sees it.
+	reTimeAvailable = regexp.MustCompile(`^(.+?): Available$`)
+	reTimeDefeated  = regexp.MustCompile(`^(.+?): Defeated - available again in (.+)$`)
+	reTimeNotYet    = regexp.MustCompile(`^(.+?): Not yet accessible$`)
 )
+
+// timeHeaderLine is the '#timelockout' report's header — a different shape
+// from the `/sll` "=== Current X Lockouts ===" headers IsHeader recognizes
+// (no "Current", no trailing section name), so it gets its own literal check.
+const timeHeaderLine = "=== Plane of Time Timeline ==="
+
+// IsTimeHeader reports whether msg is the '#timelockout' report's header line.
+func IsTimeHeader(msg string) bool { return msg == timeHeaderLine }
+
+// timeNoiseLines and timeNoisePrefixes are the '#timelockout' lines that
+// carry no single-target lockout to store — timeline metadata (guild/
+// retirement info), the phase-summary lines from a bare '#timelockout' with
+// no phase argument, and the trailing usage hint. Recognized purely so a live
+// consumer's block boundary doesn't split mid-report; see IsTimeNoiseLine.
+var (
+	timeNoiseLines = map[string]bool{
+		"Warning: Your character is bound to a different guild's copy of this timeline.":                    true,
+		"This timeline will retire after the active run ends. Your next entry will begin a fresh timeline.": true,
+		"Use #timelockout <1-6> to list a phase's encounters.":                                              true,
+	}
+	timeNoisePrefixes = []string{
+		"Timeline: ",                   // "Timeline: 12345"
+		"Guild instance: ",             // "Guild instance: 3" or "...: Legacy save; ..."
+		"Timeline retires in: ",        // dynamic duration
+		"Timeline record expires in: ", // dynamic duration
+		"Phase ",                       // "Phase 3 encounter status:", "Phase 3: ..." summaries
+	}
+)
+
+// IsTimeNoiseLine reports whether msg is a recognized '#timelockout' line
+// that carries no per-target lockout (see timeNoiseLines/timeNoisePrefixes
+// above), including a "Not yet accessible" encounter — a phase-gated boss has
+// no lockout state to report, so it's recognized but not stored as a row.
+func IsTimeNoiseLine(msg string) bool {
+	if timeNoiseLines[msg] {
+		return true
+	}
+	for _, p := range timeNoisePrefixes {
+		if strings.HasPrefix(msg, p) {
+			return true
+		}
+	}
+	return reTimeNotYet.MatchString(msg)
+}
+
+// ParseTimeRow parses one '#timelockout' per-encounter line: "<Name>:
+// Available" or "<Name>: Defeated - available again in <duration>". Returns
+// ok=false for a "Not yet accessible" line (see IsTimeNoiseLine) or any
+// non-matching line.
+func ParseTimeRow(msg string) (Row, bool) {
+	if m := reTimeAvailable.FindStringSubmatch(msg); m != nil {
+		name := strings.TrimSpace(m[1])
+		if name == "" {
+			return Row{}, false
+		}
+		return Row{TargetName: name, Available: true}, true
+	}
+	if m := reTimeDefeated.FindStringSubmatch(msg); m != nil {
+		name := strings.TrimSpace(m[1])
+		if name == "" {
+			return Row{}, false
+		}
+		d, ok := parseDuration(m[2])
+		if !ok {
+			return Row{}, false
+		}
+		return Row{TargetName: name, Remaining: d}, true
+	}
+	return Row{}, false
+}
 
 // IsHeader reports whether msg is an `/sll` section header and, if so, returns
 // the normalised section it begins.

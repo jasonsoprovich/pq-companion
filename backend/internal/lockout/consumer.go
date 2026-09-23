@@ -79,6 +79,18 @@ func (c *Consumer) HandleLine(ts time.Time, msg string) {
 		c.handleRow(row, ts)
 		return
 	}
+	if IsTimeHeader(msg) {
+		c.handleHeader(SectionTime, ts)
+		return
+	}
+	if row, ok := ParseTimeRow(msg); ok {
+		c.handleRow(row, ts)
+		return
+	}
+	if IsTimeNoiseLine(msg) {
+		c.handleNoise(ts)
+		return
+	}
 	// Any other line ends the block. Cheap no-op when nothing is buffered.
 	c.flush()
 }
@@ -98,6 +110,20 @@ func (c *Consumer) handleHeader(section Section, ts time.Time) {
 	c.section = section
 	c.lastMatchAt = ts
 	c.arm()
+	c.mu.Unlock()
+}
+
+// handleNoise keeps an in-progress block alive across a recognized
+// '#timelockout' line that carries no row of its own (phase summaries,
+// timeline metadata) — the same arm-without-append handleHeader does, but
+// only while already inside a block; outside one there's nothing to keep
+// alive, so it's ignored.
+func (c *Consumer) handleNoise(ts time.Time) {
+	c.mu.Lock()
+	if c.inBlock {
+		c.lastMatchAt = ts
+		c.arm()
+	}
 	c.mu.Unlock()
 }
 
@@ -196,7 +222,22 @@ func (c *Consumer) flush() {
 		slog.Debug("lockout: skipped snapshot — no active character", "rows", len(rows))
 		return
 	}
-	if err := c.store.Snapshot(character, rows, observedAt); err != nil {
+
+	// Time rows go through a per-name upsert, not `/sll`'s position-based
+	// Snapshot: `/sll` always reports the WHOLE loot-lockout state in one
+	// command, so replacing everything on every sync is correct there.
+	// '#timelockout' only reports the phase(s) the player actually ran, so a
+	// full-section replace would erase previously-synced phases every time a
+	// different one is checked. Every row in one block shares the same
+	// section (the two commands are never interleaved), so checking the
+	// first row is sufficient.
+	var err error
+	if rows[0].Section == SectionTime {
+		err = c.store.UpsertTimeEntries(character, rows, observedAt)
+	} else {
+		err = c.store.Snapshot(character, rows, observedAt)
+	}
+	if err != nil {
 		slog.Warn("lockout: snapshot failed", "character", character, "rows", len(rows), "err", err)
 		return
 	}

@@ -72,9 +72,11 @@ function formatAgo(unixSec: number, nowMs: number): string {
 const SECTION_LABEL: Record<LockoutSection, string> = {
   loot: 'Loot Lockouts',
   legacy: 'Legacy Item Lockouts',
+  time: 'Plane of Time',
 }
-// Render order — loot first, then legacy (matches /sll output order).
-const SECTION_ORDER: LockoutSection[] = ['loot', 'legacy']
+// Render order — loot then legacy (matches /sll output order), Time last
+// since it's synced from an entirely separate command (#timelockout).
+const SECTION_ORDER: LockoutSection[] = ['loot', 'legacy', 'time']
 
 // ── Row ─────────────────────────────────────────────────────────────────────
 
@@ -209,9 +211,9 @@ export default function LockoutTrackerPage(): React.ReactElement {
 
   // Group rows by section, keeping snapshot (position) order within each.
   const grouped = useMemo<Record<LockoutSection, LockoutEntry[]>>(() => {
-    const g: Record<LockoutSection, LockoutEntry[]> = { loot: [], legacy: [] }
+    const g: Record<LockoutSection, LockoutEntry[]> = { loot: [], legacy: [], time: [] }
     for (const e of entries) {
-      if (e.section === 'loot' || e.section === 'legacy') g[e.section].push(e)
+      if (e.section === 'loot' || e.section === 'legacy' || e.section === 'time') g[e.section].push(e)
     }
     return g
   }, [entries])
@@ -316,7 +318,8 @@ export default function LockoutTrackerPage(): React.ReactElement {
             No lockouts recorded for this character. Lockouts capture
             automatically as lockout bosses die, or type{' '}
             <span className="font-mono">/sll</span> in-game for a full
-            snapshot. To pull past lockouts from this character's existing
+            snapshot (Plane of Time: <span className="font-mono">#timelockout</span>). To
+            pull past lockouts from this character's existing
             log, use the <span className="font-medium">Backfill</span> button
             above (Settings → Logs).
           </p>

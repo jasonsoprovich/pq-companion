@@ -29,6 +29,13 @@ type BackfillHandler struct {
 	section    Section
 	buffer     []Entry
 	observedAt time.Time
+
+	// inTimeBlock tracks a '#timelockout' block separately from the /sll
+	// inBlock/buffer/section state above — Time rows commit one at a time via
+	// UpsertEntryIfNewer (see HandleLine), not as a buffered block, since a
+	// block-level staleness check (MaxObservedAt) would compare a Time sync
+	// against the character's LOOT lockout freshness, an unrelated section.
+	inTimeBlock bool
 }
 
 // NewBackfillHandler returns a handler that attributes lockouts to character.
@@ -57,6 +64,7 @@ func (h *BackfillHandler) HandleLine(ts time.Time, msg string) {
 		// A second header (Loot → Legacy) within the same block continues the
 		// same buffer under the new section — it does not commit what's been
 		// buffered so far. See Consumer.handleHeader.
+		h.inTimeBlock = false
 		h.inBlock = true
 		h.section = section
 		h.observedAt = ts
@@ -73,6 +81,29 @@ func (h *BackfillHandler) HandleLine(ts time.Time, msg string) {
 		}
 		return
 	}
+	if IsTimeHeader(msg) {
+		// End any open /sll block first, then switch to per-row Time upserts.
+		h.commitBlock()
+		h.inTimeBlock = true
+		return
+	}
+	if row, ok := ParseTimeRow(msg); ok {
+		if h.inTimeBlock {
+			expiresAt := time.Unix(0, 0)
+			if !row.Available {
+				expiresAt = ts.Add(row.Remaining)
+			}
+			wrote, err := h.store.UpsertEntryIfNewer(h.character, SectionTime, row.TargetName, expiresAt, ts)
+			if err == nil && wrote {
+				h.inserted++
+			}
+		}
+		return
+	}
+	if IsTimeNoiseLine(msg) && h.inTimeBlock {
+		return
+	}
+	h.inTimeBlock = false
 	h.commitBlock()
 }
 
