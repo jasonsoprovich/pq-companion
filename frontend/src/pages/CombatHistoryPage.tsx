@@ -60,10 +60,15 @@ function dpsModeTooltip(mode: DPSMode): string {
   return `${meaning[mode]} Click to cycle (Personal → Raid → Encounter).`
 }
 
-// Page-level pagination size — matches the backend default; chosen so a
-// raid night (~50–200 fights) fits in 1–2 pages without scrolling becoming
-// the only way to navigate.
+// Page-level pagination size for the row-by-row list view.
 const PAGE_SIZE = 50
+
+// Combined View pools every fight matching the current filters into one
+// breakdown, so it isn't bound to PAGE_SIZE — a full raid night needs to
+// land in one aggregate, not the first 50 fights. Matches ListFights'
+// backend cap (store.go) rather than raising it further, since that's the
+// largest single response the API will return.
+const COMBINED_VIEW_LIMIT = 1000
 
 // Session-grouping toggle, persisted across reloads. Default ON since
 // dividers are usually helpful, but users who want a flat scroll can
@@ -1051,19 +1056,22 @@ type ConfirmAction =
 
 // ── page ──────────────────────────────────────────────────────────────────────
 
-// CombinedView pools the loaded page of saved fights into one breakdown so a
-// user can review group performance across a span of mobs instead of opening
-// each fight. Scope follows the current filters + the loaded page (PAGE_SIZE),
-// so narrowing by NPC/zone/character/date answers "how did the group do across
-// these fights". Reuses CombatantTable/HealerTable for identical rendering.
+// CombinedView pools every fight matching the current filters (not just one
+// page — see COMBINED_VIEW_LIMIT) into one breakdown so a user can review
+// group performance across a span of mobs instead of opening each fight.
+// Narrowing by NPC/zone/character/date answers "how did the group do across
+// these fights", e.g. a full raid night. Reuses CombatantTable/HealerTable
+// for identical rendering.
 function CombinedView({
   fights,
   combine,
   mode,
+  total,
 }: {
   fights: StoredFight[]
   combine: boolean
   mode: DPSMode
+  total: number
 }): React.ReactElement {
   const agg: FightState | null = useMemo(
     () => aggregateRecentFights(fights, fights.length),
@@ -1104,8 +1112,13 @@ function CombinedView({
           <Sigma size={13} /> All Fights
         </span>
         <span style={{ color: 'var(--color-muted)' }}>
-          {fights.length} fight{fights.length !== 1 ? 's' : ''} on this page
+          {fights.length} fight{fights.length !== 1 ? 's' : ''} combined
         </span>
+        {total > COMBINED_VIEW_LIMIT && (
+          <span style={{ color: '#f97316' }}>
+            showing most recent {COMBINED_VIEW_LIMIT} of {total} matching fights
+          </span>
+        )}
         <span style={{ color: 'var(--color-muted)' }}>·</span>
         <span style={{ color: 'var(--color-muted)' }}>{fmtDuration(agg.duration_seconds)} total</span>
         <span style={{ color: 'var(--color-muted)' }}>·</span>
@@ -1181,8 +1194,10 @@ export default function CombatHistoryPage(): React.ReactElement {
       zone: appliedFilter.zone || undefined,
       start: range.start,
       end: range.end,
-      limit: PAGE_SIZE,
-      offset,
+      // Combined View aggregates every matching fight, so it fetches in one
+      // shot at the backend's cap instead of paging through PAGE_SIZE chunks.
+      limit: combinedView ? COMBINED_VIEW_LIMIT : PAGE_SIZE,
+      offset: combinedView ? 0 : offset,
     })
       .then((res) => {
         if (seq !== seqRef.current) return
@@ -1191,7 +1206,7 @@ export default function CombatHistoryPage(): React.ReactElement {
       })
       .catch((e) => { if (seq === seqRef.current) setError(e.message ?? String(e)) })
       .finally(() => { if (seq === seqRef.current) setLoading(false) })
-  }, [appliedFilter, offset])
+  }, [appliedFilter, offset, combinedView])
 
   useEffect(() => {
     fetchPage()
@@ -1371,7 +1386,7 @@ export default function CombatHistoryPage(): React.ReactElement {
             {empty}
           </div>
         ) : combinedView ? (
-          <CombinedView fights={fights} combine={combine} mode={dpsMode} />
+          <CombinedView fights={fights} combine={combine} mode={dpsMode} total={total} />
         ) : (
           groupByEventSession(
             fights,
@@ -1406,7 +1421,7 @@ export default function CombatHistoryPage(): React.ReactElement {
         )}
       </div>
 
-      {total > 0 && (
+      {total > 0 && !combinedView && (
         <Pagination total={total} offset={offset} pageSize={PAGE_SIZE} onPage={setOffset} />
       )}
 
