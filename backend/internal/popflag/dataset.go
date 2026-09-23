@@ -57,7 +57,15 @@ type PoPFlag struct {
 	Label     string   `json:"label"`           // short checklist label
 	Detail    string   `json:"detail"`          // step instructions
 	Prereqs   []string `json:"prereqs"`         // AND-list of flag IDs that gate this one
-	Level     int      `json:"level,omitempty"` // level at which the chain can be skipped to (display)
+
+	// Level is the zone's minimum entry level (display only), set on the first
+	// node(s) for a zone. Quarm's old level-bypass-the-flag system (55/62/game
+	// max) was removed server-side (quests PR #137, 2026-09) — every PoP zone
+	// now requires the actual progression flag regardless of character level.
+	// EQMacEmu PR #386 sets quarm.db's zone.min_level to 46 for every PoP
+	// gameplay zone; the Plane of Time portal additionally checks GetLevel()>=65
+	// in Lua on top of its zone flag.
+	Level int `json:"level,omitempty"`
 
 	// Optional marks a row that is NOT required for THIS character's personal
 	// flagging: one-per-raid door keys, keyring zone-ins, and purely optional

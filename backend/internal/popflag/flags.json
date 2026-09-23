@@ -98,11 +98,13 @@
     "zone": "Plane of Justice",
     "zone_short": "PoJ",
     "label": "Mark of Justice (optional)",
-    "detail": "Optional: after looting all six Trial Marks, say 'knowledge' to one of the Tribunal to receive the Mark of Justice.",
+    "detail": "Optional: after looting all six Trial Marks, say 'knowledge' to one of the Tribunal to receive the Mark of Justice. Also unlocks access to The Seventh Hammer.",
     "prereqs": ["poj_preflag"],
     "step_kind": "hail",
     "optional": true,
-    "role": "optional"
+    "role": "optional",
+    "qglobal": "seventh",
+    "qglobal_value": "1"
   },
   {
     "id": "poj_seventh_hammer",
@@ -240,7 +242,7 @@
     "zone": "Plane of Innovation",
     "zone_short": "PoI",
     "label": "Defeat Xanamech (Factory door — optional)",
-    "detail": "Optional: defeat Xanamech Nezmirthafen for access to the Factory (can be 85/15'd past).",
+    "detail": "Optional: defeat Xanamech Nezmirthafen for access to the Factory door.",
     "prereqs": [],
     "level": 46,
     "step_kind": "kill",
@@ -292,8 +294,8 @@
     "tier": 2,
     "zone": "Plane of Storms",
     "zone_short": "PoSt",
-    "label": "Bastion of Thunder flag",
-    "detail": "Say 'Bastion of Thunder' to Askr for a fresh bag, combine any two Esoteric Medallions in it, and turn it in for the Talisman of Thunderous Foyer. Flags for the Bastion of Thunder.",
+    "label": "Talisman of Thunderous Foyer",
+    "detail": "Say 'Bastion of Thunder' to Askr for a fresh bag, combine any two Esoteric Medallions in it, and turn it in for the Talisman of Thunderous Foyer.",
     "prereqs": ["post_bot_preflag"],
     "step_kind": "loot",
     "qglobal": "karana",
@@ -302,16 +304,18 @@
     "satisfied_by": [{ "qglobal": "zebuxoruk", "value": "1" }]
   },
   {
-    "id": "post_bot_keyring",
+    "id": "post_bot_shrine",
     "tier": 2,
     "zone": "Plane of Storms",
     "zone_short": "PoSt",
-    "label": "Click the central stone (Bastion key-ring)",
-    "detail": "Find the stone (like an unlit forge) at the center of the Plane of Storms and click it to zone into the Bastion of Thunder. Key-rings your personal access.",
+    "label": "Click the Storms shrine (Bastion flag)",
+    "detail": "With the Talisman of Thunderous Foyer in hand and Mavuin's case complete, click the shrine (an unlit forge) at the center of the Plane of Storms. This flags you personally and zones you into the Bastion of Thunder.",
     "prereqs": ["post_bot_flag"],
     "step_kind": "zone",
-    "optional": true,
-    "role": "keyring"
+    "qglobal": "karana",
+    "qglobal_value": "3",
+    "counter": true,
+    "satisfied_by": [{ "qglobal": "zebuxoruk", "value": "1" }]
   },
   {
     "id": "pov_globe_key",
@@ -333,7 +337,7 @@
     "label": "Defeat Aerin`Dar (HoH access)",
     "detail": "Enter Aerin`Dar's lair and defeat the prismatic dragon, then hail the Astral Projection. Flags for Halls of Honor.",
     "prereqs": ["poj_mavuin_return"],
-    "level": 55,
+    "level": 46,
     "step_kind": "timed_hail",
     "qglobal": "aerindar",
     "qglobal_value": "2",
@@ -357,11 +361,13 @@
     "tier": 2,
     "zone": "Crypt of Decay",
     "zone_short": "CoD",
-    "label": "Carpryn cycle",
-    "detail": "Fight through Carpin, Ahvi, Bishop, Vindor, Raex, and High Priest Ultor Szanvon within Ruins of Lxanvom.",
+    "label": "Carpryn cycle (Lower Crypt access)",
+    "detail": "Fight through Carpin, Ahvi, Bishop, Vindor, Raex, and High Priest Ultor Szanvon within Ruins of Lxanvom, then hail Tarkil Adan for the Lower Crypt access flag.",
     "prereqs": ["pod_postflag"],
-    "level": 55,
-    "step_kind": "kill"
+    "level": 46,
+    "step_kind": "kill",
+    "qglobal": "bertox_key",
+    "qglobal_value": "1"
   },
   {
     "id": "cod_bertox",
@@ -391,6 +397,69 @@
     "counter": true
   },
   {
+    "id": "potor_preflag",
+    "tier": 2,
+    "zone": "Plane of Torment",
+    "zone_short": "PoTor",
+    "label": "Preflag with Fahlia Shadyglade",
+    "detail": "Hail Fahlia Shadyglade in the sick bay, follow her text, and say 'I will go.'",
+    "prereqs": ["cod_postflag", "ponb_postflag"],
+    "step_kind": "hail",
+    "qglobal": "tylis",
+    "qglobal_value": "1",
+    "counter": true
+  },
+  {
+    "id": "potor_sphere_key",
+    "tier": 2,
+    "zone": "Plane of Torment",
+    "zone_short": "PoTor",
+    "label": "Screaming Sphere Key (door key)",
+    "detail": "Optional: quest a Screaming Sphere Key to open the door to Saryrn's Tower. Only one person per raid needs it.",
+    "prereqs": ["potor_preflag"],
+    "step_kind": "loot",
+    "optional": true,
+    "role": "key"
+  },
+  {
+    "id": "potor_keeper",
+    "tier": 2,
+    "zone": "Plane of Torment",
+    "zone_short": "PoTor",
+    "label": "Defeat the Keeper of Sorrows",
+    "detail": "Talk to Tylis Newleaf to teleport the raid to the Keeper of Sorrows, then defeat it. Hail Tylis afterward.",
+    "prereqs": ["potor_preflag"],
+    "step_kind": "timed_hail",
+    "qglobal": "tylis",
+    "qglobal_value": "2",
+    "counter": true,
+    "events": [{ "kind": "kill", "match": "the Keeper of Sorrows" }]
+  },
+  {
+    "id": "potor_saryrn",
+    "tier": 2,
+    "zone": "Plane of Torment",
+    "zone_short": "PoTor",
+    "label": "Defeat Saryrn",
+    "detail": "Go to the 5th floor, defeat Saryrn, and hail the Planar Projection.",
+    "prereqs": ["potor_preflag"],
+    "step_kind": "timed_hail",
+    "qglobal": "saryrn",
+    "qglobal_value": "1",
+    "satisfied_by": [{ "qglobal": "cipher", "value": "1" }],
+    "events": [{ "kind": "kill", "match": "Saryrn" }]
+  },
+  {
+    "id": "potor_postflag",
+    "tier": 2,
+    "zone": "Plane of Torment",
+    "zone_short": "PoTor",
+    "label": "Hail Fahlia (Saryrn flag)",
+    "detail": "Return to the sick bay and hail Tylis and Fahlia after defeating the Keeper of Sorrows and Saryrn.",
+    "prereqs": ["potor_saryrn", "potor_keeper"],
+    "step_kind": "hail"
+  },
+  {
     "id": "hoh_trial_rydda",
     "tier": 3,
     "zone": "Halls of Honor",
@@ -398,7 +467,7 @@
     "label": "Trial: Rydda`Dar",
     "detail": "Complete Trydan Faye's trial by defeating Rydda`Dar (first of Honor's Trials).",
     "prereqs": ["pov_aerindar", "poj_mavuin_return"],
-    "level": 62,
+    "level": 46,
     "step_kind": "kill",
     "qglobal": "hohtrials",
     "bit_position": 1
@@ -411,7 +480,7 @@
     "label": "Trial: Villagers",
     "detail": "Complete Rhaliq Trell's trial by saving the villagers (second of Honor's Trials).",
     "prereqs": ["pov_aerindar", "poj_mavuin_return"],
-    "level": 62,
+    "level": 46,
     "step_kind": "kill",
     "qglobal": "hohtrials",
     "bit_position": 2
@@ -421,10 +490,10 @@
     "tier": 3,
     "zone": "Halls of Honor",
     "zone_short": "HoH",
-    "label": "Trial: Maidens",
-    "detail": "Complete Alekson Garn's trial by protecting the maidens (third of Honor's Trials).",
+    "label": "Trial: Nomads",
+    "detail": "Complete Alekson Garn's trial by defeating the nomads (third of Honor's Trials).",
     "prereqs": ["pov_aerindar", "poj_mavuin_return"],
-    "level": 62,
+    "level": 46,
     "step_kind": "kill",
     "qglobal": "hohtrials",
     "bit_position": 3
@@ -442,69 +511,6 @@
     "qglobal_value": "1",
     "satisfied_by": [{ "qglobal": "cipher", "value": "1" }],
     "events": [{ "kind": "kill", "match": "Lord Mithaniel Marr" }]
-  },
-  {
-    "id": "potor_preflag",
-    "tier": 3,
-    "zone": "Plane of Torment",
-    "zone_short": "PoTor",
-    "label": "Preflag with Fahlia Shadyglade",
-    "detail": "Hail Fahlia Shadyglade in the sick bay, follow her text, and say 'I will go.'",
-    "prereqs": ["cod_postflag", "ponb_postflag"],
-    "step_kind": "hail",
-    "qglobal": "tylis",
-    "qglobal_value": "1",
-    "counter": true
-  },
-  {
-    "id": "potor_sphere_key",
-    "tier": 3,
-    "zone": "Plane of Torment",
-    "zone_short": "PoTor",
-    "label": "Screaming Sphere Key (door key)",
-    "detail": "Optional: quest a Screaming Sphere Key to open the door to Saryrn's Tower. Only one person per raid needs it.",
-    "prereqs": ["potor_preflag"],
-    "step_kind": "loot",
-    "optional": true,
-    "role": "key"
-  },
-  {
-    "id": "potor_keeper",
-    "tier": 3,
-    "zone": "Plane of Torment",
-    "zone_short": "PoTor",
-    "label": "Defeat the Keeper of Sorrows",
-    "detail": "Talk to Tylis Newleaf to teleport the raid to the Keeper of Sorrows, then defeat it. Hail Tylis afterward.",
-    "prereqs": ["potor_preflag"],
-    "step_kind": "timed_hail",
-    "qglobal": "tylis",
-    "qglobal_value": "2",
-    "counter": true,
-    "events": [{ "kind": "kill", "match": "the Keeper of Sorrows" }]
-  },
-  {
-    "id": "potor_saryrn",
-    "tier": 3,
-    "zone": "Plane of Torment",
-    "zone_short": "PoTor",
-    "label": "Defeat Saryrn",
-    "detail": "Go to the 5th floor, defeat Saryrn, and hail the Planar Projection.",
-    "prereqs": ["potor_preflag"],
-    "step_kind": "timed_hail",
-    "qglobal": "saryrn",
-    "qglobal_value": "1",
-    "satisfied_by": [{ "qglobal": "cipher", "value": "1" }],
-    "events": [{ "kind": "kill", "match": "Saryrn" }]
-  },
-  {
-    "id": "potor_postflag",
-    "tier": 3,
-    "zone": "Plane of Torment",
-    "zone_short": "PoTor",
-    "label": "Hail Fahlia (Saryrn flag)",
-    "detail": "Return to the sick bay and hail Tylis and Fahlia after defeating the Keeper of Sorrows and Saryrn.",
-    "prereqs": ["potor_saryrn", "potor_keeper"],
-    "step_kind": "hail"
   },
   {
     "id": "potac_vallon",
@@ -553,7 +559,7 @@
     "zone_short": "BoT",
     "label": "Symbol of Torden (Agnarr key)",
     "detail": "Combine the Blizzard, Lightning, Sandstorm, and Tornado Spheres (one drops from each tower boss) in an Unadorned Symbol of Torden to unlock the portal to Agnarr. Only one person per raid needs it.",
-    "prereqs": ["post_bot_flag"],
+    "prereqs": ["post_bot_shrine"],
     "step_kind": "loot",
     "optional": true,
     "role": "key"
@@ -565,8 +571,8 @@
     "zone_short": "BoT",
     "label": "Defeat Agnarr the Storm Lord",
     "detail": "Defeat Agnarr the Storm Lord, then go upstairs to Karana, hail him, and say 'I will follow the path of the Fallen.'",
-    "prereqs": ["post_bot_flag"],
-    "level": 62,
+    "prereqs": ["post_bot_shrine"],
+    "level": 46,
     "step_kind": "timed_hail",
     "events": [{ "kind": "kill", "match": "Agnarr the Storm Lord" }]
   },
@@ -598,17 +604,17 @@
   },
   {
     "id": "solro_miak",
-    "tier": 4,
+    "tier": 3,
     "zone": "Tower of Solusek Ro",
     "zone_short": "SolRo",
     "label": "Miak: 'portal's destination' (Tower access)",
-    "detail": "Say 'portal's destination' to Miak the Searedsoul in the Plane of Tranquility (near the Plane of Fire) to flag for and reach the Tower of Solusek Ro.",
-    "prereqs": ["pok_librarian"],
+    "detail": "Say 'portal's destination' to Miak the Searedsoul in the Plane of Tranquility (near the Plane of Fire) to flag for and reach the Tower of Solusek Ro. Requires the Cipher (from Mithaniel Marr + Saryrn) and Rallos Zek defeated.",
+    "prereqs": ["pok_librarian", "potac_rallos"],
     "step_kind": "hail"
   },
   {
     "id": "solro_xuzl",
-    "tier": 4,
+    "tier": 3,
     "zone": "Tower of Solusek Ro",
     "zone_short": "SolRo",
     "label": "Mini: Xuzl",
@@ -621,7 +627,7 @@
   },
   {
     "id": "solro_arlyxir",
-    "tier": 4,
+    "tier": 3,
     "zone": "Tower of Solusek Ro",
     "zone_short": "SolRo",
     "label": "Mini: Arlyxir",
@@ -634,7 +640,7 @@
   },
   {
     "id": "solro_dresolik",
-    "tier": 4,
+    "tier": 3,
     "zone": "Tower of Solusek Ro",
     "zone_short": "SolRo",
     "label": "Mini: Protector of Dresolik",
@@ -647,7 +653,7 @@
   },
   {
     "id": "solro_rizlona",
-    "tier": 4,
+    "tier": 3,
     "zone": "Tower of Solusek Ro",
     "zone_short": "SolRo",
     "label": "Mini: Rizlona",
@@ -660,7 +666,7 @@
   },
   {
     "id": "solro_jiva",
-    "tier": 4,
+    "tier": 3,
     "zone": "Tower of Solusek Ro",
     "zone_short": "SolRo",
     "label": "Mini: Jiva",
@@ -673,7 +679,7 @@
   },
   {
     "id": "solro_solusek",
-    "tier": 4,
+    "tier": 3,
     "zone": "Tower of Solusek Ro",
     "zone_short": "SolRo",
     "label": "Defeat Solusek Ro (Plane of Fire flag)",
@@ -687,7 +693,7 @@
   },
   {
     "id": "solro_pofire_keyring",
-    "tier": 4,
+    "tier": 3,
     "zone": "Tower of Solusek Ro",
     "zone_short": "SolRo",
     "label": "Jump into the floor door (Plane of Fire key-ring)",
@@ -704,7 +710,7 @@
     "zone_short": "PoAir",
     "label": "Wind Etched Key (port key)",
     "detail": "Say 'Plane of Air' to Sarhya the Dawnbreeze for a Pouch of Swirling Winds, then combine the four Mystical Essences (Wind, Smoke, Mist, Dust) in it for a Wind Etched Key. One person per group needs it to port the group up to Xegony.",
-    "prereqs": ["pok_librarian"],
+    "prereqs": ["pok_maelin_information"],
     "step_kind": "loot",
     "optional": true,
     "role": "key"
@@ -716,7 +722,7 @@
     "zone_short": "PoAir",
     "label": "Defeat Xegony, Queen of Air",
     "detail": "Defeat the Avatars of Wind for access, then defeat Xegony for the Amorphous Cloud of Air.",
-    "prereqs": ["pok_librarian"],
+    "prereqs": ["pok_maelin_information"],
     "step_kind": "kill",
     "events": [{ "kind": "kill", "match": "Xegony" }]
   },
@@ -727,7 +733,7 @@
     "zone_short": "PoEarth",
     "label": "Gem-Etched Key (door key)",
     "detail": "Kill Tantisala Jaggedtooth and loot the Gem-Etched Key. One person per raid needs it to open the door to the south canyon.",
-    "prereqs": ["pok_librarian"],
+    "prereqs": ["pok_maelin_information"],
     "step_kind": "loot",
     "optional": true,
     "role": "key"
@@ -738,9 +744,11 @@
     "zone": "Plane of Earth",
     "zone_short": "PoEarth",
     "label": "Defeat the Mystical Arbitor (PoEb flag)",
-    "detail": "Complete all four Ring Events to spawn the Mystical Arbitor and defeat it. Flags for Plane of Earth B.",
-    "prereqs": ["pok_librarian"],
+    "detail": "Complete all four Ring Events to spawn the Mystical Arbitor and defeat it, then hail the Planar Projection. Flags for Plane of Earth B.",
+    "prereqs": ["pok_maelin_information"],
     "step_kind": "kill",
+    "qglobal": "earthb_key",
+    "qglobal_value": "1",
     "events": [{ "kind": "kill", "match": "the Mystical Arbitor" }]
   },
   {
@@ -773,7 +781,7 @@
     "zone_short": "PoWater",
     "label": "Defeat Coirnav, Avatar of Water",
     "detail": "Defeat Coirnav, the Avatar of Water, for the Sphere of Coalesced Water.",
-    "prereqs": ["pok_librarian"],
+    "prereqs": ["pok_maelin_information"],
     "step_kind": "kill",
     "events": [{ "kind": "kill", "match": "Coirnav" }]
   },
@@ -796,6 +804,7 @@
     "label": "Plane of Time access",
     "detail": "Craft the Quintessence of Elements from the four elemental god drops, hail Grand Librarian Maelin with it in hand, then see Chronographer Muan in the Plane of Innovation Factory and click the Time Machine to enter the Plane of Time.",
     "prereqs": ["pofire_fennin", "poair_xegony", "powater_coirnav", "poearth_rathe", "pok_maelin_information"],
+    "level": 65,
     "step_kind": "loot",
     "qglobal": "time",
     "qglobal_value": "1"

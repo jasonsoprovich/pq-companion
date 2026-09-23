@@ -257,7 +257,11 @@ function FlagRow({ flag, allFlags, requiredByDone, canToggle, busy, onToggle, on
             </span>
           )}
           {flag.level ? (
-            <span className="ml-2 shrink-0 text-[10px]" style={{ color: 'var(--color-muted)' }}>
+            <span
+              className="ml-2 shrink-0 text-[10px]"
+              style={{ color: 'var(--color-muted)' }}
+              title={`Min level to enter: ${flag.level}`}
+            >
               L{flag.level}
             </span>
           ) : null}
