@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -11,12 +12,17 @@ import (
 )
 
 // Source precedence for the effective state of a (character, flag) row.
-// manual > seer > auto: a manual toggle is a deliberate user correction that a
-// later Seer reading or live-event inference must never overwrite.
+// manual > (seer/popflags) > auto: a manual toggle is a deliberate user
+// correction that a later reading or live-event inference must never
+// overwrite. Seer and popflags share a precedence tier — whichever reading
+// was applied most recently wins for the qglobal-backed flags it covers (see
+// qglobalBackedFlagIDs), since both are equally authoritative in-game
+// snapshots of the same underlying qglobal state.
 const (
-	SourceManual = "manual"
-	SourceSeer   = "seer"
-	SourceAuto   = "auto"
+	SourceManual   = "manual"
+	SourceSeer     = "seer"
+	SourcePopflags = "popflags"
+	SourceAuto     = "auto"
 )
 
 // State is one persisted per-character flag row.
@@ -263,9 +269,12 @@ func (s *Store) ApplySeerOverriding(character string, qglobals map[string]string
 	}
 	defer tx.Rollback() //nolint:errcheck
 
-	// Clear non-manual rows so retractions take effect and seer supersedes auto.
-	if _, err := tx.Exec(`DELETE FROM pop_flag_state WHERE character = ? AND source != 'manual'`, character); err != nil {
-		return nil, fmt.Errorf("clear non-manual rows for %q: %w", character, err)
+	// Clear non-manual rows for qglobal-backed flags ONLY, so retractions take
+	// effect and seer supersedes auto — but a reading must never retract an
+	// 'auto' kill-detected row on a flag it has no way to observe (e.g.
+	// bot_agnarr, poair_xegony have no backing qglobal at all).
+	if err := clearNonManualQglobalBackedRows(tx, character); err != nil {
+		return nil, err
 	}
 	// Drop the manual rows the user chose to override, so the seer insert below
 	// applies the reading's value for them instead of being blocked.
@@ -282,6 +291,132 @@ func (s *Store) ApplySeerOverriding(character string, qglobals map[string]string
 			ON CONFLICT(character, flag_id) DO NOTHING
 		`, character, id, SourceSeer, now); err != nil {
 			return nil, fmt.Errorf("insert seer row char=%q flag=%q: %w", character, id, err)
+		}
+	}
+	if _, err := tx.Exec(`
+		INSERT INTO pop_seer_snapshot (character, qglobals, raw_text, taken_at)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(character) DO UPDATE SET
+			qglobals = excluded.qglobals,
+			raw_text = excluded.raw_text,
+			taken_at = excluded.taken_at
+	`, character, string(qjson), rawText, now); err != nil {
+		return nil, fmt.Errorf("upsert snapshot for %q: %w", character, err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return done, nil
+}
+
+// qglobalBackedFlagIDs returns the IDs of every dataset flag whose completion
+// is derived from a qglobal, directly (Qglobal) or via a replacement any-of
+// (SatisfiedBy). A Seer or #popflags reading is authoritative ONLY for these
+// — clearing non-manual rows on a reading must be scoped to this set, or it
+// would retract an 'auto' kill-detected row on a flag with no qglobal at all
+// (e.g. bot_agnarr, poair_xegony), which no reading has any way to observe.
+func qglobalBackedFlagIDs() []string {
+	all := Flags()
+	out := make([]string, 0, len(all))
+	for _, f := range all {
+		if f.Qglobal != "" || len(f.SatisfiedBy) > 0 {
+			out = append(out, f.ID)
+		}
+	}
+	return out
+}
+
+// clearNonManualQglobalBackedRows deletes every non-manual pop_flag_state row
+// for character that belongs to a qglobal-backed flag, within tx. Shared by
+// ApplySeerOverriding and ApplyPopFlagsReport so both readings scope their
+// retraction the same way.
+func clearNonManualQglobalBackedRows(tx *sql.Tx, character string) error {
+	ids := qglobalBackedFlagIDs()
+	if len(ids) == 0 {
+		return nil
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+	args := make([]any, 0, len(ids)+1)
+	args = append(args, character)
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	query := fmt.Sprintf(
+		`DELETE FROM pop_flag_state WHERE character = ? AND source != 'manual' AND flag_id IN (%s)`,
+		placeholders,
+	)
+	if _, err := tx.Exec(query, args...); err != nil {
+		return fmt.Errorf("clear non-manual qglobal-backed rows for %q: %w", character, err)
+	}
+	return nil
+}
+
+// ApplyPopFlagsReport merges one '#popflags' report (see popflags_cmd.go)
+// into the character's stored qglobal snapshot, re-derives completion, and
+// persists it exactly like a Seer reading (source='popflags', same manual >
+// (seer/popflags) > auto precedence enforced via clearNonManualQglobalBackedRows).
+//
+// Unlike ApplySeer (one self-contained reading that covers every qglobal),
+// one '#popflags' report only covers the section the player ran — so this
+// MERGES onto the last stored snapshot rather than replacing it: Exact values
+// overwrite, AtLeast values raise the floor if higher than what's stored, and
+// Pending flags are recorded present. Fields the report didn't mention are
+// left exactly as they were. This lets a player progressively sync their full
+// snapshot by running '#popflags 1' through '#popflags 5' (or just the
+// overview) across several scans/pastes.
+func (s *Store) ApplyPopFlagsReport(character string, report PopFlagsReport, rawText string, observedAt time.Time) ([]string, error) {
+	if character == "" {
+		return nil, fmt.Errorf("character required")
+	}
+	if observedAt.IsZero() {
+		observedAt = time.Now()
+	}
+	now := observedAt.Unix()
+
+	prev, err := s.GetSnapshot(character)
+	if err != nil {
+		return nil, fmt.Errorf("load prior snapshot for %q: %w", character, err)
+	}
+	q := map[string]string{}
+	if prev != nil {
+		for k, v := range prev.Qglobals {
+			q[k] = v
+		}
+	}
+	for k, v := range report.Exact {
+		q[k] = v
+	}
+	for k, floor := range report.AtLeast {
+		if atoi(q[k]) < floor {
+			q[k] = strconv.Itoa(floor)
+		}
+	}
+	for k := range report.Pending {
+		q[k] = "1"
+	}
+
+	done := DeriveCompletion(q)
+	qjson, err := json.Marshal(q)
+	if err != nil {
+		return nil, fmt.Errorf("marshal merged qglobals: %w", err)
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	if err := clearNonManualQglobalBackedRows(tx, character); err != nil {
+		return nil, err
+	}
+	for _, id := range done {
+		if _, err := tx.Exec(`
+			INSERT INTO pop_flag_state (character, flag_id, done, source, updated_at)
+			VALUES (?, ?, 1, ?, ?)
+			ON CONFLICT(character, flag_id) DO NOTHING
+		`, character, id, SourcePopflags, now); err != nil {
+			return nil, fmt.Errorf("insert popflags row char=%q flag=%q: %w", character, id, err)
 		}
 	}
 	if _, err := tx.Exec(`
