@@ -9,6 +9,22 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.23.0 — 2026-09-22
+
+PoP Flags gets a `#popflags`/`#timelockout` auto-sync and an accuracy pass ahead of the October 1st launch, the Planes of Power era becomes permanent, and the Gear Upgrade Finder defaults to showing PoP gear.
+
+### Highlights
+- **PoP Flags syncs from the new `#popflags`/`#timelockout` commands** — Project Quarm added a player-facing `#popflags [overview|1-5]` command that reports your Planes of Power progression straight from the server, and a `#timelockout` command for Plane of Time encounter availability. The PoP Flags tracker can now sync from either — scan your log or paste the output, the same way it already worked for the Seer Mal Nae`Shi guided meditation — and the Lockouts tab gets a new Plane of Time section fed by `#timelockout`. Running `#popflags` a section at a time (overview, or `#popflags 1` through `5`) progressively fills in the tracker rather than requiring one command to cover everything. Alongside this, a full accuracy pass against the real Quarm quest scripts fixed several progression-gating bugs (Bastion of Thunder was missing a required flagging step, three zones had the wrong unlock condition), corrected the tier grouping to match the server's own, and dropped a set of stale level-based "skip the flag" badges the server removed entirely. PoP zones also now correctly show their level-46 minimum on the Zones page ahead of the official database update.
+- **Planes of Power era is now permanent** — with PoP launching October 1st, the level cap is always 65, PoP spells/AA tabs and the Plane of Knowledge shopping source are always on, and the developer-only era toggle is gone. The resist calculator also switches to PoP-era partial-resist rules.
+- **Gear Upgrade Finder defaults to showing PoP gear** — the PoP filter now leads with it on rather than off. The Overview tab's row order also no longer reshuffles on every filter or weight tweak — it only re-ranks on an explicit column click or a character switch.
+- **Character Info Recap gets a "Today" preset** — alongside the existing 7/30/90-day windows.
+
+### Fixes
+- **Raid Summary's member list scrolls on its own** — it no longer relies on the whole page scrolling, so a full 72-member raid stays reachable regardless of how much space the stats and class-count grid take up above it.
+- **Trigger alerts stay on top through hide/show cycles** — on Windows, multi-monitor setups with a fullscreen game could let trigger alerts render behind the EQ client, since the trigger overlay is the only one hidden and re-shown on every alert.
+- **A same-named mob's kill no longer wipes another instance's slow timer** — killing one of two identically-named slowed mobs used to clear both timers instead of just the dead one.
+- Widened the What's New modal for a less cramped layout.
+
 ## v0.22.0 — 2026-09-18
 
 Raid Composition goes public — role taxonomy, encounter checker, and pack import/export — alongside the Planes of Power flag tracker and Faction Tracker, plus one level of trigger category nesting.
