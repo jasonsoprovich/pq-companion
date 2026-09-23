@@ -37,7 +37,10 @@ import type {
   LockoutCharacterResponse,
   ZoneLockoutsResponse,
 } from '../types/lockouts'
-import type { PoPResolved, PoPFlagDatasetResponse, SeerPreviewResponse, SeerScanResponse } from '../types/popflag'
+import type {
+  PoPResolved, PoPFlagDatasetResponse, SeerPreviewResponse, SeerScanResponse,
+  PopFlagsPreviewResponse, PopFlagsScanResponse,
+} from '../types/popflag'
 import type { Backup, BackupsResponse } from '../types/backup'
 import type { LogTailerStatus, LogFileInfo } from '../types/logEvent'
 import type { RaidThreatState, TargetState, ThreatState } from '../types/overlay'
@@ -1193,6 +1196,39 @@ export function commitPopSeer(
 export function scanPopSeer(character: string): Promise<SeerScanResponse> {
   return post<SeerScanResponse>(
     `/api/popflags/${encodeURIComponent(character)}/seer/scan`,
+    {},
+  )
+}
+
+// previewPopFlagsCmd/commitPopFlagsCmd/scanPopFlagsCmd mirror the Seer trio
+// above, but for the '#popflags' command (EQMacEmu PR #382) instead of the
+// Seer Mal Nae`Shi guided meditation. A single report only covers the section
+// the player ran, so it MERGES onto the character's stored snapshot rather
+// than replacing it — running '#popflags 1' through '#popflags 5' and syncing
+// after each progressively fills in the full picture.
+export function previewPopFlagsCmd(
+  character: string,
+  text: string,
+): Promise<PopFlagsPreviewResponse> {
+  return post<PopFlagsPreviewResponse>(
+    `/api/popflags/${encodeURIComponent(character)}/popflags/preview`,
+    { text },
+  )
+}
+
+export function commitPopFlagsCmd(character: string, text: string): Promise<PoPResolved> {
+  return post<PoPResolved>(
+    `/api/popflags/${encodeURIComponent(character)}/popflags/commit`,
+    { text },
+  )
+}
+
+// scanPopFlagsCmd asks the backend to read the character's EQ log for the most
+// recent '#popflags' report block. found=false when there's no log / no
+// report (the UI then falls back to manual paste).
+export function scanPopFlagsCmd(character: string): Promise<PopFlagsScanResponse> {
+  return post<PopFlagsScanResponse>(
+    `/api/popflags/${encodeURIComponent(character)}/popflags/scan`,
     {},
   )
 }

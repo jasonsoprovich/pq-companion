@@ -37,7 +37,7 @@ export interface PoPFlag {
 
 export interface PoPFlagStatus extends PoPFlag {
   done: boolean
-  source?: string // 'manual' | 'seer' | 'auto'
+  source?: string // 'manual' | 'seer' | 'popflags' | 'auto'
   locked: boolean
   missing?: string[] // prereq IDs not yet done
   superseded?: boolean // an unchosen member of a satisfied any-of group
@@ -57,6 +57,10 @@ export interface PoPResolved {
   zones: PoPProgress[]
   done: number
   total: number
+  // Pending 'cl_*' checklist flags named by the character's last Seer/#popflags
+  // reading — not dataset flags (the server deletes them once the memory is
+  // unlocked), so they ride alongside the resolved flags rather than in them.
+  pending?: string[]
 }
 
 export interface PoPFlagDatasetResponse {
@@ -87,4 +91,32 @@ export interface SeerScanResponse {
   qglobals?: Record<string, string>
   detected?: SeerDetected[]
   new_count?: number
+}
+
+// The section a '#popflags' report block came from — see backend
+// popflag.PopFlagsSection. Only 'overview' and 'tier1'..'tier4'/'time' are
+// used; a report from an unrecognized header comes back as ''.
+export type PopFlagsSection = 'overview' | 'tier1' | 'tier2' | 'tier3' | 'tier4' | 'time' | ''
+
+// PopFlagsPreviewResponse previews a pasted '#popflags' report merged onto the
+// character's current stored snapshot, without writing anything. Unlike a
+// Seer reading (self-contained), one report only covers the section the
+// player ran — new_count/detected reflect just what that section contributed.
+export interface PopFlagsPreviewResponse {
+  section: PopFlagsSection
+  detected: SeerDetected[]
+  new_count: number
+  pending?: string[] // cl_* checklist flag names the report named
+}
+
+// PopFlagsScanResponse is the result of scanning the character's EQ log for
+// the most recent '#popflags' block. found=false when there's no log file or
+// no report in it.
+export interface PopFlagsScanResponse {
+  found: boolean
+  text?: string
+  section?: PopFlagsSection
+  detected?: SeerDetected[]
+  new_count?: number
+  pending?: string[]
 }

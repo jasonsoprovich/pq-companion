@@ -35,6 +35,15 @@ func (h *popflagHandler) dataset(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"flags": popflag.Flags()})
 }
 
+// resolvedWithPending adds the character's pending ('cl_*') checklist flags
+// to the resolved response — these aren't dataset flags (the server deletes
+// them once the corresponding memory is unlocked), so Resolve has no way to
+// carry them; the frontend's "sit near Seer Mal Nae`Shi" banner reads this.
+type resolvedWithPending struct {
+	popflag.Resolved
+	Pending []string `json:"pending,omitempty"`
+}
+
 // GET /api/popflags/{character}
 // Returns the resolved per-flag status + progress for one character.
 func (h *popflagHandler) get(w http.ResponseWriter, r *http.Request) {
@@ -52,7 +61,27 @@ func (h *popflagHandler) get(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, popflag.Resolve(states))
+	writeJSON(w, http.StatusOK, resolvedWithPending{
+		Resolved: popflag.Resolve(states),
+		Pending:  h.pendingChecklistFlags(character),
+	})
+}
+
+// pendingChecklistFlags reads the character's stored qglobal snapshot (Seer or
+// #popflags, whichever was last applied) and returns any 'cl_*' names present.
+// Best-effort: a snapshot read failure or missing snapshot just yields none.
+func (h *popflagHandler) pendingChecklistFlags(character string) []string {
+	snap, err := h.store.GetSnapshot(character)
+	if err != nil || snap == nil {
+		return nil
+	}
+	out := []string{}
+	for k, v := range snap.Qglobals {
+		if v != "" && strings.HasPrefix(k, "cl_") {
+			out = append(out, k)
+		}
+	}
+	return out
 }
 
 type popflagSetRequest struct {
@@ -86,7 +115,7 @@ func (h *popflagHandler) setManual(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, popflag.Resolve(states))
+	writeJSON(w, http.StatusOK, resolvedWithPending{Resolved: popflag.Resolve(states), Pending: h.pendingChecklistFlags(character)})
 }
 
 type seerRequest struct {
@@ -266,7 +295,7 @@ func (h *popflagHandler) seerCommit(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, popflag.Resolve(states))
+	writeJSON(w, http.StatusOK, resolvedWithPending{Resolved: popflag.Resolve(states), Pending: h.pendingChecklistFlags(character)})
 }
 
 // popflagsRequest carries raw '#popflags' text pasted or scanned from the log.
@@ -475,5 +504,5 @@ func (h *popflagHandler) popflagsCommit(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, popflag.Resolve(states))
+	writeJSON(w, http.StatusOK, resolvedWithPending{Resolved: popflag.Resolve(states), Pending: h.pendingChecklistFlags(character)})
 }

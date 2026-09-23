@@ -51,6 +51,30 @@ function tierLabel(t: number): string {
   return t === 5 ? 'Plane of Time' : `Tier ${t}`
 }
 
+// pendingLabel maps a 'cl_*' checklist flag name to the display text the
+// server itself prints for it (popflags.cpp's PopFlagsPrintPending calls) —
+// falls back to a stripped/title-cased name for a checklist flag the parser
+// doesn't recognize (forward-compat with a future upstream addition).
+const PENDING_LABELS: Record<string, string> = {
+  cl_grummus: 'Grummus',
+  cl_maze: "Thelin's hedge maze",
+  cl_behemoth: 'Manaetic Behemoth',
+  cl_aerindar: 'Aerin`Dar',
+  cl_terris: 'Terris Thule',
+  cl_bertox: 'Bertoxxulous',
+  cl_keeper: 'Keeper of Sorrows',
+  cl_saryrn: 'Saryrn',
+  cl_vallon: 'Vallon Zek',
+  cl_tallon: 'Tallon Zek',
+  cl_rallos: 'Rallos Zek',
+  cl_karana: 'Karana',
+  cl_solusek: 'Solusek Ro',
+}
+
+function pendingLabel(name: string): string {
+  return PENDING_LABELS[name] ?? name.replace(/^cl_/, '').replace(/^./, (c) => c.toUpperCase())
+}
+
 // labelFor maps a prereq flag ID to its short label for the locked tooltip.
 function labelFor(flags: PoPFlagStatus[], id: string): string {
   return flags.find((f) => f.id === id)?.label ?? id
@@ -119,7 +143,7 @@ function ProvenanceChip({
         border: '1px solid var(--color-border)',
       }}
     >
-      {source === 'seer' ? 'Seer' : 'manual'}
+      {source === 'seer' ? 'Seer' : source === 'popflags' ? '#popflags' : 'manual'}
     </span>
   )
 }
@@ -551,7 +575,7 @@ export default function PoPFlaggingPage(): React.ReactElement {
               }}
             >
               <ScrollText size={11} />
-              Sync from Seer log
+              Sync from game
             </button>
           )}
           <button
@@ -577,6 +601,29 @@ export default function PoPFlaggingPage(): React.ReactElement {
           Select a character above to track flags. Showing the full flag list as a preview.
         </p>
       )}
+
+      {/* Pending checklist memories — named by the last Seer/#popflags reading
+          but not yet turned into a real character flag. Hidden once the
+          character has the Plane of Time flag (the server stops tracking
+          these the moment 'time' is granted). */}
+      {(() => {
+        const pending = resolved?.pending ?? []
+        const timeDone = resolved?.flags.find((f) => f.id === 'potime')?.done ?? false
+        if (pending.length === 0 || timeDone) return null
+        return (
+          <div
+            className="flex items-start gap-2 px-4 py-2 text-[11px] shrink-0"
+            style={{ backgroundColor: 'rgba(245,158,11,0.10)', color: '#f59e0b' }}
+          >
+            <AlertCircle size={13} className="mt-0.5 shrink-0" />
+            <span>
+              Pending checklist {pending.length === 1 ? 'memory' : 'memories'} named:{' '}
+              {pending.map(pendingLabel).join(', ')}. Sit near Seer Mal Nae`Shi and say{' '}
+              <code>unlock memories</code>, then re-sync.
+            </span>
+          </div>
+        )
+      })()}
 
       {/* Step-type legend — explains the per-row icon/colour coding. */}
       <div
