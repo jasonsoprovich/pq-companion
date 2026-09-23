@@ -2046,10 +2046,15 @@ name-based path when a field is nil, so older Zeal is unaffected.
   prerequisite locking and any-of grouping for quest paths where multiple
   routes satisfy the same milestone (e.g. the six Plane of Justice
   trials). Flags live server-side as qglobals that aren't exposed by the
-  game DB or Zeal, so progress is a manual checklist seeded from a Seer
-  "guided meditation" paste — live auto-detection from log lines and the
-  Seer NPC is planned once PoP is live on Quarm. Promoted out of
-  Developer > Flags to a permanent nav item in v0.22.0.
+  game DB or Zeal, so progress is detected rather than read directly:
+  manual toggles, the Seer Mal Nae`Shi "guided meditation" (scan the log
+  or paste it), live-log kill events for flags a single encounter
+  confirms on its own, and, as of v0.23.0, Project Quarm's own
+  `#popflags`/`#timelockout` commands — sync a section (the overview, or
+  any tier) and it merges into the tracker rather than replacing it, so
+  running each tier's command progressively fills in the full picture.
+  Manual toggles always take precedence over anything auto-detected.
+  Promoted out of Developer > Flags to a permanent nav item in v0.22.0.
 
 ## Phase 11 — Project Website
 _Planned_
@@ -2059,20 +2064,6 @@ A public-facing site for the project — feature overview, download links, scree
 ## Future Plans
 
 The following features are tracked but not scheduled for a specific phase. They will be prioritized based on demand and feasibility once the core app is mature.
-
-### Planes of Power Flag Tracker
-
-Manual per-character checklist for tracking Planes of Power progression flags. Players tick off flags as they earn them; data persists in user.db.
-
-Design notes:
-- Reference: https://takp.info/flag-check/index.html — use as the source of truth for flag names, groupings, and unlock order
-- Flag data is static (hardcoded in Go, similar to `internal/keys/keys.go`) since Zeal does not yet expose flag state
-- One checklist per character; characters identified by name (same source as Zeal exports)
-- Organized by plane/tier: Elemental Planes entry flags → God flags → Plane of Time prerequisites
-- Each flag entry: name, brief description of how it's obtained, checked/unchecked state
-- Backend: `GET /api/flags` (static definitions), `GET/PUT /api/flags/progress/{character}` (persisted checked state in user.db)
-- Frontend: character tabs, grouped flag sections, checkboxes, progress summary per tier
-- Future: wire to automatic detection if Zeal adds flag export support
 
 ### Hosted Web API
 
