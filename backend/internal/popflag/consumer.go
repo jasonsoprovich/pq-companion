@@ -7,29 +7,39 @@ import (
 	"time"
 )
 
-// FlushIdle is how long to wait after the last Seer line before committing a
-// buffered guided-meditation burst. The Seer prints its lines in one tight
-// burst (same second), so 1.5s is ample headroom while staying responsive —
-// mirrors keyring.FlushIdle.
+// FlushIdle is how long to wait after the last matching line before
+// committing a buffered burst (Seer or '#popflags'). Both print their lines
+// in one tight burst (same second), so 1.5s is ample headroom while staying
+// responsive — mirrors keyring.FlushIdle.
 const FlushIdle = 1500 * time.Millisecond
 
-// Consumer turns live Seer guided-meditation log lines into a per-character
-// snapshot. Every incoming line is tested with MatchSeerLine; matching lines
-// are buffered and committed (via Store.ApplySeer) on the first non-matching
-// line OR after FlushIdle of no new matches.
+// Consumer turns live log lines into per-character progression snapshots. It
+// runs two independent buffers off the same line feed — one for Seer Mal
+// Nae`Shi "guided meditation" text, one for '#popflags' report blocks — since
+// the two are structurally disjoint (narrative sentences vs. "Label: Value"
+// report lines) and can never both match the same line. Each buffer commits
+// on the first line that doesn't match ITS OWN matcher, or after FlushIdle of
+// no new matches for that buffer; matching a burst never flushes the other.
 //
-// This is the live-log counterpart to the paste-in path: both ultimately call
-// ParseSeer + ApplySeer, so they share precedence (manual rows are preserved).
+// This is the live-log counterpart to the paste-in / scan-log paths: all
+// three ultimately call ParseSeer+ApplySeer or ParsePopFlagsReport+
+// ApplyPopFlagsReport, so they share precedence (manual rows are preserved).
 type Consumer struct {
 	store      *Store
 	activeChar func() string
 	onSnapshot func(string)
 
-	mu          sync.Mutex
-	buffer      []string
-	character   string
-	lastMatchAt time.Time
-	timer       *time.Timer
+	mu sync.Mutex
+
+	seerBuffer      []string
+	seerCharacter   string
+	seerLastMatchAt time.Time
+	seerTimer       *time.Timer
+
+	popflagsBuffer      []string
+	popflagsCharacter   string
+	popflagsLastMatchAt time.Time
+	popflagsTimer       *time.Timer
 }
 
 // NewConsumer constructs a consumer wired to store. activeChar should return
@@ -53,17 +63,27 @@ func (c *Consumer) HandleLine(ts time.Time, msg string) {
 		return
 	}
 	if MatchSeerLine(msg) {
-		c.appendMatch(msg, ts)
+		c.appendSeerMatch(msg, ts)
 		return
 	}
-	c.flush()
+	if MatchPopFlagsLine(msg) {
+		c.appendPopFlagsMatch(msg, ts)
+		return
+	}
+	// A line matching neither buffer's format ends whichever burst(s) are in
+	// progress — matching one buffer never flushes the other, since an
+	// unrelated intervening line (e.g. a stray Seer hail during a #popflags
+	// paste) shouldn't be possible in practice, but if it happens each
+	// buffer's own idle timer is still a safety net.
+	c.flushSeer()
+	c.flushPopFlags()
 }
 
 // HandleEvent evaluates a typed live event (kind "kill"/"zone", entity name)
 // against the dataset's EventRules and optimistically records matches as
 // 'auto'-sourced rows for the active character. Auto never overwrites a manual
-// or seer row (enforced by Store.SetAuto), and a snapshot event is broadcast
-// only when something actually changed. Independent of the Seer line buffer.
+// or seer/popflags row (enforced by Store.SetAuto), and a snapshot event is
+// broadcast only when something actually changed. Independent of both buffers.
 func (c *Consumer) HandleEvent(kind, name string) {
 	if c.store == nil {
 		return
@@ -102,40 +122,42 @@ func (c *Consumer) HandleEvent(kind, name string) {
 	}
 }
 
-func (c *Consumer) appendMatch(line string, ts time.Time) {
+// ── Seer guided-meditation buffer ───────────────────────────────────────────
+
+func (c *Consumer) appendSeerMatch(line string, ts time.Time) {
 	c.mu.Lock()
-	if len(c.buffer) == 0 {
+	if len(c.seerBuffer) == 0 {
 		// First match in a new burst — snapshot the active character now so a
 		// mid-burst /camp+login can't move the snapshot to the wrong row.
-		c.character = ""
+		c.seerCharacter = ""
 		if c.activeChar != nil {
-			c.character = c.activeChar()
+			c.seerCharacter = c.activeChar()
 		}
 	}
-	c.buffer = append(c.buffer, line)
-	c.lastMatchAt = ts
-	if c.timer == nil {
-		c.timer = time.AfterFunc(FlushIdle, c.flush)
+	c.seerBuffer = append(c.seerBuffer, line)
+	c.seerLastMatchAt = ts
+	if c.seerTimer == nil {
+		c.seerTimer = time.AfterFunc(FlushIdle, c.flushSeer)
 	} else {
-		c.timer.Reset(FlushIdle)
+		c.seerTimer.Reset(FlushIdle)
 	}
 	c.mu.Unlock()
 }
 
-func (c *Consumer) flush() {
+func (c *Consumer) flushSeer() {
 	c.mu.Lock()
-	if len(c.buffer) == 0 {
+	if len(c.seerBuffer) == 0 {
 		c.mu.Unlock()
 		return
 	}
-	text := strings.Join(c.buffer, "\n")
-	character := c.character
-	observedAt := c.lastMatchAt
-	c.buffer = nil
-	c.character = ""
-	if c.timer != nil {
-		c.timer.Stop()
-		c.timer = nil
+	text := strings.Join(c.seerBuffer, "\n")
+	character := c.seerCharacter
+	observedAt := c.seerLastMatchAt
+	c.seerBuffer = nil
+	c.seerCharacter = ""
+	if c.seerTimer != nil {
+		c.seerTimer.Stop()
+		c.seerTimer = nil
 	}
 	c.mu.Unlock()
 
@@ -149,6 +171,61 @@ func (c *Consumer) flush() {
 		return
 	}
 	slog.Info("popflag: Seer snapshot committed", "character", character, "flags", len(done))
+	c.notify(character)
+}
+
+// ── '#popflags' report buffer ───────────────────────────────────────────────
+
+func (c *Consumer) appendPopFlagsMatch(line string, ts time.Time) {
+	c.mu.Lock()
+	if len(c.popflagsBuffer) == 0 {
+		c.popflagsCharacter = ""
+		if c.activeChar != nil {
+			c.popflagsCharacter = c.activeChar()
+		}
+	}
+	c.popflagsBuffer = append(c.popflagsBuffer, line)
+	c.popflagsLastMatchAt = ts
+	if c.popflagsTimer == nil {
+		c.popflagsTimer = time.AfterFunc(FlushIdle, c.flushPopFlags)
+	} else {
+		c.popflagsTimer.Reset(FlushIdle)
+	}
+	c.mu.Unlock()
+}
+
+func (c *Consumer) flushPopFlags() {
+	c.mu.Lock()
+	if len(c.popflagsBuffer) == 0 {
+		c.mu.Unlock()
+		return
+	}
+	lines := c.popflagsBuffer
+	character := c.popflagsCharacter
+	observedAt := c.popflagsLastMatchAt
+	c.popflagsBuffer = nil
+	c.popflagsCharacter = ""
+	if c.popflagsTimer != nil {
+		c.popflagsTimer.Stop()
+		c.popflagsTimer = nil
+	}
+	c.mu.Unlock()
+
+	if character == "" {
+		slog.Debug("popflag: skipped #popflags snapshot — no active character")
+		return
+	}
+	report := ParsePopFlagsReport(lines)
+	done, err := c.store.ApplyPopFlagsReport(character, report, strings.Join(lines, "\n"), observedAt)
+	if err != nil {
+		slog.Warn("popflag: #popflags snapshot failed", "character", character, "err", err)
+		return
+	}
+	slog.Info("popflag: #popflags snapshot committed", "character", character, "section", report.Section, "flags", len(done))
+	c.notify(character)
+}
+
+func (c *Consumer) notify(character string) {
 	c.mu.Lock()
 	cb := c.onSnapshot
 	c.mu.Unlock()
@@ -157,5 +234,8 @@ func (c *Consumer) flush() {
 	}
 }
 
-// Shutdown flushes any in-progress burst. Safe to call multiple times.
-func (c *Consumer) Shutdown() { c.flush() }
+// Shutdown flushes any in-progress bursts. Safe to call multiple times.
+func (c *Consumer) Shutdown() {
+	c.flushSeer()
+	c.flushPopFlags()
+}

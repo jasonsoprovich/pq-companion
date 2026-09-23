@@ -385,6 +385,9 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Post("/{character}/seer/preview", popflagH.seerPreview)
 			r.Post("/{character}/seer/scan", popflagH.seerScan)
 			r.Post("/{character}/seer/commit", popflagH.seerCommit)
+			r.Post("/{character}/popflags/preview", popflagH.popflagsPreview)
+			r.Post("/{character}/popflags/scan", popflagH.popflagsScan)
+			r.Post("/{character}/popflags/commit", popflagH.popflagsCommit)
 			r.Post("/{character}/{flagID}", popflagH.setManual)
 		})
 		// Per-character loot/legacy lockout tracker driven by /sll log parsing.

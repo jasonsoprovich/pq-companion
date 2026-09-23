@@ -83,3 +83,54 @@ func TestScanLogForSeerMissing(t *testing.T) {
 		t.Errorf("expected an IsNotExist error, got %v", err)
 	}
 }
+
+// TestScanLogForPopFlagsLatest mirrors TestScanLogForSeerLatest: an older
+// '#popflags' block and a newer one, separated by ordinary lines — the scan
+// must return only the newer block's lines.
+func TestScanLogForPopFlagsLatest(t *testing.T) {
+	path := writeLog(t, []string{
+		"[Mon Apr 13 06:00:00 2026] You slash a gnoll for 150 points of damage.",
+		// Older report: overview only.
+		"[Mon Apr 13 06:01:00 2026] === Planes of Power Progression ===",
+		"[Mon Apr 13 06:01:00 2026] Tier 1: Not started",
+		"[Mon Apr 13 06:02:00 2026] You have entered the Plane of Knowledge.",
+		// Newer report: Tier 1 detail.
+		"[Mon Apr 13 07:00:00 2026] === Tier 1 Progression ===",
+		"[Mon Apr 13 07:00:00 2026] Mavuin's case: Mavuin's case is complete",
+		"[Mon Apr 13 07:00:00 2026] Seventh Hammer access: Unlocked",
+		"[Mon Apr 13 07:05:00 2026] You say, 'hello'",
+	})
+
+	burst, found, err := ScanLogForPopFlags(path)
+	if err != nil {
+		t.Fatalf("ScanLogForPopFlags: %v", err)
+	}
+	if !found {
+		t.Fatal("expected a #popflags report to be found")
+	}
+	if len(burst.Lines) != 3 {
+		t.Fatalf("burst line count = %d, want 3 (latest block only), lines=%v", len(burst.Lines), burst.Lines)
+	}
+	report := ParsePopFlagsReport(burst.Lines)
+	if report.Section != PopFlagsTier1 {
+		t.Errorf("section = %q, want tier1 (from the latest block)", report.Section)
+	}
+	if report.Exact["mavuin"] != "3" {
+		t.Errorf("mavuin = %q, want 3 (from the latest block)", report.Exact["mavuin"])
+	}
+}
+
+// TestScanLogForPopFlagsNone returns found=false when the log holds no report.
+func TestScanLogForPopFlagsNone(t *testing.T) {
+	path := writeLog(t, []string{
+		"[Mon Apr 13 06:00:00 2026] You slash a gnoll for 150 points of damage.",
+		"[Mon Apr 13 06:00:05 2026] You have entered the Plane of Knowledge.",
+	})
+	_, found, err := ScanLogForPopFlags(path)
+	if err != nil {
+		t.Fatalf("ScanLogForPopFlags: %v", err)
+	}
+	if found {
+		t.Error("expected no #popflags report")
+	}
+}

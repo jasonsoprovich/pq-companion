@@ -50,13 +50,13 @@ type QualifyCond struct {
 
 // PoPFlag is one discrete progression flag (a node in the dependency DAG).
 type PoPFlag struct {
-	ID        string   `json:"id"`              // stable slug, e.g. "poj_mavuin_return"
-	Tier      int      `json:"tier"`            // 1..4, 5 = Plane of Time
-	Zone      string   `json:"zone"`            // "Plane of Justice"
-	ZoneShort string   `json:"zone_short"`      // "PoJ"
-	Label     string   `json:"label"`           // short checklist label
-	Detail    string   `json:"detail"`          // step instructions
-	Prereqs   []string `json:"prereqs"`         // AND-list of flag IDs that gate this one
+	ID        string   `json:"id"`         // stable slug, e.g. "poj_mavuin_return"
+	Tier      int      `json:"tier"`       // 1..4, 5 = Plane of Time
+	Zone      string   `json:"zone"`       // "Plane of Justice"
+	ZoneShort string   `json:"zone_short"` // "PoJ"
+	Label     string   `json:"label"`      // short checklist label
+	Detail    string   `json:"detail"`     // step instructions
+	Prereqs   []string `json:"prereqs"`    // AND-list of flag IDs that gate this one
 
 	// Level is the zone's minimum entry level (display only), set on the first
 	// node(s) for a zone. Quarm's old level-bypass-the-flag system (55/62/game

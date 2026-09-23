@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -254,6 +255,215 @@ func (h *popflagHandler) seerCommit(w http.ResponseWriter, r *http.Request) {
 	}
 	q := popflag.ParseSeer(req.Text)
 	if _, err := h.store.ApplySeerOverriding(character, q, req.Text, time.Now(), req.Override); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if h.hub != nil {
+		h.hub.Broadcast(ws.Event{Type: WSEventPopflagSnapshot, Data: map[string]any{"character": character}})
+	}
+	states, err := h.store.Get(character)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, popflag.Resolve(states))
+}
+
+// popflagsRequest carries raw '#popflags' text pasted or scanned from the log.
+type popflagsRequest struct {
+	Text string `json:"text"`
+}
+
+// popflagsPreviewResponse previews a '#popflags' report: the section it came
+// from and which flags it newly marks complete, merged against the
+// character's CURRENT stored snapshot (a report only covers part of the
+// dataset, so "new" here means "not already done" after the merge — same
+// meaning as the Seer preview's new_count).
+type popflagsPreviewResponse struct {
+	Section  popflag.PopFlagsSection `json:"section"`
+	Detected []seerDetected          `json:"detected"`
+	NewCount int                     `json:"new_count"`
+	Pending  []string                `json:"pending,omitempty"` // cl_* names the report named
+}
+
+// buildPopFlagsPreview mirrors buildSeerPreview but for a #popflags report:
+// it merges the report onto the character's stored qglobal snapshot WITHOUT
+// writing anything, then reports which flags the merged result marks
+// complete. Shared by the paste-in preview and the scan-log path.
+func (h *popflagHandler) buildPopFlagsPreview(character string, report popflag.PopFlagsReport) (popflagsPreviewResponse, error) {
+	snap, err := h.store.GetSnapshot(character)
+	if err != nil {
+		return popflagsPreviewResponse{}, err
+	}
+	q := map[string]string{}
+	if snap != nil {
+		for k, v := range snap.Qglobals {
+			q[k] = v
+		}
+	}
+	for k, v := range report.Exact {
+		q[k] = v
+	}
+	for k, floor := range report.AtLeast {
+		// Preview-only floor merge — Store.ApplyPopFlagsReport does the same
+		// comparison on commit; duplicated here since it operates on the raw
+		// string qglobal map with no exported helper to share.
+		cur := 0
+		if s, ok := q[k]; ok {
+			if n, err := strconv.Atoi(s); err == nil {
+				cur = n
+			}
+		}
+		if cur < floor {
+			q[k] = strconv.Itoa(floor)
+		}
+	}
+	for k := range report.Pending {
+		q[k] = "1"
+	}
+
+	derived := popflag.DeriveCompletion(q)
+	states, err := h.store.Get(character)
+	if err != nil {
+		return popflagsPreviewResponse{}, err
+	}
+	cur := make(map[string]popflag.State, len(states))
+	for _, s := range states {
+		cur[s.FlagID] = s
+	}
+	resp := popflagsPreviewResponse{Section: report.Section, Detected: []seerDetected{}}
+	for _, id := range derived {
+		f, ok := popflag.ByID(id)
+		if !ok {
+			continue
+		}
+		st, has := cur[id]
+		d := seerDetected{ID: id, Label: f.Label, Zone: f.Zone, Tier: f.Tier}
+		d.AlreadyDone = has && st.Done
+		d.ManualBlocked = has && st.Source == popflag.SourceManual && !st.Done
+		if !d.AlreadyDone && !d.ManualBlocked {
+			resp.NewCount++
+		}
+		resp.Detected = append(resp.Detected, d)
+	}
+	for name := range report.Pending {
+		resp.Pending = append(resp.Pending, name)
+	}
+	return resp, nil
+}
+
+// POST /api/popflags/{character}/popflags/preview
+// Parses pasted '#popflags' text and reports which flags it detects, without
+// writing anything.
+func (h *popflagHandler) popflagsPreview(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "pop flag store unavailable")
+		return
+	}
+	character := strings.TrimSpace(chi.URLParam(r, "character"))
+	if character == "" {
+		writeError(w, http.StatusBadRequest, "character required")
+		return
+	}
+	var req popflagsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	report := popflag.ParsePopFlagsReport(strings.Split(req.Text, "\n"))
+	preview, err := h.buildPopFlagsPreview(character, report)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, preview)
+}
+
+// popflagsScanResponse is the scan-log result: the same preview the paste
+// path returns, plus the raw recovered lines to feed back to popflags/commit.
+type popflagsScanResponse struct {
+	Found    bool                    `json:"found"`
+	Text     string                  `json:"text,omitempty"`
+	Section  popflag.PopFlagsSection `json:"section,omitempty"`
+	Detected []seerDetected          `json:"detected,omitempty"`
+	NewCount int                     `json:"new_count,omitempty"`
+	Pending  []string                `json:"pending,omitempty"`
+}
+
+// POST /api/popflags/{character}/popflags/scan
+// Scans the character's EQ log for the most recent '#popflags' report block
+// and returns the same preview as the paste path plus the raw text to commit.
+// Responds found=false (200) when the EQ folder isn't configured, the log
+// doesn't exist, or it holds no report.
+func (h *popflagHandler) popflagsScan(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "pop flag store unavailable")
+		return
+	}
+	character := strings.TrimSpace(chi.URLParam(r, "character"))
+	if character == "" {
+		writeError(w, http.StatusBadRequest, "character required")
+		return
+	}
+	eqPath := ""
+	if h.mgr != nil {
+		eqPath = h.mgr.Get().EQPath
+	}
+	if eqPath == "" {
+		writeJSON(w, http.StatusOK, popflagsScanResponse{Found: false})
+		return
+	}
+	logPath := filepath.Join(eqPath, "eqlog_"+character+"_pq.proj.txt")
+	burst, found, err := popflag.ScanLogForPopFlags(logPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			writeJSON(w, http.StatusOK, popflagsScanResponse{Found: false})
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !found {
+		writeJSON(w, http.StatusOK, popflagsScanResponse{Found: false})
+		return
+	}
+	report := popflag.ParsePopFlagsReport(burst.Lines)
+	preview, err := h.buildPopFlagsPreview(character, report)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, popflagsScanResponse{
+		Found:    true,
+		Text:     strings.Join(burst.Lines, "\n"),
+		Section:  preview.Section,
+		Detected: preview.Detected,
+		NewCount: preview.NewCount,
+		Pending:  preview.Pending,
+	})
+}
+
+// POST /api/popflags/{character}/popflags/commit
+// Applies a '#popflags' report (merged onto the character's stored qglobal
+// snapshot — see Store.ApplyPopFlagsReport) and returns the refreshed
+// resolved state.
+func (h *popflagHandler) popflagsCommit(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "pop flag store unavailable")
+		return
+	}
+	character := strings.TrimSpace(chi.URLParam(r, "character"))
+	if character == "" {
+		writeError(w, http.StatusBadRequest, "character required")
+		return
+	}
+	var req popflagsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	report := popflag.ParsePopFlagsReport(strings.Split(req.Text, "\n"))
+	if _, err := h.store.ApplyPopFlagsReport(character, report, req.Text, time.Now()); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
