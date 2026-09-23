@@ -2408,6 +2408,26 @@ func applyExpansionOverride(shortName string, raw int) int {
 	return raw
 }
 
+// applyMinLevelOverride corrects zone.min_level for a data gap our current
+// quarm.db predates: EQMacEmu PR #386 ("Set minimum levels for Plane of
+// Power zones", merged 2026-09-06) raises min_level to 46 for every PoP
+// gameplay zone (zoneidnumber 200-223) except Plane of Knowledge (202, the
+// public hub, left at its existing value). Our dump is from 2026-08-23, so it
+// still carries the pre-#386 values (mostly 0). This mirrors the upstream SQL
+// migration query-side per the "fix wrong quarm.db values query-side, never
+// edit the dump" convention — it becomes a harmless no-op once a regenerated
+// quarm.db already has min_level=46 baked in (the WHERE clause there is
+// `min_level < 46`; the equivalent guard here is the `< 46` comparison below).
+func applyMinLevelOverride(zoneIDNumber, raw int) int {
+	if zoneIDNumber == 202 {
+		return raw
+	}
+	if zoneIDNumber >= 200 && zoneIDNumber <= 223 && raw < 46 {
+		return 46
+	}
+	return raw
+}
+
 const zoneColumns = `
   z.id, COALESCE(z.short_name,''), z.long_name, COALESCE(z.file_name,''),
   z.zoneidnumber, z.safe_x, z.safe_y, z.safe_z,
@@ -2458,6 +2478,7 @@ func scanZone(row interface {
 		return nil, err
 	}
 	z.Expansion = applyExpansionOverride(z.ShortName, z.Expansion)
+	z.MinLevel = applyMinLevelOverride(z.ZoneIDNumber, z.MinLevel)
 	if graveyardID > 0 && gyDestID > 0 {
 		z.Graveyard = &ZoneGraveyard{
 			ZoneID:       gyDestID,

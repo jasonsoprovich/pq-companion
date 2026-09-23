@@ -1217,6 +1217,57 @@ These are inherent to log-file parsing and affect multiple features:
 
 ---
 
+## 19. Planes of Power server-side raid mechanics (found during the Sept 2026
+    PoP-launch upstream PR review)
+
+### 19.1 Respawn overlay can't reflect guild-instance or scripted respawns
+
+- **Limitation:** The respawn timer overlay (`internal/respawn`) reads
+  `spawn2.respawntime`/`variance` from `quarm.db`, which is what a raid target
+  respawns on in the open world. EQMacEmu PRs #376/#406-#410/#428 moved most
+  PoP raid encounters (Fire, Water, Earth, Air, Halls of Honor, Bastion of
+  Thunder) into **guild instances** with their own respawn timing, controlled
+  server-side by the guild-instance lifecycle rather than the base `spawn2`
+  row. A guild's actual instanced respawn can diverge from what the overlay
+  shows for the open-world spawnpoint.
+- **Root cause:** There is no log line or Zeal pipe field that reports which
+  guild instance a raid is in, its instance ID, or that instance's respawn
+  state — `internal/respawn/engine.go` only ever sees kill-time log lines and
+  the static `quarm.db` respawn config, both scoped to the base zone, not a
+  specific instance.
+- **Sources checked:** Log (`logparser` has no instance-ID event), Zeal pipe
+  (no instance field in any message type per `docs/zealpipes-reference.md`),
+  `quarm.db` (`spawn2` has no per-instance override row).
+- **Could a future data source fix this?** Partially — if Zeal ever exposed
+  the current zone's instance ID, the app could at least label which
+  instance a kill happened in; the instance's own respawn clock would still
+  need a dedicated log line (e.g. an on-repop announcement) to derive
+  server-side, since it's driven by Lua controllers, not `spawn2`.
+
+### 19.2 Raid-willing and alternate-access thresholds are invisible server toggles
+
+- **Limitation:** EQMacEmu PR #432 added `#popaltaccess` (alternate key/
+  keyring routes) and a per-raid "willing" threshold (a configurable percent
+  of the raid roster must hold a destination's zone flag) for the Air/Water/
+  Fire/Earth/Time raid zones. Both are GM-configured server-wide settings
+  with no player-visible state — the app has no way to know whether
+  alt-access is currently enabled, or what the willing-in percentage is set
+  to, so the PoP Flag tracker always assumes personal-flag-only access (the
+  documented default) even if a GM has enabled either toggle.
+- **Root cause:** Both settings live in the server's `DataBucket` key/value
+  store (`pop_alt_access_enabled`, `pop_raid_flagged_percent`), which prints
+  nothing to the player log and has no player-facing query command — only
+  `#popaltaccess status` (GM-only, `AccountStatus::GMAdmin`) can read it.
+- **Sources checked:** Log (no player-visible line for either setting),
+  quests/EQMacEmu source (`zone/gm_commands/popaltaccess.cpp` confirms both
+  are GM-only reads).
+- **Could a future data source fix this?** Only if a future PR adds a
+  player-readable command or log line for these settings (mirroring how
+  `#popflags` made personal progression visible) — there is currently no way
+  to detect either short of asking server staff.
+
+---
+
 ## Template for new entries
 
 ```
