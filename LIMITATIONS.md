@@ -95,6 +95,42 @@ a future data source fix this?" column against the new capabilities.
   groupmate, or any timer with no id in its key, still falls back to the
   original name-only match: the underlying limitation (no spawn id on a raid
   member's cast, or on an NPC-cast detrimental) is unchanged.
+- **Spell-timer update (2026-09-23):** the 2026-09-19 fix still wiped a
+  same-named survivor whenever the *kill* line was untrusted (the tank or
+  another groupmate lands the killing blow far more often than the slower
+  does) — it only skipped removal on an explicit id *mismatch*, and an
+  untrusted kill has no id to mismatch against, so it fell through to the
+  old name-only match anyway. Also, the default "auto" tracking mode never
+  tagged a timer with a spawn id at all — only trigger-driven timers (e.g.
+  the built-in Slows pack, via `StartExternal`) did — so most players never
+  benefited from the disambiguation in the first place. Reported again by
+  Grimrose/SoS against v0.23.0.
+  Fixed: `onSpellLanded` (the auto-mode pipeline) now tags its own key the
+  same way `StartExternal` does. `removeOnKill` no longer matches a tagged
+  timer by name at all — only an exact, trusted spawn-id match removes one.
+  An untrusted kill (no killer credit to the active character, or the pipe's
+  target name/id pair hadn't settled together yet — see below) leaves every
+  same-named tagged instance untouched and queues it for
+  `resolvePendingKillsLocked`, which — after a short grace period with no
+  exact-id evidence — flags the still-ambiguous instances `MaybeDead` rather
+  than deleting them; the overlay dims a flagged row and marks it "?". The
+  flag clears the moment the player retargets that exact instance and the
+  pipe confirms it's still alive, or the timer is removed outright once an
+  exact spawn-id match (a corpse-target signal, most commonly) identifies it
+  as the one that died.
+  Also fixed a related staleness risk: the pipe's target *name* and target
+  *id* arrive as two independent messages with no guaranteed pairing, so a
+  fresh corpse name could transiently pair with the *previous* target's id
+  (which might belong to a different, still-alive same-named mob).
+  `removeOnKill` now only trusts the pair once both have held their current
+  value for `pipeTargetSettle` (300ms).
+  The underlying limitation is unchanged and, per the above, now permanent
+  without an upstream Zeal change: a kill credited to someone other than the
+  active character carries no spawn-id evidence on this client at all. The
+  only complete fix would be Zeal forwarding the EQ client's own death
+  message (spawn id + killer id, received for every nearby death) over the
+  pipe, the way PR #229 forwards target/pet ids today — see
+  `docs/zeal-spawn-id-plan.md`.
 
 ### 1.4 Pet / charmed-pet damage attribution requires inference
 

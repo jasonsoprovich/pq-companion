@@ -227,6 +227,44 @@ const targetIDKeySep = "#id:"
 // different mob.
 const castSelfSlowWindow = 10 * time.Second
 
+// pipeTargetSettle is how long the Zeal pipe's reported target NAME
+// (HandlePipeTarget, from a MsgLabel envelope) and target ID
+// (SetPipeTargetID, from a separate per-tick MsgPlayer envelope) must each
+// have held their current value before settledPipeTargetIDLocked trusts
+// them as describing the same mob. The two arrive as independent pipe
+// messages with no guaranteed pairing, so a corpse name can transiently
+// land a tick ahead of (or behind) the id update — pairing a fresh corpse
+// name with the PREVIOUS target's id, which may belong to a different,
+// still-alive same-named mob. Comfortably longer than one pipe tick
+// (~100ms) so a pair that arrived a tick apart has time to catch up, short
+// enough to feel instant to the player.
+const pipeTargetSettle = 300 * time.Millisecond
+
+// killEvidenceGrace is how long removeOnKill's ambiguous-kill queue
+// (pendingKills — see its doc comment) waits for exact spawn-id evidence
+// to resolve a same-named kill before resolvePendingKillsLocked flags the
+// still-untouched instances MaybeDead instead of leaving them silently
+// unmarked.
+const killEvidenceGrace = 2 * time.Second
+
+// aliveGraceBeforeKill is slack resolvePendingKillsLocked gives an "alive"
+// observation (aliveSeenIDs) that landed slightly BEFORE a pendingKill was
+// recorded — the ~250ms log poll cadence means "I saw it alive" and "it
+// died" can be reported within the same window without the sighting
+// actually being stale evidence.
+const aliveGraceBeforeKill = 1 * time.Second
+
+// pendingKill is an ambiguous EventKill / corpse-target observation that
+// removeOnKill couldn't tie to an exact spawn id — a kill credited to
+// someone other than the active character, or a corpse/self-kill whose
+// target name and id hadn't settled together yet (see removeOnKill's doc
+// comment). Queued for resolvePendingKillsLocked to settle once
+// killEvidenceGrace has passed with no exact-id removal superseding it.
+type pendingKill struct {
+	name string // normalizeNPCName(target)
+	at   time.Time
+}
+
 // keyTargetTokenLocked returns targetName as-is, or targetName with a
 // disambiguating "#id:<spawnid>" suffix appended, when this StartExternal
 // call can be confidently attributed to the active character's own very
@@ -245,16 +283,30 @@ const castSelfSlowWindow = 10 * time.Second
 //   - Zeal reported a live target spawn id at the moment of the player's
 //     most recent spell cast (lastCastTargetID != 0);
 //   - that cast's spell name matches this landed spell's name exactly
-//     (case-insensitively); and
-//   - it happened within castSelfSlowWindow of this firing.
+//     (case-insensitively);
+//   - it happened within castSelfSlowWindow of this firing;
+//   - the spell is a single-target type (isSingleTargetSpellType) — a
+//     group/AE spell lands on several recipients from one cast, so the
+//     caster's single live-selected target at cast time can't identify any
+//     one of them; tagging every land with the same id would just make
+//     them all collide on THAT id instead of on the plain name; and
+//   - when the pipe also recorded WHO the player had targeted at cast time
+//     (lastCastTarget — the name snapshot recentSelfCastMatches also
+//     consults), it agrees with the mob this instance actually landed on.
 //
 // It does nothing — targetName passes through unchanged, same as before
 // this existed — for a slow cast by someone else in the raid (no cast-
 // start line for another player's cast reaches this client), an NPC-cast
-// slow (no cast-start line at all), or once the window lapses. Those cases
-// keep colliding on name exactly as before: the underlying limitation is
-// that EQ's log carries no spawn id on the landed-effect line itself,
-// documented in LIMITATIONS.md §1.3.
+// slow (no cast-start line at all), a group/AE spell, or once the window
+// lapses. Those cases keep colliding on name exactly as before: the
+// underlying limitation is that EQ's log carries no spawn id on the
+// landed-effect line itself, documented in LIMITATIONS.md §1.3.
+//
+// Called from both StartExternal (trigger-driven timers) and onSpellLanded
+// (the default auto-tracking pipeline) — the latter is what makes slow
+// tracking under the default "auto" mode benefit from this at all; before
+// that wiring, only trigger-driven timers (e.g. the built-in Slows pack)
+// ever got tagged, so an auto-mode user never saw the disambiguation.
 func (e *Engine) keyTargetTokenLocked(spell *db.Spell, targetName string, at time.Time) string {
 	if targetName == "" || spell == nil || spell.Name == "" {
 		return targetName
@@ -266,6 +318,12 @@ func (e *Engine) keyTargetTokenLocked(spell *db.Spell, targetName string, at tim
 		return targetName
 	}
 	if d := at.Sub(e.lastCastAt); d < 0 || d > castSelfSlowWindow {
+		return targetName
+	}
+	if !isSingleTargetSpellType(spell.TargetType) {
+		return targetName
+	}
+	if e.lastCastTarget != "" && normalizeNPCName(e.lastCastTarget) != normalizeNPCName(targetName) {
 		return targetName
 	}
 	return targetName + targetIDKeySep + strconv.Itoa(e.lastCastTargetID)
@@ -497,6 +555,34 @@ type Engine struct {
 	// selected, or a pre-1.4.6 Zeal build that doesn't report it.
 	lastPipeTargetID int
 
+	// pipeTargetNameChangedAt / pipeTargetIDChangedAt record when
+	// lastPipeTarget / lastPipeTargetID last changed value — consulted by
+	// settledPipeTargetIDLocked so a name and id that haven't been
+	// reported together for at least pipeTargetSettle aren't trusted as
+	// describing the same mob (see that const's doc comment).
+	pipeTargetNameChangedAt time.Time
+	pipeTargetIDChangedAt   time.Time
+
+	// aliveSeenIDs records, per Zeal spawn id, the last time the pipe
+	// reported it as the player's LIVE (non-corpse) target — positive
+	// evidence that instance is still alive. Refreshed on every settled
+	// pipe tick (not just the first sighting) so resolvePendingKillsLocked
+	// always has a current answer, not a stale one, to "was this instance
+	// being watched alive around the time of an ambiguous kill?" Also used
+	// by observeAliveLocked to clear an already-set MaybeDead flag the
+	// moment the player retargets that instance and sees it's still alive.
+	aliveSeenIDs map[int]time.Time
+
+	// lastAliveClearedID avoids re-scanning every timer on every ~100ms
+	// pipe tick just to clear MaybeDead flags for an id that's already been
+	// cleared — observeAliveLocked only repeats the scan when the settled
+	// id changes.
+	lastAliveClearedID int
+
+	// pendingKills queues ambiguous kills awaiting resolution — see
+	// pendingKill and resolvePendingKillsLocked.
+	pendingKills []pendingKill
+
 	// pipeBuffSlots is the most recent self-buff slot snapshot from the pipe
 	// (Buff0..14, plus 15..20 from game.dll). Stored as a set keyed by spell
 	// name. Used for divergence logging against the engine's active self-buff
@@ -551,6 +637,7 @@ func NewEngine(hub *ws.Hub, database *db.DB, charCtx CharacterContext, scopeFn S
 		timers:         make(map[string]*ActiveTimer),
 		pendingArms:    make(map[string]*pendingArm),
 		nextStackIndex: make(map[string]uint64),
+		aliveSeenIDs:   make(map[int]time.Time),
 	}
 }
 
@@ -716,6 +803,19 @@ func (e *Engine) Handle(ev logparser.LogEvent) {
 		// Zoning no longer clears timers — buffs survive a zone change in
 		// EQ, and persisting them lets the user keep tracking long-running
 		// raid buffs across zone lines.
+		//
+		// The spawn-id evidence caches ARE flushed, though: EQMacEmu hands
+		// out spawn ids fresh per zone-in, so a same-numbered id in the new
+		// zone almost certainly names a different mob than it did in the
+		// old one. Carrying aliveSeenIDs or pendingKills across the zone
+		// line risks either false "still alive" evidence or a
+		// MaybeDead flag landing on an unrelated new spawn that happens to
+		// reuse the id.
+		e.mu.Lock()
+		e.aliveSeenIDs = make(map[int]time.Time)
+		e.pendingKills = nil
+		e.lastAliveClearedID = 0
+		e.mu.Unlock()
 
 	case logparser.EventDeath:
 		// Active player death: EQ strips every buff (and detrimental) from you
@@ -801,6 +901,7 @@ func (e *Engine) HandlePipeTarget(name string) {
 		return
 	}
 	e.lastPipeTarget = name
+	e.pipeTargetNameChangedAt = time.Now()
 	e.mu.Unlock()
 
 	if base, ok := parseCorpseTarget(name); ok {
@@ -816,15 +917,71 @@ func (e *Engine) HandlePipeTarget(name string) {
 // Unlike SetPipePetID this needs no debounce: nothing reacts to the value
 // changing on its own. It's read once, at the instant EventSpellCast
 // snapshots it into lastCastTargetID, so a single stale or missed frame
-// can't misattribute anything.
+// can't misattribute anything for THAT purpose.
+//
+// It also feeds the alive-evidence side of removeOnKill's ambiguous-kill
+// handling: whenever the id is non-zero, the current target isn't a
+// corpse, and the (name, id) pair has settled (see
+// settledPipeTargetIDLocked), that id is recorded as observed alive right
+// now — see observeAliveLocked.
 func (e *Engine) SetPipeTargetID(id *int) {
 	e.mu.Lock()
+	newID := 0
 	if id != nil {
-		e.lastPipeTargetID = *id
-	} else {
-		e.lastPipeTargetID = 0
+		newID = *id
+	}
+	if newID != e.lastPipeTargetID {
+		e.lastPipeTargetID = newID
+		e.pipeTargetIDChangedAt = time.Now()
+	}
+	if newID != 0 {
+		if _, isCorpse := parseCorpseTarget(e.lastPipeTarget); !isCorpse {
+			now := time.Now()
+			if settled := e.settledPipeTargetIDLocked(now); settled != 0 {
+				e.observeAliveLocked(settled, now)
+			}
+		}
 	}
 	e.mu.Unlock()
+}
+
+// settledPipeTargetIDLocked returns lastPipeTargetID, or 0 if it's unset or
+// either it or lastPipeTarget changed more recently than pipeTargetSettle
+// ago — meaning the pair might describe two different mobs rather than the
+// same one (see pipeTargetSettle's doc comment). Caller must hold e.mu.
+func (e *Engine) settledPipeTargetIDLocked(now time.Time) int {
+	if e.lastPipeTargetID == 0 {
+		return 0
+	}
+	if now.Sub(e.pipeTargetNameChangedAt) < pipeTargetSettle {
+		return 0
+	}
+	if now.Sub(e.pipeTargetIDChangedAt) < pipeTargetSettle {
+		return 0
+	}
+	return e.lastPipeTargetID
+}
+
+// observeAliveLocked records id as confirmed alive at now — the Zeal pipe
+// currently has it selected as a live, non-corpse target — and, the first
+// time this settled id is observed since the last one, clears MaybeDead
+// from any timer already flagged under it: the player has retargeted that
+// exact instance and it's still walking around, which is stronger evidence
+// than the ambiguous kill that flagged it. Caller must hold e.mu.
+func (e *Engine) observeAliveLocked(id int, now time.Time) {
+	if e.aliveSeenIDs == nil {
+		e.aliveSeenIDs = make(map[int]time.Time)
+	}
+	e.aliveSeenIDs[id] = now
+	if id == e.lastAliveClearedID {
+		return
+	}
+	e.lastAliveClearedID = id
+	for k, t := range e.timers {
+		if t.MaybeDead && parseKeyTargetID(k) == id {
+			t.MaybeDead = false
+		}
+	}
 }
 
 // petLossMissThreshold is how many consecutive nil pet-id observations must
@@ -888,6 +1045,21 @@ func (e *Engine) ResetPipePetID() {
 	e.mu.Lock()
 	e.pipePetID = nil
 	e.pipePetMisses = 0
+	e.mu.Unlock()
+}
+
+// ResetPipeTargetTracking drops the spawn-id evidence caches used to
+// disambiguate same-named kills (aliveSeenIDs, pendingKills — see
+// removeOnKill and resolvePendingKillsLocked). Called when the Zeal pipe
+// disconnects: a fresh connection (or a different Zeal session entirely,
+// e.g. the player relaunching EQ) can't be trusted to still describe the
+// same mobs these caches remember. Timers themselves are untouched — they
+// still clear via the log-driven fallback, duration expiry, or dismissal.
+func (e *Engine) ResetPipeTargetTracking() {
+	e.mu.Lock()
+	e.aliveSeenIDs = make(map[int]time.Time)
+	e.pendingKills = nil
+	e.lastAliveClearedID = 0
 	e.mu.Unlock()
 }
 
@@ -1138,35 +1310,43 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 	// "treat this spell specially," so the trigger wins on metadata while
 	// the spell-landed timer wins on identity (target, accurate duration via
 	// duration focuses).
-	for _, existing := range e.timers {
-		if sameSpellForDedup(existing, name, spellID) && time.Since(existing.CastAt) < dedupGraceWindow {
-			if displayThresholdSecs > 0 {
-				existing.DisplayThresholdSecs = displayThresholdSecs
-			}
-			if len(alerts) > 0 {
-				existing.TimerAlerts = alerts
-			}
-			if barColor != "" {
-				existing.BarColor = barColor
-			}
-			if pinned {
-				existing.Pinned = true
-			}
-			if customGroup != "" {
-				existing.CustomGroup = customGroup
-			}
-			snap := e.snapshot(time.Now())
-			e.mu.Unlock()
-			slog.Debug("timer-debug: trigger metadata merged onto existing timer",
-				"name", name,
-				"existing_target", existing.TargetName,
-				"existing_age_ms", time.Since(existing.CastAt).Milliseconds(),
-				"applied_threshold_secs", displayThresholdSecs,
-				"applied_alerts_bytes", len(alerts),
-			)
-			e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
-			return
+	for existingKey, existing := range e.timers {
+		if !sameSpellForDedup(existing, name, spellID) || time.Since(existing.CastAt) >= dedupGraceWindow {
+			continue
 		}
+		// Don't merge into a DIFFERENT same-named spawn-id instance — see
+		// the matching guard in onSpellLanded's absorb loop.
+		if newID := parseKeyTargetID(key); newID != 0 {
+			if existingID := parseKeyTargetID(existingKey); existingID != 0 && existingID != newID {
+				continue
+			}
+		}
+		if displayThresholdSecs > 0 {
+			existing.DisplayThresholdSecs = displayThresholdSecs
+		}
+		if len(alerts) > 0 {
+			existing.TimerAlerts = alerts
+		}
+		if barColor != "" {
+			existing.BarColor = barColor
+		}
+		if pinned {
+			existing.Pinned = true
+		}
+		if customGroup != "" {
+			existing.CustomGroup = customGroup
+		}
+		snap := e.snapshot(time.Now())
+		e.mu.Unlock()
+		slog.Debug("timer-debug: trigger metadata merged onto existing timer",
+			"name", name,
+			"existing_target", existing.TargetName,
+			"existing_age_ms", time.Since(existing.CastAt).Milliseconds(),
+			"applied_threshold_secs", displayThresholdSecs,
+			"applied_alerts_bytes", len(alerts),
+		)
+		e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
+		return
 	}
 	timer := &ActiveTimer{
 		ID:                   key,
@@ -1511,7 +1691,22 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 		"final_seconds", durationSeconds,
 	)
 
+	e.mu.Lock()
+	// keyTargetTokenLocked appends a disambiguating spawn-id suffix to the
+	// map key (never to the displayed TargetName) when this land can be
+	// confidently attributed to the active character's own very recent
+	// single-target cast — see its doc comment. This is what makes the
+	// default "auto" tracking mode benefit from spawn-id disambiguation at
+	// all: without it, two identically-named mobs the player personally
+	// slowed collapse onto one untagged key here even when a trigger-driven
+	// StartExternal call for the same land would have tagged it, and the
+	// absorb loop below would then throw the tag away when it merges the
+	// two. Self-cast targets (isSelfTarget) skip this — the player's own
+	// name/"You" is already unique, nothing to disambiguate.
 	key := timerKey(spellName, target)
+	if !isSelfTarget {
+		key = timerKey(spellName, e.keyTargetTokenLocked(spell, target, landedAt))
+	}
 	timer := &ActiveTimer{
 		ID:              key,
 		SpellName:       spellName,
@@ -1527,7 +1722,6 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 		CasterCharacter: active,
 	}
 
-	e.mu.Lock()
 	// Triggers fire BEFORE spell-landed in the tailer dispatch (raw lines
 	// first, parsed events second), so a same-spell-name trigger may have
 	// already created a target-less entry with user-configured threshold and
@@ -1555,7 +1749,17 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 		// must coexist as its own row, not be overwritten. Without this guard
 		// the second mob's land deleted the first mob's timer, collapsing an
 		// AoE mez to a single timer (the reported bug).
-		sameSpell := (existing.TargetName == "" || normalizeNPCName(existing.TargetName) == normalizeNPCName(target)) &&
+		//
+		// A same-named DIFFERENT spawn-id instance is the same kind of
+		// separate recipient, just disambiguated by id instead of by a
+		// distinct target name (two same-named mobs both slowed by the
+		// player — see keyTargetTokenLocked). Absorbing it here would throw
+		// away exactly the tag onSpellLanded/StartExternal just attached,
+		// re-collapsing the two instances onto one row.
+		idConflict := parseKeyTargetID(key) != 0 && parseKeyTargetID(existingKey) != 0 &&
+			parseKeyTargetID(key) != parseKeyTargetID(existingKey)
+		sameSpell := !idConflict &&
+			(existing.TargetName == "" || normalizeNPCName(existing.TargetName) == normalizeNPCName(target)) &&
 			sameSpellForDedup(existing, spellName, spell.ID)
 		sameLand := sameLandOrphan(existing, target, landedAt, timer.Category)
 		if !sameSpell && !sameLand {
@@ -2091,77 +2295,160 @@ func (e *Engine) removeSelfTimers() {
 // which is positive evidence, not a same-name guess.
 //
 // Spawn-id disambiguation. keyTargetTokenLocked may have tagged a timer's map
-// key with the spawn id of the specific mob the player's own cast landed on
-// (see its doc comment) — e.g. two identically-named mobs both slowed by the
-// player get independent keys "Slow@a bloodguard#id:100" and
-// "Slow@a bloodguard#id:200". Without checking that id, a kill on either one
-// would delete both merely because they share a display name (reported by
-// Grimrose/SoS: killing one of two same-named slowed mobs cleared both slow
-// timers). trustPipeTargetID licenses reading e.lastPipeTargetID as "the
-// spawn id of the mob that just died": true for the corpse-target signal
-// (the player had that exact mob selected as it died) and for a self-kill log
-// line ("You have slain X!", Killer == "You" — the active character's own
-// target). It's meaningless for a kill credited to someone else or reported
-// with no killer at all, since lastPipeTargetID only ever reflects the local
-// player's own target.
+// key with the spawn id of the specific mob a landed spell or trigger firing
+// could be confidently attributed to (see its doc comment) — e.g. two
+// identically-named mobs both slowed by the player get independent keys
+// "Slow@a bloodguard#id:100" and "Slow@a bloodguard#id:200".
 //
-// When both the timer's key and the known-dead spawn id are present and they
-// disagree, the timer survives — it belongs to a different, still-living
-// instance of the same-named mob. Timers with no id suffix (the common case:
-// no self-cast could be attributed, or they predate the feature) fall back to
-// the original name-only match exactly as before, including its bluntness.
+// A TAGGED timer is identified ONLY by an exact spawn-id match — never by
+// name alone, regardless of trust. trustPipeTargetID licenses computing
+// knownDeadID from e.lastPipeTargetID (via settledPipeTargetIDLocked, which
+// also requires the name and id to have settled together — see
+// pipeTargetSettle) as "the spawn id of the mob that just died": true for
+// the corpse-target signal (the player had that exact mob selected as it
+// died) and for a self-kill log line ("You have slain X!", Killer == "You"
+// — the active character's own target). It's meaningless for a kill
+// credited to someone else or reported with no killer at all, since
+// lastPipeTargetID only ever reflects the local player's own target — for
+// those, knownDeadID stays 0 and a tagged timer is left alone here
+// entirely, whether or not it happens to share the dead mob's name.
+//
+// An earlier version of this fix (789d1b33) still matched a tagged timer by
+// name whenever knownDeadID was 0 (only skipping it on an explicit id
+// MISMATCH), which meant an untrusted kill — the overwhelmingly common case
+// for a group's slow, since the tank or DPS usually lands the killing blow,
+// not the slower — wiped every same-named tagged instance exactly as before
+// that fix, reported again by Grimrose/SoS against v0.23.0. Now, when
+// knownDeadID is 0 and at least one tagged timer shares the kill's
+// normalized name, that's genuinely ambiguous evidence: this function
+// leaves those timers untouched and queues a pendingKill for
+// resolvePendingKillsLocked to settle after killEvidenceGrace, flagging
+// MaybeDead (never deleting) rather than guessing which instance died — see
+// ActiveTimer.MaybeDead.
+//
+// An UNTAGGED timer (no self-cast could be confidently attributed, or it
+// predates this feature) still falls back to the original name-only match
+// exactly as before, including the charm exemption on a log-driven kill.
+// The underlying limitation — a same-name kill credited to someone else
+// carries no id evidence for that timer at all — is unchanged; see
+// LIMITATIONS.md §1.3.
 func (e *Engine) removeOnKill(target string, viaCorpseTarget bool, trustPipeTargetID bool) {
 	if target == "" {
 		return
 	}
 	normTarget := normalizeNPCName(target)
+	now := time.Now()
 	e.mu.Lock()
 	knownDeadID := 0
 	if trustPipeTargetID {
-		knownDeadID = e.lastPipeTargetID
+		knownDeadID = e.settledPipeTargetIDLocked(now)
 	}
 	removed := 0
-	survivors := make([]string, 0, len(e.timers))
+	taggedSurvivor := false
 	for k, t := range e.timers {
-		// Stacked timers are exempt from the target match: the tailer
-		// delivers raw log lines before parsed events (see
-		// logparser.Tailer.deliver), so a respawn trigger firing on
-		// "You have slain Foo!" creates its stacked timer a moment before
-		// this same kill's EventKill reaches removeOnKill("Foo") — which
-		// would otherwise delete the very row it just captured a target
-		// name for. The orphan sweep never applies to CategoryCustom
-		// (isDetrimentalCategory excludes it) so it's unaffected either way.
-		// Charm timers only match on the corpse-target signal, never a
-		// log-driven kill (see the doc comment) — a same-named mob dying
-		// elsewhere must not drop the pet's timer.
-		idMismatch := knownDeadID != 0 && func() bool {
-			keyID := parseKeyTargetID(k)
-			return keyID != 0 && keyID != knownDeadID
-		}()
-		match := !t.Stacked && normalizeNPCName(t.TargetName) == normTarget &&
-			(!t.IsCharm || viaCorpseTarget) && !idMismatch
+		keyID := parseKeyTargetID(k)
+		var match bool
+		if keyID != 0 {
+			// Tagged: only exact spawn-id evidence identifies this as the
+			// mob that died — see the doc comment above. No IsCharm gate
+			// needed here: an exact id match against a trusted source
+			// (self-kill or corpse-target) is stronger evidence than the
+			// untagged branch's viaCorpseTarget requirement exists to
+			// approximate with name alone.
+			match = !t.Stacked && knownDeadID != 0 && keyID == knownDeadID
+		} else {
+			// Stacked timers are exempt from the target match: the tailer
+			// delivers raw log lines before parsed events (see
+			// logparser.Tailer.deliver), so a respawn trigger firing on
+			// "You have slain Foo!" creates its stacked timer a moment
+			// before this same kill's EventKill reaches
+			// removeOnKill("Foo") — which would otherwise delete the very
+			// row it just captured a target name for. Charm timers only
+			// match on the corpse-target signal, never a log-driven kill —
+			// a same-named mob dying elsewhere must not drop the pet's
+			// timer (see the doc comment above removeOnKill).
+			match = !t.Stacked && normalizeNPCName(t.TargetName) == normTarget &&
+				(!t.IsCharm || viaCorpseTarget)
+		}
 		orphan := t.TargetName == "" && isDetrimentalCategory(t.Category) && !t.IsCharm
 		if match || orphan {
 			delete(e.timers, k)
 			removed++
 			continue
 		}
-		if isDetrimentalCategory(t.Category) {
-			survivors = append(survivors, t.SpellName+"@"+t.TargetName)
+		if keyID != 0 && isDetrimentalCategory(t.Category) && normalizeNPCName(t.TargetName) == normTarget {
+			taggedSurvivor = true
 		}
 	}
-	snap := e.snapshot(time.Now())
+	if knownDeadID == 0 && taggedSurvivor {
+		e.pendingKills = append(e.pendingKills, pendingKill{name: normTarget, at: now})
+	}
+	snap := e.snapshot(now)
 	e.mu.Unlock()
 
 	if removed > 0 {
-		slog.Debug("timer-debug: removed timers on kill", "target", target, "removed", removed)
+		slog.Debug("timer-debug: removed timers on kill", "target", target, "removed", removed, "known_dead_id", knownDeadID)
 		e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
 	} else {
-		slog.Debug("timer-debug: kill matched no timers",
+		slog.Debug("timer-debug: kill matched no timers for immediate removal",
 			"target", target,
 			"normalized", normTarget,
-			"detrimental_survivors", survivors)
+			"known_dead_id", knownDeadID,
+			"queued_ambiguous", knownDeadID == 0 && taggedSurvivor)
 	}
+}
+
+// resolvePendingKillsLocked settles the ambiguous-kill queue removeOnKill
+// populates when it can't confirm an exact dead spawn id: a kill credited
+// to someone other than the active character, or a corpse/self-kill whose
+// target name and id hadn't settled together yet. Called once per second
+// from pruneExpired.
+//
+// A pendingKill sits for killEvidenceGrace to give exact spawn-id evidence
+// (a slightly-delayed corpse-target settle, most commonly) a chance to
+// arrive and resolve it precisely — removeOnKill deletes the matching
+// tagged timer outright the moment that happens, which naturally drops it
+// out of the scan below. If the grace period elapses with a same-named
+// tagged timer still present, it's flagged MaybeDead ("a same-named mob
+// died; this might be the one" — see ActiveTimer.MaybeDead) UNLESS the pipe
+// has positively seen that exact spawn id alive at or after
+// aliveGraceBeforeKill before the kill (aliveSeenIDs — see
+// observeAliveLocked), meaning the player was watching that specific
+// instance around the time of the kill and it wasn't the one that died.
+//
+// A pendingKill with no matching tagged timer left at all — already
+// resolved some other way, expired, or dismissed — is dropped without ever
+// flagging anything; this is also what keeps the queue from growing
+// unbounded, no separate age cap needed. Caller must hold e.mu.
+func (e *Engine) resolvePendingKillsLocked(now time.Time) {
+	if len(e.pendingKills) == 0 {
+		return
+	}
+	kept := e.pendingKills[:0]
+	for _, pk := range e.pendingKills {
+		anyTagged := false
+		settle := now.Sub(pk.at) >= killEvidenceGrace
+		for k, t := range e.timers {
+			id := parseKeyTargetID(k)
+			if id == 0 || normalizeNPCName(t.TargetName) != pk.name {
+				continue
+			}
+			anyTagged = true
+			if !settle || t.MaybeDead {
+				continue
+			}
+			if seenAt, ok := e.aliveSeenIDs[id]; ok && !seenAt.Before(pk.at.Add(-aliveGraceBeforeKill)) {
+				continue
+			}
+			t.MaybeDead = true
+			slog.Debug("timer-debug: flagged possible death on ambiguous kill",
+				"target", pk.name, "spawn_id", id, "key", k)
+		}
+		if anyTagged {
+			kept = append(kept, pk)
+		}
+	}
+	e.pendingKills = kept
 }
 
 // normalizeNPCName returns a lowercased, trimmed form of an NPC name with any
@@ -2372,6 +2659,9 @@ func (e *Engine) clearAll() {
 	e.mu.Lock()
 	wasEmpty := len(e.timers) == 0
 	e.timers = make(map[string]*ActiveTimer)
+	e.aliveSeenIDs = make(map[int]time.Time)
+	e.pendingKills = nil
+	e.lastAliveClearedID = 0
 	snap := e.snapshot(time.Now())
 	e.mu.Unlock()
 
@@ -2434,11 +2724,15 @@ const chChainMissCheckDelay = 4 * time.Second
 // interrupted/skipped cast stays visible on the overlay for a moment rather
 // than just quietly vanishing. The grace never touches ExpiresAt, so the row's
 // countdown still runs cleanly down to zero and stays there.
+//
+// Also resolves removeOnKill's ambiguous-kill queue every tick — see
+// resolvePendingKillsLocked.
 func (e *Engine) pruneExpired() {
 	now := time.Now()
 	keep := e.keepExpired()
 	missEnabled := e.chChainMissFn == nil || e.chChainMissFn()
 	e.mu.Lock()
+	e.resolvePendingKillsLocked(now)
 	for name, t := range e.timers {
 		if missEnabled && isCHChainCategory(t.Category) && !t.castConfirmed && !t.PossibleMiss &&
 			now.Sub(t.StartsAt) >= chChainMissCheckDelay {

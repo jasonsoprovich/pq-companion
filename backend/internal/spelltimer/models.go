@@ -178,6 +178,22 @@ type ActiveTimer struct {
 	// false for every other category.
 	PossibleMiss bool `json:"possible_miss,omitempty"`
 
+	// MaybeDead flags a spawn-id-tagged detrimental timer (see
+	// engine.go's keyTargetTokenLocked) whose specific instance could NOT be
+	// confirmed dead or alive after a same-named mob died elsewhere — a kill
+	// credited to someone other than the active character, with no
+	// corroborating corpse-target signal (see removeOnKill and
+	// resolvePendingKillsLocked). The engine deliberately never guesses and
+	// deletes a timer on ambiguous evidence like this; instead it leaves the
+	// row up and flags it so the overlay can dim it and mark it "?" — "a
+	// mob with this name just died; this MIGHT be it." Clears the moment the
+	// player retargets that exact instance and the pipe confirms it's still
+	// alive, or the timer is removed outright once exact spawn-id evidence
+	// (a corpse-target signal) identifies it as the one that died. Always
+	// false for an untagged timer, which has no way to be identified this
+	// precisely in the first place.
+	MaybeDead bool `json:"maybe_dead,omitempty"`
+
 	// castConfirmed marks a CH-chain timer whose caster was observed
 	// starting a cast around the chain callout (Engine.ConfirmCast, driven by
 	// chchain.CastWatcher via Matcher.NoteCastBegin), so pruneExpired won't

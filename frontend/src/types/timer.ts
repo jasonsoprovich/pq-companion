@@ -106,6 +106,18 @@ export interface ActiveTimer {
    * that particular callout didn't include one.
    */
   caster_mana_pct?: number
+  /**
+   * True when a same-named mob died somewhere and the engine couldn't prove
+   * whether THIS specific instance was the one that died — a kill credited
+   * to someone other than the active character, with no corroborating
+   * corpse-target signal. The engine never guesses and removes the timer on
+   * evidence this thin; instead it leaves the row up and flags it so the
+   * overlay can dim it and mark it "?". Clears the moment the player
+   * retargets this exact instance and it's confirmed still alive, or the
+   * timer is removed outright once exact evidence identifies it as the one
+   * that died. Only ever set on a spawn-id-disambiguated timer.
+   */
+  maybe_dead?: boolean
 }
 
 export interface TimerState {

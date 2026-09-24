@@ -76,9 +76,21 @@ function DetrimRow({ timer, activePlayer, appearance }: { timer: ActiveTimer; ac
   const urgent = expired || pct < 0.2
   const catColor = CATEGORY_COLORS[timer.category]
   const target = detrimTarget(timer.target_name, activePlayer)
+  // A same-named mob died elsewhere and the engine can't prove this is the
+  // instance that died (no corpse-target confirmation, just an ambiguous
+  // kill credit) — see ActiveTimer.MaybeDead. Never auto-removed on
+  // evidence this thin; just dimmed and marked so the player can judge for
+  // themselves by retargeting.
+  const maybeDead = timer.maybe_dead === true
 
   return (
-    <div style={{ position: 'relative', padding: `${appearance.rowPadding}px 10px`, borderBottom: '1px solid var(--color-border)', overflow: 'hidden', flexShrink: 0 }}>
+    <div
+      style={{
+        position: 'relative', padding: `${appearance.rowPadding}px 10px`, borderBottom: '1px solid var(--color-border)',
+        overflow: 'hidden', flexShrink: 0, opacity: maybeDead ? 0.45 : 1,
+      }}
+      title={maybeDead ? 'A mob with this name died — this may be it. Target it to confirm.' : undefined}
+    >
       <div
         style={{
           position: 'absolute', left: 0, top: 0, bottom: 0,
@@ -96,7 +108,7 @@ function DetrimRow({ timer, activePlayer, appearance }: { timer: ActiveTimer; ac
           <span style={{ fontSize: appearance.nameFontSize, color: urgent ? '#f87171' : 'var(--color-foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: urgent ? 600 : 400 }}>
             {timer.spell_name}
             {target && (
-              <span style={{ color: 'var(--color-muted)', fontWeight: 400 }}>{` — ${target}`}</span>
+              <span style={{ color: 'var(--color-muted)', fontWeight: 400 }}>{` — ${maybeDead ? '? ' : ''}${target}`}</span>
             )}
           </span>
         </div>

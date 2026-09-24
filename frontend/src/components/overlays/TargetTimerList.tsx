@@ -26,6 +26,11 @@ function TimerRow({ timer, showSeconds }: { timer: ActiveTimer; showSeconds: boo
   const catColor = CATEGORY_COLORS[timer.category] ?? '#6b7280'
   const urgent = timer.duration_seconds > 0 && pct < 0.2
   const fill = urgent ? '#ef4444' : catColor
+  // A same-named mob died elsewhere and the engine can't prove this is the
+  // instance that died — see ActiveTimer.MaybeDead. Never auto-removed on
+  // evidence this thin; just dimmed and marked so the player can judge for
+  // themselves by retargeting.
+  const maybeDead = timer.maybe_dead === true
 
   return (
     <div
@@ -35,7 +40,9 @@ function TimerRow({ timer, showSeconds }: { timer: ActiveTimer; showSeconds: boo
         borderRadius: 3,
         overflow: 'hidden',
         backgroundColor: 'rgba(255,255,255,0.05)',
+        opacity: maybeDead ? 0.45 : 1,
       }}
+      title={maybeDead ? 'A mob with this name died — this may be it. Target it to confirm.' : undefined}
     >
       {/* depleting progress fill */}
       <div
@@ -85,6 +92,7 @@ function TimerRow({ timer, showSeconds }: { timer: ActiveTimer; showSeconds: boo
               fontWeight: urgent ? 600 : 500,
             }}
           >
+            {maybeDead ? '? ' : ''}
             {timer.spell_name}
           </span>
           {timer.target_is_caster && (

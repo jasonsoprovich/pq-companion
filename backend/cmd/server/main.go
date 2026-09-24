@@ -1688,6 +1688,7 @@ func main() {
 		timerEngine.SetPipeBuffSlots(nil)
 		timerEngine.ResetPipePetID()
 		timerEngine.SetPipeTargetID(nil)
+		timerEngine.ResetPipeTargetTracking()
 		triggerEngine.HandlePipeReset()
 		hub.Broadcast(ws.Event{Type: "zeal:disconnected", Data: map[string]any{}})
 	})

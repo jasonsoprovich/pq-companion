@@ -94,6 +94,11 @@ function TimerRow({
   const timeColor = showUrgentColor ? '#f87171' : urgent ? 'rgba(255,255,255,1)' : color
   const catColor = CATEGORY_COLORS[timer.category]
   const target = detrimTarget(timer.target_name, activePlayer)
+  // A same-named mob died elsewhere and the engine can't prove this is the
+  // instance that died — see ActiveTimer.MaybeDead. Never auto-removed on
+  // evidence this thin; just dimmed and marked so the player can judge for
+  // themselves by retargeting.
+  const maybeDead = timer.maybe_dead === true
 
   return (
     <div
@@ -103,7 +108,9 @@ function TimerRow({
         borderBottom: '1px solid rgba(255,255,255,0.1)',
         overflow: 'hidden',
         flexShrink: 0,
+        opacity: maybeDead ? 0.45 : 1,
       }}
+      title={maybeDead ? 'A mob with this name died — this may be it. Target it to confirm.' : undefined}
     >
       {/* depleting progress bar, opacity from Settings → Spell Overlays */}
       <div
@@ -159,7 +166,7 @@ function TimerRow({
           >
             {timer.spell_name}
             {target && (
-              <span style={{ color: 'rgba(255,255,255,0.7)', fontWeight: 400 }}>{` — ${target}`}</span>
+              <span style={{ color: 'rgba(255,255,255,0.7)', fontWeight: 400 }}>{` — ${maybeDead ? '? ' : ''}${target}`}</span>
             )}
           </span>
         </div>
