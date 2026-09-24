@@ -609,3 +609,33 @@ Body gate falls out of `RestrictionForTargetType` with no special case; resist
 to `grantedLevels` with 59 for all three. All display as "Dire Charm" via a
 new `charm.DisplayName` helper. Matches eqpetfinder's
 "Dire Charm (Max Level: 46, Req Lvl: 59)".
+
+## 🕘 Two follow-up Zeal PRs — drafted, awaiting Windows test (2026-09-24)
+
+Two more client-side gaps closed by upstream Zeal changes, prepared as PRs
+against `CoastalRedwood/Zeal` (not this repo — see the memory entries below
+for the full design writeups; this is a pointer, not a duplicate):
+
+1. **Target descriptors** (closes upstream issue #213) — adds
+   `target_name`/`target_type`/`target_race`/`target_loc` (commit 1) and
+   `target_level`/`target_class` (commit 2, droppable) to the named pipe's
+   target block, so PQ Companion can disambiguate same-name NPCs backed by
+   different `npc_types` rows (Kaas Thox in Vex Thal, A Shissar Revenant in
+   Ssraeshza — see `LIMITATIONS.md` 3.1/3.2/3.3/3.5, still unresolved on the
+   PQC side pending a Zeal release). Full detail:
+   `[[project_zeal_pr_target_descriptors]]` (Claude memory).
+2. **`#popflags` export** (new feature) — adds `/outputfile popflags`,
+   capturing PoP-progression server command output to a file the way
+   Inventory/Quarmy/Spellbook already export, feeding
+   [[pop-flag-tracker]] eventually. Full detail:
+   `[[project_zeal_popflags_export_pr]]` (Claude memory).
+
+Both branches are pushed to `jasonsoprovich/Zeal` (a fork of
+`CoastalRedwood/Zeal`), and a self-contained Windows build/test guide is
+published as a Claude Artifact (private): a zero-to-tested walkthrough
+covering installing Git/VS2022/Go from scratch through both PR's full test
+matrices, with both PR bodies embedded for copy-paste. **Nothing left to
+prep — waiting on the user's Windows test pass.** PR 2's full test matrix
+additionally needs Project Quarm's PoP launch (not live as of this note) to
+exercise `#popflags` itself; only its no-server-support fallback path can be
+tested before then.
