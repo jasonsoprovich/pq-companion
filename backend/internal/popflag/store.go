@@ -272,7 +272,7 @@ func (s *Store) ApplySeerOverriding(character string, qglobals map[string]string
 	// Clear non-manual rows for qglobal-backed flags ONLY, so retractions take
 	// effect and seer supersedes auto — but a reading must never retract an
 	// 'auto' kill-detected row on a flag it has no way to observe (e.g.
-	// bot_agnarr, poair_xegony have no backing qglobal at all).
+	// poair_xegony has no backing qglobal at all).
 	if err := clearNonManualQglobalBackedRows(tx, character); err != nil {
 		return nil, err
 	}
@@ -314,7 +314,7 @@ func (s *Store) ApplySeerOverriding(character string, qglobals map[string]string
 // (SatisfiedBy). A Seer or #popflags reading is authoritative ONLY for these
 // — clearing non-manual rows on a reading must be scoped to this set, or it
 // would retract an 'auto' kill-detected row on a flag with no qglobal at all
-// (e.g. bot_agnarr, poair_xegony), which no reading has any way to observe.
+// (e.g. poair_xegony), which no reading has any way to observe.
 func qglobalBackedFlagIDs() []string {
 	all := Flags()
 	out := make([]string, 0, len(all))

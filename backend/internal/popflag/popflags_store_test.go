@@ -58,12 +58,12 @@ func TestApplyPopFlagsReportPreservesAutoKills(t *testing.T) {
 	s := openTempStore(t)
 	const char = "Fenwei"
 
-	// bot_agnarr has no Qglobal — only a live kill event can set it.
-	if _, err := s.SetAuto(char, "bot_agnarr"); err != nil {
+	// poair_xegony has no Qglobal — only a live kill event can set it.
+	if _, err := s.SetAuto(char, "poair_xegony"); err != nil {
 		t.Fatalf("SetAuto: %v", err)
 	}
-	if !doneByID(t, s, char)["bot_agnarr"].Done {
-		t.Fatalf("bot_agnarr should be done after SetAuto")
+	if !doneByID(t, s, char)["poair_xegony"].Done {
+		t.Fatalf("poair_xegony should be done after SetAuto")
 	}
 
 	report := ParsePopFlagsReport([]string{
@@ -73,8 +73,8 @@ func TestApplyPopFlagsReportPreservesAutoKills(t *testing.T) {
 	if _, err := s.ApplyPopFlagsReport(char, report, "raw", time.Unix(1000, 0)); err != nil {
 		t.Fatalf("ApplyPopFlagsReport: %v", err)
 	}
-	if !doneByID(t, s, char)["bot_agnarr"].Done {
-		t.Errorf("bot_agnarr (auto, no qglobal) should survive a popflags reading")
+	if !doneByID(t, s, char)["poair_xegony"].Done {
+		t.Errorf("poair_xegony (auto, no qglobal) should survive a popflags reading")
 	}
 }
 
@@ -92,18 +92,23 @@ func TestApplyPopFlagsReportManualPrecedence(t *testing.T) {
 	if _, err := s.ApplyPopFlagsReport(char, report, "raw", time.Unix(1000, 0)); err != nil {
 		t.Fatalf("ApplyPopFlagsReport: %v", err)
 	}
-	// hoh_mithaniel is satisfied_by cipher>=1; confirm it landed, then
-	// manually retract it, then re-apply the same report.
-	if !doneByID(t, s, char)["hoh_mithaniel"].Done {
-		t.Fatalf("hoh_mithaniel should be satisfied by cipher")
+	// potor_saryrn is satisfied_by cipher>=1; confirm it landed, then
+	// manually retract it, then re-apply the same report. (hoh_mithaniel is
+	// ALSO satisfied_by cipher, but is a hard prereq of pok_maelin_cipher —
+	// whose own qglobal condition is cipher>=1 too — so retracting it would
+	// hit the SetManual lock guard for an unrelated reason; potor_saryrn
+	// isn't any other flag's prereq, so it isolates the guarantee this test
+	// is actually about.)
+	if !doneByID(t, s, char)["potor_saryrn"].Done {
+		t.Fatalf("potor_saryrn should be satisfied by cipher")
 	}
-	if err := s.SetManual(char, "hoh_mithaniel", false); err != nil {
+	if err := s.SetManual(char, "potor_saryrn", false); err != nil {
 		t.Fatalf("SetManual retract: %v", err)
 	}
 	if _, err := s.ApplyPopFlagsReport(char, report, "raw", time.Unix(2000, 0)); err != nil {
 		t.Fatalf("ApplyPopFlagsReport (re-apply): %v", err)
 	}
-	if row := doneByID(t, s, char)["hoh_mithaniel"]; row.Done || row.Source != SourceManual {
+	if row := doneByID(t, s, char)["potor_saryrn"]; row.Done || row.Source != SourceManual {
 		t.Errorf("manual retraction should survive a popflags re-sync, got %+v", row)
 	}
 }
