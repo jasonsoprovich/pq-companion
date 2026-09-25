@@ -89,6 +89,16 @@ func harmTouch(target string, dmg int, ts time.Time) logparser.LogEvent {
 	}
 }
 
+// damageShield is the flavor line EQ prints directly after a damage-shield
+// hit, naming the mob it struck.
+func damageShield(target string, ts time.Time) logparser.LogEvent {
+	return logparser.LogEvent{
+		Type:      logparser.EventDamageShield,
+		Timestamp: ts,
+		Data:      logparser.DamageShieldData{Target: target},
+	}
+}
+
 func cast(spell string, ts time.Time) logparser.LogEvent {
 	return logparser.LogEvent{
 		Type:      logparser.EventSpellCast,
@@ -530,6 +540,67 @@ func TestDoTTickHateUsesObserved(t *testing.T) {
 	tr.Handle(dotTick("a gnoll", "Poison", 30, t0.Add(8*time.Second)))
 	if got := hateFor(tr.GetState(), "a gnoll"); got != 60 {
 		t.Errorf("DoT hate = %d, want 60 (2 ticks × 30 observed)", got)
+	}
+}
+
+func TestDamageShieldGeneratesNoHate(t *testing.T) {
+	// A damage-shield hit (a bare non-melee line, no matching pending cast)
+	// is immediately followed by its flavor line — the retraction must undo
+	// the proc-fallback credit it would otherwise get, leaving only the real
+	// melee hate.
+	tr := NewTracker(nil, NewCalculator(fakeSpells{}, nil), nil)
+	t0 := time.Now()
+	tr.Handle(hit("a gnoll", 50, t0)) // melee engage
+	tr.Handle(spellHit("a gnoll", 34, t0.Add(time.Second)))
+	tr.Handle(damageShield("a gnoll", t0.Add(time.Second)))
+	if got := hateFor(tr.GetState(), "a gnoll"); got != 50 {
+		t.Errorf("hate = %d, want 50 (34 damage-shield credit retracted)", got)
+	}
+}
+
+func TestDamageShieldDoesNotResolveOrLosePendingNuke(t *testing.T) {
+	// A damage-shield hit lands inside the cast-resolve window and looks like
+	// the pending nuke's own damage line. The retraction must restore the
+	// pending cast so the real damage line still resolves it — not silently
+	// drop the nuke's hate.
+	spells := fakeSpells{"Nuke": spellDamage("Nuke")} // base 200
+	tr := NewTracker(nil, NewCalculator(spells, nil), nil)
+	t0 := time.Now()
+	tr.Handle(cast("Nuke", t0))
+	tr.Handle(spellHit("a gnoll", 34, t0.Add(time.Second))) // DS hit, mistaken for the nuke resolving
+	tr.Handle(damageShield("a gnoll", t0.Add(time.Second)))
+	if got := hateFor(tr.GetState(), "a gnoll"); got != 0 {
+		t.Errorf("hate after DS-only = %d, want 0 (DS retracted, nuke still pending)", got)
+	}
+	tr.Handle(spellHit("a gnoll", 350, t0.Add(2*time.Second))) // the real nuke resolves
+	if got := hateFor(tr.GetState(), "a gnoll"); got != 200 {
+		t.Errorf("hate after real nuke = %d, want 200 (base damage, restored pending)", got)
+	}
+}
+
+func TestDamageShieldOnDifferentMobNotRetracted(t *testing.T) {
+	// A groupmate's own damage shield produces a flavor line for a mob we
+	// didn't just credit — our last credit (on a different mob) must stand.
+	tr := NewTracker(nil, NewCalculator(fakeSpells{}, nil), nil)
+	t0 := time.Now()
+	tr.Handle(spellHit("a gnoll", 75, t0)) // our proc, no pending cast
+	tr.Handle(damageShield("an orc", t0.Add(time.Second)))
+	if got := hateFor(tr.GetState(), "a gnoll"); got != 75 {
+		t.Errorf("hate = %d, want 75 (unrelated mob's DS flavor must not retract it)", got)
+	}
+}
+
+func TestDamageShieldOnlyRetractsImmediatelyFollowingEvent(t *testing.T) {
+	// The retraction window is exactly one event: anything else in between
+	// (here, a second, unrelated melee hit) clears the candidate, so a
+	// flavor line that arrives late no longer retracts anything.
+	tr := NewTracker(nil, NewCalculator(fakeSpells{}, nil), nil)
+	t0 := time.Now()
+	tr.Handle(spellHit("a gnoll", 75, t0)) // proc credit
+	tr.Handle(hit("a gnoll", 10, t0.Add(time.Second)))
+	tr.Handle(damageShield("a gnoll", t0.Add(2*time.Second)))
+	if got := hateFor(tr.GetState(), "a gnoll"); got != 85 {
+		t.Errorf("hate = %d, want 85 (late flavor line must not retract a superseded credit)", got)
 	}
 }
 

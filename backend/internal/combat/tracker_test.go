@@ -75,6 +75,27 @@ func critEvent(actor string, dmg int, ts time.Time) logparser.LogEvent {
 	}
 }
 
+func spellHitEvent(actor, target string, damage int, ts time.Time) logparser.LogEvent {
+	return logparser.LogEvent{
+		Type:      logparser.EventCombatHit,
+		Timestamp: ts,
+		Data: logparser.CombatHitData{
+			Actor:  actor,
+			Skill:  "spell",
+			Target: target,
+			Damage: damage,
+		},
+	}
+}
+
+func damageShieldEvent(target string, ts time.Time) logparser.LogEvent {
+	return logparser.LogEvent{
+		Type:      logparser.EventDamageShield,
+		Timestamp: ts,
+		Data:      logparser.DamageShieldData{Target: target},
+	}
+}
+
 func dotTickEvent(target string, dmg int, spell string, ts time.Time) logparser.LogEvent {
 	return logparser.LogEvent{
 		Type:      logparser.EventCombatHit,
@@ -366,6 +387,40 @@ func TestThirdPartyDamageTracked(t *testing.T) {
 	// 2 outgoing combatants (You + Guildmate), NPC excluded
 	if len(st.CurrentFight.Combatants) != 2 {
 		t.Fatalf("expected 2 outgoing combatants, got %d", len(st.CurrentFight.Combatants))
+	}
+}
+
+// TestRaidThreatDamageExcludesDamageShield verifies that damage dealt by a
+// damage shield reflecting off the struck mob is excluded from the raid
+// threat feed (real damage generates no hate for its wearer), while the
+// ordinary DPS/combat totals still count it as real damage.
+func TestRaidThreatDamageExcludesDamageShield(t *testing.T) {
+	tr := newTestTracker(t)
+	t0 := time.Now()
+
+	tr.Handle(hitEvent("You", "a gnoll", 100, t0))
+	tr.Handle(spellHitEvent("You", "a gnoll", 34, t0.Add(time.Second)))
+	tr.Handle(damageShieldEvent("a gnoll", t0.Add(time.Second)))
+
+	mobs := tr.RaidThreatDamage()
+	if len(mobs) != 1 {
+		t.Fatalf("RaidThreatDamage mobs = %d, want 1", len(mobs))
+	}
+	var got int64 = -1
+	for _, a := range mobs[0].Attackers {
+		if a.Name == "You" {
+			got = a.Damage
+		}
+	}
+	if got != 100 {
+		t.Errorf("raid-threat damage = %d, want 100 (34 damage-shield reflection excluded)", got)
+	}
+
+	// The DPS meter is unaffected — damage-shield damage is still real damage.
+	st := tr.GetState()
+	c := requireCombatant(t, st, "You")
+	if c.TotalDamage != 134 {
+		t.Errorf("TotalDamage = %d, want 134 (damage-shield damage still counted)", c.TotalDamage)
 	}
 }
 

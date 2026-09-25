@@ -130,6 +130,24 @@ type pendingCast struct {
 	at            time.Time
 }
 
+// spellCredit remembers the hate just added by recordSpellDamage so it can be
+// retracted if the very next event is that hit's damage-shield flavor line
+// (EventDamageShield) — damage shields deal real damage but generate no hate
+// for the wearer (EQMacEmu routes DS through CommonDamage with hate=0), and
+// nothing in the log distinguishes a DS reflection from an ordinary nuke or
+// proc except the flavor line that immediately follows it. amount is the
+// post-hatemod value addHateLocked actually added, ready to subtract straight
+// back out. consumedPending is set (and restored on retraction) when the
+// credit resolved a pending direct-damage cast — otherwise that nuke's real
+// resolution would be lost, since a DS hit can land inside the cast-resolve
+// window and be mistaken for the nuke's own damage line.
+type spellCredit struct {
+	mob             string
+	amount          float64
+	consumedPending *pendingCast
+	prevLastEngaged string
+}
+
 // Tracker accumulates the active character's estimated personal hate per mob
 // from parsed log events and broadcasts a ThreatState snapshot on every change.
 //
@@ -152,6 +170,12 @@ type Tracker struct {
 	// Its hate is held here until the cast lands or is resisted; nil when no
 	// hate-relevant cast is in flight. See pendingCast.
 	pending *pendingCast
+
+	// lastSpellCredit is the most recent recordSpellDamage hate credit, kept
+	// only long enough to be retracted if the immediately-following event is
+	// that hit's damage-shield flavor line. Handle clears this before
+	// dispatching any event that isn't EventDamageShield. See spellCredit.
+	lastSpellCredit *spellCredit
 
 	// pipeTarget is the player's current target name from the Zeal pipe, fed in
 	// exactly as the combat tracker receives it. Drives which mob the overlay
@@ -339,7 +363,23 @@ func (t *Tracker) SetPipeTarget(name string) {
 
 // Handle processes a single parsed log event.
 func (t *Tracker) Handle(ev logparser.LogEvent) {
+	// A damage-shield hit's retraction window is exactly one event: the flavor
+	// line always comes directly after the hit line it explains. Any other
+	// event in between means the preceding credit stands as-is.
+	if ev.Type != logparser.EventDamageShield {
+		t.mu.Lock()
+		t.lastSpellCredit = nil
+		t.mu.Unlock()
+	}
+
 	switch ev.Type {
+	case logparser.EventDamageShield:
+		data, ok := ev.Data.(logparser.DamageShieldData)
+		if !ok {
+			return
+		}
+		t.retractDamageShield(data.Target, ev.Timestamp)
+
 	case logparser.EventCombatHit:
 		data, ok := ev.Data.(logparser.CombatHitData)
 		if !ok || data.Actor != "You" {
@@ -619,9 +659,11 @@ func (t *Tracker) ensureMobLocked(mob string, ts time.Time) *mobState {
 // -600 is credited unscaled, matching the server bypassing AddToHateList for a
 // non-positive CheckAggroAmount result. amount may still be negative (an aggro
 // shedder); the displayed value is floored at snapshot time. Does NOT touch
-// lastEngaged — callers that represent "engaging" a mob set that. Caller must
-// hold t.mu.
-func (t *Tracker) addHateLocked(mob string, amount float64, ts time.Time, applyHatemod bool) {
+// lastEngaged — callers that represent "engaging" a mob set that. Returns the
+// post-hatemod amount actually added, so a caller that may need to retract the
+// credit (see spellCredit / EventDamageShield) knows the exact value to
+// subtract back out. Caller must hold t.mu.
+func (t *Tracker) addHateLocked(mob string, amount float64, ts time.Time, applyHatemod bool) float64 {
 	adjusted := amount
 	if applyHatemod {
 		adjusted = amount * float64(100+t.effectiveHatemodLocked()) / 100
@@ -633,6 +675,7 @@ func (t *Tracker) addHateLocked(mob string, amount float64, ts time.Time, applyH
 	// wall-clock consistent in both live-tail and replay modes — see nowFn.
 	m.recent = append(m.recent, hateSample{ts: t.nowFn(), amt: adjusted})
 	t.armExpiryLocked(mob, m)
+	return adjusted
 }
 
 // recordSpellDamage resolves a direct spell-damage line. When it matches the
@@ -646,6 +689,15 @@ func (t *Tracker) addHateLocked(mob string, amount float64, ts time.Time, applyH
 // The pending is resolved on the first direct-damage line within the cast window
 // regardless of which mob it names (EQ casts serially, so the recent cast is
 // this nuke); the hate is credited to the mob actually struck.
+//
+// A damage-shield hit reflecting off the struck mob arrives on this exact same
+// line shape (a bare non-melee hit with no spell name), so every credit here
+// is remembered in lastSpellCredit and can be retracted by the very next event
+// if it turns out to be that hit's EventDamageShield flavor line — see
+// retractDamageShield. Handle clears lastSpellCredit before dispatching any
+// other event, so only the immediately-following line can retract a credit,
+// matching how EQ always emits the flavor line directly after the hit it
+// explains.
 func (t *Tracker) recordSpellDamage(mob string, dmg int, ts time.Time) {
 	mob = logparser.CanonicalNPCName(mob)
 	if mob == "" || mob == "You" {
@@ -655,9 +707,12 @@ func (t *Tracker) recordSpellDamage(mob string, dmg int, ts time.Time) {
 	if p := t.pending; p != nil && p.directDamage && ts.Sub(p.at) <= castResolveWindow {
 		t.pending = nil
 		hate := p.offensiveHate + p.damageHate
+		prevEngaged := t.lastEngaged
 		// See applyPendingLocked: the hate modifier bypasses a non-positive total.
-		t.addHateLocked(mob, float64(hate), ts, hate > 0) // spell hate
+		adjusted := t.addHateLocked(mob, float64(hate), ts, hate > 0) // spell hate
 		t.lastEngaged = mob
+		consumed := *p
+		t.lastSpellCredit = &spellCredit{mob: mob, amount: adjusted, consumedPending: &consumed, prevLastEngaged: prevEngaged}
 		snap := t.snapshotLocked(ts)
 		t.mu.Unlock()
 		t.broadcast(snap)
@@ -667,8 +722,48 @@ func (t *Tracker) recordSpellDamage(mob string, dmg int, ts time.Time) {
 		t.mu.Unlock()
 		return
 	}
-	t.addHateLocked(mob, float64(dmg), ts, true) // spell (proc) hate
+	prevEngaged := t.lastEngaged
+	adjusted := t.addHateLocked(mob, float64(dmg), ts, true) // spell (proc) hate
 	t.lastEngaged = mob
+	t.lastSpellCredit = &spellCredit{mob: mob, amount: adjusted, prevLastEngaged: prevEngaged}
+	snap := t.snapshotLocked(ts)
+	t.mu.Unlock()
+	t.broadcast(snap)
+}
+
+// retractDamageShield undoes the most recent recordSpellDamage hate credit
+// when it turns out to have been a damage-shield reflection rather than a real
+// nuke or proc — signalled by target matching lastSpellCredit.mob (Handle only
+// reaches here with lastSpellCredit still set when this is the very next event
+// after the credit). No-op if the credit is absent or names a different mob
+// (e.g. a raid-mate's own damage shield producing an unrelated flavor line
+// that happens to arrive right after one of our credits on a different mob).
+func (t *Tracker) retractDamageShield(target string, ts time.Time) {
+	target = logparser.CanonicalNPCName(target)
+	if target == "" {
+		return
+	}
+	t.mu.Lock()
+	credit := t.lastSpellCredit
+	if credit == nil || credit.mob != target {
+		t.mu.Unlock()
+		return
+	}
+	t.lastSpellCredit = nil
+
+	if m := t.mobs[credit.mob]; m != nil {
+		m.hate -= credit.amount
+		if n := len(m.recent); n > 0 && m.recent[n-1].amt == credit.amount {
+			m.recent = m.recent[:n-1]
+		}
+	}
+	if credit.consumedPending != nil {
+		// The DS hit only looked like the nuke's resolve line; restore the
+		// pending cast so the real damage line still resolves it.
+		t.pending = credit.consumedPending
+	}
+	t.lastEngaged = credit.prevLastEngaged
+
 	snap := t.snapshotLocked(ts)
 	t.mu.Unlock()
 	t.broadcast(snap)

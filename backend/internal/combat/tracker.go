@@ -132,6 +132,13 @@ type internalEntity struct {
 	critCount   int
 	critDamage  int64
 
+	// dsDamage is the portion of totalDamage that landed via a damage shield
+	// reflecting off the struck mob rather than this attacker's own action.
+	// Real damage — stays in totalDamage/DPS — but generates no hate for its
+	// wearer, so RaidThreatDamage subtracts it back out before attributing
+	// threat. See lastSpellHit / EventDamageShield.
+	dsDamage int64
+
 	firstActivity time.Time
 	lastActivity  time.Time
 }
@@ -349,6 +356,22 @@ type Tracker struct {
 	// applies to the next armed timer without a restart. May be nil or return
 	// <= 0, in which case the tracker falls back to fightExpiryWithDamage.
 	fightTimeoutFn func() time.Duration
+
+	// lastSpellHit remembers the most recent outgoing non-melee ("spell")
+	// CombatHit, so it can be reclassified as a damage-shield reflection if
+	// the very next event is that hit's EventDamageShield flavor line. Handle
+	// clears this before dispatching any other event — see
+	// retractDamageShieldLocked. nil once consumed or superseded.
+	lastSpellHit *dsCandidate
+}
+
+// dsCandidate is the outgoing hit lastSpellHit is watching, kept just long
+// enough to see whether the immediately-following event reclassifies it as
+// damage-shield reflection damage.
+type dsCandidate struct {
+	fight *Fight
+	actor string
+	dmg   int64
 }
 
 // SetHistoryStore wires the persistent fight history store. Called once at
@@ -552,7 +575,23 @@ func relabelYouHealers(playerName string, healers []HealerStats) {
 
 // Handle processes a single parsed log event.
 func (t *Tracker) Handle(ev logparser.LogEvent) {
+	// A damage-shield flavor line always comes directly after the hit line it
+	// explains, so lastSpellHit is only ever reclassified by the immediately
+	// next event — any other event in between clears the candidate.
+	if ev.Type != logparser.EventDamageShield {
+		t.mu.Lock()
+		t.lastSpellHit = nil
+		t.mu.Unlock()
+	}
+
 	switch ev.Type {
+	case logparser.EventDamageShield:
+		data, ok := ev.Data.(logparser.DamageShieldData)
+		if !ok {
+			return
+		}
+		t.recordDamageShield(data.Target)
+
 	case logparser.EventCombatHit:
 		data, ok := ev.Data.(logparser.CombatHitData)
 		if !ok {
@@ -680,9 +719,20 @@ func (t *Tracker) RaidThreatDamage() []MobDamage {
 	defer t.mu.Unlock()
 	out := make([]MobDamage, 0, len(t.activeFights))
 	for _, f := range t.activeFights {
+		// Threat attribution excludes damage-shield reflections — real damage
+		// (stays in the DPS meter), but generates no hate for its wearer.
+		// Build a de-shielded copy of outgoing rather than mutating the fight.
+		outgoing := f.outgoing
+		for _, e := range outgoing {
+			if e.dsDamage != 0 {
+				outgoing = deShieldedOutgoing(f.outgoing)
+				break
+			}
+		}
+
 		// duration/raidSeconds only feed the DPS variants we don't read here, so
 		// any non-zero value works.
-		combatants := excludeNPCsByName(buildEntityStats(f.outgoing, 1, 1),
+		combatants := excludeNPCsByName(buildEntityStats(outgoing, 1, 1),
 			map[string]bool{f.npcName: true}, t.petOwners, t.confirmedHostiles)
 		stampPetOwners(combatants, t.petOwners)
 		stampClasses(combatants, t.selfClass(), t.classResolverFn)
@@ -702,6 +752,23 @@ func (t *Tracker) RaidThreatDamage() []MobDamage {
 		out = append(out, md)
 	}
 	return out
+}
+
+// deShieldedOutgoing returns a shallow copy of outgoing with each entity's
+// dsDamage subtracted back out of totalDamage, for threat attribution only.
+// Only called when at least one entity actually carries dsDamage.
+func deShieldedOutgoing(outgoing map[string]*internalEntity) map[string]*internalEntity {
+	cp := make(map[string]*internalEntity, len(outgoing))
+	for name, e := range outgoing {
+		if e.dsDamage == 0 {
+			cp[name] = e
+			continue
+		}
+		dup := *e
+		dup.totalDamage -= e.dsDamage
+		cp[name] = &dup
+	}
+	return cp
 }
 
 // Reset clears all fight history, session aggregates, and death records,
@@ -1055,6 +1122,14 @@ func (t *Tracker) recordHit(ts time.Time, data logparser.CombatHitData) {
 			ent.critDamage += int64(data.Damage)
 		}
 		noteActivityEntity(ent, ts)
+
+		// A non-melee ("spell") hit is a candidate for turning out to be a
+		// damage shield reflecting off npcName rather than actor's own
+		// action — only the immediately-following EventDamageShield (see
+		// Handle) can confirm it; anything else clears the candidate.
+		if data.Skill == "spell" {
+			t.lastSpellHit = &dsCandidate{fight: f, actor: data.Actor, dmg: int64(data.Damage)}
+		}
 	}
 
 	t.armFightTimerLocked(f)
@@ -1063,6 +1138,31 @@ func (t *Tracker) recordHit(ts time.Time, data logparser.CombatHitData) {
 	t.mu.Unlock()
 	if now {
 		t.broadcast(snap)
+	}
+}
+
+// recordDamageShield reclassifies the pending lastSpellHit as damage-shield
+// reflection damage when npcName matches the mob it was credited against —
+// confirming the flavor line explains that exact hit rather than an unrelated
+// one. The damage itself is untouched (still real, still counted in
+// totalDamage/DPS); only dsDamage is bumped so RaidThreatDamage can exclude it
+// from threat attribution. No-op if there's no pending candidate or the name
+// doesn't match (e.g. a raid-mate's own damage shield producing a flavor line
+// on a different mob right after one of our hits).
+func (t *Tracker) recordDamageShield(target string) {
+	target = canonicalNPCName(target)
+	if target == "" {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	c := t.lastSpellHit
+	if c == nil || c.fight.npcName != target {
+		return
+	}
+	t.lastSpellHit = nil
+	if ent := c.fight.outgoing[c.actor]; ent != nil {
+		ent.dsDamage += c.dmg
 	}
 }
 

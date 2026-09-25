@@ -207,6 +207,16 @@ const (
 
 	// EventSpellScribed is emitted on "You have finished scribing <Spell>."
 	EventSpellScribed EventType = "log:spell_scribed"
+
+	// EventDamageShield is emitted on one of the flavor lines EQ prints
+	// immediately after a damage-shield hit lands on Target: "was pierced by
+	// thorns.", "was burned.", "was tormented.", or "was chilled to the bone."
+	// (eqstr 12134/12136/12138/12140). It always follows the "X hit Y for N
+	// points of non-melee damage." / "Y was hit by non-melee for N points of
+	// damage." line for the same hit — consumers that credit that preceding
+	// line as spell damage/hate use this event to retract the credit, since a
+	// damage shield's damage is real but generates no hate for its wearer.
+	EventDamageShield EventType = "log:damage_shield"
 )
 
 // LogEvent is the parsed representation of a single EQ log line.
@@ -509,4 +519,11 @@ type AAGainData struct {
 // SpellScribedData is the structured payload for EventSpellScribed.
 type SpellScribedData struct {
 	SpellName string `json:"spell_name"`
+}
+
+// DamageShieldData is the structured payload for EventDamageShield. Target is
+// the entity the flavor line named as struck (canonicalized the same way as
+// CombatHitData.Target so name-keyed lookups match).
+type DamageShieldData struct {
+	Target string `json:"target"`
 }

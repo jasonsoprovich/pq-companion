@@ -349,6 +349,36 @@ func TestParseLine(t *testing.T) {
 			wantData: CombatHitData{Actor: "Gormak", Skill: "spell", Target: "Gormak", Damage: 50},
 		},
 
+		// --- Combat: damage-shield flavor line ---
+		{
+			name:     "damage shield: pierced by thorns",
+			line:     "[Mon Apr 13 06:00:00 2026] Eom Thall Xakra was pierced by thorns.",
+			wantOK:   true,
+			wantType: EventDamageShield,
+			wantData: DamageShieldData{Target: "Eom Thall Xakra"},
+		},
+		{
+			name:     "damage shield: burned",
+			line:     "[Mon Apr 13 06:00:00 2026] Gonobab was burned.",
+			wantOK:   true,
+			wantType: EventDamageShield,
+			wantData: DamageShieldData{Target: "Gonobab"},
+		},
+		{
+			name:     "damage shield: tormented",
+			line:     "[Mon Apr 13 06:00:00 2026] Chetari Courier was tormented.",
+			wantOK:   true,
+			wantType: EventDamageShield,
+			wantData: DamageShieldData{Target: "Chetari Courier"},
+		},
+		{
+			name:     "damage shield: chilled to the bone",
+			line:     "[Mon Apr 13 06:00:00 2026] a temple skirmisher was chilled to the bone.",
+			wantOK:   true,
+			wantType: EventDamageShield,
+			wantData: DamageShieldData{Target: "a temple skirmisher"},
+		},
+
 		// --- Combat: DoT tick (PQ "from your" form) ---
 		// Project Quarm only logs the local player's own DoT ticks; ticks
 		// from other casters are server-side and never appear in this log.
@@ -1002,6 +1032,14 @@ func compareData(t *testing.T, got, want interface{}) {
 		}
 		if g != w {
 			t.Errorf("SpellScribedData = %+v, want %+v", g, w)
+		}
+	case DamageShieldData:
+		g, ok := got.(DamageShieldData)
+		if !ok {
+			t.Fatalf("Data type = %T, want DamageShieldData", got)
+		}
+		if g != w {
+			t.Errorf("DamageShieldData = %+v, want %+v", g, w)
 		}
 	case SpellResistData:
 		g, ok := got.(SpellResistData)

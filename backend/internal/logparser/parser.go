@@ -99,6 +99,18 @@ var (
 	// "A Shissar Arch Arcanist hit Takkisina for 640 points of non-melee damage."
 	reNonMeleeHit = regexp.MustCompile(`^(.+?) hit (.+) for (\d+) points? of non-melee damage\.$`)
 
+	// Damage-shield flavor line — EQ prints this immediately after a damage
+	// shield's non-melee hit line for the same target, naming the shield's
+	// flavor (thorns/fire/torment/cold). It carries no actor or amount; it
+	// exists purely as the retraction signal for the hate the preceding
+	// non-melee line would otherwise be credited (see EventDamageShield):
+	//   "Eom Thall Xakra was pierced by thorns."
+	//   "Gonobab was burned."
+	//   "Chetari Courier was tormented."
+	// "chilled to the bone" (eqstr 12140) is the fourth known flavor; not yet
+	// seen in a captured log but included for completeness.
+	reDamageShieldFlavor = regexp.MustCompile(`^(.+?) was (?:pierced by thorns|burned|tormented|chilled to the bone)\.$`)
+
 	// DoT tick — Project Quarm / EQMac log only the local player's own DoTs
 	// in this format; ticks from other casters are server-side and never
 	// appear in this log file. The spell name is always present, so no
@@ -534,6 +546,17 @@ func classifyMessage(msg string) (LogEvent, bool) {
 				Target: m[1],
 				Damage: dmg,
 			},
+		}, true
+	}
+
+	// --- Damage-shield flavor line ---
+	// Always immediately follows the non-melee hit line it retracts hate for
+	// (own or another actor's), so it's checked early alongside the other
+	// non-melee forms.
+	if m := reDamageShieldFlavor.FindStringSubmatch(msg); m != nil {
+		return LogEvent{
+			Type: EventDamageShield,
+			Data: DamageShieldData{Target: m[1]},
 		}, true
 	}
 
