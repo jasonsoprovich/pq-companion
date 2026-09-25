@@ -17,7 +17,7 @@ import { useWindowDrag } from '../hooks/useWindowDrag'
 import OverlayLockButton from '../components/OverlayLockButton'
 import { getCombatState, resetCombatState, endActiveFight } from '../services/api'
 import type { CombatState, FightState } from '../types/combat'
-import { rollupCombatants, useCombinePetWithOwner, petBadge, type RolledUpEntity } from '../lib/dpsRollup'
+import { rollupCombatants, useCombinePetWithOwner, petBadge, isYouRow, type RolledUpEntity } from '../lib/dpsRollup'
 import { buildDpsFightSummary } from '../lib/dpsClipboard'
 import { combatantBarColor } from '../lib/combatantColor'
 import { useDPSClassColors } from '../hooks/useDPSClassColors'
@@ -67,7 +67,7 @@ function truncateName(name: string, max = 24): string {
 // ── Row ────────────────────────────────────────────────────────────────────────
 
 function Row({ stat, totalDmg, expanded, onToggle, mode, palette }: { stat: RolledUpEntity; totalDmg: number; expanded: boolean; onToggle: () => void; mode: DPSMode; palette: DPSClassColors }): React.ReactElement {
-  const isYou = stat.name === 'You'
+  const isYou = isYouRow(stat)
   const barPct = totalDmg > 0 ? (stat.total_damage / totalDmg) * 100 : 0
   const hasPets = stat.pets.length > 0
 
@@ -151,7 +151,7 @@ function Row({ stat, totalDmg, expanded, onToggle, mode, palette }: { stat: Roll
 function FightTable({ fight, showAll, combine, mode, palette }: { fight: FightState; showAll: boolean; combine: boolean; mode: DPSMode; palette: DPSClassColors }): React.ReactElement {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const rolled = rollupCombatants(fight.combatants ?? [], combine, fight.duration_seconds)
-  const rows = showAll ? rolled : rolled.filter((c) => c.name === 'You')
+  const rows = showAll ? rolled : rolled.filter(isYouRow)
   const totalDmg = showAll ? fight.total_damage : fight.you_damage
 
   return (

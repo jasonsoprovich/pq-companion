@@ -46,6 +46,14 @@ export interface RolledUpEntity extends EntityStats {
   pets: EntityStats[]
 }
 
+// isYouRow identifies the active character's own row. Prefers the backend's
+// is_you flag (reliable even after the row's name has been relabelled from
+// "You" to the character's display name); falls back to the literal name for
+// any older/synthesized row that predates the flag.
+export function isYouRow(c: Pick<EntityStats, 'name' | 'is_you'>): boolean {
+  return c.is_you === true || c.name === 'You'
+}
+
 // rollupCombatants groups pet rows under their owners when combine=true.
 // When combine=false, returns the original list with empty pets[] on each row.
 //

@@ -6,7 +6,7 @@ import { getCombatState, getLogStatus, resetCombatState, endActiveFight } from '
 import OverlayWindow from '../OverlayWindow'
 import type { CombatState, FightState } from '../../types/combat'
 import type { LogTailerStatus } from '../../types/logEvent'
-import { rollupCombatants, useCombinePetWithOwner, petBadge, type RolledUpEntity } from '../../lib/dpsRollup'
+import { rollupCombatants, useCombinePetWithOwner, petBadge, isYouRow, type RolledUpEntity } from '../../lib/dpsRollup'
 import { buildDpsFightSummary } from '../../lib/dpsClipboard'
 import { combatantBarColor } from '../../lib/combatantColor'
 import { useDPSClassColors } from '../../hooks/useDPSClassColors'
@@ -312,7 +312,7 @@ function DPSRow({ stat, totalDamage, isYou, expanded, onToggle, mode, palette }:
 function DPSContent({ fight, showAll, combine, mode, palette }: { fight: FightState; showAll: boolean; combine: boolean; mode: DPSMode; palette: DPSClassColors }): React.ReactElement {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const rolled = rollupCombatants(fight.combatants ?? [], combine, fight.duration_seconds)
-  const rows = showAll ? rolled : rolled.filter((c) => c.name === 'You')
+  const rows = showAll ? rolled : rolled.filter(isYouRow)
   const totalDmg = showAll ? fight.total_damage : fight.you_damage
   // min-height: 0 lets this flex child honor its allocated height instead of
   // growing to fit all rows (default min-height: auto on flex items), so
@@ -328,7 +328,7 @@ function DPSContent({ fight, showAll, combine, mode, palette }: { fight: FightSt
             key={s.name}
             stat={s}
             totalDamage={totalDmg}
-            isYou={s.name === 'You'}
+            isYou={isYouRow(s)}
             mode={mode}
             palette={palette}
             expanded={expanded.has(s.name)}

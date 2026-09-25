@@ -13,6 +13,7 @@ import { useWindowDrag } from '../hooks/useWindowDrag'
 import OverlayLockButton from '../components/OverlayLockButton'
 import { getCombatState } from '../services/api'
 import type { CombatState, HealerStats, FightState } from '../types/combat'
+import { isYouRow } from '../lib/dpsRollup'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -38,7 +39,7 @@ function pct(part: number, total: number): string {
 // ── Row ────────────────────────────────────────────────────────────────────────
 
 function Row({ stat, totalHeal }: { stat: HealerStats; totalHeal: number }): React.ReactElement {
-  const isYou = stat.name === 'You'
+  const isYou = isYouRow(stat)
   const barPct = totalHeal > 0 ? (stat.total_heal / totalHeal) * 100 : 0
 
   return (
@@ -96,7 +97,7 @@ function Row({ stat, totalHeal }: { stat: HealerStats; totalHeal: number }): Rea
 
 function HealTable({ fight, showAll }: { fight: FightState; showAll: boolean }): React.ReactElement {
   const healers = fight.healers ?? []
-  const rows = showAll ? healers : healers.filter((h) => h.name === 'You')
+  const rows = showAll ? healers : healers.filter(isYouRow)
   const totalHeal = showAll ? fight.total_heal : fight.you_heal
 
   return (

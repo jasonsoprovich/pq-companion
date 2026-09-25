@@ -22,7 +22,7 @@ import { useWebSocket } from '../hooks/useWebSocket'
 import { getCombatState, getLogStatus, resetCombatState } from '../services/api'
 import type { CombatState, DeathRecord, EntityStats, FightState, FightSummary } from '../types/combat'
 import type { LogTailerStatus } from '../types/logEvent'
-import { rollupCombatants, useCombinePetWithOwner, petBadge, type RolledUpEntity } from '../lib/dpsRollup'
+import { rollupCombatants, useCombinePetWithOwner, petBadge, isYouRow, type RolledUpEntity } from '../lib/dpsRollup'
 import { useDPSMode, dpsForMode, dpsModeAbbrev, dpsModeLabel, fightAggregateDPS, playerAggregateDPS, type DPSMode } from '../hooks/useDPSMode'
 import { buildDpsFightSummary } from '../lib/dpsClipboard'
 import { aggregateRecentFights } from '../lib/rollingWindow'
@@ -182,7 +182,7 @@ function renderRolledRow(
   setExpanded: React.Dispatch<React.SetStateAction<Set<string>>>,
   mode: DPSMode,
 ): React.ReactNode {
-  const isYou = c.name === 'You'
+  const isYou = isYouRow(c)
   const hasPets = c.pets.length > 0
   const isExpanded = expanded.has(c.name)
   return (

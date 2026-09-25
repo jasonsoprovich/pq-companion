@@ -30,6 +30,11 @@ export interface EntityStats {
   // owner. Empty/undefined when the class can't be resolved — the
   // frontend falls back to the Unknown palette colour.
   class?: string
+  // Marks the active character's own row. The backend relabels its internal
+  // "You" key to the character's display name before this reaches the wire,
+  // so this is the reliable way to find "my own row" — comparing name
+  // against the literal string "You" only works before that relabel.
+  is_you?: boolean
 }
 
 export interface HealerStats {
@@ -42,6 +47,8 @@ export interface HealerStats {
   active_seconds: number
   raid_hps: number
   raid_seconds: number
+  // See EntityStats.is_you.
+  is_you?: boolean
 }
 
 export interface FightState {

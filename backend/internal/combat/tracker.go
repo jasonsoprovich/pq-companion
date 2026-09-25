@@ -209,6 +209,15 @@ type Fight struct {
 	startTime   time.Time
 	lastTouched time.Time
 	hasDamage   bool
+	// lastDamage is the timestamp of this fight's most recent CombatHit —
+	// outgoing damage on the NPC or incoming damage on "You". Unlike
+	// lastTouched (which heals, spell-lands, and misses also refresh so the
+	// overlay doesn't flicker closed mid-fight), lastDamage advances only on
+	// real damage, and armFightTimerLocked uses it as a hard ceiling: a
+	// string of heals with no further damage can keep lastTouched fresh
+	// indefinitely, but must not keep a fight alive past its own inactivity
+	// timeout measured from the last real hit. See armFightTimerLocked.
+	lastDamage time.Time
 	// timerGen increments each time the inactivity timer is (re)armed. The
 	// callback captures the value and only ends the fight if it still matches —
 	// so fresh activity that re-armed the timer on the SAME fight (same id)
@@ -552,23 +561,23 @@ func (t *Tracker) selfClass() string {
 // literal "You" key, so internal accounting remains correct while the wire
 // payload uses the character's canonical name.
 func relabelYou(playerName string, stats []EntityStats) {
-	if playerName == "" {
-		return
-	}
 	for i := range stats {
 		if stats[i].Name == "You" {
-			stats[i].Name = playerName
+			stats[i].IsYou = true
+			if playerName != "" {
+				stats[i].Name = playerName
+			}
 		}
 	}
 }
 
 func relabelYouHealers(playerName string, healers []HealerStats) {
-	if playerName == "" {
-		return
-	}
 	for i := range healers {
 		if healers[i].Name == "You" {
-			healers[i].Name = playerName
+			healers[i].IsYou = true
+			if playerName != "" {
+				healers[i].Name = playerName
+			}
 		}
 	}
 }
@@ -961,12 +970,36 @@ func (t *Tracker) findOrCreateFightLocked(npcName string, ts time.Time) *Fight {
 
 // armFightTimerLocked (re)starts the per-fight inactivity timer. Uses a
 // shorter timeout once the fight has any damage activity, matching
-// EQLogParser's FightTimeout / MaxTimeout split. Caller must hold t.mu.
-func (t *Tracker) armFightTimerLocked(f *Fight) {
+// EQLogParser's FightTimeout / MaxTimeout split. For a fight that already has
+// damage, the timeout is a hard ceiling measured from lastDamage rather than a
+// fresh window granted on every call: a heal, spell-land, or miss still calls
+// this (via lastTouched) to keep the overlay from flickering closed mid-fight,
+// but must not extend a genuinely stale fight (no real damage in over a
+// timeout's worth of time) any further — see Fight.lastDamage.
+//
+// ts is the triggering event's own timestamp, used (not time.Now()) to budget
+// the ceiling — "as of this event, how much of the damage-timeout window is
+// left since the last real hit" — so live tailing (where ts tracks wall time
+// closely) and log replay (where ts can run far ahead of or behind wall time)
+// both schedule a sensible real countdown from here. The scheduled
+// time.AfterFunc duration is necessarily still real wall-clock time; only the
+// budget calculation is event-time based. Caller must hold t.mu.
+func (t *Tracker) armFightTimerLocked(f *Fight, ts time.Time) {
 	if f.timer != nil {
 		f.timer.Stop()
 	}
 	d := t.fightTimeoutLocked(f)
+	if f.hasDamage {
+		if remaining := d - ts.Sub(f.lastDamage); remaining > 0 {
+			d = remaining
+		} else {
+			// Already past the real-damage ceiling — fire almost immediately
+			// via the normal async expiry path instead of granting another
+			// full window just because something non-damage refreshed
+			// lastTouched.
+			d = time.Millisecond
+		}
+	}
 	npcName := f.npcName
 	fightID := f.id
 	f.timerGen++
@@ -1081,6 +1114,7 @@ func (t *Tracker) recordHit(ts time.Time, data logparser.CombatHitData) {
 
 	f := t.findOrCreateFightLocked(npcName, ts)
 	f.lastTouched = ts
+	f.lastDamage = ts
 	f.hasDamage = true
 
 	if data.Target == "You" {
@@ -1132,7 +1166,7 @@ func (t *Tracker) recordHit(ts time.Time, data logparser.CombatHitData) {
 		}
 	}
 
-	t.armFightTimerLocked(f)
+	t.armFightTimerLocked(f, ts)
 
 	snap, now := t.coalesceLocked(ts, wasInCombat)
 	t.mu.Unlock()
@@ -1204,7 +1238,7 @@ func (t *Tracker) recordHeal(ts time.Time, data logparser.HealData) {
 
 	// A heal during combat counts as activity — extend the fight's timer.
 	f.lastTouched = ts
-	t.armFightTimerLocked(f)
+	t.armFightTimerLocked(f, ts)
 
 	snap, now := t.coalesceLocked(ts, wasInCombat)
 	t.mu.Unlock()
@@ -1226,7 +1260,7 @@ func (t *Tracker) recordMiss(ts time.Time, data logparser.CombatMissData) {
 	t.mu.Lock()
 	if f, ok := t.activeFights[npcName]; ok {
 		f.lastTouched = ts
-		t.armFightTimerLocked(f)
+		t.armFightTimerLocked(f, ts)
 	}
 	t.mu.Unlock()
 }
@@ -1247,7 +1281,7 @@ func (t *Tracker) extendMostRecentActivity(ts time.Time) {
 	t.mu.Lock()
 	if f := t.mostRecentActiveFightLocked(); f != nil {
 		f.lastTouched = ts
-		t.armFightTimerLocked(f)
+		t.armFightTimerLocked(f, ts)
 	}
 	t.mu.Unlock()
 }
@@ -1273,12 +1307,45 @@ func (t *Tracker) isRaidLikeLocked() bool {
 	return len(t.verifiedPlayers) >= raidPlayerThreshold
 }
 
+// fightHasUsefulDamageLocked reports whether f has at least one outgoing
+// attacker that would survive excludeNPCsByName — a real player or pet, not
+// pure NPC-vs-NPC crossfire or damage credited to the fight's own npcName.
+// Mirrors excludeNPCsByName's per-name checks without needing a full
+// EntityStats pass. Used by mergedActiveFightLocked to keep a fight with no
+// real player involvement (e.g. one keyed on a charm pet that other mobs are
+// still hitting) from setting the merged live view's startTime/lastTouched —
+// otherwise its own long-running, undisplayed activity inflates every other
+// combatant's live duration. Caller must hold t.mu.
+func (t *Tracker) fightHasUsefulDamageLocked(f *Fight) bool {
+	for name := range f.outgoing {
+		if _, isPet := t.petOwners[name]; isPet {
+			return true
+		}
+		if name == f.npcName {
+			continue
+		}
+		if looksLikeNPC(name) || t.confirmedHostiles[name] {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
 // mergedActiveFightLocked folds every currently-active fight into a single
 // synthetic Fight for the live meter, so a multi-mob encounter (a boss plus
 // adds, or an AoE group pull) shows as ONE combat instead of flickering
 // between targets as damage lands on each mob in turn. It also lets a pet
 // fighting an add roll up under its owner who is tanking the boss, since both
 // land in the same merged combatant list.
+//
+// Only a fight with real player/pet damage (fightHasUsefulDamageLocked)
+// contributes to the merged startTime/lastTouched — a fight with none (pure
+// NPC crossfire, or one keyed on a charm pet other mobs keep hitting) still
+// contributes its combatants (excludeNPCsByName filters them at render time
+// regardless), but must not be allowed to set the encounter's duration. If
+// every active fight lacks useful damage, all of them fall back into the
+// startTime/lastTouched computation rather than leaving it zero.
 //
 // Returns the merged fight and the set of every contributing NPC name (so the
 // renderer can exclude all of them, not just the primary, from the DPS rows).
@@ -1304,12 +1371,16 @@ func (t *Tracker) mergedActiveFightLocked() (*Fight, map[string]bool) {
 		healers:  make(map[string]*internalHealer),
 	}
 	var bestDamage int64 = -1
+	anyUseful := false
 	for _, f := range t.activeFights {
-		if merged.startTime.IsZero() || f.startTime.Before(merged.startTime) {
-			merged.startTime = f.startTime
-		}
-		if f.lastTouched.After(merged.lastTouched) {
-			merged.lastTouched = f.lastTouched
+		if t.fightHasUsefulDamageLocked(f) {
+			anyUseful = true
+			if merged.startTime.IsZero() || f.startTime.Before(merged.startTime) {
+				merged.startTime = f.startTime
+			}
+			if f.lastTouched.After(merged.lastTouched) {
+				merged.lastTouched = f.lastTouched
+			}
 		}
 		var fightDamage int64
 		for name, e := range f.outgoing {
@@ -1339,6 +1410,16 @@ func (t *Tracker) mergedActiveFightLocked() (*Fight, map[string]bool) {
 		if fightDamage > bestDamage {
 			bestDamage = fightDamage
 			merged.npcName = f.npcName
+		}
+	}
+	if !anyUseful {
+		for _, f := range t.activeFights {
+			if merged.startTime.IsZero() || f.startTime.Before(merged.startTime) {
+				merged.startTime = f.startTime
+			}
+			if f.lastTouched.After(merged.lastTouched) {
+				merged.lastTouched = f.lastTouched
+			}
 		}
 	}
 	return merged, names
@@ -1609,6 +1690,15 @@ func (t *Tracker) archiveFightLocked(f *Fight, endTime time.Time) {
 		if e.Name == "You" {
 			youDmg = e.TotalDamage
 		}
+	}
+
+	// Diagnostic only — surfaces a fight that ran far longer than any normal
+	// group/solo pull (outside a raid, where long lulls between adds are
+	// expected) so a report of implausibly low DPS can be checked against the
+	// backend log. Doesn't change behaviour.
+	if !t.isRaidLikeLocked() && duration > longFightDiagnosticThreshold.Seconds() {
+		slog.Info("combat: fight archived after unusually long duration",
+			"npc", f.npcName, "duration_seconds", duration, "attackers", len(combatants), "total_damage", totalDmg)
 	}
 
 	// Drop fights with no outgoing damage at all — there's nothing useful

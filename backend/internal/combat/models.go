@@ -36,6 +36,13 @@ const raidPlayerThreshold = 6
 // maxRecentFights is the number of completed fights retained in memory.
 const maxRecentFights = 20
 
+// longFightDiagnosticThreshold is the archived-fight duration past which
+// archiveFightLocked logs a diagnostic line outside raid mode, where such a
+// span is implausible for a normal solo/group pull. Purely informational —
+// helps correlate a user report of absurdly low DPS with a specific fight in
+// the backend log.
+const longFightDiagnosticThreshold = 10 * time.Minute
+
 // minPersonalSeconds is the floor applied to per-player active spans before
 // dividing damage by them. A single-hit fight would otherwise divide by 0
 // and produce Inf. EQLogParser uses the same "+1 per discrete event"
@@ -89,6 +96,12 @@ type EntityStats struct {
 	// class is unknown — the frontend falls back to the user's "Unknown"
 	// palette colour.
 	Class string `json:"class,omitempty"`
+	// IsYou marks the active character's own row. Set by relabelYou, which
+	// renames the internal "You" key to the character's display name for the
+	// wire payload — so this is the one reliable way for the frontend to find
+	// "my own row" for a "Me" filter or highlight without comparing against
+	// the literal string "You" (which never matches once relabelled).
+	IsYou bool `json:"is_you,omitempty"`
 }
 
 // HealerStats holds healing statistics for one healer within a fight.
@@ -103,6 +116,8 @@ type HealerStats struct {
 	ActiveSeconds float64 `json:"active_seconds"`
 	RaidHPS       float64 `json:"raid_hps"`
 	RaidSeconds   float64 `json:"raid_seconds"`
+	// IsYou marks the active character's own row — see EntityStats.IsYou.
+	IsYou bool `json:"is_you,omitempty"`
 }
 
 // FightState describes the currently active fight.

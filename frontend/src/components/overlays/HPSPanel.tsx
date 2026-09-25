@@ -6,6 +6,7 @@ import { getCombatState, getLogStatus } from '../../services/api'
 import OverlayWindow from '../OverlayWindow'
 import type { CombatState, FightState, HealerStats } from '../../types/combat'
 import type { LogTailerStatus } from '../../types/logEvent'
+import { isYouRow } from '../../lib/dpsRollup'
 
 interface HPSPanelProps {
   defaultX?: number
@@ -168,7 +169,7 @@ function HPSRow({ stat, totalHeal, isYou }: { stat: HealerStats; totalHeal: numb
 
 function HPSContent({ fight, showAll }: { fight: FightState; showAll: boolean }): React.ReactElement {
   const healers = fight.healers ?? []
-  const rows = showAll ? healers : healers.filter((h) => h.name === 'You')
+  const rows = showAll ? healers : healers.filter(isYouRow)
   const totalHeal = showAll ? fight.total_heal : fight.you_heal
   return (
     <div style={{ flex: 1, minHeight: 0, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
@@ -177,7 +178,7 @@ function HPSContent({ fight, showAll }: { fight: FightState; showAll: boolean })
         <div style={{ padding: '16px 10px', fontSize: 12, color: 'var(--color-muted)', textAlign: 'center' }}>No heal data</div>
       ) : (
         rows.map((s) => (
-          <HPSRow key={s.name} stat={s} totalHeal={totalHeal} isYou={s.name === 'You'} />
+          <HPSRow key={s.name} stat={s} totalHeal={totalHeal} isYou={isYouRow(s)} />
         ))
       )}
     </div>

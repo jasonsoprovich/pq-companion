@@ -717,12 +717,18 @@ func TestYouRelabeledToCharacterName(t *testing.T) {
 	if osuiRow.TotalDamage != 50 {
 		t.Errorf("expected Osui personal damage 50, got %d", osuiRow.TotalDamage)
 	}
+	if !osuiRow.IsYou {
+		t.Error("expected IsYou=true on the renamed 'Osui' row — the frontend's 'Me' filter relies on this once Name is no longer literally \"You\"")
+	}
 	pet := findCombatant(st.CurrentFight.Combatants, "a shissar revenant")
 	if pet == nil {
 		t.Fatal("expected charmed pet row")
 	}
 	if pet.OwnerName != "Osui" {
 		t.Errorf("expected pet OwnerName=Osui, got %q", pet.OwnerName)
+	}
+	if pet.IsYou {
+		t.Error("expected IsYou=false on the pet's own row")
 	}
 	// YouDamage internal aggregate should still pivot on the "You" key,
 	// independent of the relabel — the player's own damage is 50.
@@ -925,6 +931,51 @@ func TestHealDuringFightExtendsActivity(t *testing.T) {
 	}
 }
 
+// TestHealsAloneCannotKeepAStaleFightAlive is the regression test for the DPS
+// meter's "absurdly low DPS" bug (v0.23 group-content reports): heals kept
+// refreshing lastTouched on a fight whose real damage had gone stale far
+// longer than the configured timeout, so the fight never expired and a later
+// pull's duration/spans got merged with — and inflated by — this ancient one.
+// A heal whose own timestamp is already past the damage-timeout ceiling
+// (measured from the fight's last real hit, not from "now") must not grant
+// the fight a fresh full window; the fight should expire almost immediately
+// instead.
+func TestHealsAloneCannotKeepAStaleFightAlive(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	tr.Handle(hitEvent("You", "Aten Ha Ra", 100, now))
+	// This heal's timestamp is well past fightExpiryWithDamage (30s) since the
+	// last real hit — it may still refresh lastTouched, but must not reset the
+	// fight's real-damage ceiling.
+	tr.Handle(healEvent("Cleric1", "You", 500, now.Add(40*time.Second)))
+
+	if f := activeFightFor(tr, "Aten Ha Ra"); f == nil {
+		t.Fatal("expected the fight to still be active immediately after the heal")
+	}
+
+	// The real timer (armed for ~1ms once past the ceiling) fires on the real
+	// wall clock, independent of the synthetic event timestamps above.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if activeFightFor(tr, "Aten Ha Ra") == nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if f := activeFightFor(tr, "Aten Ha Ra"); f != nil {
+		t.Fatal("stale fight kept alive by heals alone was never archived")
+	}
+
+	st := tr.GetState()
+	if len(st.RecentFights) != 1 {
+		t.Fatalf("RecentFights = %d, want 1", len(st.RecentFights))
+	}
+	if st.RecentFights[0].YouDamage != 100 {
+		t.Errorf("archived fight YouDamage = %d, want 100", st.RecentFights[0].YouDamage)
+	}
+}
+
 // TestMissExtendsActivity verifies that EventCombatMiss pushes the inactivity
 // window even though no damage lands — important for tank-only fights where
 // avoidance dominates.
@@ -1104,6 +1155,37 @@ func TestCurrentFightMergesSimultaneousMobs(t *testing.T) {
 	}
 	if st.CurrentFight.PrimaryTarget != "a gnoll" {
 		t.Fatalf("expected PrimaryTarget 'a gnoll', got %q", st.CurrentFight.PrimaryTarget)
+	}
+}
+
+// TestMergedLiveViewIgnoresCrossfireOnlyFightDuration is a regression test for
+// the DPS meter's "absurdly low DPS" bug: a fight with no real player/pet
+// involvement (here, two roaming NPCs fighting each other long before the
+// player engaged anything — the same shape a charm-pet-keyed fight that other
+// mobs keep hitting would take) must not set the merged live view's
+// startTime. Before the fix, its ancient startTime became the WHOLE
+// encounter's startTime the moment a second, unrelated real fight began,
+// making every combatant's live duration (and therefore DPS) look far too
+// low.
+func TestMergedLiveViewIgnoresCrossfireOnlyFightDuration(t *testing.T) {
+	tr := newTestTracker(t)
+	t0 := time.Now()
+
+	// Long-running NPC-vs-NPC crossfire with no player/pet involvement.
+	tr.Handle(hitEvent("a wolf", "a bat", 20, t0))
+	tr.Handle(hitEvent("a wolf", "a bat", 20, t0.Add(90*time.Second)))
+
+	// The player's real fight starts much later.
+	realStart := t0.Add(100 * time.Second)
+	tr.Handle(hitEvent("You", "Aten Ha Ra", 100, realStart))
+
+	st := tr.GetState()
+	if st.CurrentFight == nil {
+		t.Fatal("expected a merged current fight")
+	}
+	if !st.CurrentFight.StartTime.Equal(realStart) {
+		t.Errorf("CurrentFight.StartTime = %v, want %v (crossfire-only fight must not set merged startTime)",
+			st.CurrentFight.StartTime, realStart)
 	}
 }
 
