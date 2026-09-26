@@ -22,6 +22,12 @@ export interface RespawnTimer {
   ambiguous: boolean
   min_seconds?: number
   max_seconds?: number
+  /**
+   * True when the player has flagged this timer as a priority (camp/farm
+   * target). Pinned timers sort first, are never auto-pruned after they
+   * pop, and hand the pin off to a later kill at the same spot.
+   */
+  pinned: boolean
 }
 
 export interface RespawnState {

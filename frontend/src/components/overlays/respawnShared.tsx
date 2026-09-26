@@ -1,8 +1,12 @@
 import React from 'react'
-import { X } from 'lucide-react'
-import { removeRespawn } from '../../services/api'
+import { Pin, X } from 'lucide-react'
+import { removeRespawn, setRespawnPinned } from '../../services/api'
 import { useTimerAppearance } from '../../hooks/useTimerAppearance'
 import type { RespawnTimer } from '../../types/respawn'
+
+// Matches TargetPinButton / the buff-timer pin styling — the app's one
+// "pinned/priority" gold.
+const PIN_COLOR = '#c9a84c'
 
 // fmtClock renders a remaining-seconds value as M:SS, or "Hh Mm" for the long
 // respawns (some named/raid mobs are hours to days). 0:00 reads as "popped".
@@ -36,12 +40,19 @@ interface RespawnRowProps {
   /** Current zone short_name, used to tag/dim rows from other zones. */
   currentZone: string
   variant: 'panel' | 'window'
+  /**
+   * Whether the pin/remove buttons render. Defaults to true (the dashboard
+   * panel is always interactive); the popout window passes its lock mode's
+   * rowsInteractive so the buttons hide the same way BuffTimer/DetrimTimer/
+   * CustomTimer's do in clickthrough/display-only lock modes.
+   */
+  showControls?: boolean
 }
 
 // RespawnRow renders one death/respawn countdown. Shared between the dashboard
 // panel and the popout window; the `variant` switches the colour palette so the
 // window stays legible at low opacity (mirrors BuffTimer's two renderers).
-export function RespawnRow({ timer, currentZone, variant }: RespawnRowProps): React.ReactElement {
+export function RespawnRow({ timer, currentZone, variant, showControls = true }: RespawnRowProps): React.ReactElement {
   const win = variant === 'window'
   const appearance = useTimerAppearance()
   const pct =
@@ -61,7 +72,16 @@ export function RespawnRow({ timer, currentZone, variant }: RespawnRowProps): Re
   const textShadow = win ? '0 1px 2px rgba(0,0,0,0.9)' : undefined
 
   return (
-    <div style={{ position: 'relative', padding: '3px 10px', borderBottom: border, overflow: 'hidden', flexShrink: 0 }}>
+    <div
+      style={{
+        position: 'relative',
+        padding: '3px 10px',
+        borderBottom: border,
+        borderLeft: timer.pinned ? `2px solid ${PIN_COLOR}` : '2px solid transparent',
+        overflow: 'hidden',
+        flexShrink: 0,
+      }}
+    >
       <div
         style={{
           position: 'absolute', left: 0, top: 0, bottom: 0,
@@ -72,6 +92,9 @@ export function RespawnRow({ timer, currentZone, variant }: RespawnRowProps): Re
       />
       <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0, flex: 1 }}>
+          {timer.pinned && (
+            <Pin size={10} style={{ color: PIN_COLOR, flexShrink: 0 }} />
+          )}
           <span style={{ fontSize: 12, color: nameColor, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: win ? 500 : 400, textShadow }}>
             {timer.npc_name}{' '}
             <span style={{ color: mutedColor, fontVariantNumeric: 'tabular-nums' }}>{label}</span>
@@ -102,13 +125,28 @@ export function RespawnRow({ timer, currentZone, variant }: RespawnRowProps): Re
         >
           {popped ? 'POP' : fmtClock(timer.remaining_seconds)}
         </span>
-        <button
-          onClick={() => removeRespawn(timer.id).catch(() => {})}
-          title="Remove this timer"
-          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: mutedColor, display: 'flex', alignItems: 'center', flexShrink: 0, lineHeight: 0 }}
-        >
-          <X size={11} />
-        </button>
+        {showControls && (
+          <>
+            <button
+              onClick={() => setRespawnPinned(timer.id, !timer.pinned).catch(() => {})}
+              title={timer.pinned ? 'Unpin (stop tracking this as a priority)' : 'Pin as priority — sorts first, stays visible when up'}
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                color: timer.pinned ? PIN_COLOR : mutedColor,
+                display: 'flex', alignItems: 'center', flexShrink: 0, lineHeight: 0,
+              }}
+            >
+              <Pin size={11} />
+            </button>
+            <button
+              onClick={() => removeRespawn(timer.id).catch(() => {})}
+              title="Remove this timer"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: mutedColor, display: 'flex', alignItems: 'center', flexShrink: 0, lineHeight: 0 }}
+            >
+              <X size={11} />
+            </button>
+          </>
+        )}
       </div>
     </div>
   )

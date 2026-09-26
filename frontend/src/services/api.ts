@@ -1803,6 +1803,14 @@ export function setRespawnInstanceMode(enabled: boolean): Promise<RespawnState> 
   return put<RespawnState>('/api/overlay/respawns/instance-mode', { enabled })
 }
 
+export function setRespawnPinned(id: string, pinned: boolean): Promise<RespawnState> {
+  return put<RespawnState>(`/api/overlay/respawns/${encodeURIComponent(id)}/pin`, { pinned })
+}
+
+export function clearRespawnPins(): Promise<void> {
+  return del('/api/overlay/respawns/pins')
+}
+
 // ── Config ─────────────────────────────────────────────────────────────────────
 
 export function getConfig(): Promise<Config> {

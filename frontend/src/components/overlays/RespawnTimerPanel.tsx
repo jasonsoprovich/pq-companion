@@ -1,15 +1,16 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import {
-  Hourglass, Skull, ExternalLink, Trash2, Circle,
+  Hourglass, Skull, ExternalLink, Pin, Trash2, Circle,
   CheckCircle2, AlertTriangle,
 } from 'lucide-react'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { WSEvent } from '../../lib/wsEvents'
 import {
-  clearRespawns, getLogStatus, getRespawnState, removeRespawn, setRespawnInstanceMode,
+  clearRespawnPins, clearRespawns, getLogStatus, getRespawnState, removeRespawn, setRespawnInstanceMode,
 } from '../../services/api'
 import OverlayWindow from '../OverlayWindow'
 import OverlayInstanceModeButton from '../OverlayInstanceModeButton'
+import { useRespawnPinnedOnly } from '../../hooks/useRespawnPinnedOnly'
 import type { RespawnState, RespawnTimer } from '../../types/respawn'
 import type { LogTailerStatus } from '../../types/logEvent'
 import { RespawnRow } from './respawnShared'
@@ -56,6 +57,7 @@ export default function RespawnTimerPanel({
 }: RespawnTimerPanelProps): React.ReactElement {
   const [state, setState] = useState<RespawnState | null>(null)
   const [status, setStatus] = useState<LogTailerStatus | null>(null)
+  const [pinnedOnly, togglePinnedOnly] = useRespawnPinnedOnly()
 
   useEffect(() => {
     getRespawnState().then(setState).catch(() => {})
@@ -68,9 +70,11 @@ export default function RespawnTimerPanel({
 
   const wsState = useWebSocket(handleMessage)
 
-  const timers: RespawnTimer[] = state?.timers ?? []
+  const allTimers: RespawnTimer[] = state?.timers ?? []
+  const timers = pinnedOnly ? allTimers.filter((t) => t.pinned) : allTimers
   const currentZone = state?.current_zone ?? ''
   const instanceMode = state?.instance_mode ?? false
+  const anyPinned = allTimers.some((t) => t.pinned)
 
   const toggleInstanceMode = useCallback(() => {
     setRespawnInstanceMode(!instanceMode).then(setState).catch(() => {})
@@ -95,6 +99,27 @@ export default function RespawnTimerPanel({
       headerRight={
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <OverlayInstanceModeButton enabled={instanceMode} onToggle={toggleInstanceMode} size={12} />
+          <button
+            onClick={togglePinnedOnly}
+            title={pinnedOnly ? 'Showing pinned only — click to show all' : 'Show pinned timers only'}
+            style={{
+              background: pinnedOnly ? 'rgba(201,168,76,0.15)' : 'none',
+              border: 'none', borderRadius: 3, cursor: 'pointer', padding: '1px 3px',
+              color: pinnedOnly ? '#c9a84c' : 'var(--color-muted)',
+              display: 'flex', alignItems: 'center',
+            }}
+          >
+            <Pin size={12} />
+          </button>
+          {anyPinned && (
+            <button
+              onClick={() => clearRespawnPins().catch(() => {})}
+              title="Clear all pins"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px 3px', fontSize: 9, fontWeight: 700, color: 'var(--color-muted)' }}
+            >
+              UNPIN ALL
+            </button>
+          )}
           <button
             onClick={() => clearRespawns().catch(() => {})}
             title="Clear all respawn timers"
@@ -133,9 +158,9 @@ export default function RespawnTimerPanel({
         ) : timers.length === 0 ? (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: 'var(--color-muted)', padding: 16 }}>
             <Skull size={28} style={{ opacity: 0.2 }} />
-            <p style={{ fontSize: 12, margin: 0 }}>No respawn timers</p>
+            <p style={{ fontSize: 12, margin: 0 }}>{pinnedOnly ? 'No pinned timers' : 'No respawn timers'}</p>
             <p style={{ fontSize: 11, margin: 0, opacity: 0.7, textAlign: 'center' }}>
-              Kill a mob to start tracking its respawn.
+              {pinnedOnly ? 'Pin a timer to track it here.' : 'Kill a mob to start tracking its respawn.'}
             </p>
           </div>
         ) : (

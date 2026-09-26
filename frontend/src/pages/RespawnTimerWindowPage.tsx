@@ -3,7 +3,7 @@
  * respawn ("death") timers. Renders in a dedicated frameless Electron window.
  */
 import React, { useCallback, useEffect, useState } from 'react'
-import { Hourglass, Skull, Trash2 } from 'lucide-react'
+import { Hourglass, Pin, Skull, Trash2 } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
@@ -16,19 +16,21 @@ import OverlayMuteButton from '../components/OverlayMuteButton'
 import OverlayInstanceModeButton from '../components/OverlayInstanceModeButton'
 import { useOverlayAlertMute } from '../hooks/useOverlayAlertMute'
 import { RESPAWN_ALERTS_KEY } from '../lib/overlayAlertMute'
-import { clearRespawns, getRespawnState, setRespawnInstanceMode } from '../services/api'
+import { useRespawnPinnedOnly } from '../hooks/useRespawnPinnedOnly'
+import { clearRespawnPins, clearRespawns, getRespawnState, setRespawnInstanceMode } from '../services/api'
 import { RespawnRow } from '../components/overlays/respawnShared'
 import type { RespawnState } from '../types/respawn'
 
 export default function RespawnTimerWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity()
-  const { locked, mode, toggleLocked, rootInteractionProps, headerInteractionProps } =
+  const { locked, mode, toggleLocked, rootInteractionProps, headerInteractionProps, rowsInteractive } =
     useOverlayLock('respawnTimer')
   const chrome = useOverlayChromeFade(mode === 'display-only')
   const onDragMouseDown = useWindowDrag()
   const appearance = useTimerAppearance()
   const [state, setState] = useState<RespawnState | null>(null)
   const [alertsEnabled, toggleAlerts] = useOverlayAlertMute(RESPAWN_ALERTS_KEY)
+  const [pinnedOnly, togglePinnedOnly] = useRespawnPinnedOnly()
 
   useEffect(() => {
     getRespawnState().then(setState).catch(() => {})
@@ -42,9 +44,11 @@ export default function RespawnTimerWindowPage(): React.ReactElement {
 
   useWebSocket(handleMessage)
 
-  const timers = state?.timers ?? []
+  const allTimers = state?.timers ?? []
+  const timers = pinnedOnly ? allTimers.filter((t) => t.pinned) : allTimers
   const currentZone = state?.current_zone ?? ''
   const instanceMode = state?.instance_mode ?? false
+  const anyPinned = allTimers.some((t) => t.pinned)
 
   const toggleInstanceMode = useCallback(() => {
     setRespawnInstanceMode(!instanceMode).then(setState).catch(() => {})
@@ -108,6 +112,42 @@ export default function RespawnTimerWindowPage(): React.ReactElement {
           )}
         </div>
         <div className="no-drag" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button
+            onClick={togglePinnedOnly}
+            title={pinnedOnly ? 'Showing pinned only — click to show all' : 'Show pinned timers only'}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              padding: '1px 5px',
+              borderRadius: 3,
+              border: '1px solid rgba(255,255,255,0.1)',
+              backgroundColor: pinnedOnly ? 'rgba(201,168,76,0.15)' : 'transparent',
+              color: pinnedOnly ? '#c9a84c' : 'rgba(255,255,255,0.4)',
+              cursor: 'pointer',
+              lineHeight: 1,
+            }}
+          >
+            <Pin size={11} />
+          </button>
+          {anyPinned && (
+            <button
+              onClick={() => clearRespawnPins().catch(() => {})}
+              title="Clear all pins"
+              style={{
+                fontSize: 9,
+                fontWeight: 700,
+                lineHeight: 1,
+                padding: '1px 5px',
+                borderRadius: 3,
+                border: '1px solid rgba(255,255,255,0.1)',
+                backgroundColor: 'transparent',
+                color: 'rgba(255,255,255,0.4)',
+                cursor: 'pointer',
+              }}
+            >
+              UNPIN ALL
+            </button>
+          )}
           <button
             onClick={() => clearRespawns().catch(() => {})}
             title="Clear all respawn timers"
@@ -177,12 +217,12 @@ export default function RespawnTimerWindowPage(): React.ReactElement {
           >
             <Skull size={22} style={{ opacity: 0.15 }} />
             <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', margin: 0 }}>
-              No respawn timers
+              {pinnedOnly ? 'No pinned timers' : 'No respawn timers'}
             </p>
           </div>
         ) : (
           timers.map((t) => (
-            <RespawnRow key={t.id} timer={t} currentZone={currentZone} variant="window" />
+            <RespawnRow key={t.id} timer={t} currentZone={currentZone} variant="window" showControls={rowsInteractive} />
           ))
         )}
       </div>
