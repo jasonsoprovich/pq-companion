@@ -504,6 +504,8 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/respawns", respawnH.state)
 			r.Delete("/respawns", respawnH.clear)
 			r.Put("/respawns/instance-mode", respawnH.setInstanceMode)
+			r.Delete("/respawns/pins", respawnH.clearPins)
+			r.Put("/respawns/{id}/pin", respawnH.setPin)
 			r.Delete("/respawns/{id}", respawnH.remove)
 		})
 		r.Post("/threat/reset", threatH.reset)

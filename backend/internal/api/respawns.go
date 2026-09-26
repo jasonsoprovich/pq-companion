@@ -56,3 +56,37 @@ func (h *respawnHandler) setInstanceMode(w http.ResponseWriter, r *http.Request)
 	}
 	writeJSON(w, http.StatusOK, h.engine.SetInstanceMode(req.Enabled))
 }
+
+// setPin handles PUT /api/overlay/respawns/{id}/pin — pins or unpins a single
+// timer (see respawn.Engine.TogglePin). Returns 404 if the ID isn't
+// currently active.
+func (h *respawnHandler) setPin(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id is required"})
+		return
+	}
+	// IDs contain '|' and spaces, so they arrive percent-encoded — see remove.
+	if decoded, err := url.PathUnescape(id); err == nil {
+		id = decoded
+	}
+	var req struct {
+		Pinned bool `json:"pinned"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	if !h.engine.TogglePin(id, req.Pinned) {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	writeJSON(w, http.StatusOK, h.engine.GetState())
+}
+
+// clearPins handles DELETE /api/overlay/respawns/pins — unpins every
+// currently pinned timer (see respawn.Engine.ClearPins).
+func (h *respawnHandler) clearPins(w http.ResponseWriter, r *http.Request) {
+	h.engine.ClearPins()
+	w.WriteHeader(http.StatusNoContent)
+}

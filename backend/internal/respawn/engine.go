@@ -26,6 +26,15 @@ const graceWindow = 60 * time.Second
 // so it can't appear in either component.
 const keySep = "\x00"
 
+// anchorRadius is how close (in EQ world units, the same scale as
+// spawn2.x/y) a new kill's position must be to a pinned timer's anchor for
+// the pin to hand off to it. ~200 units covers a camp's kill radius (mobs
+// pulled a short way to a safe spot) without reaching into a neighbouring
+// camp. Squared so callers can compare against squared distances directly.
+const anchorRadius = 200.0
+
+var anchorRadiusSquared = anchorRadius * anchorRadius
+
 // scriptControlledRespawnSentinel is the raw spawn2.respawntime EQEmu content
 // databases use on raid/named encounters whose real respawn is driven by a
 // quest script (trial resets, guild lockouts) rather than the natural spawn
@@ -58,6 +67,13 @@ type Engine struct {
 	pipeZoneLong  string
 	logZoneShort  string
 	logZoneLong   string
+
+	// Player position, from the Zeal pipe's per-tick MsgPlayer snapshot
+	// (GameX/GameY — already un-transposed by the caller). Used only for
+	// pin handoff (see claimPinLocked); there's no log-derived fallback, so
+	// hasPipePos stays false for the whole session without Zeal connected.
+	pipeX, pipeY float64
+	hasPipePos   bool
 
 	// instanceMode is a manual, session-only override (see SetInstanceMode).
 	instanceMode bool
@@ -127,11 +143,25 @@ func (e *Engine) SetPipeZone(zoneIDNumber int) {
 }
 
 // ResetPipeZone clears the pipe-derived zone when Zeal disconnects, so the
-// log-driven zone takes over again.
+// log-driven zone takes over again. Also clears the tracked player position,
+// since it's equally stale once the pipe is gone.
 func (e *Engine) ResetPipeZone() {
 	e.mu.Lock()
 	e.pipeZoneShort = ""
 	e.pipeZoneLong = ""
+	e.hasPipePos = false
+	e.mu.Unlock()
+}
+
+// SetPipePlayerPos records the player's current world position from the
+// Zeal pipe's per-tick MsgPlayer snapshot. Callers must pass GameX/GameY
+// (Location.GameX()/GameY()), not the raw X/Y fields — Zeal's location is
+// transposed, and this feeds distance comparisons against other GameX/GameY
+// positions recorded the same way (see claimPinLocked).
+func (e *Engine) SetPipePlayerPos(x, y float64) {
+	e.mu.Lock()
+	e.pipeX, e.pipeY = x, y
+	e.hasPipePos = true
 	e.mu.Unlock()
 }
 
@@ -218,6 +248,8 @@ func (e *Engine) onKill(displayName string, diedAt time.Time) {
 	// Skipped entirely when instanceMode is on — see SetInstanceMode.
 	e.mu.Lock()
 	instanceMode := e.instanceMode
+	hasPos := e.hasPipePos
+	posX, posY := e.pipeX, e.pipeY
 	e.mu.Unlock()
 
 	reduced, dungeon, err := e.db.GetZoneSpawnReduction(zoneShort)
@@ -246,7 +278,7 @@ func (e *Engine) onKill(displayName string, diedAt time.Time) {
 	e.nextIndex[key]++
 	idx := e.nextIndex[key]
 	id := fmt.Sprintf("%s|%s|%d", zoneShort, displayName, idx)
-	e.timers[id] = &RespawnTimer{
+	newTimer := &RespawnTimer{
 		ID:              id,
 		NPCName:         displayName,
 		LabelIndex:      idx,
@@ -260,12 +292,27 @@ func (e *Engine) onKill(displayName string, diedAt time.Time) {
 		MinSeconds:      minS,
 		MaxSeconds:      maxS,
 	}
+	if hasPos {
+		newTimer.killX, newTimer.killY, newTimer.hasKillPos = posX, posY, true
+	}
+	handoffFrom := ""
+	if match := e.claimPinLocked(zoneShort, displayName, hasPos, posX, posY, diedAt); match != nil {
+		newTimer.Pinned = true
+		newTimer.anchorX, newTimer.anchorY, newTimer.hasAnchor = match.anchorX, match.anchorY, match.hasAnchor
+		newTimer.pinnedAt = match.pinnedAt
+		handoffFrom = match.ID
+		delete(e.timers, match.ID)
+	}
+	e.timers[id] = newTimer
 	snap := e.snapshot(time.Now())
 	e.mu.Unlock()
 
 	slog.Info("respawn: timer started",
 		"npc", displayName, "zone", zoneShort, "index", idx,
 		"estimate_sec", estimate, "ambiguous", ambiguous)
+	if handoffFrom != "" {
+		slog.Info("respawn: pin handed off", "from", handoffFrom, "to", id, "npc", displayName, "zone", zoneShort)
+	}
 	e.hub.Broadcast(ws.Event{Type: WSEventRespawns, Data: snap})
 }
 
@@ -306,6 +353,173 @@ func summarize(infos []db.RespawnInfo) (estimate int, ambiguous bool, minS, maxS
 		minS, maxS = 0, 0
 	}
 	return estimate, ambiguous, minS, maxS, npcID
+}
+
+// claimPinLocked looks for a pinned, already-popped timer in zone that a new
+// kill of name should inherit the pin from, and returns it without removing
+// it (the caller deletes it once the new timer is inserted). Returns nil if
+// nothing matches. Caller must hold e.mu.
+//
+// With a known kill position (hasPos), the nearest popped pinned timer whose
+// own anchor is within anchorRadius wins, regardless of name — this is what
+// lets a placeholder's pop hand the pin to whatever spawns next at the same
+// spot, including the named it was guarding. Without a position (no Zeal
+// pipe connected for this kill), there's nothing to compare distances
+// against, so the match falls back to same name only, oldest death first.
+// A pinned timer that hasn't popped yet is never a candidate — it's still
+// tracking its own mob.
+func (e *Engine) claimPinLocked(zone, name string, hasPos bool, x, y float64, now time.Time) *RespawnTimer {
+	if hasPos {
+		var best *RespawnTimer
+		bestDist := anchorRadiusSquared
+		for _, t := range e.timers {
+			if !t.Pinned || t.Zone != zone || !t.hasAnchor || !now.After(t.RespawnAt) {
+				continue
+			}
+			dx, dy := x-t.anchorX, y-t.anchorY
+			if dist := dx*dx + dy*dy; dist <= bestDist {
+				best, bestDist = t, dist
+			}
+		}
+		return best
+	}
+
+	var best *RespawnTimer
+	for _, t := range e.timers {
+		if !t.Pinned || t.Zone != zone || t.NPCName != name || !now.After(t.RespawnAt) {
+			continue
+		}
+		if best == nil || t.DiedAt.Before(best.DiedAt) {
+			best = t
+		}
+	}
+	return best
+}
+
+// TogglePin sets or clears the Pinned flag on one timer (the row's pin
+// button). Pinning stamps the anchor from the timer's recorded kill position,
+// if one is known, so a later kill at the same spot can claim the pin (see
+// claimPinLocked). Returns false if id isn't an active timer.
+func (e *Engine) TogglePin(id string, pinned bool) bool {
+	e.mu.Lock()
+	t, ok := e.timers[id]
+	if !ok {
+		e.mu.Unlock()
+		return false
+	}
+	t.Pinned = pinned
+	if pinned {
+		t.pinnedAt = time.Now()
+		t.anchorX, t.anchorY, t.hasAnchor = t.killX, t.killY, t.hasKillPos
+	} else {
+		t.hasAnchor = false
+	}
+	snap := e.snapshot(time.Now())
+	e.mu.Unlock()
+
+	e.hub.Broadcast(ws.Event{Type: WSEventRespawns, Data: snap})
+	return true
+}
+
+// PinLatestInCurrentZone pins the most recently created timer in the
+// player's current zone — the action behind the "/pipe respawn pin" command,
+// which has no timer ID to target. Returns false if there's no active timer
+// in the current zone.
+func (e *Engine) PinLatestInCurrentZone() bool {
+	zoneShort, _ := e.currentZone()
+	if zoneShort == "" {
+		return false
+	}
+	e.mu.Lock()
+	var latest *RespawnTimer
+	for _, t := range e.timers {
+		if t.Zone != zoneShort {
+			continue
+		}
+		if latest == nil || t.DiedAt.After(latest.DiedAt) {
+			latest = t
+		}
+	}
+	if latest == nil {
+		e.mu.Unlock()
+		return false
+	}
+	latest.Pinned = true
+	latest.pinnedAt = time.Now()
+	latest.anchorX, latest.anchorY, latest.hasAnchor = latest.killX, latest.killY, latest.hasKillPos
+	snap := e.snapshot(time.Now())
+	e.mu.Unlock()
+
+	e.hub.Broadcast(ws.Event{Type: WSEventRespawns, Data: snap})
+	return true
+}
+
+// UnpinLatest clears the pin from the most recently pinned timer (by
+// pinnedAt, not DiedAt) — the action behind "/pipe respawn unpin". Returns
+// false if nothing is currently pinned.
+func (e *Engine) UnpinLatest() bool {
+	e.mu.Lock()
+	var latest *RespawnTimer
+	for _, t := range e.timers {
+		if !t.Pinned {
+			continue
+		}
+		if latest == nil || t.pinnedAt.After(latest.pinnedAt) {
+			latest = t
+		}
+	}
+	if latest == nil {
+		e.mu.Unlock()
+		return false
+	}
+	latest.Pinned = false
+	latest.hasAnchor = false
+	snap := e.snapshot(time.Now())
+	e.mu.Unlock()
+
+	e.hub.Broadcast(ws.Event{Type: WSEventRespawns, Data: snap})
+	return true
+}
+
+// ClearPins unpins every currently pinned timer — the "Clear pins" header
+// button and the "/pipe respawn clearpins" command. Returns false if nothing
+// was pinned (so callers can skip a no-op broadcast).
+func (e *Engine) ClearPins() bool {
+	e.mu.Lock()
+	any := false
+	for _, t := range e.timers {
+		if t.Pinned {
+			t.Pinned = false
+			t.hasAnchor = false
+			any = true
+		}
+	}
+	snap := e.snapshot(time.Now())
+	e.mu.Unlock()
+
+	if any {
+		e.hub.Broadcast(ws.Event{Type: WSEventRespawns, Data: snap})
+	}
+	return any
+}
+
+// HandlePipeCommand parses a Zeal "/pipe <text>" command for the respawn-pin
+// actions: "respawn pin", "respawn unpin", "respawn clearpins" (case
+// insensitive, surrounding whitespace trimmed). Returns true if the text
+// matched and was handled. This runs independently of trigger.Engine's own
+// HandlePipeCommand — both see the same raw pipe text, so a user's own
+// pipe_command triggers still fire on it too.
+func (e *Engine) HandlePipeCommand(text string) bool {
+	switch strings.ToLower(strings.TrimSpace(text)) {
+	case "respawn pin":
+		return e.PinLatestInCurrentZone()
+	case "respawn unpin":
+		return e.UnpinLatest()
+	case "respawn clearpins":
+		return e.ClearPins()
+	default:
+		return false
+	}
 }
 
 // GetState returns a point-in-time snapshot of all active respawn timers.
@@ -369,10 +583,16 @@ func (e *Engine) Clear() {
 }
 
 // pruneExpired removes timers whose respawn (plus grace window) has elapsed.
+// Pinned timers are exempt — a "POP" row means "your camp mob is up", and it
+// should stay visible until it's dismissed or hands its pin off to the next
+// kill at the same spot (see claimPinLocked), not vanish after 60s.
 func (e *Engine) pruneExpired() {
 	now := time.Now()
 	e.mu.Lock()
 	for id, t := range e.timers {
+		if t.Pinned {
+			continue
+		}
 		if now.After(t.RespawnAt.Add(graceWindow)) {
 			delete(e.timers, id)
 		}
@@ -421,10 +641,14 @@ func (e *Engine) snapshot(now time.Time) RespawnState {
 		timers = append(timers, entry)
 	}
 
-	// Current-zone timers first, then most imminent respawn first. ID
-	// tiebreaks equal RemainingSeconds so ordering stays fixed across
-	// broadcasts even though map iteration order is randomized each call.
+	// Pinned timers first, then current-zone timers, then most imminent
+	// respawn first. ID tiebreaks equal RemainingSeconds so ordering stays
+	// fixed across broadcasts even though map iteration order is randomized
+	// each call.
 	sort.SliceStable(timers, func(i, j int) bool {
+		if timers[i].Pinned != timers[j].Pinned {
+			return timers[i].Pinned
+		}
 		iCur := timers[i].Zone == curZone
 		jCur := timers[j].Zone == curZone
 		if iCur != jCur {

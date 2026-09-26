@@ -1437,6 +1437,7 @@ func main() {
 				return
 			}
 			triggerEngine.HandlePipeCommand(cmd.Text, env.Character, time.Now())
+			respawnEngine.HandlePipeCommand(cmd.Text)
 			return
 		case zealpipe.MsgPlayer:
 			// Per-tick player snapshot. Feed zone + position into the NPC
@@ -1455,6 +1456,7 @@ func main() {
 			npcTracker.SetPipePlayerSnapshot(
 				p.Zone, p.Location.GameX(), p.Location.GameY(), p.Location.Z)
 			respawnEngine.SetPipeZone(p.Zone)
+			respawnEngine.SetPipePlayerPos(p.Location.GameX(), p.Location.GameY())
 			// Maps need the short name, and heading, which the trackers above
 			// discard. An unresolved zone yields "" and the tracker declines to
 			// broadcast rather than place the arrow on whatever map is open.

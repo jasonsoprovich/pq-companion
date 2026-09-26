@@ -46,6 +46,35 @@ type RespawnTimer struct {
 	Ambiguous  bool `json:"ambiguous"`
 	MinSeconds int  `json:"min_seconds,omitempty"`
 	MaxSeconds int  `json:"max_seconds,omitempty"`
+
+	// Pinned marks a timer the player has flagged as their camp/farm target
+	// (see Engine.TogglePin). Pinned timers sort first, are never auto-pruned
+	// after they pop, and hand the pin off to a later kill at the same spot
+	// (see Engine.claimPinLocked) so the player doesn't have to re-pin every
+	// cycle.
+	Pinned bool `json:"pinned"`
+
+	// anchorX/anchorY are the player's world position (Zeal pipe GameX/GameY)
+	// at the moment this timer was pinned. Unexported: it's engine-internal
+	// bookkeeping for handoff, not something the frontend needs to render.
+	// hasAnchor is false when the timer was pinned without a known position
+	// (no Zeal pipe connected), in which case handoff falls back to
+	// same-name matching instead of proximity.
+	anchorX, anchorY float64
+	hasAnchor        bool
+
+	// killX/killY are the player's position at the moment this NPC died,
+	// independent of whether the timer is pinned — recorded on every kill so
+	// that pinning a timer after the fact (or a later handoff match) has a
+	// position to work from. hasKillPos is false when no Zeal pipe position
+	// was known at kill time.
+	killX, killY float64
+	hasKillPos   bool
+
+	// pinnedAt is when Pinned was last set true — used to pick "the most
+	// recently pinned timer" for the /pipe respawn unpin command, since
+	// DiedAt tracks the kill, not the pin.
+	pinnedAt time.Time
 }
 
 // RespawnState is the full payload broadcast via WebSocket and returned by the
