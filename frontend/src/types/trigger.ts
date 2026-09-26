@@ -266,6 +266,94 @@ export interface TriggerFired {
   matched_line: string
   actions: Action[]
   fired_at: string
+  /** True when this fire came from the Trigger Tester, not a real log line
+   *  — see TriggerTesterTab. The History tab filters these out. */
+  test?: boolean
+}
+
+// ── Trigger Tester ───────────────────────────────────────────────────────────
+// Paste log lines, hit Run, and see/hear what would fire — without a raid to
+// test against. See backend/internal/trigger/tester.go.
+
+export type TestLineStatus = 'matched' | 'excluded' | 'cooldown' | 'wrong_character'
+
+export interface TestTimerInfo {
+  key: string
+  category?: string
+  duration_secs?: number
+  target?: string
+}
+
+export interface TestWebhook {
+  webhook_id: string
+  text: string
+  /** False = the webhook id no longer resolves to one in Settings. */
+  resolved: boolean
+}
+
+/** One trigger's outcome against one pasted line. Triggers whose pattern
+ *  never matched the line are simply absent — not represented as a "no
+ *  match" entry. */
+export interface TestMatch {
+  trigger_id: string
+  trigger_name: string
+  status: TestLineStatus
+  /** "primary" or "extra N" — which pattern matched. */
+  pattern_label?: string
+  /** Set only when status === 'excluded'. */
+  exclude_pattern?: string
+  /** Numbered ("0", "1", …) and named capture groups. */
+  captures?: Record<string, string>
+  /** Rendered action text (captures/built-ins already substituted in). */
+  actions?: Action[]
+  timer?: TestTimerInfo
+  webhooks?: TestWebhook[]
+  /** True when this entry is the worn-off pattern matching (stopping a
+   *  timer), not the primary/extra pattern. */
+  worn_off?: boolean
+  /** True when fire effects were on and this match actually ran — the real
+   *  overlay/audio/timer fired, not just the report row. */
+  fired: boolean
+}
+
+export interface TestLineResult {
+  line: string
+  /** The line's own parsed EQ log timestamp, if it had one. */
+  timestamp?: string
+  matches: TestMatch[]
+}
+
+export interface TestRequest {
+  lines: string
+  /** Defaults to the live active character server-side when omitted. */
+  character?: string
+  /** Also starts real timers and broadcasts trigger:fired (test:true) so
+   *  the overlay/audio can preview a match. Never posts webhooks or writes
+   *  history regardless of this flag. */
+  fire_effects?: boolean
+  /** Tests only this (possibly unsaved) trigger instead of every enabled
+   *  trigger — used by the trigger editor's inline sample-line test. */
+  trigger?: Trigger
+  /** Paces playback by the lines' own timestamp gaps and streams results
+   *  over WS instead of returning the whole report at once. */
+  realtime?: boolean
+}
+
+export interface TestReport {
+  lines: TestLineResult[]
+  /** Problems that stopped the whole run — e.g. an invalid draft pattern. */
+  errors?: string[]
+  matched: number
+  fired: number
+  excluded: number
+  cooldowns: number
+}
+
+export type TestPlaybackState = 'idle' | 'playing'
+
+export interface TestStatus {
+  state: TestPlaybackState
+  errors?: string[]
 }
 
 export interface TriggerPack {

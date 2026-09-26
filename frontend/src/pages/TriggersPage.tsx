@@ -60,6 +60,7 @@ import ImportTriggersModal from '../components/ImportTriggersModal'
 import PackUpdateModal from '../components/PackUpdateModal'
 import ActionTemplatesMenu from '../components/ActionTemplatesMenu'
 import BulkActionsModal from '../components/BulkActionsModal'
+import TriggerTesterTab, { MatchRow } from '../components/TriggerTesterTab'
 import { buildSpellTriggerPrefill, secsLabel, type SpellTimerTriggerPrefill } from '../lib/spellHelpers'
 import {
   listTriggers,
@@ -85,6 +86,7 @@ import {
   reorderTriggerCategories,
   listTimerGroups,
   createTimerGroup,
+  runTriggerTest,
   type CreateTriggerRequest,
   type Character,
 } from '../services/api'
@@ -108,6 +110,7 @@ import type {
   PipeCondition,
   ExtraPattern,
   PackUpdateSummary,
+  TestLineResult,
 } from '../types/trigger'
 
 const CLASS_NAMES = [
@@ -408,6 +411,123 @@ function ActionEditor({ action, index, onChange, onRemove }: ActionEditorProps):
   )
 }
 
+// ── Sample-line tester (inline, in the trigger editor) ──────────────────────
+// Lets the user validate an unsaved draft's pattern against one pasted line
+// before Save — the trigger editor's slice of the Trigger Tester (see
+// TriggerTesterTab for the full paste-and-run tab). buildDraft assembles a
+// Trigger-shaped payload from the form's current (possibly invalid/unsaved)
+// state at test time.
+
+function SampleLineTester({
+  buildDraft,
+  disabled,
+}: {
+  buildDraft: () => Trigger
+  disabled: boolean
+}): React.ReactElement {
+  const [open, setOpen] = useState(false)
+  const [line, setLine] = useState('')
+  const [fireEffects, setFireEffects] = useState(false)
+  const [running, setRunning] = useState(false)
+  const [result, setResult] = useState<TestLineResult | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const run = () => {
+    if (!line.trim()) return
+    setRunning(true)
+    setError(null)
+    setResult(null)
+    runTriggerTest({ lines: line, trigger: buildDraft(), fire_effects: fireEffects })
+      .then((report) => {
+        if (report.errors && report.errors.length > 0) {
+          setError(report.errors.join(' '))
+          return
+        }
+        setResult(report.lines[0] ?? null)
+      })
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setRunning(false))
+  }
+
+  return (
+    <div
+      className="rounded p-2 space-y-1.5"
+      style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}
+    >
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 text-[11px] font-medium"
+        style={{ color: 'var(--color-muted-foreground)' }}
+      >
+        {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+        Test against sample line
+      </button>
+      {open && (
+        <div className="space-y-1.5 pt-0.5">
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={line}
+              onChange={(e) => setLine(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); run() } }}
+              placeholder="Paste a sample log line here (with or without the timestamp)"
+              className="flex-1 rounded px-2 py-1 text-xs outline-none font-mono"
+              style={{
+                backgroundColor: 'var(--color-surface)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-foreground)',
+              }}
+              disabled={disabled}
+            />
+            <button
+              type="button"
+              onClick={run}
+              disabled={!line.trim() || running || disabled}
+              className="text-[11px] px-2 py-1 rounded font-medium shrink-0"
+              style={{
+                backgroundColor: 'var(--color-primary)',
+                color: 'var(--color-background)',
+                opacity: !line.trim() || running || disabled ? 0.6 : 1,
+              }}
+            >
+              {running ? 'Testing…' : 'Test'}
+            </button>
+          </div>
+          <label
+            className="flex items-center gap-1.5 text-[11px]"
+            style={{ color: 'var(--color-muted-foreground)' }}
+            title="Also start the real timer and preview the overlay/audio — never posts a Discord webhook or writes trigger history"
+          >
+            <input
+              type="checkbox"
+              checked={fireEffects}
+              onChange={(e) => setFireEffects(e.target.checked)}
+            />
+            Fire alerts
+          </label>
+          {error && (
+            <p className="text-[11px]" style={{ color: 'var(--color-danger)' }}>{error}</p>
+          )}
+          {result && (
+            result.matches.length === 0 ? (
+              <p className="text-[11px] italic" style={{ color: 'var(--color-muted)' }}>
+                No match.
+              </p>
+            ) : (
+              <div className="space-y-1.5">
+                {result.matches.map((m, i) => (
+                  <MatchRow key={i} match={m} onOpenTrigger={() => {}} />
+                ))}
+              </div>
+            )
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Trigger form ──────────────────────────────────────────────────────────────
 
 interface TriggerFormProps {
@@ -540,6 +660,44 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, timerG
   }, [activePlayer, initial])
 
   useEffect(() => { nameRef.current?.focus() }, [])
+
+  // Assembles the current (possibly unsaved/invalid) form state into a
+  // Trigger-shaped payload for the inline sample-line tester — mirrors
+  // handleSubmit's request below, minus its validation (an invalid pattern
+  // just comes back as a report error from the backend instead of blocking
+  // the test).
+  const buildTestDraft = useCallback((): Trigger => ({
+    id: initial?.id ?? 'draft',
+    name: name.trim() || 'Draft',
+    enabled: true,
+    pattern: pattern.trim(),
+    actions,
+    pack_name: '',
+    category_id: categoryId,
+    created_at: initial?.created_at ?? new Date().toISOString(),
+    timer_type: timerType,
+    timer_duration_secs: timerType === 'none' ? 0 : Math.max(0, timerDuration),
+    timer_duration_capture: timerType === 'none' ? '' : timerDurationCapture.trim(),
+    timer_key_capture: timerType === 'none' ? '' : timerKeyCapture.trim(),
+    timer_target_capture: timerTargetCapture.trim(),
+    worn_off_pattern: timerType === 'none' ? '' : wornOffPattern.trim(),
+    spell_id: initial?.spell_id ?? prefill?.spellId ?? 0,
+    refire_cooldown_secs: Math.max(0, refireCooldown),
+    display_threshold_secs: timerType === 'none' ? 0 : Math.max(0, displayThreshold),
+    bar_color: timerType === 'none' ? '' : barColor,
+    characters: Array.from(selectedChars),
+    timer_alerts: timerType === 'none' ? [] : timerAlerts,
+    exclude_patterns: excludePatternsText.split('\n').map((s) => s.trim()).filter((s) => s.length > 0),
+    extra_patterns: extraPatterns
+      .map((ep) => ({ ...ep, pattern: ep.pattern.trim() }))
+      .filter((ep) => ep.pattern.length > 0),
+    sort_order: initial?.sort_order ?? 0,
+  }), [
+    initial, name, pattern, actions, categoryId, timerType, timerDuration,
+    timerDurationCapture, timerKeyCapture, timerTargetCapture, wornOffPattern,
+    prefill, refireCooldown, displayThreshold, barColor, selectedChars,
+    timerAlerts, excludePatternsText, extraPatterns,
+  ])
 
   // Plain new triggers start from the default action template when one is
   // set. Spell-prefilled and edited triggers keep their own actions.
@@ -1192,6 +1350,12 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, timerG
           </p>
         )}
       </div>
+      )}
+
+      {/* Sample-line tester — log source only (pipe conditions aren't
+          driven by pasted log lines). */}
+      {source === 'log' && (
+        <SampleLineTester buildDraft={buildTestDraft} disabled={submitting} />
       )}
 
       {/* Refire cooldown — applies to any trigger (log or pipe) */}
@@ -2348,6 +2512,10 @@ function HistoryTab(): React.ReactElement {
   useWebSocket((msg) => {
     if (msg.type === WSEvent.TriggerFired) {
       const event = msg.data as TriggerFired
+      // Trigger Tester fires (see TriggerTesterTab) broadcast the same event
+      // so the overlay/audio can preview them, but they're not real matches
+      // — keep them out of history.
+      if (event.test) return
       setHistory((prev) => [event, ...prev].slice(0, 200))
     }
   })
@@ -2888,7 +3056,7 @@ function PacksTab({ installedPacks, onInstalled }: PacksTabProps): React.ReactEl
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
-type Tab = 'triggers' | 'history' | 'packs'
+type Tab = 'triggers' | 'history' | 'packs' | 'tester'
 
 // ── Delete category modal ───────────────────────────────────────────────────
 
@@ -3021,6 +3189,7 @@ function DeleteCategoryModal({
 }
 
 export default function TriggersPage(): React.ReactElement {
+  const activePlayer = useActivePlayerName()
   const [tab, setTab] = useState<Tab>('triggers')
   const [triggers, setTriggers] = useState<Trigger[]>([])
   const [loading, setLoading] = useState(true)
@@ -3752,7 +3921,7 @@ export default function TriggersPage(): React.ReactElement {
         className="flex gap-0 border-b shrink-0"
         style={{ borderColor: 'var(--color-border)' }}
       >
-        {(['triggers', 'history', 'packs'] as Tab[]).map((t) => (
+        {(['triggers', 'history', 'packs', 'tester'] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -3762,6 +3931,7 @@ export default function TriggersPage(): React.ReactElement {
             {t === 'triggers' && <span>Triggers ({triggers.length})</span>}
             {t === 'history' && <span>History</span>}
             {t === 'packs' && <span>Packs</span>}
+            {t === 'tester' && <span>Tester</span>}
           </button>
         ))}
       </div>
@@ -4115,6 +4285,18 @@ export default function TriggersPage(): React.ReactElement {
       {/* Tab: Packs */}
       {tab === 'packs' && (
         <PacksTab installedPacks={installedPacks} onInstalled={load} />
+      )}
+
+      {/* Tab: Tester */}
+      {tab === 'tester' && (
+        <TriggerTesterTab
+          chars={chars}
+          activeCharacter={activePlayer}
+          onOpenTrigger={(name) => {
+            setSearch(name)
+            setTab('triggers')
+          }}
+        />
       )}
 
       {deletingCategory && (

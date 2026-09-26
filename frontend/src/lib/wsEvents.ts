@@ -16,6 +16,11 @@ export const WSEvent = {
   TriggerTest: 'trigger:test',
   TriggerTestPosition: 'trigger:test_position',
   TriggerTestSessionEnded: 'trigger:test_session_ended',
+  // Trigger Tester real-time playback (see TriggerTesterTab): one
+  // TestLineResult per pasted line as it's processed, and a {state,
+  // errors?} snapshot when playback starts and ends.
+  TriggerTestLine: 'trigger:test:line',
+  TriggerTestStatus: 'trigger:test:status',
   ConfigUpdated: 'config:updated',
   ConfigCharacterDetected: 'config:character_detected',
   ChatNew: 'chat:new',

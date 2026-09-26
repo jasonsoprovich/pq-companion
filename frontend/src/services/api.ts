@@ -47,7 +47,7 @@ import type { RaidThreatState, TargetState, ThreatState } from '../types/overlay
 import type { CombatState, HistoryFacets, HistoryFilter, HistoryListResponse, StoredFight } from '../types/combat'
 import type { TimerState } from '../types/timer'
 import type { RespawnState } from '../types/respawn'
-import type { Trigger, TriggerFired, TriggerPack, TriggerCategory, CategoryPlacement, TimerGroup, Action, TimerType, TimerAlertThreshold, TriggerSource, PipeCondition, ExtraPattern, ImportPreview, PackUpdateSummary, PackDiff, PackUpdateMode, PackUpdateResult, ActionTemplate, BulkResult, EmoteChange, TriggerEmoteSuggestion, PatternLocation } from '../types/trigger'
+import type { Trigger, TriggerFired, TriggerPack, TriggerCategory, CategoryPlacement, TimerGroup, Action, TimerType, TimerAlertThreshold, TriggerSource, PipeCondition, ExtraPattern, ImportPreview, PackUpdateSummary, PackDiff, PackUpdateMode, PackUpdateResult, ActionTemplate, BulkResult, EmoteChange, TriggerEmoteSuggestion, PatternLocation, TestRequest, TestReport, TestStatus } from '../types/trigger'
 import type { RollsState, RollsSettingsPatch, WinnerRule } from '../types/rolls'
 import type { EnumsCatalog } from '../types/enums'
 import type {
@@ -2870,6 +2870,29 @@ export function clearAllTriggers(): Promise<void> {
 
 export function getTriggerHistory(): Promise<TriggerFired[]> {
   return get<TriggerFired[]>('/api/triggers/history')
+}
+
+// ── Trigger Tester ───────────────────────────────────────────────────────────
+
+/**
+ * Runs pasted log lines through the trigger engine. With req.realtime unset
+ * (the default), this resolves with the full TestReport. With
+ * req.realtime=true, the backend instead starts a paced playback session and
+ * resolves once it has started (202) — subscribe to WSEvent.TriggerTestLine /
+ * TriggerTestStatus for the streamed results.
+ */
+export function runTriggerTest(req: TestRequest): Promise<TestReport> {
+  return post<TestReport>('/api/triggers/test', req)
+}
+
+/** Aborts an active real-time Trigger Tester session. No-op when idle. */
+export function stopTriggerTest(): Promise<void> {
+  return post('/api/triggers/test/stop')
+}
+
+/** Current real-time Trigger Tester session state. */
+export function getTriggerTestStatus(): Promise<TestStatus> {
+  return get<TestStatus>('/api/triggers/test/status')
 }
 
 export function getBuiltinPacks(): Promise<TriggerPack[]> {
