@@ -130,3 +130,51 @@ export function roleMeta(role?: string): RoleMeta | null {
   if (role && role in ROLE_META) return ROLE_META[role as Role]
   return null
 }
+
+// ── Zone display order + colour (Flow view) ─────────────────────────────────
+// ZONE_ORDER fixes the left-to-right reading order of zone cards within each
+// tier band, matching Grimrose's (SoS) hand-verified bare-minimum flowchart —
+// see PoPFlagFlowPanel. A zone not listed here (future dataset addition)
+// falls back to first-seen order, appended after the known zones in its tier.
+export const ZONE_ORDER: string[] = [
+  // Tier 1
+  'Plane of Justice', 'Plane of Disease', 'Plane of Nightmares', 'Plane of Innovation',
+  // Tier 2
+  'Plane of Valor', 'Plane of Storms', 'Crypt of Decay', 'Plane of Torment',
+  // Tier 3
+  'Halls of Honor', 'Bastion of Thunder', 'Plane of Knowledge', 'Plane of Tactics', 'Tower of Solusek Ro',
+  // Tier 4
+  'Plane of Air', 'Plane of Water', 'Plane of Earth', 'Plane of Fire',
+  // Tier 5 (Plane of Time)
+  'Plane of Time',
+]
+
+// ZONE_COLORS gives each zone a distinct accent for its Flow-view card header,
+// loosely echoing Grimrose's own colour-coded boxes so the two are easy to
+// cross-reference. A zone missing from this map falls back to ZONE_FALLBACK.
+export const ZONE_COLORS: Record<string, string> = {
+  'Plane of Justice': '#eab308',
+  'Plane of Disease': '#84cc16',
+  'Plane of Nightmares': '#a78bfa',
+  'Plane of Innovation': '#94a3b8',
+  'Plane of Valor': '#fb923c',
+  'Plane of Storms': '#facc15',
+  'Crypt of Decay': '#65a30d',
+  'Plane of Torment': '#c084fc',
+  'Halls of Honor': '#fb923c',
+  'Bastion of Thunder': '#facc15',
+  'Plane of Knowledge': '#34d399',
+  'Plane of Tactics': '#2dd4bf',
+  'Tower of Solusek Ro': '#f87171',
+  'Plane of Air': '#60a5fa',
+  'Plane of Water': '#38bdf8',
+  'Plane of Earth': '#a16207',
+  'Plane of Fire': '#f87171',
+  'Plane of Time': '#f5f5dc',
+}
+
+export const ZONE_FALLBACK_COLOR = '#94a3b8'
+
+export function zoneColor(zone: string): string {
+  return ZONE_COLORS[zone] ?? ZONE_FALLBACK_COLOR
+}

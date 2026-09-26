@@ -1,19 +1,19 @@
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Flag, RefreshCw, AlertCircle, CheckCircle2, Circle, Lock,
-  ChevronDown, ChevronRight, ScrollText, ListChecks, Share2,
+  Flag, RefreshCw, AlertCircle,
+  ChevronDown, ChevronRight, ScrollText, ListChecks, Waypoints,
 } from 'lucide-react'
 import { getPopFlagDataset, getPopFlags, setPopFlag } from '../services/api'
 import type { PoPFlagStatus, PoPResolved } from '../types/popflag'
-import { STEP_KIND_META, STEP_KIND_ORDER, stepKindMeta, roleMeta, ROLE_META } from '../lib/popFlagKind'
+import { STEP_KIND_META, STEP_KIND_ORDER, ROLE_META } from '../lib/popFlagKind'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
 import { useWebSocket } from '../hooks/useWebSocket'
 import CharacterSubTabs from '../components/CharacterSubTabs'
 import ImportSeerModal from '../components/ImportSeerModal'
+import { PopFlagRow } from '../components/PopFlagRow'
 
-// Graph view is lazy — @xyflow/react is ~4MB and most sessions stay on the
-// checklist.
-const PoPFlagGraphPanel = lazy(() => import('./PoPFlagGraphPanel'))
+// Flow view is lazy — it's only needed once a user switches off the checklist.
+const PoPFlagFlowPanel = lazy(() => import('./PoPFlagFlowPanel'))
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -75,11 +75,6 @@ function pendingLabel(name: string): string {
   return PENDING_LABELS[name] ?? name.replace(/^cl_/, '').replace(/^./, (c) => c.toUpperCase())
 }
 
-// labelFor maps a prereq flag ID to its short label for the locked tooltip.
-function labelFor(flags: PoPFlagStatus[], id: string): string {
-  return flags.find((f) => f.id === id)?.label ?? id
-}
-
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 function ProgressBar({ done, total }: { done: number; total: number }): React.ReactElement {
@@ -105,203 +100,6 @@ function ProgressBar({ done, total }: { done: number; total: number }): React.Re
       >
         {done} / {total}
       </span>
-    </div>
-  )
-}
-
-function ProvenanceChip({
-  source, onConfirm,
-}: { source?: string; onConfirm?: () => void }): React.ReactElement | null {
-  if (!source) return null
-  // Auto-detected flags are optimistic — render an amber, clickable chip the
-  // user can click to confirm (promote to a manual row).
-  if (source === 'auto') {
-    return (
-      <button
-        type="button"
-        onClick={onConfirm}
-        disabled={!onConfirm}
-        className="ml-2 shrink-0 rounded px-1.5 py-0.5 text-[9px] uppercase tracking-wider"
-        title="Auto-detected from a kill — click to confirm"
-        style={{
-          backgroundColor: 'rgba(245,158,11,0.15)',
-          color: '#f59e0b',
-          border: '1px solid rgba(245,158,11,0.4)',
-          cursor: onConfirm ? 'pointer' : 'default',
-        }}
-      >
-        auto — confirm?
-      </button>
-    )
-  }
-  return (
-    <span
-      className="ml-2 shrink-0 rounded px-1.5 py-0.5 text-[9px] uppercase tracking-wider"
-      style={{
-        backgroundColor: 'var(--color-surface-2)',
-        color: 'var(--color-muted)',
-        border: '1px solid var(--color-border)',
-      }}
-    >
-      {source === 'seer' ? 'Seer' : source === 'popflags' ? '#popflags' : 'manual'}
-    </span>
-  )
-}
-
-interface FlagRowProps {
-  flag: PoPFlagStatus
-  allFlags: PoPFlagStatus[]
-  requiredByDone: Set<string>
-  canToggle: boolean
-  busy: boolean
-  onToggle: (flag: PoPFlagStatus) => void
-  onConfirm: (flag: PoPFlagStatus) => void
-}
-
-function FlagRow({ flag, allFlags, requiredByDone, canToggle, busy, onToggle, onConfirm }: FlagRowProps): React.ReactElement {
-  const missingLabels = (flag.missing ?? []).map((id) => labelFor(allFlags, id))
-  const lockTitle = flag.locked ? `Needs: ${missingLabels.join(', ')}` : ''
-  // Checking is blocked while prerequisites are unmet (must be done in order);
-  // un-checking is blocked while a completed later step depends on this one
-  // (must be retracted top-down). Confirming an already-done auto/seer
-  // detection via the chip stays allowed.
-  const lockedForCheck = flag.locked && !flag.done
-  const lockedForUncheck = flag.done && requiredByDone.has(flag.id)
-  // An any-of anchor satisfied via a checked member: toggling the anchor itself
-  // would be a no-op (the member keeps it done), so steer the user to the
-  // member instead.
-  const anchorViaMember =
-    flag.done && allFlags.some((o) => o.group === flag.id && o.done)
-  const checkDisabled =
-    !canToggle || busy || lockedForCheck || lockedForUncheck || anchorViaMember
-  const checkTitle = !canToggle
-    ? 'Select a character to track'
-    : lockedForCheck
-      ? `Complete prerequisites first — Needs: ${missingLabels.join(', ')}`
-      : lockedForUncheck
-        ? 'Required by a completed later step'
-        : anchorViaMember
-          ? 'Completed via an option below — uncheck that instead'
-          : flag.done
-            ? 'Mark not done'
-            : 'Mark done'
-  // Step-kind accent: a coloured left stripe + icon + chip so a player can tell
-  // a raid kill from a must-act-now post-kill hail from solo homework. The
-  // timed-hail kind also gets a faint row tint to make the easy-to-miss steps
-  // stand out (left as transparent stripe when a kind is missing/unknown).
-  const km = stepKindMeta(flag.step_kind)
-  const KindIcon = km?.icon
-  // Role badge (key / keyring / optional) for the non-required rows.
-  const rm = roleMeta(flag.role)
-  const RoleIcon = rm?.icon
-  const isMember = !!flag.group
-  // Superseded: an unchosen alternative in a satisfied any-of group — render it
-  // faded + struck as "not needed". Dim optional rows that aren't done so they
-  // read as "nice to have, not required".
-  const dimmed = flag.done || flag.superseded
-  const opacity = flag.superseded
-    ? 0.45
-    : flag.locked && !flag.done
-      ? 0.6
-      : rm && !flag.done
-        ? 0.85
-        : 1
-  return (
-    <div
-      className="flex items-start gap-2 px-4 py-2"
-      style={{
-        borderTop: '1px solid var(--color-border)',
-        borderLeft: `3px solid ${km ? km.color : 'transparent'}`,
-        backgroundColor: km?.kind === 'timed_hail' && !flag.superseded ? km.bg : undefined,
-        opacity,
-        paddingLeft: isMember ? '2.25rem' : undefined,
-      }}
-    >
-      <button
-        type="button"
-        onClick={() => onToggle(flag)}
-        disabled={checkDisabled}
-        className="mt-0.5 shrink-0"
-        title={checkTitle}
-        style={{ cursor: checkDisabled ? 'not-allowed' : 'pointer' }}
-      >
-        {flag.done ? (
-          <CheckCircle2 size={16} style={{ color: 'var(--color-success)' }} />
-        ) : (
-          <Circle size={16} style={{ color: 'var(--color-muted)' }} />
-        )}
-      </button>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center">
-          {KindIcon && (
-            <span className="mr-1.5 shrink-0" title={km?.tip}>
-              <KindIcon size={13} style={{ color: km!.color }} />
-            </span>
-          )}
-          <span
-            className="text-sm"
-            style={{
-              color: dimmed ? 'var(--color-muted)' : 'var(--color-foreground)',
-              textDecoration: dimmed ? 'line-through' : 'none',
-            }}
-          >
-            {flag.label}
-          </span>
-          {km && (
-            <span
-              className="ml-2 shrink-0 rounded px-1.5 py-0.5 text-[9px] uppercase tracking-wider"
-              title={km.tip}
-              style={{ color: km.color, backgroundColor: km.bg, border: `1px solid ${km.border}` }}
-            >
-              {km.label}
-            </span>
-          )}
-          {rm && (
-            <span
-              className="ml-1.5 inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[9px] uppercase tracking-wider"
-              title={rm.tip}
-              style={{ color: rm.color, backgroundColor: rm.bg, border: `1px solid ${rm.border}` }}
-            >
-              {RoleIcon && <RoleIcon size={9} />}
-              {rm.label}
-            </span>
-          )}
-          {flag.superseded && (
-            <span
-              className="ml-1.5 shrink-0 rounded px-1.5 py-0.5 text-[9px] uppercase tracking-wider"
-              title="Another option in this group is done — this one is no longer needed."
-              style={{ color: 'var(--color-muted)', backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}
-            >
-              not needed
-            </span>
-          )}
-          {flag.locked && !flag.done && (
-            <span className="ml-1.5 shrink-0" title={lockTitle}>
-              <Lock size={11} style={{ color: '#f87171' }} />
-            </span>
-          )}
-          {flag.level ? (
-            <span
-              className="ml-2 shrink-0 text-[10px]"
-              style={{ color: 'var(--color-muted)' }}
-              title={`Min level to enter: ${flag.level}`}
-            >
-              L{flag.level}
-            </span>
-          ) : null}
-          {flag.done && (
-            <ProvenanceChip
-              source={flag.source}
-              onConfirm={canToggle && !busy ? () => onConfirm(flag) : undefined}
-            />
-          )}
-        </div>
-        {flag.detail && (
-          <p className="mt-0.5 text-[11px] leading-snug" style={{ color: 'var(--color-muted)' }}>
-            {flag.detail}
-          </p>
-        )}
-      </div>
     </div>
   )
 }
@@ -373,7 +171,7 @@ function TierCard({
                 {zone}
               </div>
               {zoneFlags.map((f) => (
-                <FlagRow
+                <PopFlagRow
                   key={f.id}
                   flag={f}
                   allFlags={allFlags}
@@ -402,7 +200,7 @@ export default function PoPFlaggingPage(): React.ReactElement {
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [showImport, setShowImport] = useState(false)
-  const [view, setView] = useState<'checklist' | 'graph'>('checklist')
+  const [view, setView] = useState<'checklist' | 'flow'>('checklist')
 
   // Default the viewed character to the active character once known.
   useEffect(() => {
@@ -542,7 +340,7 @@ export default function PoPFlaggingPage(): React.ReactElement {
           </div>
         )}
         <div className="ml-4 flex items-center gap-1">
-          {([['checklist', 'Checklist', ListChecks], ['graph', 'Graph', Share2]] as const).map(
+          {([['checklist', 'Checklist', ListChecks], ['flow', 'Flow', Waypoints]] as const).map(
             ([v, label, Icon]) => {
               const isActive = view === v
               return (
@@ -673,7 +471,7 @@ export default function PoPFlaggingPage(): React.ReactElement {
         })}
       </div>
 
-      {view === 'graph' ? (
+      {view === 'flow' ? (
         <Suspense
           fallback={
             <div className="flex flex-1 items-center justify-center">
@@ -681,7 +479,14 @@ export default function PoPFlaggingPage(): React.ReactElement {
             </div>
           }
         >
-          <PoPFlagGraphPanel flags={resolved?.flags ?? []} />
+          <PoPFlagFlowPanel
+            flags={resolved?.flags ?? []}
+            canToggle={canToggle}
+            busyId={busyId}
+            onToggle={onToggle}
+            onConfirm={onConfirm}
+            requiredByDone={requiredByDone}
+          />
         </Suspense>
       ) : (
         /* Tier cards */
