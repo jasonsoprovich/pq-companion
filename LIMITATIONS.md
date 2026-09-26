@@ -1302,6 +1302,51 @@ These are inherent to log-file parsing and affect multiple features:
   `#popflags` made personal progression visible) — there is currently no way
   to detect either short of asking server staff.
 
+## 20. Prioritized (pinned) respawn tracking
+
+### 20.1 Pin handoff anchors on the player's position, not the mob's
+
+- **Limitation:** Pinning a respawn timer (row button or `/pipe respawn
+  pin`) stamps an anchor from the player's Zeal-pipe position at kill time,
+  so that once the timer pops, the next kill within ~200 units can inherit
+  the pin regardless of name (`internal/respawn/engine.go`,
+  `claimPinLocked`). This is a proxy for "the camp spot," not the killed
+  NPC's own location. A kill made a good distance from where the player was
+  standing (a pulled mob fought back at a safe spot, or a ranged/pet kill)
+  won't hand off even though it's the same spawn point; conversely, killing
+  an unrelated mob that happens to die near the same spot after the pinned
+  timer has already popped will claim the pin instead.
+- **Root cause:** Zeal's `MsgPlayer` pipe message reports the player's own
+  location every tick; there is no NPC-location field on the kill message
+  (log or pipe) to anchor to instead.
+- **Sources checked:** Log (kill lines carry no coordinates), Zeal pipe
+  (`docs/zealpipes-reference.md` — `MsgPlayer` is player-only; no per-kill
+  NPC location message exists), `quarm.db` (`spawn2.x/y` exist per spawn
+  point, but the engine has no way to know which spawn point a given kill
+  came from without decorated-name/variant disambiguation it doesn't do
+  today for respawns).
+- **Could a future data source fix this?** Partially — if Zeal added an
+  NPC-location field to a death/combat message, the anchor could use the
+  mob's own spot instead of the player's, tightening the match and removing
+  the "killed something else nearby" false-positive.
+
+### 20.2 No pin persistence across restarts, and no cross-session pin memory
+
+- **Limitation:** Respawn timers (pinned or not) exist only in backend
+  memory and are lost on app restart, same as the base respawn tracker
+  (§19 doesn't cover this since it predates the pin feature) — there is no
+  way to "remember" that a particular camp was pinned across a play
+  session.
+- **Root cause:** `internal/respawn` was designed session-scoped from the
+  start (see `engine.go`'s package doc); adding persistence would require a
+  user.db table and a decision about what a stale, restored timer should
+  mean (its estimate is now wrong relative to wall-clock time).
+- **Sources checked:** N/A — this is a design constraint, not a missing
+  data source.
+- **Could a future data source fix this?** No new data source needed —
+  this would be a deliberate persistence feature (a user.db table +
+  restore-on-startup logic), not a limitation of available inputs.
+
 ---
 
 ## Template for new entries
