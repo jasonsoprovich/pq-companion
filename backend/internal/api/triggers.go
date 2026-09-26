@@ -30,6 +30,11 @@ type triggerHandler struct {
 	// initial WS broadcast (window-startup race).
 	testMu     sync.Mutex
 	latestTest *testOverlayRequest
+
+	// tester runs real-time Trigger Tester playback sessions (see
+	// trigger/tester.go). Wired by NewRouter; instant (non-realtime) test
+	// requests call engine.RunTest directly and never touch this.
+	tester *trigger.Tester
 }
 
 // list returns all triggers.
@@ -371,6 +376,54 @@ func (h *triggerHandler) history(w http.ResponseWriter, r *http.Request) {
 		events = []trigger.TriggerFired{}
 	}
 	writeJSON(w, http.StatusOK, events)
+}
+
+// test runs the Trigger Tester (see trigger/tester.go) against a pasted
+// blob of log lines. By default (Realtime false) it runs synchronously and
+// returns the full report in the response. With Realtime true, it instead
+// starts a playback session that paces lines by their own log-timestamp
+// gaps and streams results as trigger:test:line / trigger:test:status WS
+// events; the response is 202 Accepted with no body.
+//
+// Character defaults to the live active character when omitted, matching
+// how a real log line is attributed.
+func (h *triggerHandler) test(w http.ResponseWriter, r *http.Request) {
+	var req trigger.TestRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if strings.TrimSpace(req.Lines) == "" {
+		writeError(w, http.StatusBadRequest, "lines is required")
+		return
+	}
+	if req.Character == "" {
+		req.Character = h.activeCharacterName()
+	}
+
+	if !req.Realtime {
+		writeJSON(w, http.StatusOK, h.engine.RunTest(req))
+		return
+	}
+
+	if err := h.tester.Start(req); err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+	h.hub.Broadcast(ws.Event{Type: trigger.WSEventTriggerTestStatus, Data: map[string]any{"state": string(trigger.TestPlaybackPlaying)}})
+	w.WriteHeader(http.StatusAccepted)
+}
+
+// testStop aborts an active real-time Trigger Tester session. No-op when
+// idle.
+func (h *triggerHandler) testStop(w http.ResponseWriter, r *http.Request) {
+	h.tester.Stop()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// testStatus returns the real-time Trigger Tester session's current state.
+func (h *triggerHandler) testStatus(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"state": string(h.tester.Status())})
 }
 
 // activeCharacterName returns the currently selected character — manual config

@@ -120,6 +120,12 @@ type TestRequest struct {
 	// of every enabled trigger — used by the trigger editor's inline
 	// "test against sample line" box.
 	Trigger *Trigger `json:"trigger,omitempty"`
+	// Realtime is read only by the API layer, to choose between calling
+	// RunTest (false, the default — return the whole report in one HTTP
+	// response) and starting a Tester playback session (true — paced by the
+	// lines' own timestamps, streamed over WS). Neither RunTest nor Tester
+	// itself consult it.
+	Realtime bool `json:"realtime,omitempty"`
 }
 
 // TestReport is the result of an instant (non-realtime) test run.

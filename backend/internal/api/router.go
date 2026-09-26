@@ -112,6 +112,17 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	timerH := &timerHandler{engine: timerEngine}
 	respawnH := &respawnHandler{engine: respawnEngine}
 	triggerH := &triggerHandler{store: triggerStore, engine: triggerEngine, hub: hub, charStore: charStore, tailer: tailer, cfgMgr: cfgMgr}
+	// Real-time Trigger Tester playback streams its per-line results and
+	// start/end state over the same WS hub every other event uses — see
+	// triggerHandler.test in triggers.go for the instant (non-realtime) path.
+	triggerH.tester = trigger.NewTester(triggerEngine,
+		func(lr trigger.TestLineResult) {
+			hub.Broadcast(ws.Event{Type: trigger.WSEventTriggerTestLine, Data: lr})
+		},
+		func(errs []string) {
+			hub.Broadcast(ws.Event{Type: trigger.WSEventTriggerTestStatus, Data: map[string]any{"state": string(trigger.TestPlaybackIdle), "errors": errs}})
+		},
+	)
 	tasksH := &tasksHandler{store: charStore}
 	skillsH := &skillsHandler{charStore: charStore, store: skillsStore, db: database}
 	wishlistH := &wishlistHandler{store: charStore, db: database, hub: hub, watcher: wishlistWatcher}
@@ -587,6 +598,9 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Post("/test-overlay/position", triggerH.testOverlayPosition)
 			r.Post("/test-overlay/end", triggerH.testOverlayEnd)
 			r.Post("/timer-alert-overlay", triggerH.fireTimerAlertOverlay)
+			r.Post("/test", triggerH.test)
+			r.Post("/test/stop", triggerH.testStop)
+			r.Get("/test/status", triggerH.testStatus)
 		})
 	})
 

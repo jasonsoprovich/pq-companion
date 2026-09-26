@@ -10,6 +10,15 @@ import (
 // WSEventTriggerFired is the WebSocket event type emitted when a trigger fires.
 const WSEventTriggerFired = "trigger:fired"
 
+// WSEventTriggerTestLine and WSEventTriggerTestStatus are emitted by a
+// real-time Trigger Tester session (see tester.go): one TestLineResult per
+// pasted line as it's processed, and a {state, errors?} status snapshot when
+// playback starts and ends.
+const (
+	WSEventTriggerTestLine   = "trigger:test:line"
+	WSEventTriggerTestStatus = "trigger:test:status"
+)
+
 // ActionType identifies the kind of action a trigger fires.
 type ActionType string
 
