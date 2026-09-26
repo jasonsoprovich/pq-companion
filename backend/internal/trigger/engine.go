@@ -110,16 +110,54 @@ type Engine struct {
 	histMu  sync.Mutex
 	history []TriggerFired // ring buffer, newest appended last
 
-	// Refire-cooldown state: last fire time per trigger ID. Lives on the engine
-	// (not the recompiled `compiled` slice) so a Reload from an unrelated CRUD
-	// edit doesn't reset in-flight cooldowns. Keyed by trigger ID; only
-	// populated for triggers with RefireCooldownSecs > 0.
-	fireMu    sync.Mutex
-	lastFired map[string]time.Time
+	// fc holds the live session's refire-cooldown and boss-cast tracking
+	// state. It lives behind a *fireContext (not plain fields) so the
+	// Trigger Tester (tester.go) can run matches against its own isolated
+	// fireContext without perturbing live cooldowns or boss-cast state — see
+	// fireContext's doc comment.
+	fc *fireContext
+}
 
-	// bossCast tracks recent raid-boss "begins to cast a spell." lines so
-	// signature-spell timers can bind to the actual caster — see bosscast.go.
-	bossCast *bossCastTracker
+// fireContext bundles the mutable, per-session state that matching consults
+// beyond the compiled trigger list itself: refire-cooldown timestamps and
+// boss-cast tracking (bosscast.go). The live Engine owns one for the
+// lifetime of the process (via NewEngine); a Trigger Tester session
+// (tester.go) creates its own so pasted test lines never suppress a live
+// trigger's refire cooldown or bind a live signature-spell timer to a
+// fabricated caster observation, and vice versa.
+type fireContext struct {
+	mu        sync.Mutex
+	lastFired map[string]time.Time
+	bossCast  *bossCastTracker
+}
+
+func newFireContext() *fireContext {
+	return &fireContext{
+		lastFired: make(map[string]time.Time),
+		bossCast:  newBossCastTracker(),
+	}
+}
+
+// passesRefireCooldown reports whether the trigger is allowed to fire at ts,
+// honoring its RefireCooldownSecs anti-spam lockout. When the trigger has a
+// cooldown and is allowed, the fire time is recorded so the next match within
+// the window is suppressed. Triggers with no cooldown (the default) always pass
+// and record nothing. ts is the log line's timestamp (not wall clock) so replay
+// and the trigger tester behave deterministically.
+func (fc *fireContext) passesRefireCooldown(t *Trigger, ts time.Time) bool {
+	if t.RefireCooldownSecs <= 0 {
+		return true
+	}
+	window := time.Duration(t.RefireCooldownSecs * float64(time.Second))
+	fc.mu.Lock()
+	defer fc.mu.Unlock()
+	if last, ok := fc.lastFired[t.ID]; ok {
+		if d := ts.Sub(last); d >= 0 && d < window {
+			return false
+		}
+	}
+	fc.lastFired[t.ID] = ts
+	return true
 }
 
 // NewEngine creates an Engine backed by store. Call Reload before routing
@@ -129,9 +167,8 @@ type Engine struct {
 func NewEngine(store *Store, hub *ws.Hub, sink TimerSink, activeChar func() string) *Engine {
 	return &Engine{
 		store: store, hub: hub, sink: sink, activeChar: activeChar,
-		lastFired:   make(map[string]time.Time),
 		sendWebhook: postDiscordWebhook,
-		bossCast:    newBossCastTracker(),
+		fc:          newFireContext(),
 	}
 }
 
@@ -183,43 +220,12 @@ func (e *Engine) Reload() {
 			pipeCs = append(pipeCs, t)
 			continue
 		}
-		re, err := regexp.Compile(normalizePattern(t.Pattern, character))
-		if err != nil {
-			slog.Warn("trigger: invalid pattern, skipping", "id", t.ID, "name", t.Name, "err", err)
-			continue
+		c, errs := compileOne(t, character)
+		for _, e := range errs {
+			slog.Warn("trigger: "+e, "id", t.ID, "name", t.Name)
 		}
-		c := compiled{trigger: t, re: re}
-		for _, ep := range t.ExtraPatterns {
-			if !ep.Enabled || ep.Pattern == "" {
-				continue
-			}
-			ex, err := regexp.Compile(normalizePattern(ep.Pattern, character))
-			if err != nil {
-				slog.Warn("trigger: invalid extra pattern, skipping", "id", t.ID, "name", t.Name, "pattern", ep.Pattern, "err", err)
-				continue
-			}
-			c.extras = append(c.extras, compiledExtra{re: ex, meta: ep})
-		}
-		if t.WornOffPattern != "" {
-			if wornRe, err := regexp.Compile(normalizePattern(t.WornOffPattern, character)); err == nil {
-				c.wornOff = wornRe
-			} else {
-				slog.Warn("trigger: invalid worn-off pattern", "id", t.ID, "name", t.Name, "err", err)
-			}
-		}
-		if timerCategory(t.TimerType) != "" {
-			c.timerKey = timerKeyFor(t)
-		}
-		for _, p := range t.ExcludePatterns {
-			if p == "" {
-				continue
-			}
-			ex, err := regexp.Compile(normalizePattern(p, character))
-			if err != nil {
-				slog.Warn("trigger: invalid exclude pattern, skipping", "id", t.ID, "name", t.Name, "pattern", p, "err", err)
-				continue
-			}
-			c.excludes = append(c.excludes, ex)
+		if c.re == nil {
+			continue // primary pattern failed to compile — skip the trigger entirely
 		}
 		cs = append(cs, c)
 	}
@@ -232,11 +238,66 @@ func (e *Engine) Reload() {
 	slog.Info("trigger: reloaded", "log_active", len(cs), "pipe_active", len(pipeCs))
 }
 
+// compileOne compiles a single log-source trigger's pattern, extra patterns,
+// worn-off pattern, and exclude patterns for the given character context
+// (see normalizePattern for how {c}/{char}/{self} expand). Returns the
+// compiled matcher and a human-readable message per pattern that failed to
+// compile — the caller decides how to surface those (Reload logs and skips
+// the trigger; the Trigger Tester reports them to the UI so an invalid regex
+// shows up before the trigger is even saved).
+//
+// A failed primary pattern leaves the returned compiled.re nil; the caller
+// must check for that before using the result. Extra/worn-off/exclude
+// failures are independently skipped (matching Reload's existing behavior)
+// and only add to the returned messages.
+func compileOne(t *Trigger, character string) (compiled, []string) {
+	var errs []string
+	re, err := regexp.Compile(normalizePattern(t.Pattern, character))
+	if err != nil {
+		errs = append(errs, fmt.Sprintf("invalid pattern: %v", err))
+		return compiled{trigger: t}, errs
+	}
+	c := compiled{trigger: t, re: re}
+	for _, ep := range t.ExtraPatterns {
+		if !ep.Enabled || ep.Pattern == "" {
+			continue
+		}
+		ex, err := regexp.Compile(normalizePattern(ep.Pattern, character))
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("invalid extra pattern %q: %v", ep.Pattern, err))
+			continue
+		}
+		c.extras = append(c.extras, compiledExtra{re: ex, meta: ep})
+	}
+	if t.WornOffPattern != "" {
+		if wornRe, err := regexp.Compile(normalizePattern(t.WornOffPattern, character)); err == nil {
+			c.wornOff = wornRe
+		} else {
+			errs = append(errs, fmt.Sprintf("invalid worn-off pattern: %v", err))
+		}
+	}
+	if timerCategory(t.TimerType) != "" {
+		c.timerKey = timerKeyFor(t)
+	}
+	for _, p := range t.ExcludePatterns {
+		if p == "" {
+			continue
+		}
+		ex, err := regexp.Compile(normalizePattern(p, character))
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("invalid exclude pattern %q: %v", p, err))
+			continue
+		}
+		c.excludes = append(c.excludes, ex)
+	}
+	return c, errs
+}
+
 // Handle tests a raw log line message against all enabled triggers.
 // timestamp is when the line was logged; message is the text after the EQ
 // timestamp prefix (i.e. the bare log message, without brackets).
 func (e *Engine) Handle(timestamp time.Time, message string) {
-	e.bossCast.observe(timestamp, message)
+	e.fc.bossCast.observe(timestamp, message)
 
 	e.mu.RLock()
 	cs := e.compiled
@@ -263,8 +324,9 @@ func (e *Engine) Handle(timestamp time.Time, message string) {
 				extra = &c.extras[i].meta
 			}
 		}
-		if m != nil && !matchesAny(c.excludes, message) && e.passesRefireCooldown(c.trigger, timestamp) {
-			e.fire(c, message, timestamp, m, names, extra)
+		if m != nil && !matchesAny(c.excludes, message) && e.fc.passesRefireCooldown(c.trigger, timestamp) {
+			plan := e.planFire(e.fc, c, message, timestamp, m, names, extra, "")
+			e.applyFire(plan, fireOpts{})
 		}
 		if c.wornOff != nil && e.sink != nil && c.timerKey != "" {
 			if wm := c.wornOff.FindStringSubmatch(message); wm != nil {
@@ -442,7 +504,7 @@ func (e *Engine) firePipe(t *Trigger, matchedLine string, firedAt time.Time) {
 	// Pipe triggers have no regex captures, but built-in tokens
 	// ({c}/{target}) still substitute into action text. Copy-on-write,
 	// same as fire().
-	builtins := e.builtinTokens()
+	builtins := e.builtinTokens("")
 	actions := t.Actions
 	if len(builtins) > 0 {
 		actions = make([]Action, len(t.Actions))
@@ -633,12 +695,17 @@ func marshalTimerAlerts(alerts []TimerAlert, match []string, names []string, bui
 // action: the active character ({c}/{char}/{self}) and the current combat
 // target ({target}/{t}). Empty values are omitted so unresolved tokens stay
 // visible in the alert text rather than silently vanishing.
-func (e *Engine) builtinTokens() map[string]string {
+//
+// character overrides the live active-character lookup when non-empty — used
+// by the Trigger Tester (tester.go) to preview a fire under a character other
+// than the one actually logged in. Live callers pass "".
+func (e *Engine) builtinTokens(character string) map[string]string {
 	b := make(map[string]string, 5)
-	if e.activeChar != nil {
-		if c := e.activeChar(); c != "" {
-			b["c"], b["char"], b["self"] = c, c, c
-		}
+	if character == "" && e.activeChar != nil {
+		character = e.activeChar()
+	}
+	if character != "" {
+		b["c"], b["char"], b["self"] = character, character, character
 	}
 	if e.currentTarget != nil {
 		if t := e.currentTarget(); t != "" {
@@ -664,28 +731,6 @@ func triggerAppliesTo(t *Trigger, active string) bool {
 	return false
 }
 
-// passesRefireCooldown reports whether the trigger is allowed to fire at ts,
-// honoring its RefireCooldownSecs anti-spam lockout. When the trigger has a
-// cooldown and is allowed, the fire time is recorded so the next match within
-// the window is suppressed. Triggers with no cooldown (the default) always pass
-// and record nothing. ts is the log line's timestamp (not wall clock) so replay
-// behaves deterministically.
-func (e *Engine) passesRefireCooldown(t *Trigger, ts time.Time) bool {
-	if t.RefireCooldownSecs <= 0 {
-		return true
-	}
-	window := time.Duration(t.RefireCooldownSecs * float64(time.Second))
-	e.fireMu.Lock()
-	defer e.fireMu.Unlock()
-	if last, ok := e.lastFired[t.ID]; ok {
-		if d := ts.Sub(last); d >= 0 && d < window {
-			return false
-		}
-	}
-	e.lastFired[t.ID] = ts
-	return true
-}
-
 // GetHistory returns a copy of the recent trigger firing history, newest last.
 func (e *Engine) GetHistory() []TriggerFired {
 	e.histMu.Lock()
@@ -697,19 +742,46 @@ func (e *Engine) GetHistory() []TriggerFired {
 
 // ── internal ─────────────────────────────────────────────────────────────────
 
-// fire emits a trigger's actions. match/names are the regex submatches and
-// their names from the line that matched, used to substitute capture
-// references ({1}, $1, {name}) into the action text (#132). extra is the
-// matched ExtraPattern's metadata when an extra (not the primary pattern)
-// matched — its non-zero duration/spell-id override the trigger's; nil when
-// the primary matched.
-func (e *Engine) fire(c compiled, matchedLine string, firedAt time.Time, match []string, names []string, extra *ExtraPattern) {
+// firePlan is the fully-resolved outcome of matching one trigger against one
+// line, computed by planFire without any side effects (no webhook posts, no
+// history append, no WS broadcast, no timer start). applyFire executes a
+// plan. Splitting the two lets the Trigger Tester (tester.go) report exactly
+// what a fire would do — the rendered action text, the timer it would start,
+// which webhook it would post to — without requiring "fire effects" to be
+// enabled, and lets it enable them selectively (real timer/overlay/audio,
+// but never a real webhook post or history entry — see applyFire's opts).
+type firePlan struct {
+	trigger     *Trigger
+	matchedLine string
+	firedAt     time.Time
+	actions     []Action // capture-substituted, ready to use as-is
+
+	hasTimer      bool
+	timerKey      string
+	timerCategory string
+	timerDuration float64
+	timerTarget   string
+	timerSpellID  int
+	timerAlerts   json.RawMessage
+	timerStack    bool
+	timerIsSig    bool
+}
+
+// planFire resolves a trigger match into a firePlan. match/names are the
+// regex submatches and their names from the line that matched, used to
+// substitute capture references ({1}, $1, {name}) into the action text
+// (#132). extra is the matched ExtraPattern's metadata when an extra (not
+// the primary pattern) matched — its non-zero duration/spell-id override the
+// trigger's; nil when the primary matched. fc supplies the boss-cast tracker
+// used to resolve a signature spell's caster; character overrides the live
+// active character (see builtinTokens) for the Trigger Tester's benefit.
+func (e *Engine) planFire(fc *fireContext, c compiled, matchedLine string, firedAt time.Time, match []string, names []string, extra *ExtraPattern, character string) firePlan {
 	t := c.trigger
 
 	// Substitute regex captures into the action text on a copy — never mutate
 	// the shared trigger. Done for every fire so {1}/{name} in overlay or TTS
 	// text resolve to the matched values.
-	builtins := e.builtinTokens()
+	builtins := e.builtinTokens(character)
 	// When the trigger designates a capture group as its target
 	// (TimerTargetCapture), bind {target}/{t} in the action text to that
 	// captured value too — not just the grey "on <target>" timer suffix. This
@@ -728,36 +800,11 @@ func (e *Engine) fire(c compiled, matchedLine string, firedAt time.Time, match [
 	for i := range actions {
 		actions[i].Text = substituteCaptures(actions[i].Text, match, names, builtins)
 	}
-	e.dispatchWebhooks(actions)
 
-	event := TriggerFired{
-		TriggerID:   t.ID,
-		TriggerName: t.Name,
-		MatchedLine: matchedLine,
-		Actions:     actions,
-		FiredAt:     firedAt,
-	}
+	plan := firePlan{trigger: t, matchedLine: matchedLine, firedAt: firedAt, actions: actions}
 
-	e.histMu.Lock()
-	e.history = append(e.history, event)
-	if len(e.history) > historyMaxSize {
-		e.history = e.history[len(e.history)-historyMaxSize:]
-	}
-	e.histMu.Unlock()
-
-	e.hub.Broadcast(ws.Event{Type: WSEventTriggerFired, Data: event})
-	// Verbose diagnostics (enable via Settings → Advanced → Diagnostics): the
-	// id + log timestamp let a bug report distinguish "one line matched several
-	// triggers" (different ids, same log_ts) from "the same line fired the same
-	// trigger more than once" (same id + log_ts = a re-read / duplicate event),
-	// which is the root-cause question for the "alert played N times" reports.
-	slog.Debug("trigger fired",
-		"trigger", t.Name, "id", t.ID, "log_ts", firedAt.Format(time.RFC3339), "line", matchedLine)
-
-	if e.sink != nil && c.timerKey != "" {
+	if c.timerKey != "" {
 		if durationSecs := resolveTimerDuration(t, extra, match, names); durationSecs > 0 {
-			alertJSON := marshalTimerAlerts(t.TimerAlerts, match, names, builtins)
-			key := resolveTimerKey(t, c.timerKey, match, names)
 			// Prefer the trigger's own capture group; when it has none (a
 			// literal boss-name pattern has nothing to capture), fall back to
 			// the inferred combat target so the timer still binds to a real
@@ -791,7 +838,7 @@ func (e *Engine) fire(c compiled, matchedLine string, firedAt time.Time, match [
 				// when the player is off-tanking an add or has nothing
 				// targeted.
 				if isSignatureSpell {
-					target = e.bossCast.resolveCaster(firedAt, casters, builtins["target"])
+					target = fc.bossCast.resolveCaster(firedAt, casters, builtins["target"])
 				}
 				if target == "" {
 					target = builtins["target"]
@@ -803,12 +850,73 @@ func (e *Engine) fire(c compiled, matchedLine string, firedAt time.Time, match [
 			}
 			// TimerStack only ever applies to custom timers — see its doc
 			// comment; the API layer already enforces this on write, but the
-			// check is repeated here since fire() is the actual behaviour gate.
+			// check is repeated here since this is the actual behaviour gate.
 			stack := t.TimerStack && t.TimerType == TimerTypeCustom
-			e.sink.StartExternal(key, timerCategory(t.TimerType), durationSecs, t.DisplayThresholdSecs, firedAt, alertJSON, spellID, target, t.BarColor, t.Pinned, t.CustomGroupID, isSignatureSpell, stack)
+
+			plan.hasTimer = true
+			plan.timerKey = resolveTimerKey(t, c.timerKey, match, names)
+			plan.timerCategory = timerCategory(t.TimerType)
+			plan.timerDuration = durationSecs
+			plan.timerTarget = target
+			plan.timerSpellID = spellID
+			plan.timerAlerts = marshalTimerAlerts(t.TimerAlerts, match, names, builtins)
+			plan.timerStack = stack
+			plan.timerIsSig = isSignatureSpell
 		}
 	}
-	e.startCooldownTimer(t, firedAt)
+	return plan
+}
+
+// fireOpts controls which side effects applyFire performs. test is set by
+// the Trigger Tester: it still broadcasts the WS event (so the overlay/audio
+// can preview a fire) and still starts a real timer via the sink, but skips
+// webhook posts, history recording, and the cooldown timer.
+type fireOpts struct {
+	test bool
+}
+
+// applyFire executes a firePlan: dispatches webhooks, records history,
+// broadcasts trigger:fired, and starts the timer/cooldown via the sink.
+func (e *Engine) applyFire(plan firePlan, opts fireOpts) {
+	t := plan.trigger
+
+	if !opts.test {
+		e.dispatchWebhooks(plan.actions)
+	}
+
+	event := TriggerFired{
+		TriggerID:   t.ID,
+		TriggerName: t.Name,
+		MatchedLine: plan.matchedLine,
+		Actions:     plan.actions,
+		FiredAt:     plan.firedAt,
+		Test:        opts.test,
+	}
+
+	if !opts.test {
+		e.histMu.Lock()
+		e.history = append(e.history, event)
+		if len(e.history) > historyMaxSize {
+			e.history = e.history[len(e.history)-historyMaxSize:]
+		}
+		e.histMu.Unlock()
+	}
+
+	e.hub.Broadcast(ws.Event{Type: WSEventTriggerFired, Data: event})
+	// Verbose diagnostics (enable via Settings → Advanced → Diagnostics): the
+	// id + log timestamp let a bug report distinguish "one line matched several
+	// triggers" (different ids, same log_ts) from "the same line fired the same
+	// trigger more than once" (same id + log_ts = a re-read / duplicate event),
+	// which is the root-cause question for the "alert played N times" reports.
+	slog.Debug("trigger fired",
+		"trigger", t.Name, "id", t.ID, "log_ts", plan.firedAt.Format(time.RFC3339), "line", plan.matchedLine, "test", opts.test)
+
+	if e.sink != nil && plan.hasTimer {
+		e.sink.StartExternal(plan.timerKey, plan.timerCategory, plan.timerDuration, t.DisplayThresholdSecs, plan.firedAt, plan.timerAlerts, plan.timerSpellID, plan.timerTarget, t.BarColor, t.Pinned, t.CustomGroupID, plan.timerIsSig, plan.timerStack)
+	}
+	if !opts.test {
+		e.startCooldownTimer(t, plan.firedAt)
+	}
 }
 
 // discordWebhookURLRe restricts outbound webhook posts to Discord's own

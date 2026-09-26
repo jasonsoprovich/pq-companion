@@ -406,6 +406,11 @@ type TriggerFired struct {
 	MatchedLine string    `json:"matched_line"`
 	Actions     []Action  `json:"actions"`
 	FiredAt     time.Time `json:"fired_at"`
+	// Test marks a fire produced by the Trigger Tester (see tester.go) rather
+	// than a real log line. Still broadcast over WS so the overlay/audio can
+	// preview it, but it never lands in history and never posts a Discord
+	// webhook — see applyFire's opts.test.
+	Test bool `json:"test,omitempty"`
 }
 
 // TriggerPack is a portable collection of triggers used for import/export and
