@@ -6,6 +6,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strconv"
+	"strings"
 	"time"
 	"unsafe"
 
@@ -54,6 +56,12 @@ func discoverPlatform() ([]PipeRef, error) {
 		if err == windows.ERROR_FILE_NOT_FOUND || err == windows.ERROR_NO_MORE_FILES {
 			return nil, nil
 		}
+		// Wine doesn't implement directory listing on the pipe namespace and
+		// fails with ERROR_NOT_SUPPORTED. Fall back to deriving the pipe names
+		// from running eqgame.exe PIDs; the dial confirms the pipe exists.
+		if refs, perr := discoverByProcess(); perr == nil {
+			return refs, nil
+		}
 		return nil, fmt.Errorf("zealpipe: FindFirstFile: %w", err)
 	}
 	defer windows.FindClose(handle)
@@ -73,6 +81,32 @@ func discoverPlatform() ([]PipeRef, error) {
 			}
 			return refs, fmt.Errorf("zealpipe: FindNextFile: %w", err)
 		}
+	}
+	return refs, nil
+}
+
+// discoverByProcess returns a candidate pipe for every running eqgame.exe,
+// named the way Zeal names its pipe (prefix + PID).
+func discoverByProcess() ([]PipeRef, error) {
+	snap, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
+	if err != nil {
+		return nil, fmt.Errorf("zealpipe: process snapshot: %w", err)
+	}
+	defer windows.CloseHandle(snap)
+
+	var entry windows.ProcessEntry32
+	entry.Size = uint32(unsafe.Sizeof(entry))
+	var refs []PipeRef
+	for err = windows.Process32First(snap, &entry); err == nil; err = windows.Process32Next(snap, &entry) {
+		if strings.EqualFold(windows.UTF16ToString(entry.ExeFile[:]), "eqgame.exe") {
+			refs = append(refs, PipeRef{
+				Name: PipeNamePrefix + strconv.FormatUint(uint64(entry.ProcessID), 10),
+				PID:  entry.ProcessID,
+			})
+		}
+	}
+	if err != windows.ERROR_NO_MORE_FILES {
+		return nil, fmt.Errorf("zealpipe: process walk: %w", err)
 	}
 	return refs, nil
 }
