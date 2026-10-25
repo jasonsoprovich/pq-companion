@@ -454,6 +454,20 @@ export interface SpellTimerSettings {
   keep_expired_timers?: boolean
 
   /**
+   * How long (minutes) a kept-expired row lingers before it's dropped, for
+   * the Buff and Detrimental overlays. 0/absent = 60. Only used when
+   * keep_expired_timers is on.
+   */
+  buff_expired_keep_mins?: number
+  detrim_expired_keep_mins?: number
+
+  /**
+   * Per-spell linger time in minutes, keyed by spell name, overriding the
+   * Buff/Detrimental values above. 0 drops that spell as soon as it expires.
+   */
+  expired_keep_overrides?: Record<string, number>
+
+  /**
    * Timer overlay bar fill: '' / 'faded' (default ~15% tint), 'solid'
    * (~55% fill), 'none' (no fill — just the countdown text), or 'custom'
    * (use the exact percentage in timer_bar_fill_pct).

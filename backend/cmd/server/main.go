@@ -784,6 +784,9 @@ func main() {
 		s := cfgMgr.Get().CHChain
 		return s.Enabled && s.PossibleMissEnabled
 	})
+	timerEngine.SetExpiredKeepProvider(func(spellName string, detrimental bool) time.Duration {
+		return cfgMgr.Get().SpellTimer.ExpiredKeep(spellName, detrimental)
+	})
 	// Duration formulas scale with caster level (still meaningful 60→65);
 	// level comes from the Zeal quarmy export stored on the character.
 	timerEngine.SetLevelProvider(func() int {

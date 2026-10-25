@@ -16,6 +16,7 @@ import NPCOverlayLayoutCard from '../components/settings/NPCOverlayLayoutCard'
 import NPCOverlayOutlineRulesCard from '../components/settings/NPCOverlayOutlineRulesCard'
 import NPCOverlayPreview from '../components/settings/NPCOverlayPreview'
 import DetrimSpellOverridesEditor from '../components/settings/DetrimSpellOverridesEditor'
+import ExpiredKeepOverridesEditor from '../components/settings/ExpiredKeepOverridesEditor'
 import { getConfig, saveConfigChanges, getLogStatus, getLogFileInfo, cleanupLog, exportDebugLogs, getServerInfo, testPortAvailability, detectZeal, getZealPipeStatus, getQuarmClientStatus, getEqwStatus, getChangelog, type ServerInfo, type TestPortResult, type ChangelogEntry } from '../services/api'
 import { renderChangelogBody } from '../components/WhatsNewModal'
 import type { Config, DPSClassColors, LogTrimSettings, TimerAlertPref } from '../types/config'
@@ -2848,10 +2849,57 @@ export default function SettingsPage(): React.ReactElement {
                   Keep expired timers until refreshed
                 </span>
                 <span className="block text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-                  Instead of vanishing when it runs out, a buff or detrimental stays in the overlay as an overdue row (full red bar, counting up) until you recast it or dismiss it with the row's <b>✕</b>. Turns the overlay into a "buffs I still need to refresh" checklist — handy for pet haste, Fero, and the like. Overdue rows clear themselves after an hour.
+                  Instead of vanishing when it runs out, a buff or detrimental stays in the overlay as an overdue row (full red bar, counting up) until you recast it or dismiss it with the row's <b>✕</b>. Turns the overlay into a "buffs I still need to refresh" checklist — handy for pet haste, Fero, and the like. Overdue rows clear themselves after the time set below (an hour by default).
                 </span>
               </span>
             </label>
+            {config.spell_timer?.keep_expired_timers && (
+              <div className="mt-3 ml-6">
+                <p className="mb-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                  How long an expired row stays before it's cleared automatically (in minutes). Set to <b>0</b> for the default of 60.
+                </p>
+                <div className="flex gap-3">
+                  {([
+                    { label: 'Buff', key: 'buff_expired_keep_mins' as const },
+                    { label: 'Detrimental', key: 'detrim_expired_keep_mins' as const },
+                  ]).map(({ label, key }) => (
+                    <label key={key} className="flex flex-col gap-1" style={{ flex: 1 }}>
+                      <span className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>{label}</span>
+                      <input
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={config.spell_timer?.[key] ?? 0}
+                        onChange={(e) =>
+                          setConfig({
+                            ...config,
+                            spell_timer: {
+                              ...config.spell_timer,
+                              [key]: Math.max(0, Math.floor(Number(e.target.value) || 0)),
+                            },
+                          })
+                        }
+                        className="rounded px-2 py-1 text-sm"
+                        style={{
+                          backgroundColor: 'var(--color-surface-2)',
+                          color: 'var(--color-foreground)',
+                          border: '1px solid var(--color-border)',
+                        }}
+                      />
+                    </label>
+                  ))}
+                </div>
+                <ExpiredKeepOverridesEditor
+                  value={config.spell_timer?.expired_keep_overrides}
+                  onChange={(next) =>
+                    setConfig({
+                      ...config,
+                      spell_timer: { ...config.spell_timer, expired_keep_overrides: next },
+                    })
+                  }
+                />
+              </div>
+            )}
           </div>
 
           <div className="mt-6">

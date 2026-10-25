@@ -65,6 +65,13 @@ type OwnedItemsProvider func() []int
 // timer the moment it expires.
 type KeepExpiredProvider func() bool
 
+// ExpiredKeepProvider returns how long an expired timer for spellName should
+// linger as an overdue row before being dropped, when keep-expired is on —
+// the user's Buff/Detrimental caps and per-spell overrides. detrimental is
+// true for every non-buff category. Called live from pruneExpired so a
+// Settings change applies to rows already lingering.
+type ExpiredKeepProvider func(spellName string, detrimental bool) time.Duration
+
 // CHChainMissProvider reports whether CH-chain possible-miss flagging should
 // run — mirrors chchain.CastWatcher's own gate (config.CHChainSettings
 // Enabled && PossibleMissEnabled). Without this the engine has no visibility
@@ -485,6 +492,9 @@ type Engine struct {
 	// hiddenDetrimFn reports whether a detrimental spell should never get a
 	// timer (user's per-spell "hide" override). nil = nothing hidden.
 	hiddenDetrimFn func(spellName string) bool
+	// expiredKeepFn returns how long a kept-expired timer lingers before
+	// pruneExpired drops it. nil = keepExpiredMaxOverdue for every timer.
+	expiredKeepFn ExpiredKeepProvider
 	// levelFn returns the active character's level (0 when unknown). Most
 	// duration formulas scale with the caster's level; see casterLevelFor.
 	levelFn func() int
@@ -665,6 +675,24 @@ func (e *Engine) SetHiddenDetrimProvider(fn func(spellName string) bool) {
 	e.mu.Lock()
 	e.hiddenDetrimFn = fn
 	e.mu.Unlock()
+}
+
+// SetExpiredKeepProvider wires the user's linger caps for kept-expired timers
+// (see ExpiredKeepProvider). nil (the default) keeps every expired timer for
+// keepExpiredMaxOverdue.
+func (e *Engine) SetExpiredKeepProvider(fn ExpiredKeepProvider) {
+	e.mu.Lock()
+	e.expiredKeepFn = fn
+	e.mu.Unlock()
+}
+
+// expiredKeepFor returns how long t may linger past expiry with keep-expired
+// on. Must be called with e.mu held.
+func (e *Engine) expiredKeepFor(t *ActiveTimer) time.Duration {
+	if e.expiredKeepFn == nil {
+		return keepExpiredMaxOverdue
+	}
+	return e.expiredKeepFn(t.SpellName, t.Category != CategoryBuff)
 }
 
 // SetLevelProvider wires the active character's level lookup used for
@@ -2991,9 +3019,11 @@ func (e *Engine) clearAll() {
 }
 
 // keepExpiredMaxOverdue caps how long a kept-expired timer lingers as an
-// overdue reminder before the engine drops it anyway. Without this backstop a
-// row the user never recasts or dismisses (zoned away, logged for the night)
-// would accumulate in the overlay forever.
+// overdue reminder before the engine drops it anyway, when no
+// ExpiredKeepProvider is wired. Without this backstop a row the user never
+// recasts or dismisses (zoned away, logged for the night) would accumulate in
+// the overlay forever. The user can tune it per overlay and per spell via
+// SetExpiredKeepProvider.
 const keepExpiredMaxOverdue = 60 * time.Minute
 
 // expiryGraceWindow is how long pruneExpired holds a just-expired non-CH-chain
@@ -3033,7 +3063,8 @@ const chChainMissCheckDelay = 4 * time.Second
 // pruneExpired removes timers whose expiry time has passed. With the
 // keep-expired option on, a past-expiry timer is instead left in place so
 // snapshot() can surface it as an overdue count-up — until it has been overdue
-// longer than keepExpiredMaxOverdue, at which point it's dropped regardless.
+// longer than its linger cap (expiredKeepFor), at which point it's dropped
+// regardless.
 //
 // CH-chain timers get extra handling, gated on chChainMissFn (nil/true means
 // flagging runs — see CHChainMissProvider): an unconfirmed one (no matching
@@ -3123,7 +3154,7 @@ func (e *Engine) pruneExpired() {
 				continue
 			}
 		}
-		if keep && now.Sub(t.ExpiresAt) <= keepExpiredMaxOverdue {
+		if keep && now.Sub(t.ExpiresAt) <= e.expiredKeepFor(t) {
 			continue
 		}
 		// One-tick "just expired" grace. Hold a newly-expired timer in the

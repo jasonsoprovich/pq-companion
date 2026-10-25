@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -211,6 +212,22 @@ type SpellTimerSettings struct {
 	// doubles as a "buffs I still need to refresh" checklist. Off by default;
 	// the standard behaviour is to remove a timer the moment it expires.
 	KeepExpiredTimers bool `yaml:"keep_expired_timers,omitempty" json:"keep_expired_timers"`
+
+	// BuffExpiredKeepMins / DetrimExpiredKeepMins cap how long a kept-expired
+	// row lingers as an overdue reminder before the engine drops it, for the
+	// Buff and Detrimental overlays respectively. 0 (the default) means
+	// DefaultExpiredKeepMins. Only consulted when KeepExpiredTimers is on.
+	BuffExpiredKeepMins   int `yaml:"buff_expired_keep_mins,omitempty" json:"buff_expired_keep_mins,omitempty"`
+	DetrimExpiredKeepMins int `yaml:"detrim_expired_keep_mins,omitempty" json:"detrim_expired_keep_mins,omitempty"`
+
+	// ExpiredKeepOverrides gives individual spells (by name, case-insensitive)
+	// their own linger time in minutes, taking precedence over the Buff /
+	// Detrimental caps above — e.g. keep expired raid buffs for 30 minutes
+	// but drop a short refresh-or-forget buff like Quiescence after 1. A value
+	// of 0 drops that spell's timer as soon as it expires, as if
+	// KeepExpiredTimers were off for it. Keyed by name for the same reason as
+	// Preferences.DetrimSpellOverrides: rank variants share a name.
+	ExpiredKeepOverrides map[string]int `yaml:"expired_keep_overrides,omitempty" json:"expired_keep_overrides,omitempty"`
 
 	// TimerBarFill controls the timer overlay row's bar fill: "" / "faded"
 	// (the default ~15% tint), "solid" (a stronger ~55% fill), "none" (no
@@ -1809,6 +1826,30 @@ func defaultPath() (string, error) {
 		return "", err
 	}
 	return filepath.Join(home, ".pq-companion", "config.yaml"), nil
+}
+
+// DefaultExpiredKeepMins is how long a kept-expired timer lingers when the
+// user hasn't set a Buff/Detrimental cap (see SpellTimerSettings).
+const DefaultExpiredKeepMins = 60
+
+// ExpiredKeep returns how long an expired timer for spellName should linger
+// before being dropped: a per-spell override when one is configured, else the
+// Buff or Detrimental cap (detrimental selects which), else
+// DefaultExpiredKeepMins.
+func (s SpellTimerSettings) ExpiredKeep(spellName string, detrimental bool) time.Duration {
+	for name, mins := range s.ExpiredKeepOverrides {
+		if strings.EqualFold(name, spellName) {
+			return time.Duration(max(mins, 0)) * time.Minute
+		}
+	}
+	mins := s.BuffExpiredKeepMins
+	if detrimental {
+		mins = s.DetrimExpiredKeepMins
+	}
+	if mins <= 0 {
+		mins = DefaultExpiredKeepMins
+	}
+	return time.Duration(mins) * time.Minute
 }
 
 // Detrimental spell override modes (see Preferences.DetrimSpellOverrides).
