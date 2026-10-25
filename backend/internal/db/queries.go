@@ -2859,14 +2859,18 @@ func (db *DB) GetZoneDrops(shortName string, opts ZoneDropsOptions, limit, offse
 			"%"+escapeLike(strings.ReplaceAll(q, " ", "_"))+"%",
 		)
 	}
+	// HAVING repeats the expression rather than naming the "chance" alias:
+	// SQLite resolves a bare name there to the lootdrop_entries.chance column
+	// first, which filtered on the raw lootdrop rate and ignored probability.
+	const effChance = "ROUND(MAX(CAST(lte.probability AS REAL) * lde.chance / 100.0), 2)"
 	having := ""
 	if opts.MinChance > 0 {
-		having = " HAVING chance >= ?"
+		having = " HAVING " + effChance + " >= ?"
 	}
 
 	grouped := `
 		SELECT lde.item_id, i.Name AS item_name, n.id, n.name AS npc_name,
-		       ROUND(MAX(CAST(lte.probability AS REAL) * lde.chance / 100.0), 2) AS chance
+		       ` + effChance + ` AS chance
 		` + zoneDropsFrom + where + `
 		GROUP BY lde.item_id, n.id` + having
 	if opts.MinChance > 0 {

@@ -108,3 +108,24 @@ func TestGetZoneDropsSortFilter(t *testing.T) {
 		t.Errorf("min_chance total %d not below unfiltered %d", filtered.Total, all.Total)
 	}
 }
+
+// TestGetZoneDropsMinChanceUsesEffectiveRate guards against MinChance being
+// applied to the raw lootdrop_entries.chance column instead of the effective
+// rate. Ssraeshza Temple has many loottables with probability
+// under 100, so the two diverge there (unlike Chardok above).
+func TestGetZoneDropsMinChanceUsesEffectiveRate(t *testing.T) {
+	d := openTestDB(t)
+
+	res, err := d.GetZoneDrops("ssratemple", db.ZoneDropsOptions{MinChance: 25}, 5000, 0)
+	if err != nil {
+		t.Fatalf("GetZoneDrops: %v", err)
+	}
+	if len(res.Items) == 0 {
+		t.Fatal("expected rows")
+	}
+	for _, it := range res.Items {
+		if it.Chance < 25 {
+			t.Fatalf("%s from %s has chance %.2f below min", it.ItemName, it.NPCName, it.Chance)
+		}
+	}
+}
