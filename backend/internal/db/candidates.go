@@ -80,12 +80,15 @@ func (db *DB) FocusOptions(classBit, maxLevel int) ([]FocusOption, error) {
 		where += " AND (i.reqlevel = 0 OR i.reqlevel <= ?)"
 		args = append(args, maxLevel)
 	}
+	// The alias must not be "focusname": SQLite resolves a bare name in
+	// HAVING to the items.focusname column before the SELECT alias, and that
+	// column is empty for every item in quarm.db — which emptied the picker.
 	q := `SELECT i.focuseffect,
-	  COALESCE(NULLIF(i.focusname, ''), (SELECT s.name FROM spells_new s WHERE s.id = i.focuseffect), '') AS focusname,
+	  COALESCE(NULLIF(i.focusname, ''), (SELECT s.name FROM spells_new s WHERE s.id = i.focuseffect), '') AS focus_label,
 	  COUNT(*) AS cnt
 	  FROM items i WHERE ` + where + `
-	  GROUP BY i.focuseffect HAVING focusname != ''
-	  ORDER BY cnt DESC, focusname`
+	  GROUP BY i.focuseffect HAVING focus_label != ''
+	  ORDER BY cnt DESC, focus_label`
 	rows, err := db.Query(q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("focus options: %w", err)

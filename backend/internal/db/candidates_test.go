@@ -164,3 +164,26 @@ func TestUpgradeCandidates_LevelGate(t *testing.T) {
 		}
 	}
 }
+
+// TestFocusOptions_Enchanter guards the priority-focus picker. A HAVING clause
+// that referenced the raw items.focusname column (empty for every item) instead
+// of the resolved name filtered out every focus, leaving the picker blank.
+func TestFocusOptions_Enchanter(t *testing.T) {
+	d := openTestDB(t)
+
+	const enchanterBit = 0x2000 // class index 13 -> 1<<13
+
+	opts, err := d.FocusOptions(enchanterBit, 60)
+	if err != nil {
+		t.Fatalf("FocusOptions: %v", err)
+	}
+	if len(opts) < 20 {
+		t.Fatalf("expected a healthy set of enchanter focus effects, got %d", len(opts))
+	}
+	for _, o := range opts {
+		if o.SpellID <= 0 || o.Name == "" || o.Count <= 0 {
+			t.Fatalf("malformed focus option: %+v", o)
+		}
+	}
+	t.Logf("enchanter focus options: %d", len(opts))
+}
