@@ -18,14 +18,16 @@ import (
 // only be noise: Warrior, Monk, Rogue, Bard.
 var nonCasterClasses = map[int]bool{0: true, 6: true, 7: true, 8: true}
 
-// maxFocusUpgradeItems caps one category's upgrade list.
-const maxFocusUpgradeItems = 60
+// maxFocusUpgradeItems caps one category's item list. High enough that lower
+// ranks of a worn focus (the "pivot" view) aren't cut off.
+const maxFocusUpgradeItems = 200
 
 // focusItem is one item a character could wear for a focus category.
 type focusItem struct {
 	ItemID       int            `json:"item_id"`
 	Name         string         `json:"name"`
 	Icon         int            `json:"icon"`
+	Slots        int            `json:"slots"`
 	ReqLevel     int            `json:"req_level"`
 	NoDrop       bool           `json:"no_drop"`
 	FocusSpellID int            `json:"focus_spell_id"`
@@ -98,7 +100,7 @@ func (h *charactersHandler) focusCandidates(char character.Character) (map[strin
 				continue
 			}
 			out[m.Category] = append(out[m.Category], focusItem{
-				ItemID: c.ID, Name: c.Name, Icon: c.Icon, ReqLevel: c.ReqLevel,
+				ItemID: c.ID, Name: c.Name, Icon: c.Icon, Slots: c.Slots, ReqLevel: c.ReqLevel,
 				NoDrop: c.NoDrop == 0, FocusSpellID: c.FocusEffect, FocusName: c.FocusName,
 				Percent: m.Percent, Limits: m.Limits, CoversTop: focusCoversTop(m.Limits, top),
 			})
@@ -108,32 +110,64 @@ func (h *charactersHandler) focusCandidates(char character.Character) (map[strin
 	return out, nil
 }
 
-// missingFocusCategories lists the categories the character could use but has
-// no worn contributor for, in display order. Empty for non-casting classes.
-func (h *charactersHandler) missingFocusCategories(char character.Character, contributors []buffmod.Modifier) []missingFocusCategory {
+// equippedFocusCategory is a category the character already wears a focus for,
+// with the strongest worn percent — the entry point for planning gear pivots.
+type equippedFocusCategory struct {
+	missingFocusCategory
+	SPA     int `json:"spa"`
+	Percent int `json:"percent"`
+}
+
+// focusCategorySummary splits the focus categories into the ones the character
+// could use but has no worn contributor for (empty for non-casting classes) and
+// the ones they already wear, both in display order.
+func (h *charactersHandler) focusCategorySummary(char character.Character, contributors []buffmod.Modifier) ([]missingFocusCategory, []equippedFocusCategory) {
 	missing := []missingFocusCategory{}
-	if nonCasterClasses[char.Class] {
-		return missing
-	}
-	have := map[string]bool{}
+	equipped := []equippedFocusCategory{}
+	// Strongest worn magnitude per category (aggro reduction is negative).
+	have := map[string]int{}
 	for _, m := range contributors {
-		if m.Category != "" {
-			have[m.Category] = true
+		if m.Category == "" {
+			continue
+		}
+		if cur, ok := have[m.Category]; !ok || abs(m.Percent) > abs(cur) {
+			have[m.Category] = m.Percent
 		}
 	}
 	cands, err := h.focusCandidates(char)
 	if err != nil {
-		return missing
+		return missing, equipped
 	}
 	for _, def := range buffmod.Categories {
-		if def.NoMissingHint || have[def.ID] || len(cands[def.ID]) == 0 {
+		cat := missingFocusCategory{
+			ID: def.ID, Label: def.Label, Blurb: def.Blurb, ItemCount: len(cands[def.ID]),
+		}
+		if pct, ok := have[def.ID]; ok {
+			equipped = append(equipped, equippedFocusCategory{
+				missingFocusCategory: cat, SPA: def.SPA, Percent: pct,
+			})
 			continue
 		}
-		missing = append(missing, missingFocusCategory{
-			ID: def.ID, Label: def.Label, Blurb: def.Blurb, ItemCount: len(cands[def.ID]),
-		})
+		if nonCasterClasses[char.Class] || def.NoMissingHint || cat.ItemCount == 0 {
+			continue
+		}
+		missing = append(missing, cat)
 	}
+	return missing, equipped
+}
+
+// missingFocusCategories lists the categories the character could use but has
+// no worn contributor for, in display order. Empty for non-casting classes.
+func (h *charactersHandler) missingFocusCategories(char character.Character, contributors []buffmod.Modifier) []missingFocusCategory {
+	missing, _ := h.focusCategorySummary(char, contributors)
 	return missing
+}
+
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
 }
 
 type focusUpgradesResponse struct {

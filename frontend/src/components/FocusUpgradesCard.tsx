@@ -8,6 +8,8 @@ import {
   type FocusUpgradesResponse,
 } from '../services/api'
 import { ItemIcon } from './Icon'
+import { decodeSlots } from '../lib/itemHelpers'
+import { usePersistentState } from '../hooks/usePersistentState'
 
 interface FocusUpgradesCardProps {
   characterID: number
@@ -18,7 +20,7 @@ interface FocusUpgradesCardProps {
 // fmtPct renders a focus magnitude with its sign: cast-time (127) and mana-cost
 // (132) foci are reductions (minus), a negative value (aggro reduction) already
 // carries its own sign, and everything else is a bonus (plus).
-function fmtPct(spa: number, percent: number): string {
+export function fmtPct(spa: number, percent: number): string {
   if (percent < 0) return `−${-percent}%`
   return `${spa === 127 || spa === 132 ? '−' : '+'}${percent}%`
 }
@@ -33,6 +35,18 @@ function scopeTags(l: FocusUpgradeItem['limits']): string[] {
   if (l.min_cast_time_ms) tags.push(`≥ ${l.min_cast_time_ms / 1000}s cast`)
   return tags
 }
+
+// slotTag names the slots an item equips to, collapsing "go anywhere" items.
+function slotTag(mask: number): string | null {
+  const names = decodeSlots(mask)
+  if (names.length === 0) return null
+  if (names.length > 3) return `${names.slice(0, 2).join(', ')} +${names.length - 2} slots`
+  return names.join(', ')
+}
+
+// Hate foci where a bigger number isn't plainly better — mirrors the backend's
+// "comparable" check, so ranks aren't filtered for them.
+const UNRANKED_CATEGORIES = new Set(['aggro_reduction', 'bash_hate'])
 
 // ownedByItem maps item id → names of characters carrying it (bags, bank,
 // shared bank), so an upgrade the player already has on an alt is flagged.
@@ -70,6 +84,9 @@ export default function FocusUpgradesCard({
   const [data, setData] = useState<FocusUpgradesResponse | null>(null)
   const [owners, setOwners] = useState<Map<number, string[]>>(new Map())
   const [error, setError] = useState<string | null>(null)
+  const [lowerRanks, setLowerRanks] = usePersistentState<'on' | 'off'>(
+    'pq-focus:include-lower-ranks', 'off', ['on', 'off'],
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -84,6 +101,18 @@ export default function FocusUpgradesCard({
 
   const border = '1px solid var(--color-border)'
 
+  // With a focus worn, hide lower ranks by default: keep what's worn plus
+  // anything at least as good that still covers the top spells — the
+  // same-or-better options to move into another slot.
+  const canFilter = !!data && data.current.length > 0 && !UNRANKED_CATEGORIES.has(data.category)
+  const shown = !data
+    ? []
+    : canFilter && lowerRanks === 'off'
+      ? data.items.filter((it) =>
+          it.equipped || (it.covers_top && it.percent >= data.current_percent))
+      : data.items
+  const hiddenCount = data ? data.items.length - shown.length : 0
+
   return (
     <div
       className="rounded-lg p-4"
@@ -92,7 +121,9 @@ export default function FocusUpgradesCard({
       <div className="mb-2 flex items-start justify-between gap-2">
         <div>
           <p className="text-sm font-semibold" style={{ color: 'var(--color-primary)' }}>
-            {data?.label ?? 'Focus'} — items you can use
+            {data?.label ?? 'Focus'} — {data && data.current.length > 0
+              ? 'items with this focus'
+              : 'items you can use'}
           </p>
           {data && (
             <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>{data.blurb}</p>
@@ -121,7 +152,9 @@ export default function FocusUpgradesCard({
                 {data.current.map((m, i) => (
                   <span key={i} className="font-mono" style={{ color: 'var(--color-primary)' }}>
                     {i > 0 ? ', ' : ''}
-                    {m.source === 'item' ? m.source_item_name : m.source_aa_name} ({fmtPct(data.spa, m.percent)})
+                    {m.source === 'item' ? m.source_item_name : m.source_aa_name}
+                    {m.source === 'item' && m.source_item_slot ? ` [${m.source_item_slot}]` : ''}
+                    {' '}({fmtPct(data.spa, m.percent)})
                     {!m.covers_top && m.limits.max_level ? (
                       <span
                         style={{ color: '#f59e0b' }}
@@ -143,14 +176,33 @@ export default function FocusUpgradesCard({
             </p>
           )}
 
+          {canFilter && (
+            <label
+              className="mb-2 flex w-fit cursor-pointer items-center gap-1.5 text-xs"
+              style={{ color: 'var(--color-muted-foreground)' }}
+              title="Also list weaker versions of this focus (e.g. a rank III when you wear rank IV)"
+            >
+              <input
+                type="checkbox"
+                checked={lowerRanks === 'on'}
+                onChange={(e) => setLowerRanks(e.target.checked ? 'on' : 'off')}
+              />
+              Include lower ranks
+              {lowerRanks === 'off' && hiddenCount > 0 && (
+                <span style={{ color: 'var(--color-muted)' }}>({hiddenCount} hidden)</span>
+              )}
+            </label>
+          )}
+
           {data.items.length === 0 ? (
             <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
               No items found for your class and level.
             </p>
           ) : (
             <div className="space-y-1">
-              {data.items.map((it) => {
+              {shown.map((it) => {
                 const who = owners.get(it.item_id)
+                const slots = slotTag(it.slots)
                 return (
                   <div
                     key={`${it.item_id}-${it.focus_spell_id}`}
@@ -173,6 +225,7 @@ export default function FocusUpgradesCard({
                       <div className="mt-0.5 flex flex-wrap gap-1">
                         {it.equipped && <Tag label="worn" accent />}
                         {it.is_upgrade && <Tag label="upgrade" success />}
+                        {slots && <Tag label={slots} slot />}
                         {it.req_level > 0 && <Tag label={`req L${it.req_level}`} />}
                         {it.limits.max_level ? (
                           <Tag
@@ -210,11 +263,12 @@ export default function FocusUpgradesCard({
   )
 }
 
-function Tag({ label, accent, success, warn, title }: {
+function Tag({ label, accent, success, warn, slot, title }: {
   label: string
   accent?: boolean
   success?: boolean
   warn?: boolean
+  slot?: boolean
   title?: string
 }): React.ReactElement {
   return (
@@ -223,6 +277,7 @@ function Tag({ label, accent, success, warn, title }: {
       title={title}
       style={{
         backgroundColor: 'var(--color-surface-3)',
+        border: slot ? '1px solid var(--color-border)' : undefined,
         color: warn
           ? '#f59e0b'
           : success ? 'var(--color-success)' : accent ? 'var(--color-primary)' : 'var(--color-muted-foreground)',

@@ -17,9 +17,10 @@ import type {
   QuarmyData, CharacterAA, AAInfo, Character,
   SpellModifier, SpellModifierResolution, StatBlock,
   SpellStatDeltaEntry, DerivedStats, SourceSplit, StatCaps, MissingFocusCategory,
+  EquippedFocusCategory,
 } from '../services/api'
 import type { Spell } from '../types/spell'
-import FocusUpgradesCard from '../components/FocusUpgradesCard'
+import FocusUpgradesCard, { fmtPct } from '../components/FocusUpgradesCard'
 import type { Item } from '../types/item'
 import type { SkillView, TradeskillView } from '../types/skill'
 import { DEV_SKILLS } from '../lib/devFlags'
@@ -185,6 +186,7 @@ export default function CharacterProgressPage(): React.ReactElement {
   const [unspentAAAt, setUnspentAAAt] = useState<number>(0)
   const [modifiers, setModifiers] = useState<SpellModifier[] | null>(null)
   const [missingFocus, setMissingFocus] = useState<MissingFocusCategory[]>([])
+  const [equippedFocus, setEquippedFocus] = useState<EquippedFocusCategory[]>([])
   const [activeChar, setActiveChar] = useState<Character | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -232,10 +234,12 @@ export default function CharacterProgressPage(): React.ReactElement {
           const modResp = await getCharacterSpellModifiers(found.id)
           setModifiers(modResp.contributors ?? [])
           setMissingFocus(modResp.missing_categories ?? [])
+          setEquippedFocus(modResp.equipped_categories ?? [])
         } catch {
           // Quarmy export not available — modifiers panel will show its own empty state
           setModifiers(null)
           setMissingFocus([])
+          setEquippedFocus([])
         }
       } else {
         setTrainedAAs([])
@@ -244,6 +248,7 @@ export default function CharacterProgressPage(): React.ReactElement {
         setUnspentAAAt(0)
         setModifiers(null)
         setMissingFocus([])
+        setEquippedFocus([])
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to load data')
@@ -415,6 +420,7 @@ export default function CharacterProgressPage(): React.ReactElement {
                     characterID={activeChar?.id ?? null}
                     contributors={modifiers}
                     missingCategories={missingFocus}
+                    equippedCategories={equippedFocus}
                   />
                 </ErrorBoundary>
               )}
@@ -1743,9 +1749,12 @@ interface SpellModifiersPanelProps {
   characterID: number | null
   contributors: SpellModifier[] | null
   missingCategories: MissingFocusCategory[]
+  equippedCategories: EquippedFocusCategory[]
 }
 
-function SpellModifiersPanel({ characterID, contributors, missingCategories }: SpellModifiersPanelProps): React.ReactElement {
+function SpellModifiersPanel({
+  characterID, contributors, missingCategories, equippedCategories,
+}: SpellModifiersPanelProps): React.ReactElement {
   // Focus category whose "items you can use" list is open (null = closed).
   const [upgradeCategory, setUpgradeCategory] = useState<string | null>(null)
   const [query, setQuery] = useState('')
@@ -1842,6 +1851,42 @@ function SpellModifiersPanel({ characterID, contributors, missingCategories }: S
                 }}
               >
                 {c.label}
+                <span style={{ color: 'var(--color-muted)' }}> · {c.item_count}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Equipped focus types — entry point for planning gear pivots */}
+      {equippedCategories.length > 0 && characterID !== null && (
+        <div
+          className="rounded-lg p-4"
+          style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+        >
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+            Equipped focus types ({equippedCategories.length})
+          </p>
+          <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+            Focus effects you wear now. Click one to see other items with the same focus and the
+            slots they use, handy for planning a gear swap.
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {equippedCategories.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => setUpgradeCategory(upgradeCategory === c.id ? null : c.id)}
+                title={`${c.blurb} (${c.item_count} item${c.item_count === 1 ? '' : 's'} you can use)`}
+                className="rounded px-2 py-1 text-xs"
+                style={{
+                  backgroundColor: upgradeCategory === c.id ? 'var(--color-surface-3)' : 'var(--color-surface-2)',
+                  border: `1px solid ${upgradeCategory === c.id ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                  color: 'var(--color-foreground)',
+                  cursor: 'pointer',
+                }}
+              >
+                {c.label}
+                <span className="font-mono" style={{ color: 'var(--color-primary)' }}> {fmtPct(c.spa, c.percent)}</span>
                 <span style={{ color: 'var(--color-muted)' }}> · {c.item_count}</span>
               </button>
             ))}
@@ -2019,9 +2064,9 @@ function ModifierRow({ m, onShowUpgrades }: { m: SpellModifier; onShowUpgrades?:
               onClick={() => onShowUpgrades(m.category as string)}
               className="rounded px-1.5 py-0.5 text-[10px] font-medium"
               style={{ backgroundColor: 'var(--color-surface-3)', color: 'var(--color-muted-foreground)', cursor: 'pointer' }}
-              title="See items that give this focus, including better versions"
+              title="See other items that give this focus: upgrades, alternatives in other slots, lower ranks"
             >
-              Upgrades
+              Alternatives
             </button>
           )}
           <span className="font-mono font-semibold" style={{ color: 'var(--color-primary)' }}>

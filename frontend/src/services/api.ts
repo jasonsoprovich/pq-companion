@@ -2646,6 +2646,8 @@ export interface SpellModifiersResponse {
   resolution?: SpellModifierResolution
   // Focus categories the character could use but has nothing worn for.
   missing_categories?: MissingFocusCategory[]
+  // Focus categories the character wears now (for planning gear pivots).
+  equipped_categories?: EquippedFocusCategory[]
 }
 
 export interface MissingFocusCategory {
@@ -2655,10 +2657,18 @@ export interface MissingFocusCategory {
   item_count: number
 }
 
+// EquippedFocusCategory is a category the character already wears, with the
+// strongest worn percent.
+export interface EquippedFocusCategory extends MissingFocusCategory {
+  spa: number
+  percent: number
+}
+
 export interface FocusUpgradeItem {
   item_id: number
   name: string
   icon: number
+  slots: number // equip-slot bitmask
   req_level: number
   no_drop: boolean
   focus_spell_id: number

@@ -128,3 +128,36 @@ func TestMissingFocusCategories_NoBashHate(t *testing.T) {
 		}
 	}
 }
+
+func TestFocusCategorySummary_Equipped(t *testing.T) {
+	h := &charactersHandler{db: openFocusTestDB(t)}
+	enchanter := character.Character{Class: 13, Race: 1, Level: 60}
+	worn := []buffmod.Modifier{
+		{SPA: buffmod.SPACastTime, Percent: 10, Category: "spell_haste"},
+		{SPA: buffmod.SPACastTime, Percent: 25, Category: "spell_haste"},
+	}
+	missing, equipped := h.focusCategorySummary(enchanter, worn)
+	if len(equipped) != 1 || equipped[0].ID != "spell_haste" {
+		t.Fatalf("want only spell_haste equipped, got %+v", equipped)
+	}
+	if equipped[0].Percent != 25 {
+		t.Errorf("equipped percent should be the strongest worn (25), got %d", equipped[0].Percent)
+	}
+	if equipped[0].ItemCount == 0 {
+		t.Errorf("spell_haste should list usable items for a level 60 enchanter")
+	}
+	for _, m := range missing {
+		if m.ID == "spell_haste" {
+			t.Errorf("spell_haste should not be both equipped and missing")
+		}
+	}
+
+	// Non-casters still see what they wear, but get no missing hints.
+	warrior := character.Character{Class: 0, Race: 1, Level: 60}
+	missing, equipped = h.focusCategorySummary(warrior, []buffmod.Modifier{
+		{SPA: buffmod.SPASpellHate, Percent: 5, Category: "bash_hate"},
+	})
+	if len(missing) != 0 || len(equipped) != 1 {
+		t.Errorf("warrior: want 0 missing / 1 equipped, got %d / %d", len(missing), len(equipped))
+	}
+}

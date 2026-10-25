@@ -946,9 +946,10 @@ func (h *charactersHandler) spellModifiers(w http.ResponseWriter, r *http.Reques
 	// modifiers panel already renders its own empty state.
 	if zeal.FindQuarmyFile(cfg.EQPath, char.Name) == "" {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"character":          char.Name,
-			"contributors":       []buffmod.Modifier{},
-			"missing_categories": []missingFocusCategory{},
+			"character":           char.Name,
+			"contributors":        []buffmod.Modifier{},
+			"missing_categories":  []missingFocusCategory{},
+			"equipped_categories": []equippedFocusCategory{},
 		})
 		return
 	}
@@ -959,11 +960,14 @@ func (h *charactersHandler) spellModifiers(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	missing, equipped := h.focusCategorySummary(char, res.Contributors)
 	resp := map[string]interface{}{
 		"character":    res.Character,
 		"contributors": res.Contributors,
 		// Focus categories the character could use but has nothing worn for.
-		"missing_categories": h.missingFocusCategories(char, res.Contributors),
+		"missing_categories": missing,
+		// Focus categories the character wears now (for planning gear pivots).
+		"equipped_categories": equipped,
 	}
 
 	if sidStr := r.URL.Query().Get("spell_id"); sidStr != "" {
