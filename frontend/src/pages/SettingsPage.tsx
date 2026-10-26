@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useLocation, useSearchParams } from 'react-router-dom'
 import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, Layers, FileText, Palette, Code2, PanelLeft, Crosshair, Info, Globe, MessageCircle, Coffee, Heart, ExternalLink, Eye, Gauge, Download, Headphones, Map as MapIcon } from 'lucide-react'
 import BackfillPanel from '../components/settings/BackfillPanel'
 import SidebarNavSettings from '../components/settings/SidebarNavSettings'
@@ -80,6 +80,9 @@ interface TabBarProps {
   tabs: { id: Tab; label: string; icon: React.ReactNode }[]
   active: Tab
   onChange: (t: Tab) => void
+  // Tabs that need the user's attention get an orange dot; the string is the
+  // hover text explaining why.
+  alerts?: Partial<Record<Tab, string>>
 }
 
 // Settings tabs are grouped into labelled sections in the vertical sidebar so
@@ -97,7 +100,7 @@ const TAB_GROUPS: { label: string; ids: Tab[] }[] = [
 // beside the main app sidebar, scoped to the Settings page). Grouped by
 // TAB_GROUPS; the provided `tabs` list still controls which entries exist
 // (e.g. the developer tab only when unlocked).
-function TabBar({ tabs, active, onChange }: TabBarProps): React.ReactElement {
+function TabBar({ tabs, active, onChange, alerts }: TabBarProps): React.ReactElement {
   const byId = new Map(tabs.map((t) => [t.id, t]))
   const grouped = new Set(TAB_GROUPS.flatMap((g) => g.ids))
   const leftovers = tabs.filter((t) => !grouped.has(t.id))
@@ -106,6 +109,7 @@ function TabBar({ tabs, active, onChange }: TabBarProps): React.ReactElement {
     <button
       key={id}
       onClick={() => onChange(id)}
+      title={alerts?.[id]}
       // text-left because a button centres its text by default, which only
       // shows up on a label long enough to wrap — "In-Game Map Markers" sat
       // centred while every one-line label above it was flush left.
@@ -119,6 +123,13 @@ function TabBar({ tabs, active, onChange }: TabBarProps): React.ReactElement {
           which misaligns it with the icons above and below. */}
       <span className="shrink-0">{icon}</span>
       {label}
+      {alerts?.[id] && (
+        <span
+          className="ml-auto h-2 w-2 shrink-0 rounded-full"
+          style={{ backgroundColor: '#f97316' }}
+          title={alerts[id]}
+        />
+      )}
     </button>
   )
 
@@ -348,6 +359,15 @@ export default function SettingsPage(): React.ReactElement {
     }
     return 'general'
   })
+  // The sidebar's large-log dot links to ?tab=logs. The initializer above only
+  // runs on mount, so also honour the param when navigating here while the
+  // page is already open (keyed on location.key so repeat clicks re-apply).
+  const location = useLocation()
+  useEffect(() => {
+    const t = searchParams.get('tab')
+    if (t === 'logs') setTab('logs')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.key])
   useEffect(() => {
     if (tab === 'developer') return
     try {
@@ -804,11 +824,15 @@ export default function SettingsPage(): React.ReactElement {
       : []),
   ]
 
+  const tabAlerts: Partial<Record<Tab, string>> = logLargeFile
+    ? { logs: 'Your EverQuest log file is large — archive & trim it here' }
+    : {}
+
   if (loadError && tab !== 'backups') {
     const configPath = configFolder ? `${configFolder}\\config.yaml` : null
     return (
       <div className="flex h-full">
-        <TabBar tabs={tabs} active={tab} onChange={setTab} />
+        <TabBar tabs={tabs} active={tab} onChange={setTab} alerts={tabAlerts} />
         <div className="flex flex-1 items-start justify-center overflow-y-auto p-6">
           <div className="flex w-full max-w-xl flex-col gap-4">
             <div className="flex items-center gap-3">
@@ -910,7 +934,7 @@ export default function SettingsPage(): React.ReactElement {
   if (!config && tab !== 'backups') {
     return (
       <div className="flex h-full">
-        <TabBar tabs={tabs} active={tab} onChange={setTab} />
+        <TabBar tabs={tabs} active={tab} onChange={setTab} alerts={tabAlerts} />
         <div className="flex flex-1 flex-col items-center justify-center gap-3">
           <Loader2 size={24} className="animate-spin" style={{ color: 'var(--color-muted)' }} />
           <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
@@ -928,7 +952,7 @@ export default function SettingsPage(): React.ReactElement {
   if (tab === 'maps') {
     return (
       <div className="flex h-full">
-        <TabBar tabs={tabs} active={tab} onChange={setTab} />
+        <TabBar tabs={tabs} active={tab} onChange={setTab} alerts={tabAlerts} />
         <div className="min-h-0 flex-1 overflow-y-auto">
           <MapSettingsPanel />
           <div
@@ -944,7 +968,7 @@ export default function SettingsPage(): React.ReactElement {
   if (tab === 'backups') {
     return (
       <div className="flex h-full">
-        <TabBar tabs={tabs} active={tab} onChange={setTab} />
+        <TabBar tabs={tabs} active={tab} onChange={setTab} alerts={tabAlerts} />
         <div className="min-h-0 flex-1">
           <BackupManagerPage />
         </div>
@@ -955,7 +979,7 @@ export default function SettingsPage(): React.ReactElement {
   if (tab === 'developer') {
     return (
       <div className="flex h-full">
-        <TabBar tabs={tabs} active={tab} onChange={setTab} />
+        <TabBar tabs={tabs} active={tab} onChange={setTab} alerts={tabAlerts} />
         <div className="min-h-0 flex-1 overflow-y-auto">
           <DeveloperTab />
         </div>
@@ -966,7 +990,7 @@ export default function SettingsPage(): React.ReactElement {
   if (tab === 'navigation') {
     return (
       <div className="flex h-full">
-        <TabBar tabs={tabs} active={tab} onChange={setTab} />
+        <TabBar tabs={tabs} active={tab} onChange={setTab} alerts={tabAlerts} />
         <div className="min-h-0 flex-1 overflow-y-auto">
           <SidebarNavSettings />
         </div>
@@ -982,7 +1006,7 @@ export default function SettingsPage(): React.ReactElement {
 
   return (
     <div className="flex h-full">
-      <TabBar tabs={tabs} active={tab} onChange={setTab} />
+      <TabBar tabs={tabs} active={tab} onChange={setTab} alerts={tabAlerts} />
       <div className="flex-1 overflow-y-auto">
       {/* The Overlays tab holds a wide per-overlay control table (Pop out /
           Reset / Monitor / lock-mode), so it gets more horizontal room than
@@ -992,6 +1016,39 @@ export default function SettingsPage(): React.ReactElement {
           tab === 'npcoverlay' ? 'max-w-7xl' : tab === 'overlays' ? 'max-w-4xl' : 'max-w-xl'
         }`}
       >
+      {/* Explains the orange dot on the main sidebar's Settings button, which
+          otherwise gives no hint where to look. */}
+      {logLargeFile && tab !== 'logs' && (
+        <div
+          className="mb-6 flex items-start gap-3 rounded-lg p-3 text-xs"
+          style={{
+            border: '1px solid #f97316',
+            backgroundColor: 'rgba(249, 115, 22, 0.08)',
+            color: 'var(--color-muted-foreground)',
+          }}
+        >
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" style={{ color: '#f97316' }} />
+          <div className="flex-1">
+            <p className="mb-0.5 font-semibold" style={{ color: 'var(--color-foreground)' }}>
+              Your EverQuest log file is getting large
+            </p>
+            <p>
+              That's what the orange dot on Settings means. Nothing is broken —
+              archiving & trimming it from the Logs tab keeps backfills quick
+              and frees disk space.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setTab('logs')}
+            className="shrink-0 rounded px-3 py-1.5 text-xs font-medium"
+            style={{ backgroundColor: '#f97316', color: '#fff' }}
+          >
+            Go to Logs
+          </button>
+        </div>
+      )}
+
       {/* Page header — shows the active tab's name; the sidebar carries the
           overall "Settings" branding. */}
       <div className="mb-6 flex items-center gap-3">

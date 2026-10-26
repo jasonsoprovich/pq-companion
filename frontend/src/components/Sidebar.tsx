@@ -206,7 +206,14 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
         style={{ borderColor: 'var(--color-border)' }}
       >
         <NavLink
-          to="/settings"
+          // With a large log, jump straight to the tab that explains and
+          // fixes it — otherwise Settings reopens wherever the user left off.
+          to={logLargeFile ? '/settings?tab=logs' : '/settings'}
+          title={
+            logLargeFile
+              ? 'Your EverQuest log file is large — click to archive & trim it (Settings › Logs)'
+              : undefined
+          }
           className={({ isActive }) =>
             [
               'no-drag flex items-center gap-3 rounded px-3 py-2 text-sm transition-colors',
@@ -222,7 +229,6 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
               <span
                 className="absolute -top-1 -right-1 h-2 w-2 rounded-full"
                 style={{ backgroundColor: '#f97316' }}
-                title="Log file is large — cleanup recommended"
               />
             )}
           </span>
