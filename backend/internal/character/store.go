@@ -211,6 +211,9 @@ func (s *Store) migrate() error {
 	if err := s.migrateUpgradeFocus(); err != nil {
 		return err
 	}
+	if err := s.migrateMockLoadouts(); err != nil {
+		return err
+	}
 	return nil
 }
 

@@ -976,58 +976,69 @@ func (h *charactersHandler) spellModifiers(w http.ResponseWriter, r *http.Reques
 			writeError(w, http.StatusBadRequest, "invalid spell_id")
 			return
 		}
-		sp, err := h.db.GetSpell(spellID)
-		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				writeError(w, http.StatusNotFound, "spell not found")
-			} else {
-				writeError(w, http.StatusInternalServerError, "failed to look up spell")
-			}
+		resolution, status, msg := h.resolveSpellFor(char, spellID, res)
+		if status != 0 {
+			writeError(w, status, msg)
 			return
-		}
-		spellType := buffmod.SpellTypeBeneficial
-		if !isBeneficialSpell(h.db, spellID) {
-			spellType = buffmod.SpellTypeDetrimental
-		}
-		// Per-class spell level: SPA 134/139 limits compare against the level
-		// the caster's OWN class learns the spell, not the lowest class level
-		// (multi-class spells like Celerity: ENC 39 vs SHM 56).
-		spellLevel := buffmod.SpellLevelForClass(sp.ClassLevels, char.Class)
-		// character_aas table defaults level=1, so anything ≤ 1 likely means
-		// "not set yet" rather than literally a level-1 character. Treat that
-		// as "cast at the spell's effective level" so the duration formula
-		// produces a useful number for sanity-checking modifiers.
-		casterLevel := char.Level
-		if casterLevel <= 1 {
-			casterLevel = spellLevel
-		}
-		if casterLevel < 1 {
-			casterLevel = era.PoPMaxLevel
-		}
-		baseTicks := spelltimer.CalcDurationTicks(sp.BuffDurationFormula, sp.BuffDuration, casterLevel)
-		resolution := buffmod.Resolve(
-			sp.ID, sp.Name, spellLevel, casterLevel,
-			baseTicks*6, // ticks → seconds
-			sp.CastTime, // SPA 143 (min cast time) filter
-			spellType, sp.EffectIDs[:],
-			res.Contributors,
-			char.Class,
-			sp.ClassLevels,
-		)
-		// Permanent Illusion AA: self-cast illusions (SPA 58) last a flat
-		// 10000 ticks (~16h40m) on EQMacEmu — the formula duration and focus
-		// percentages are replaced wholesale.
-		if res.PermanentIllusion && buffmod.HasIllusionEffect(sp.EffectIDs[:]) {
-			resolution.ExtendedDurationSec = buffmod.PermanentIllusionDurationSec
-			resolution.PermanentIllusion = true
-			if resolution.BaseDurationSec > 0 {
-				resolution.DurationPercent = (resolution.ExtendedDurationSec - resolution.BaseDurationSec) * 100 / resolution.BaseDurationSec
-			}
 		}
 		resp["resolution"] = resolution
 	}
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// resolveSpellFor resolves one spell against a set of focus contributions for
+// the character (caster level/class from the stored character). Shared by the
+// actual-gear Test Resolution and the mocked-loadout what-if. On failure it
+// returns a nonzero HTTP status and message.
+func (h *charactersHandler) resolveSpellFor(char character.Character, spellID int, res *buffmod.Result) (buffmod.Resolution, int, string) {
+	sp, err := h.db.GetSpell(spellID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return buffmod.Resolution{}, http.StatusNotFound, "spell not found"
+		}
+		return buffmod.Resolution{}, http.StatusInternalServerError, "failed to look up spell"
+	}
+	spellType := buffmod.SpellTypeBeneficial
+	if !isBeneficialSpell(h.db, spellID) {
+		spellType = buffmod.SpellTypeDetrimental
+	}
+	// Per-class spell level: SPA 134/139 limits compare against the level
+	// the caster's OWN class learns the spell, not the lowest class level
+	// (multi-class spells like Celerity: ENC 39 vs SHM 56).
+	spellLevel := buffmod.SpellLevelForClass(sp.ClassLevels, char.Class)
+	// character_aas table defaults level=1, so anything ≤ 1 likely means
+	// "not set yet" rather than literally a level-1 character. Treat that
+	// as "cast at the spell's effective level" so the duration formula
+	// produces a useful number for sanity-checking modifiers.
+	casterLevel := char.Level
+	if casterLevel <= 1 {
+		casterLevel = spellLevel
+	}
+	if casterLevel < 1 {
+		casterLevel = era.PoPMaxLevel
+	}
+	baseTicks := spelltimer.CalcDurationTicks(sp.BuffDurationFormula, sp.BuffDuration, casterLevel)
+	resolution := buffmod.Resolve(
+		sp.ID, sp.Name, spellLevel, casterLevel,
+		baseTicks*6, // ticks → seconds
+		sp.CastTime, // SPA 143 (min cast time) filter
+		spellType, sp.EffectIDs[:],
+		res.Contributors,
+		char.Class,
+		sp.ClassLevels,
+	)
+	// Permanent Illusion AA: self-cast illusions (SPA 58) last a flat
+	// 10000 ticks (~16h40m) on EQMacEmu — the formula duration and focus
+	// percentages are replaced wholesale.
+	if res.PermanentIllusion && buffmod.HasIllusionEffect(sp.EffectIDs[:]) {
+		resolution.ExtendedDurationSec = buffmod.PermanentIllusionDurationSec
+		resolution.PermanentIllusion = true
+		if resolution.BaseDurationSec > 0 {
+			resolution.DurationPercent = (resolution.ExtendedDurationSec - resolution.BaseDurationSec) * 100 / resolution.BaseDurationSec
+		}
+	}
+	return resolution, 0, ""
 }
 
 // equipSlots is the set of inventory locations we treat as worn equipment for

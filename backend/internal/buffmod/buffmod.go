@@ -18,6 +18,7 @@ package buffmod
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/zeal"
@@ -222,10 +223,17 @@ func Compute(eqPath, charName string, gameDB *db.DB) (*Result, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse quarmy: %w", err)
 	}
+	return FromEquipment(charName, q.Inventory, q.AAs, gameDB), nil
+}
 
+// FromEquipment builds the focus contributions for an explicit set of worn
+// items and trained AAs. Compute feeds it the Quarmy export; the Test
+// Resolution "what-if" path feeds it a mocked loadout, so both resolve through
+// identical focus parsing. Non-worn inventory entries are skipped.
+func FromEquipment(charName string, inventory []zeal.InventoryEntry, aas []zeal.AAEntry, gameDB *db.DB) *Result {
 	res := &Result{Character: charName, Contributors: []Modifier{}}
 
-	for _, entry := range q.Inventory {
+	for _, entry := range inventory {
 		if !equipSlots[entry.Location] {
 			continue
 		}
@@ -246,7 +254,7 @@ func Compute(eqPath, charName string, gameDB *db.DB) (*Result, error) {
 		}
 	}
 
-	for _, aa := range q.AAs {
+	for _, aa := range aas {
 		if aa.ID == PermanentIllusionEqmacID && aa.Rank > 0 {
 			res.PermanentIllusion = true
 		}
@@ -266,7 +274,26 @@ func Compute(eqPath, charName string, gameDB *db.DB) (*Result, error) {
 		})
 	}
 
-	return res, nil
+	return res
+}
+
+// MockableAA is one AA that changes focus resolution, exposed so the Test
+// Resolution what-if editor can offer a rank picker for each.
+type MockableAA struct {
+	ID      int    `json:"id"` // altadv_vars.eqmacid
+	Name    string `json:"name"`
+	MaxRank int    `json:"max_rank"`
+}
+
+// MockableAAs returns every AA FromEquipment reacts to: the hardcoded focus
+// table plus Permanent Illusion, ordered by eqmacid for a stable UI.
+func MockableAAs() []MockableAA {
+	out := []MockableAA{{ID: PermanentIllusionEqmacID, Name: "Permanent Illusion", MaxRank: 1}}
+	for id, e := range aaTable {
+		out = append(out, MockableAA{ID: id, Name: e.Name, MaxRank: len(e.PerRank)})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
 }
 
 // parseFocusSpell extracts every Modifier (one per SPA 127/128 slot) from a
