@@ -34,6 +34,8 @@ import CharacterRecapPanel from '../components/CharacterRecapPanel'
 import { StatSnapshotsPanel } from '../components/StatSnapshotsPanel'
 import { EquipmentPaperDoll } from '../components/EquipmentPaperDoll'
 import CharacterSubTabs from '../components/CharacterSubTabs'
+import MockLoadoutPanel from '../components/MockLoadoutPanel'
+import { spaLabel, spaSign, formatDuration } from '../lib/spellModHelpers'
 
 // ── Equipment slot ordering ────────────────────────────────────────────────────
 
@@ -1717,27 +1719,6 @@ function AAPanel({ trained, available, unspentAA, unspentAAAt }: AAPanelProps): 
 
 // ── Spell Modifiers Panel ─────────────────────────────────────────────────────
 
-function spaLabel(spa: number): string {
-  switch (spa) {
-    case 124: return 'Spell Damage'
-    case 125: return 'Healing'
-    case 126: return 'Resist Reduction'
-    case 127: return 'Cast Time'
-    case 128: return 'Duration'
-    case 129: return 'Range'
-    case 130: return 'Spell Hate'
-    case 131: return 'Reagent Conserve'
-    case 132: return 'Mana Cost'
-    default: return `SPA ${spa}`
-  }
-}
-
-// Focus SPAs whose magnitude is a reduction (shown with a minus sign): cast
-// time (127) and mana cost (132). Everything else is a bonus shown with a plus.
-function spaSign(spa: number): string {
-  return spa === 127 || spa === 132 ? '−' : '+'
-}
-
 function spellTypeLabel(type: number): string {
   if (type === 1) return 'beneficial'
   if (type === 0) return 'detrimental'
@@ -1760,6 +1741,8 @@ function SpellModifiersPanel({
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<Spell[]>([])
   const [resolution, setResolution] = useState<SpellModifierResolution | null>(null)
+  // Spell last picked for Test Resolution (also drives the what-if compare).
+  const [resolvedSpellID, setResolvedSpellID] = useState<number | null>(null)
   const [resolveLoading, setResolveLoading] = useState(false)
   const [resolveError, setResolveError] = useState<string | null>(null)
 
@@ -1776,6 +1759,7 @@ function SpellModifiersPanel({
 
   const resolve = useCallback(async (spellID: number) => {
     if (!characterID) return
+    setResolvedSpellID(spellID)
     setResolveLoading(true)
     setResolveError(null)
     setResolution(null)
@@ -1949,7 +1933,8 @@ function SpellModifiersPanel({
         <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
           Pick a spell to see exactly how this character's modifiers apply, after EQEmu's filter and stacking rules
           (best item-focus + AA percentages summed). Only Duration and Cast Time resolve per-spell here — Spell Damage,
-          Healing, and the other focus types above are listed but not yet resolved.
+          Healing, and the other focus types above are listed but not yet resolved. Open What-if loadout below to try
+          other gear or AA ranks.
         </p>
         <div className="relative mb-3">
           <Search size={14} style={{
@@ -2002,6 +1987,9 @@ function SpellModifiersPanel({
         )}
         {resolution && !resolveLoading && !resolveError && (
           <ResolutionDisplay r={resolution} />
+        )}
+        {characterID !== null && (
+          <MockLoadoutPanel characterID={characterID} spellID={resolvedSpellID} />
         )}
       </div>
     </div>
@@ -2104,18 +2092,6 @@ function FilterTag({ label }: { label: string }): React.ReactElement {
       {label}
     </span>
   )
-}
-
-function formatDuration(sec: number): string {
-  if (sec <= 0) return '0s'
-  const h = Math.floor(sec / 3600)
-  const m = Math.floor((sec % 3600) / 60)
-  const s = sec % 60
-  const parts: string[] = []
-  if (h) parts.push(`${h}h`)
-  if (m) parts.push(`${m}m`)
-  if (s || parts.length === 0) parts.push(`${s}s`)
-  return parts.join(' ')
 }
 
 function ResolutionDisplay({ r }: { r: SpellModifierResolution }): React.ReactElement {

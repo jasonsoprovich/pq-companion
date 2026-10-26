@@ -2712,6 +2712,103 @@ export function getCharacterSpellModifiers(
   return get<SpellModifiersResponse>(`/api/characters/${id}/spell-modifiers${qs}`)
 }
 
+// ── Test Resolution what-if loadouts ──────────────────────────────────────────
+// Overrides on top of the character's real Quarmy export. gear is keyed by
+// physical worn-slot key (ear1, head, finger2, …; 0 = slot left empty); aas by
+// eqmacid (0 = untrained). Absent keys keep the actual item / rank.
+
+export interface MockOverrides {
+  gear: Record<string, number>
+  aas: Record<string, number>
+}
+
+export interface MockItemBrief {
+  id: number
+  name: string
+  icon: number
+  slots: number
+  focus_id?: number
+  focus_name?: string
+}
+
+export interface MockBaseSlot {
+  key: string
+  label: string
+  mask: number // equip-slot bitmask an item must overlap to fit
+  bucket: string // wishlist slot bucket
+  item: MockItemBrief | null // actually worn item
+}
+
+export interface MockBaseAA {
+  id: number
+  name: string
+  max_rank: number
+  rank: number // actually trained rank
+}
+
+export interface MockBaseResponse {
+  has_quarmy: boolean
+  slots: MockBaseSlot[]
+  aas: MockBaseAA[]
+}
+
+export interface MockResolveResponse {
+  actual: SpellModifierResolution
+  mock: SpellModifierResolution
+  mock_contributors: SpellModifier[]
+}
+
+export interface MockLoadout extends MockOverrides {
+  id: number
+  character_id: number
+  name: string
+  created_at: number
+  updated_at: number
+}
+
+export function getMockBase(charID: number): Promise<MockBaseResponse> {
+  return get<MockBaseResponse>(`/api/characters/${charID}/spell-modifiers/mock-base`)
+}
+
+export function resolveMockSpell(
+  charID: number,
+  spellID: number,
+  overrides: MockOverrides,
+): Promise<MockResolveResponse> {
+  return post<MockResolveResponse>(
+    `/api/characters/${charID}/spell-modifiers/mock-resolve`,
+    { spell_id: spellID, ...overrides },
+  )
+}
+
+export function listMockLoadouts(charID: number): Promise<{ loadouts: MockLoadout[] }> {
+  return get<{ loadouts: MockLoadout[] }>(`/api/characters/${charID}/mock-loadouts`)
+}
+
+export function createMockLoadout(
+  charID: number,
+  name: string,
+  overrides: MockOverrides,
+): Promise<MockLoadout> {
+  return post<MockLoadout>(`/api/characters/${charID}/mock-loadouts`, { name, ...overrides })
+}
+
+export function updateMockLoadout(
+  charID: number,
+  loadoutID: number,
+  name: string,
+  overrides: MockOverrides,
+): Promise<MockLoadout> {
+  return put<MockLoadout>(
+    `/api/characters/${charID}/mock-loadouts/${loadoutID}`,
+    { name, ...overrides },
+  )
+}
+
+export function deleteMockLoadout(charID: number, loadoutID: number): Promise<void> {
+  return del(`/api/characters/${charID}/mock-loadouts/${loadoutID}`)
+}
+
 export function getCharacterSkills(id: number): Promise<SkillsResponse> {
   return get<SkillsResponse>(`/api/characters/${id}/skills`)
 }
