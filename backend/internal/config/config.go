@@ -910,6 +910,13 @@ type Preferences struct {
 	// ever carries the opaque reference. Managed entirely client-side via
 	// updateConfig, like DiscordVoiceLinks — no dedicated backend CRUD.
 	DiscordWebhooks []DiscordWebhook `yaml:"discord_webhooks,omitempty" json:"discord_webhooks"`
+
+	// ZealItemDisplaySeen records that the installed Zeal has sent at least
+	// one item display pipe event (a proposed Zeal message, not in any
+	// release yet). Set by the backend on the first event, never by the
+	// user; it reveals the Item Info overlay, which stays hidden until then
+	// so users on a Zeal without the message never see a dead feature.
+	ZealItemDisplaySeen bool `yaml:"zeal_item_display_seen,omitempty" json:"zeal_item_display_seen"`
 }
 
 // DiscordVoiceLink is one saved StreamKit voice-overlay link — a name the

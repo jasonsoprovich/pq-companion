@@ -33,6 +33,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/emote"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/factiontracker"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/itemdisplay"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/keyring"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/killtracker"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/lockout"
@@ -1572,7 +1573,20 @@ func main() {
 	// feed the Players tab.
 	rosterKeeper := raidcomp.NewRoster()
 
+	// Item Info overlay: the item the player last opened an item window for.
+	itemDisplayTracker := itemdisplay.NewTracker(hub, cfgMgr)
+
 	pipeSupervisor := zealpipe.NewSupervisor(func(env zealpipe.Envelope) {
+		// Proposed Zeal item display message. Its type number is 7 on a build
+		// with only that PR and 8 alongside the death PR, so it's matched by
+		// payload shape ahead of the type switch — a death payload never
+		// decodes as an item, so MsgDeath still reaches its case below.
+		if env.Type >= zealpipe.MsgDeath {
+			if it, err := zealpipe.DecodeItemDisplay(env.Data); err == nil {
+				itemDisplayTracker.Handle(it.ItemID, it.Name, env.Character)
+				return
+			}
+		}
 		switch env.Type {
 		case zealpipe.MsgCmd:
 			// In-game /pipe <text> command — feed to the trigger engine.
@@ -2245,7 +2259,7 @@ func main() {
 	}
 	defer mapStore.Close()
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, replayer, npcTracker, combatTracker, historyStore, threatTracker, raidThreatAssembler, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, blockbuffStore, sb, savedQueryStore, skillsStore, traderStore, traderCapturer, popflagStore, wishlistWatcher, changelogEntries, factionEngine, emoteService, mapStore, mapAnnotations, progressStore, mystatsStore, raidStore, rosterKeeper, killStore, killCounters, liveZoneFn, actualPort)
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, replayer, npcTracker, combatTracker, historyStore, threatTracker, raidThreatAssembler, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, blockbuffStore, sb, savedQueryStore, skillsStore, traderStore, traderCapturer, popflagStore, wishlistWatcher, changelogEntries, factionEngine, emoteService, mapStore, mapAnnotations, progressStore, mystatsStore, raidStore, rosterKeeper, killStore, killCounters, itemDisplayTracker, liveZoneFn, actualPort)
 
 	// Raid disband watcher. Zeal emits MsgRaid only while is_in_raid(); on
 	// disband the envelopes just STOP — there is no "raid over" message on the
