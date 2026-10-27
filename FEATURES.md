@@ -2014,6 +2014,30 @@ name-based path when a field is nil, so older Zeal is unaffected.
   the `wornHere` (same-Location) and `wornLore` (any-slot LORE) sets in
   the same canonical id space the candidate list already uses.
 
+## v0.31.0 — Spell Search Filters, What-If Loadouts, Leader-Relative DPS
+
+- **Spell search filters** — collapsible "More filters" on the Spells
+  search: beneficial/detrimental, target type (Any PB AE / Any Targeted AE
+  groups), resist type, school, and has-effect (SPA in any slot).
+  `SpellSearchFilters` + `SearchSpellsFiltered`; `SearchSpells` delegates.
+- **What-if loadouts** — Test Resolution resolves a spell against per-slot
+  gear overrides and AA rank overrides; `buffmod.Compute` split so
+  `FromEquipment` builds contributors from any worn-item/AA set. Saved
+  per character in `character_mock_loadouts`; mocked items can be starred
+  onto the wishlist.
+- **Equipped focus types** — chip strip beside Missing focus types; focus
+  cards show equip slots and the worn slot, with a persisted "Include
+  lower ranks" toggle.
+- **DPS bars scale to the leader** — persisted header toggle back to share
+  of total; own row pinned with its rank when scrolled out of view. Panel
+  and overlay share `DPSTable`.
+- **Kept-expired timer linger** — separate Buff / Detrimental linger times
+  plus per-spell overrides (0 = drop on expiry), replacing the fixed 60 min.
+- Fixes: zone drops min-chance and the priority focus picker both had
+  `HAVING` aliases resolving to real columns; Quarm dubious/kindly /con
+  wording; ungrouped rolls interleave with tiered contests by time; the
+  Settings large-log dot deep-links to Logs and explains itself.
+
 ## v0.30.0 — NPC Overlay Customization, Upgrades By Zone, PoP Class Packs
 
 - **NPC Overlay settings tab** — all NPC overlay settings move to Settings →
@@ -2343,6 +2367,21 @@ name-based path when a field is nil, so older Zeal is unaffected.
   version: on Zeal 1.4.7 and earlier the overlay behaves exactly as before
   and the distance chip is hidden. See LIMITATIONS.md §3.1–3.6 for what
   remains ambiguous and the accuracy caveats.
+
+## Unreleased — Item Info overlay (Zeal item display)
+
+- **Item Info overlay** — dashboard panel + popout window showing the full
+  item tabs (Overview, sources, Tradeskills, Quests, Characters) for the
+  item last opened in game, fed by the item message from the pending Zeal
+  named-pipe-item-display branch (matched by payload shape, type 7 or 8).
+  `internal/itemdisplay` broadcasts `item:display` and serves
+  `GET /api/item-display/last`. Shares `ItemDetailView` with the item
+  modal; popout links open in the main window via `useAppNavigate`.
+- Hidden from the dashboard and Settings until the backend sees a real
+  Zeal item event (`zeal_item_display_seen`), or in Developer Mode, where
+  `POST /api/item-display/simulate` drives a simulate-item-click picker
+  without setting the flag. Ships dark in v0.31.0 so nothing appears until
+  a Zeal release carries the event.
 
 ## Phase 11 — Project Website
 _Planned_
