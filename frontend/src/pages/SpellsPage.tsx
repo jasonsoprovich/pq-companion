@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Search, X, Clock } from 'lucide-react'
+import { Search, X, Clock, ChevronDown, ChevronRight } from 'lucide-react'
 import { searchSpells, getSpell, getSpellCrossRefs, getSpellRaw } from '../services/api'
+import type { SpellSearchExtraFilters } from '../services/api'
 import type { Spell, SpellComponent, SpellCrossRefs } from '../types/spell'
 import {
   buildSpellTriggerPrefill,
@@ -27,6 +28,7 @@ import { useDeveloperMode } from '../hooks/useDeveloperMode'
 import { useSpellRefNames } from '../hooks/useSpellRefNames'
 import { useItemRefNames } from '../hooks/useItemRefNames'
 import { maxLevel as eraMaxLevel } from '../lib/era'
+import { spellEnumOptions } from '../lib/enumsCache'
 
 const SPELL_CLASSES: { index: number; abbr: string; full: string }[] = [
   { index: 0,  abbr: 'WAR', full: 'Warrior' },
@@ -46,6 +48,23 @@ const SPELL_CLASSES: { index: number; abbr: string; full: string }[] = [
   { index: 14, abbr: 'BST', full: 'Beastlord' },
 ]
 
+// Grouped target-type options so "PB AE" / "Targeted AE" catch every
+// variant (EQMacEmu ST_* codes; see backend/internal/db/enums/spell.go).
+const TARGET_GROUPS: { value: string; label: string }[] = [
+  { value: '2,4,40', label: 'Any PB AE' },
+  { value: '8,20,24,25', label: 'Any Targeted AE' },
+]
+
+function parseIdList(v: string): number[] | undefined {
+  if (!v) return undefined
+  const ids = v.split(',').map(Number).filter((n) => Number.isInteger(n) && n >= 0)
+  return ids.length ? ids : undefined
+}
+
+function parseId(v: string): number | undefined {
+  return v === '' ? undefined : Number(v)
+}
+
 // ── Search pane ────────────────────────────────────────────────────────────────
 
 interface SearchPaneProps {
@@ -60,6 +79,12 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
   const [classIndex, setClassIndex] = useCachedState('spells.classIndex', -1)
   const [minLevel, setMinLevel] = useCachedState('spells.minLevel', '')
   const [maxLevel, setMaxLevel] = useCachedState('spells.maxLevel', '')
+  const [targetFilter, setTargetFilter] = useCachedState('spells.targetType', '')
+  const [resistFilter, setResistFilter] = useCachedState('spells.resist', '')
+  const [beneficialFilter, setBeneficialFilter] = useCachedState('spells.beneficial', '')
+  const [skillFilter, setSkillFilter] = useCachedState('spells.skill', '')
+  const [effectFilter, setEffectFilter] = useCachedState('spells.effect', '')
+  const [moreOpen, setMoreOpen] = useCachedState('spells.moreFilters', false)
   const [spells, setSpells] = useState<Spell[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -73,14 +98,27 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
 
   // When a class is selected, fetch all spells for that class so the user can
   // scroll the full list. Otherwise paginate via "Show more".
-  const runSearch = useCallback((q: string, cls: number, min: string, max: string) => {
+  const extra = useMemo<SpellSearchExtraFilters>(() => ({
+    beneficial: beneficialFilter === '' ? undefined : beneficialFilter === '1',
+    targetTypes: parseIdList(targetFilter),
+    resistTypes: parseIdList(resistFilter),
+    skill: parseId(skillFilter),
+    effect: parseId(effectFilter),
+  }), [beneficialFilter, targetFilter, resistFilter, skillFilter, effectFilter])
+  const extraCount = [
+    beneficialFilter, targetFilter, resistFilter, skillFilter, effectFilter,
+  ].filter((v) => v !== '').length
+
+  const runSearch = useCallback((
+    q: string, cls: number, min: string, max: string, ex: SpellSearchExtraFilters,
+  ) => {
     const seq = ++seqRef.current
     setLoading(true)
     setError(null)
     const minLvl = parseInt(min) || 0
     const maxLvl = parseInt(max) || 0
     const limit = cls >= 0 ? 1000 : SPELL_PAGE_SIZE
-    searchSpells(q, limit, 0, cls, minLvl, maxLvl)
+    searchSpells(q, limit, 0, cls, minLvl, maxLvl, false, ex)
       .then((res) => {
         if (seq !== seqRef.current) return
         setSpells(res.items ?? [])
@@ -95,7 +133,9 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
     setLoadingMore(true)
     const minLvl = parseInt(minLevel) || 0
     const maxLvl = parseInt(maxLevel) || 0
-    searchSpells(query, SPELL_PAGE_SIZE, spells.length, classIndex, minLvl, maxLvl)
+    searchSpells(
+      query, SPELL_PAGE_SIZE, spells.length, classIndex, minLvl, maxLvl, false, extra,
+    )
       .then((res) => {
         if (seq !== seqRef.current) return
         setSpells((prev) => [...prev, ...(res.items ?? [])])
@@ -103,18 +143,20 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
       })
       .catch((err: Error) => { if (seq === seqRef.current) setError(err.message) })
       .finally(() => { if (seq === seqRef.current) setLoadingMore(false) })
-  }, [query, classIndex, minLevel, maxLevel, spells.length])
+  }, [query, classIndex, minLevel, maxLevel, extra, spells.length])
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => runSearch(query, classIndex, minLevel, maxLevel), 300)
+    debounceRef.current = setTimeout(
+      () => runSearch(query, classIndex, minLevel, maxLevel, extra), 300,
+    )
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
     }
-  }, [query, classIndex, minLevel, maxLevel, runSearch])
+  }, [query, classIndex, minLevel, maxLevel, extra, runSearch])
 
   useEffect(() => {
-    runSearch(query, classIndex, minLevel, maxLevel)
+    runSearch(query, classIndex, minLevel, maxLevel, extra)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runSearch])
 
@@ -204,9 +246,13 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
             className="rounded border px-1.5 py-0.5 text-xs outline-none disabled:opacity-40"
             style={{ ...levelInputStyle, borderColor: 'var(--color-border)' }}
           />
-          {(classIndex >= 0 || minLevel || maxLevel) && (
+          {(classIndex >= 0 || minLevel || maxLevel || extraCount > 0) && (
             <button
-              onClick={() => { setClassIndex(-1); setMinLevel(''); setMaxLevel('') }}
+              onClick={() => {
+                setClassIndex(-1); setMinLevel(''); setMaxLevel('')
+                setTargetFilter(''); setResistFilter(''); setBeneficialFilter('')
+                setSkillFilter(''); setEffectFilter('')
+              }}
               className="ml-auto shrink-0"
               title="Clear filters"
             >
@@ -214,6 +260,86 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
             </button>
           )}
         </div>
+
+        {/* More filters — target type, resist, effect, etc. */}
+        <button
+          onClick={() => setMoreOpen(!moreOpen)}
+          className="flex items-center gap-1 text-[11px]"
+          style={{ color: 'var(--color-muted)' }}
+        >
+          {moreOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+          More filters
+          {extraCount > 0 && (
+            <span style={{ color: 'var(--color-primary)' }}>({extraCount})</span>
+          )}
+        </button>
+        {moreOpen && (
+          <>
+            <select
+              value={beneficialFilter}
+              onChange={(e) => setBeneficialFilter(e.target.value)}
+              className="w-full rounded px-2 py-1 text-xs outline-none"
+              style={selectStyle}
+              title="Beneficial or detrimental"
+            >
+              <option value="">Beneficial &amp; Detrimental</option>
+              <option value="1">Beneficial only</option>
+              <option value="0">Detrimental only</option>
+            </select>
+            <select
+              value={targetFilter}
+              onChange={(e) => setTargetFilter(e.target.value)}
+              className="w-full rounded px-2 py-1 text-xs outline-none"
+              style={selectStyle}
+              title="Target type"
+            >
+              <option value="">All Target Types</option>
+              {TARGET_GROUPS.map((g) => (
+                <option key={g.value} value={g.value}>{g.label}</option>
+              ))}
+              <option disabled>──────────</option>
+              {spellEnumOptions('spell_targets').map((o) => (
+                <option key={o.value} value={String(o.value)}>{o.label}</option>
+              ))}
+            </select>
+            <select
+              value={resistFilter}
+              onChange={(e) => setResistFilter(e.target.value)}
+              className="w-full rounded px-2 py-1 text-xs outline-none"
+              style={selectStyle}
+              title="Resist type"
+            >
+              <option value="">All Resist Types</option>
+              {spellEnumOptions('spell_resists').map((o) => (
+                <option key={o.value} value={String(o.value)}>{o.label}</option>
+              ))}
+            </select>
+            <select
+              value={skillFilter}
+              onChange={(e) => setSkillFilter(e.target.value)}
+              className="w-full rounded px-2 py-1 text-xs outline-none"
+              style={selectStyle}
+              title="Spell school (or instrument for bard songs)"
+            >
+              <option value="">All Schools</option>
+              {spellEnumOptions('spell_skills').map((o) => (
+                <option key={o.value} value={String(o.value)}>{o.label}</option>
+              ))}
+            </select>
+            <select
+              value={effectFilter}
+              onChange={(e) => setEffectFilter(e.target.value)}
+              className="w-full rounded px-2 py-1 text-xs outline-none"
+              style={selectStyle}
+              title="Spells with this effect in any slot"
+            >
+              <option value="">Any Effect</option>
+              {spellEnumOptions('spell_effects').map((o) => (
+                <option key={o.value} value={String(o.value)}>{o.label}</option>
+              ))}
+            </select>
+          </>
+        )}
       </div>
 
       {/* Result count */}

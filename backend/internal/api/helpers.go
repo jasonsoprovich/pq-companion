@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 )
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -35,4 +36,23 @@ func queryInt(r *http.Request, key string, defaultVal int) int {
 		return defaultVal
 	}
 	return v
+}
+
+// queryIntList reads a comma-separated list of non-negative integers
+// (e.g. "?targetType=4,2,40"), skipping invalid entries. Returns nil when
+// the param is absent or holds no valid values.
+func queryIntList(r *http.Request, key string) []int {
+	s := r.URL.Query().Get(key)
+	if s == "" {
+		return nil
+	}
+	var out []int
+	for _, part := range strings.Split(s, ",") {
+		v, err := strconv.Atoi(strings.TrimSpace(part))
+		if err != nil || v < 0 {
+			continue
+		}
+		out = append(out, v)
+	}
+	return out
 }

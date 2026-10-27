@@ -1921,6 +1921,37 @@ func (db *DB) GetSpellByExactName(name string) (*Spell, error) {
 // goodEffectOnly: when true, only beneficial spells (spells_new.goodEffect=1)
 // are returned — used by the raid-buff picker so debuffs/nukes don't appear.
 func (db *DB) SearchSpells(query string, classIndex, minLevel, maxLevel, limit, offset int, goodEffectOnly bool) (*SearchResult[Spell], error) {
+	return db.SearchSpellsFiltered(query, SpellSearchFilters{
+		ClassIndex:     classIndex,
+		MinLevel:       minLevel,
+		MaxLevel:       maxLevel,
+		GoodEffectOnly: goodEffectOnly,
+		Beneficial:     -1,
+		Skill:          -1,
+		Effect:         -1,
+	}, limit, offset)
+}
+
+// SpellSearchFilters are the Spells-page filters on top of the name search.
+// Use -1 for "any" on the int filters and nil/empty for the slice filters.
+type SpellSearchFilters struct {
+	ClassIndex int // -1 any, 0–14 player class, 15 NPC-only
+	MinLevel   int // 0 = no bound; class-scoped
+	MaxLevel   int // 0 = no bound; class-scoped
+	// GoodEffectOnly keeps the legacy goodEffect=1 picker filter (excludes
+	// group-only beneficial rows, goodEffect=2).
+	GoodEffectOnly bool
+	// Beneficial: -1 any, 1 beneficial (goodEffect 1 or 2), 0 detrimental.
+	Beneficial  int
+	TargetTypes []int // spells_new.targettype IN (...)
+	ResistTypes []int // spells_new.resisttype IN (...)
+	Skill       int   // spells_new.skill (spell school / instrument)
+	Effect      int   // SPA present in any of effectid1–effectid12
+}
+
+// SearchSpellsFiltered is SearchSpells with the full Spells-page filter set.
+func (db *DB) SearchSpellsFiltered(query string, f SpellSearchFilters, limit, offset int) (*SearchResult[Spell], error) {
+	classIndex, minLevel, maxLevel := f.ClassIndex, f.MinLevel, f.MaxLevel
 	pattern := "%" + escapeLike(query) + "%"
 
 	conditions := []string{"s.name LIKE ? ESCAPE '\\'", "s.name != ''"}
@@ -1949,8 +1980,34 @@ func (db *DB) SearchSpells(query string, classIndex, minLevel, maxLevel, limit, 
 		conditions = append(conditions, npcOnlyExpr)
 	}
 
-	if goodEffectOnly {
+	if f.GoodEffectOnly {
 		conditions = append(conditions, "COALESCE(s.goodEffect, 0) = 1")
+	}
+	switch f.Beneficial {
+	case 1:
+		conditions = append(conditions, "COALESCE(s.goodEffect, 0) IN (1, 2)")
+	case 0:
+		conditions = append(conditions, "COALESCE(s.goodEffect, 0) = 0")
+	}
+	if cond, inArgs := intInClause("s.targettype", f.TargetTypes); cond != "" {
+		conditions = append(conditions, cond)
+		args = append(args, inArgs...)
+	}
+	if cond, inArgs := intInClause("s.resisttype", f.ResistTypes); cond != "" {
+		conditions = append(conditions, cond)
+		args = append(args, inArgs...)
+	}
+	if f.Skill >= 0 {
+		conditions = append(conditions, "s.skill = ?")
+		args = append(args, f.Skill)
+	}
+	if f.Effect >= 0 {
+		slots := make([]string, 12)
+		for i := range slots {
+			slots[i] = fmt.Sprintf("s.effectid%d", i+1)
+		}
+		conditions = append(conditions, "? IN ("+strings.Join(slots, ", ")+")")
+		args = append(args, f.Effect)
 	}
 
 	where := strings.Join(conditions, " AND ")
@@ -1994,6 +2051,19 @@ func (db *DB) SearchSpells(query string, classIndex, minLevel, maxLevel, limit, 
 		spells[i].VariantIDs, spells[i].CanonicalID = db.spellVariants.variantFields(spells[i].ID)
 	}
 	return &SearchResult[Spell]{Items: spells, Total: total}, nil
+}
+
+// intInClause builds a parameterized "col IN (?, ?, …)" condition, or ""
+// when vals is empty.
+func intInClause(col string, vals []int) (string, []any) {
+	if len(vals) == 0 {
+		return "", nil
+	}
+	args := make([]any, len(vals))
+	for i, v := range vals {
+		args[i] = v
+	}
+	return col + " IN (" + strings.TrimSuffix(strings.Repeat("?, ", len(vals)), ", ") + ")", args
 }
 
 func collectSpells(rows *sql.Rows) ([]Spell, error) {

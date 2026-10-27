@@ -525,11 +525,18 @@ func (h *spellsHandler) search(w http.ResponseWriter, r *http.Request) {
 	if limit > 1000 {
 		limit = 1000
 	}
-	classIndex := queryInt(r, "class", -1)
-	minLevel := queryInt(r, "minLevel", 0)
-	maxLevel := queryInt(r, "maxLevel", 0)
-	goodEffectOnly := r.URL.Query().Get("goodEffect") == "1"
-	result, err := h.db.SearchSpells(q, classIndex, minLevel, maxLevel, limit, offset, goodEffectOnly)
+	f := db.SpellSearchFilters{
+		ClassIndex:     queryInt(r, "class", -1),
+		MinLevel:       queryInt(r, "minLevel", 0),
+		MaxLevel:       queryInt(r, "maxLevel", 0),
+		GoodEffectOnly: r.URL.Query().Get("goodEffect") == "1",
+		Beneficial:     queryInt(r, "beneficial", -1),
+		TargetTypes:    queryIntList(r, "targetType"),
+		ResistTypes:    queryIntList(r, "resist"),
+		Skill:          queryInt(r, "skill", -1),
+		Effect:         queryInt(r, "effect", -1),
+	}
+	result, err := h.db.SearchSpellsFiltered(q, f, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

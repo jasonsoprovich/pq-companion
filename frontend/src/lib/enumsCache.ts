@@ -155,6 +155,17 @@ export function spellTargetLabel(id: number): string {
   return catalog?.spell_targets[String(id)] ?? `Unknown (${id})`
 }
 
+// spellEnumOptions returns dropdown options for one of the spell enum maps.
+// Effects (~200 SPAs) sort by label so they're scannable; the short maps
+// keep code order.
+export function spellEnumOptions(
+  kind: 'spell_targets' | 'spell_resists' | 'spell_skills' | 'spell_effects',
+): { value: number; label: string }[] {
+  const opts = optionsFromMap(catalog?.[kind], false)
+  if (kind === 'spell_effects') opts.sort((a, b) => a.label.localeCompare(b.label))
+  return opts
+}
+
 export function spellSkillLabel(id: number): string {
   return catalog?.spell_skills[String(id)] ?? ''
 }

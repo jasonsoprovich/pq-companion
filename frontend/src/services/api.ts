@@ -377,6 +377,15 @@ export function getEnums(): Promise<EnumsCatalog> {
 
 // ── Spells ─────────────────────────────────────────────────────────────────────
 
+// Spells-page filters beyond class/level. Omitted fields mean "any".
+export interface SpellSearchExtraFilters {
+  beneficial?: boolean
+  targetTypes?: number[]
+  resistTypes?: number[]
+  skill?: number
+  effect?: number
+}
+
 export function searchSpells(
   q: string,
   limit = 50,
@@ -385,12 +394,18 @@ export function searchSpells(
   minLevel = 0,
   maxLevel = 0,
   goodEffectOnly = false,
+  extra: SpellSearchExtraFilters = {},
 ): Promise<SearchResult<Spell>> {
   const params = new URLSearchParams({ q, limit: String(limit), offset: String(offset) })
   if (classIndex >= 0) params.set('class', String(classIndex))
   if (minLevel > 0) params.set('minLevel', String(minLevel))
   if (maxLevel > 0) params.set('maxLevel', String(maxLevel))
   if (goodEffectOnly) params.set('goodEffect', '1')
+  if (extra.beneficial !== undefined) params.set('beneficial', extra.beneficial ? '1' : '0')
+  if (extra.targetTypes?.length) params.set('targetType', extra.targetTypes.join(','))
+  if (extra.resistTypes?.length) params.set('resist', extra.resistTypes.join(','))
+  if (extra.skill !== undefined) params.set('skill', String(extra.skill))
+  if (extra.effect !== undefined) params.set('effect', String(extra.effect))
   return get<SearchResult<Spell>>(`/api/spells?${params}`)
 }
 

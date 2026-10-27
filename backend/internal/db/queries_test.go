@@ -494,6 +494,53 @@ func TestSearchSpells(t *testing.T) {
 	}
 }
 
+func TestSearchSpellsFiltered(t *testing.T) {
+	d := openTestDB(t)
+	base := db.SpellSearchFilters{ClassIndex: -1, Beneficial: -1, Skill: -1, Effect: -1}
+	tests := []struct {
+		name  string
+		query string
+		mod   func(f *db.SpellSearchFilters)
+		check func(sp db.Spell) bool
+	}{
+		{"pb ae", "", func(f *db.SpellSearchFilters) { f.TargetTypes = []int{2, 4, 40} },
+			func(sp db.Spell) bool { return sp.TargetType == 2 || sp.TargetType == 4 || sp.TargetType == 40 }},
+		{"fire resist", "", func(f *db.SpellSearchFilters) { f.ResistTypes = []int{2} },
+			func(sp db.Spell) bool { return sp.ResistType == 2 }},
+		{"detrimental", "", func(f *db.SpellSearchFilters) { f.Beneficial = 0 },
+			func(sp db.Spell) bool { return sp.GoodEffect == 0 }},
+		{"evocation", "", func(f *db.SpellSearchFilters) { f.Skill = 24 },
+			func(sp db.Spell) bool { return sp.Skill == 24 }},
+		{"root effect", "", func(f *db.SpellSearchFilters) { f.Effect = 99 },
+			func(sp db.Spell) bool {
+				for _, id := range sp.EffectIDs {
+					if id == 99 {
+						return true
+					}
+				}
+				return false
+			}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := base
+			tt.mod(&f)
+			res, err := d.SearchSpellsFiltered(tt.query, f, 200, 0)
+			if err != nil {
+				t.Fatalf("SearchSpellsFiltered: %v", err)
+			}
+			if res.Total == 0 {
+				t.Fatal("expected matches, got none")
+			}
+			for _, sp := range res.Items {
+				if !tt.check(sp) {
+					t.Errorf("spell %d %q does not match filter", sp.ID, sp.Name)
+				}
+			}
+		})
+	}
+}
+
 // TestGetSpellsByClass_EraLevelCap drives the era-dependent level cap (see
 // internal/era): pre-PoP the enchanter list stops at 60; with the PoP cap of
 // 65 the list grows and includes 61+ spells (e.g. Greater Fetter at 61).
