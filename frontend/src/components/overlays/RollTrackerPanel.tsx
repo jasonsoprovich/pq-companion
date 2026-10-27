@@ -33,6 +33,7 @@ import {
   buildRollSummary,
   buildPickOrderSummary,
   groupContests,
+  orderRollEntries,
   contestOutcome,
   buildContestSummary,
   buildContestPickOrderSummary,
@@ -525,10 +526,10 @@ export default function RollTrackerPanel({
     const preset = ROLL_PROFILE_PRESETS.find((p) => p.id === id)
     if (preset) updateRollsSettings({ profile: preset.profile }).then(setState).catch(() => {})
   }
-  const { contests, ungrouped } = useMemo(
-    () => groupContests(state.sessions, state.profile),
-    [state.sessions, state.profile],
-  )
+  const entries = useMemo(() => {
+    const { contests, ungrouped } = groupContests(state.sessions, state.profile)
+    return orderRollEntries(contests, ungrouped)
+  }, [state.sessions, state.profile])
   const presetId = presetIdFor(state.profile)
   const commitDuration = (): void => {
     const parsed = parseInt(durationDraft, 10)
@@ -693,27 +694,28 @@ export default function RollTrackerPanel({
           </div>
         ) : (
           <>
-            {contests.map((c) => (
-              <ContestRow
-                key={c.key}
-                contest={c}
-                rule={state.winner_rule}
-                onStop={handleStop}
-                onRemove={handleRemove}
-                onSetItemName={handleSetItemName}
-              />
-            ))}
-            {ungrouped.map((s) => (
-              <SessionRow
-                key={s.id}
-                session={s}
-                rule={state.winner_rule}
-                now={now}
-                onStop={handleStop}
-                onRemove={handleRemove}
-                onSetItemName={handleSetItemName}
-              />
-            ))}
+            {entries.map((e) =>
+              e.kind === 'contest' ? (
+                <ContestRow
+                  key={e.key}
+                  contest={e.contest}
+                  rule={state.winner_rule}
+                  onStop={handleStop}
+                  onRemove={handleRemove}
+                  onSetItemName={handleSetItemName}
+                />
+              ) : (
+                <SessionRow
+                  key={e.key}
+                  session={e.session}
+                  rule={state.winner_rule}
+                  now={now}
+                  onStop={handleStop}
+                  onRemove={handleRemove}
+                  onSetItemName={handleSetItemName}
+                />
+              ),
+            )}
           </>
         )}
       </div>

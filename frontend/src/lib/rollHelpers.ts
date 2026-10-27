@@ -327,6 +327,32 @@ export function groupContests(
   return { contests, ungrouped }
 }
 
+/** One renderable card: a tiered contest or a plain ungrouped session. */
+export type RollEntry =
+  | { kind: 'contest'; key: string; contest: Contest }
+  | { kind: 'session'; key: string; session: RollSession }
+
+/**
+ * orderRollEntries interleaves contests and ungrouped sessions newest-first
+ * by start time. Rendering ungrouped after all contests buried off-scheme
+ * rolls (a parchment called as "444" under Pick · Upgrade · Alt) beneath
+ * every contest of the raid, so they looked untracked.
+ */
+export function orderRollEntries(contests: Contest[], ungrouped: RollSession[]): RollEntry[] {
+  const entries: { at: number; entry: RollEntry }[] = [
+    ...contests.map((c) => ({
+      at: new Date(c.startedAt).getTime(),
+      entry: { kind: 'contest', key: c.key, contest: c } as RollEntry,
+    })),
+    ...ungrouped.map((s) => ({
+      at: startMs(s),
+      entry: { kind: 'session', key: `s${s.id}`, session: s } as RollEntry,
+    })),
+  ]
+  entries.sort((a, b) => b.at - a.at)
+  return entries.map((e) => e.entry)
+}
+
 /**
  * contestOutcome resolves a contest's winner: walk tiers best→worst and the
  * first tier with any rolls decides it, winner picked by the rule within that
