@@ -9,6 +9,24 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.31.0 — 2026-10-27
+
+Filter spell search by target type, resist, school and effect, try what-if gear and AA loadouts in Test Resolution, and read raid-sized DPS parses more easily. Kept-expired timers now have adjustable linger times, and several fixes cover the zone drops filter, the Gear Upgrade Finder focus picker, Faction Tracker cons and the Roll Tracker.
+
+### Highlights
+- **More spell search filters** — a new "More filters" section in the Spells database search narrows results by beneficial/detrimental, target type (including Any PB AE and Any Targeted AE groups), resist type, spell school, and whether the spell has a given effect in any slot.
+- **What-if loadouts in Test Resolution** — on Character Info → Spell Modifiers, swap worn items slot by slot, empty slots, or change the ranks of the AAs that feed focus effects, and see the chosen spell resolve against the mock loadout next to your real gear. Loadouts save per character, and mocked items can be added to your wishlist one at a time or all at once. Your real Character Info is never changed.
+- **Equipped focus types** — Spell Modifiers now lists the focus types you're wearing next to the ones you're missing, to help plan gear swaps. Each opens its focus card, which now shows which slot each item goes in and which slot your worn item is in. Lower ranks of a worn focus are hidden behind an "Include lower ranks" toggle.
+- **DPS meter scales to the top damage dealer** — in big raid fights the share-of-total bars were nearly empty. Bars now scale to whoever did the most damage, with a header toggle to switch back to share of total (the % column still shows share of total). If your own row is scrolled out of view, a copy with your rank stays pinned under the table. Applies to both the dashboard panel and the pop-out overlay.
+- **Linger time for kept-expired timers** — with "Keep expired timers until refreshed" on, expired rows used to stay for a fixed 60 minutes. Set separate Buff and Detrimental linger times, plus per-spell overrides (for example Quiescence 1 minute, raid buffs 30 minutes, or 0 to drop on expiry), so tracking raid-wide buffs with Anyone scope doesn't flood the overlays.
+
+### Fixes
+- **Zone drops minimum-chance filter** — the filter ignored loot table odds and let thousands of rare drops through in zones like the Planes of Power, Temple of Veeshan and Ssraeshza Temple. It now filters on the real drop rate.
+- **Gear Upgrade Finder priority focus picker** — the picker always said no focus effects were available. It now lists them.
+- **Faction Tracker missed dubious and kindly cons** — Project Quarm's "glowers at you dubiously" and "kindly considers you" wording now updates your standing.
+- **Roll Tracker buried some rolls** — with Pick · Upgrade · Alt tiers, a roll outside every tier (like a parchment called as 444) showed at the bottom of the list, below every contest, so it looked untracked. Contests and other rolls are now listed together, newest first.
+- **Unexplained orange dot on Settings** — the dot means a log file is getting large, but users took it for an update notice. Clicking the button now opens Settings → Logs, the button has a tooltip, and other Settings tabs show a banner explaining it.
+
 ## v0.30.0 — 2026-10-22
 
 Customize the NPC overlay from its own Settings tab with a live preview, find upgrades zone by zone in the Gear Upgrade Finder, and get timers for Planes of Power spells in the built-in class packs. PoP Flags also handles today's reworded `#popflags` output.
