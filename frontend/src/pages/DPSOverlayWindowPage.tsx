@@ -8,7 +8,7 @@
  * buttons (clear, lock, close, etc.) stay clickable.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Swords, Clipboard, ClipboardCheck, Trash2, Users, Activity, Hourglass, User, History, Crosshair, XCircle } from 'lucide-react'
+import { Swords, ChartBar, ChartBarDecreasing, Clipboard, ClipboardCheck, Trash2, Users, Activity, Hourglass, User, History, Crosshair, XCircle } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
@@ -17,14 +17,14 @@ import { useWindowDrag } from '../hooks/useWindowDrag'
 import OverlayLockButton from '../components/OverlayLockButton'
 import { getCombatState, resetCombatState, endActiveFight } from '../services/api'
 import type { CombatState, FightState } from '../types/combat'
-import { rollupCombatants, useCombinePetWithOwner, petBadge, isYouRow, type RolledUpEntity } from '../lib/dpsRollup'
+import { useCombinePetWithOwner } from '../lib/dpsRollup'
 import { buildDpsFightSummary } from '../lib/dpsClipboard'
-import { combatantBarColor } from '../lib/combatantColor'
 import { useDPSClassColors } from '../hooks/useDPSClassColors'
-import type { DPSClassColors } from '../types/config'
-import { useDPSMode, dpsForMode, dpsModeAbbrev, dpsModeLabel, fightAggregateDPS, playerAggregateDPS, type DPSMode } from '../hooks/useDPSMode'
+import { useDPSMode, dpsModeAbbrev, dpsModeLabel, fightAggregateDPS, playerAggregateDPS, type DPSMode } from '../hooks/useDPSMode'
 import { useDPSScope, dpsScopeLabel } from '../hooks/useDPSScope'
 import { aggregateRecentFights } from '../lib/rollingWindow'
+import { useDPSBarScale, dpsBarScaleTooltip } from '../hooks/useDPSBarScale'
+import DPSTable, { OVERLAY_THEME } from '../components/overlays/DPSTable'
 import { WSEvent } from '../lib/wsEvents'
 
 // dpsModeIcon picks an icon matching the metric's intuition.
@@ -55,150 +55,8 @@ function fmtDur(secs: number): string {
   return m > 0 ? `${m}m ${s}s` : `${s}s`
 }
 
-function pct(part: number, total: number): string {
-  if (total === 0) return '—'
-  return `${Math.round((part / total) * 100)}%`
-}
-
 function truncateName(name: string, max = 24): string {
   return name.length > max ? `${name.slice(0, max - 1)}…` : name
-}
-
-// ── Row ────────────────────────────────────────────────────────────────────────
-
-function Row({ stat, totalDmg, expanded, onToggle, mode, palette }: { stat: RolledUpEntity; totalDmg: number; expanded: boolean; onToggle: () => void; mode: DPSMode; palette: DPSClassColors }): React.ReactElement {
-  const isYou = isYouRow(stat)
-  const barPct = totalDmg > 0 ? (stat.total_damage / totalDmg) * 100 : 0
-  const hasPets = stat.pets.length > 0
-
-  return (
-    <div>
-      <div
-        onClick={hasPets ? onToggle : undefined}
-        style={{
-          position: 'relative',
-          display: 'grid',
-          gridTemplateColumns: '1fr auto auto auto',
-          gap: '0 8px',
-          padding: '4px 8px',
-          alignItems: 'center',
-          borderBottom: '1px solid rgba(255,255,255,0.06)',
-          overflow: 'hidden',
-          cursor: hasPets ? 'pointer' : 'default',
-        }}
-      >
-        {/* bar */}
-        <div
-          style={{
-            position: 'absolute',
-            left: 0,
-            top: 0,
-            bottom: 0,
-            width: `${barPct}%`,
-            backgroundColor: combatantBarColor(stat.class, palette, 0.28),
-            pointerEvents: 'none',
-          }}
-        />
-        <span
-          style={{
-            fontSize: 12,
-            fontWeight: isYou ? 700 : 400,
-            color: isYou ? '#818cf8' : 'rgba(255,255,255,0.85)',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            position: 'relative',
-          }}
-        >
-          {stat.name}
-          {hasPets && <span style={{ color: 'rgba(255,255,255,0.45)', fontWeight: 400 }}>{petBadge(stat.pets)}</span>}
-        </span>
-        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontVariantNumeric: 'tabular-nums', position: 'relative' }}>
-          {pct(stat.total_damage, totalDmg)}
-        </span>
-        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', fontVariantNumeric: 'tabular-nums', position: 'relative' }}>
-          {fmt(stat.total_damage)}
-        </span>
-        <span style={{ fontSize: 11, color: '#fb923c', fontVariantNumeric: 'tabular-nums', position: 'relative', minWidth: 44, textAlign: 'right' }}>
-          {fmtDPS(dpsForMode(stat, mode))}
-        </span>
-      </div>
-      {hasPets && expanded && stat.pets.map((p) => (
-        <div
-          key={p.name}
-          style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr auto auto auto',
-            gap: '0 8px',
-            padding: '2px 8px 2px 20px',
-            alignItems: 'center',
-            fontSize: 11,
-            color: 'rgba(255,255,255,0.55)',
-          }}
-        >
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>↳ {p.name}</span>
-          <span style={{ color: 'rgba(255,255,255,0.35)', fontVariantNumeric: 'tabular-nums' }}>{pct(p.total_damage, totalDmg)}</span>
-          <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmt(p.total_damage)}</span>
-          <span style={{ color: '#fb923c', fontVariantNumeric: 'tabular-nums', minWidth: 44, textAlign: 'right' }}>{fmtDPS(dpsForMode(p, mode))}</span>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-// ── Fight table ────────────────────────────────────────────────────────────────
-
-function FightTable({ fight, showAll, combine, mode, palette }: { fight: FightState; showAll: boolean; combine: boolean; mode: DPSMode; palette: DPSClassColors }): React.ReactElement {
-  const [expanded, setExpanded] = useState<Set<string>>(new Set())
-  const rolled = rollupCombatants(fight.combatants ?? [], combine, fight.duration_seconds)
-  const rows = showAll ? rolled : rolled.filter(isYouRow)
-  const totalDmg = showAll ? fight.total_damage : fight.you_damage
-
-  return (
-    <div style={{ flex: 1, overflow: 'auto' }}>
-      {/* Header */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr auto auto auto',
-          gap: '0 8px',
-          padding: '3px 8px',
-          fontSize: 9,
-          fontWeight: 700,
-          textTransform: 'uppercase',
-          letterSpacing: '0.06em',
-          color: 'rgba(255,255,255,0.3)',
-          borderBottom: '1px solid rgba(255,255,255,0.08)',
-        }}
-      >
-        <span>Name</span>
-        <span>%</span>
-        <span>Dmg</span>
-        <span style={{ textAlign: 'right' }}>{dpsModeAbbrev(mode)}</span>
-      </div>
-
-      {rows.length === 0 ? (
-        <p style={{ padding: 12, fontSize: 11, color: 'rgba(255,255,255,0.3)', textAlign: 'center', margin: 0 }}>No data</p>
-      ) : (
-        rows.map((s) => (
-          <Row
-            key={s.name}
-            stat={s}
-            totalDmg={totalDmg}
-            mode={mode}
-            palette={palette}
-            expanded={expanded.has(s.name)}
-            onToggle={() => setExpanded((prev) => {
-              const next = new Set(prev)
-              if (next.has(s.name)) next.delete(s.name)
-              else next.add(s.name)
-              return next
-            })}
-          />
-        ))
-      )}
-    </div>
-  )
 }
 
 // ── Page ───────────────────────────────────────────────────────────────────────
@@ -215,6 +73,7 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
   const [combine, setCombine] = useCombinePetWithOwner()
   const { mode: dpsMode, toggle: toggleDPSMode } = useDPSMode()
   const { scope, toggle: toggleScope } = useDPSScope()
+  const { barScale, toggle: toggleBarScale } = useDPSBarScale()
   const [now, setNow] = useState(() => Date.now())
   const [copied, setCopied] = useState(false)
 
@@ -278,7 +137,7 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
   useWebSocket(handleMessage)
 
   // Pooled "last N mobs" fight — a synthetic FightState rendered by the same
-  // FightTable as a real fight. Stable/historical, so no freeze handling.
+  // DPSTable as a real fight. Stable/historical, so no freeze handling.
   const windowMode = scope === 'window'
   const windowFight = useMemo(
     () => aggregateRecentFights(combat?.recent_fights ?? []),
@@ -403,6 +262,22 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
             }}
           >
             <Users size={11} />
+          </button>
+          {/* Bar scale toggle: leader = full bar ↔ share of total. */}
+          <button
+            onClick={toggleBarScale}
+            title={dpsBarScaleTooltip(barScale)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              background: 'none',
+              border: 'none',
+              padding: '1px 3px',
+              cursor: 'pointer',
+              color: barScale === 'leader' ? '#818cf8' : 'rgba(255,255,255,0.4)',
+            }}
+          >
+            {barScale === 'leader' ? <ChartBarDecreasing size={11} /> : <ChartBar size={11} />}
           </button>
           {/* Scope toggle: current fight ↔ pooled last-20-mobs average. */}
           <button
@@ -593,7 +468,15 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
           Connecting…
         </p>
       ) : fight ? (
-        <FightTable fight={fight} showAll={showAll} combine={combine} mode={dpsMode} palette={palette} />
+        <DPSTable
+          fight={fight}
+          showAll={showAll}
+          combine={combine}
+          mode={dpsMode}
+          palette={palette}
+          barScale={barScale}
+          theme={OVERLAY_THEME}
+        />
       ) : (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, opacity: chrome ? 1 : 0, transition: 'opacity 0.4s ease' }}>
           {windowMode ? <History size={24} style={{ opacity: 0.15 }} /> : <Swords size={24} style={{ opacity: 0.15 }} />}

@@ -1,19 +1,20 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Swords, Circle, CheckCircle2, AlertTriangle, ExternalLink, Clipboard, ClipboardCheck, Users, Trash2, Activity, Hourglass, User, History, Crosshair, XCircle } from 'lucide-react'
+import { Swords, Circle, ChartBar, ChartBarDecreasing, CheckCircle2, AlertTriangle, ExternalLink, Clipboard, ClipboardCheck, Users, Trash2, Activity, Hourglass, User, History, Crosshair, XCircle } from 'lucide-react'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { WSEvent } from '../../lib/wsEvents'
 import { getCombatState, getLogStatus, resetCombatState, endActiveFight } from '../../services/api'
 import OverlayWindow from '../OverlayWindow'
 import type { CombatState, FightState } from '../../types/combat'
 import type { LogTailerStatus } from '../../types/logEvent'
-import { rollupCombatants, useCombinePetWithOwner, petBadge, isYouRow, type RolledUpEntity } from '../../lib/dpsRollup'
+import { useCombinePetWithOwner } from '../../lib/dpsRollup'
 import { buildDpsFightSummary } from '../../lib/dpsClipboard'
-import { combatantBarColor } from '../../lib/combatantColor'
 import { useDPSClassColors } from '../../hooks/useDPSClassColors'
 import type { DPSClassColors } from '../../types/config'
-import { useDPSMode, dpsForMode, dpsModeAbbrev, dpsModeLabel, fightAggregateDPS, type DPSMode } from '../../hooks/useDPSMode'
+import { useDPSMode, dpsModeAbbrev, dpsModeLabel, fightAggregateDPS, type DPSMode } from '../../hooks/useDPSMode'
 import { useDPSScope, dpsScopeLabel, type DPSScope } from '../../hooks/useDPSScope'
 import { aggregateRecentFights } from '../../lib/rollingWindow'
+import { useDPSBarScale, dpsBarScaleTooltip, type DPSBarScale } from '../../hooks/useDPSBarScale'
+import DPSTable, { PANEL_THEME } from './DPSTable'
 
 // dpsModeIcon picks an icon for the current DPS mode that matches the
 // metric's intuition: a single User for Personal, Users for Raid, an
@@ -50,10 +51,6 @@ interface DPSPanelProps {
 
 function fmt(n: number): string { return n.toLocaleString() }
 function fmtRate(n: number): string { return n.toFixed(1) }
-function pct(part: number, total: number): string {
-  if (total === 0) return '—'
-  return `${Math.round((part / total) * 100)}%`
-}
 function fmtDuration(secs: number): string {
   const m = Math.floor(secs / 60)
   const s = Math.floor(secs % 60)
@@ -61,14 +58,6 @@ function fmtDuration(secs: number): string {
 }
 function truncateName(name: string, max = 28): string {
   return name.length > max ? `${name.slice(0, max - 1)}…` : name
-}
-
-function rowTooltip(stat: RolledUpEntity): string {
-  const parts = [`${stat.hit_count} hit${stat.hit_count !== 1 ? 's' : ''}`, `max ${fmt(stat.max_hit)}`]
-  if (stat.crit_count > 0) {
-    parts.push(`${stat.crit_count} crit${stat.crit_count !== 1 ? 's' : ''} (${fmt(stat.crit_damage)} dmg)`)
-  }
-  return parts.join(' · ')
 }
 
 function CopyFightButton({ fight, combine, mode }: { fight: FightState | null; combine: boolean; mode: DPSMode }): React.ReactElement {
@@ -233,115 +222,17 @@ function WindowStrip({ fight, mode }: { fight: FightState | null; mode: DPSMode 
   )
 }
 
-function ColHeaders(): React.ReactElement {
+function DPSContent({ fight, showAll, combine, mode, palette, barScale }: { fight: FightState; showAll: boolean; combine: boolean; mode: DPSMode; palette: DPSClassColors; barScale: DPSBarScale }): React.ReactElement {
   return (
-    <div
-      style={{
-        display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: '0 10px',
-        padding: '4px 10px', fontSize: 10, fontWeight: 600,
-        textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-muted)',
-        borderBottom: '1px solid var(--color-border)', flexShrink: 0,
-      }}
-    >
-      <span>Name</span>
-      <span>%</span>
-      <span>Dmg</span>
-      <span style={{ textAlign: 'right' }}>DPS</span>
-    </div>
-  )
-}
-
-function DPSRow({ stat, totalDamage, isYou, expanded, onToggle, mode, palette }: { stat: RolledUpEntity; totalDamage: number; isYou: boolean; expanded: boolean; onToggle: () => void; mode: DPSMode; palette: DPSClassColors }): React.ReactElement {
-  const barPct = totalDamage > 0 ? (stat.total_damage / totalDamage) * 100 : 0
-  const hasPets = stat.pets.length > 0
-  // flexShrink: 0 keeps each row at its natural height when the parent flex
-  // column overflows — without it the column flex algorithm squeezes rows to
-  // fit, making text and bars look tiny in raid-sized fights.
-  return (
-    <div style={{ flexShrink: 0 }}>
-      <div
-        onClick={hasPets ? onToggle : undefined}
-        title={rowTooltip(stat)}
-        style={{
-          position: 'relative', padding: '5px 10px',
-          display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: '0 10px',
-          alignItems: 'center', borderBottom: '1px solid var(--color-border)', overflow: 'hidden',
-          cursor: hasPets ? 'pointer' : 'default',
-        }}
-      >
-        <div
-          style={{
-            position: 'absolute', left: 0, top: 0, bottom: 0,
-            width: `${barPct}%`,
-            backgroundColor: combatantBarColor(stat.class, palette),
-            pointerEvents: 'none',
-          }}
-        />
-        <span style={{ fontSize: 12, fontWeight: isYou ? 600 : 400, color: isYou ? 'var(--color-primary)' : 'var(--color-foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', position: 'relative' }}>
-          {stat.name}
-          {hasPets && <span style={{ color: 'var(--color-muted)', fontWeight: 400 }}>{petBadge(stat.pets)}</span>}
-        </span>
-        <span style={{ fontSize: 11, color: 'var(--color-muted)', fontVariantNumeric: 'tabular-nums', position: 'relative' }}>{pct(stat.total_damage, totalDamage)}</span>
-        <span style={{ fontSize: 11, color: 'var(--color-foreground)', fontVariantNumeric: 'tabular-nums', position: 'relative' }}>{fmt(stat.total_damage)}</span>
-        <span style={{ fontSize: 11, color: '#f97316', fontVariantNumeric: 'tabular-nums', position: 'relative', minWidth: 44, textAlign: 'right' }}>{fmtRate(dpsForMode(stat, mode))}</span>
-      </div>
-      {hasPets && expanded && (
-        <div style={{ borderBottom: '1px solid var(--color-border)' }}>
-          {stat.pets.map((p) => (
-            <div
-              key={p.name}
-              style={{
-                padding: '3px 10px 3px 22px',
-                display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: '0 10px',
-                alignItems: 'center', fontSize: 11,
-                color: 'var(--color-muted-foreground)',
-              }}
-            >
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>↳ {p.name}</span>
-              <span style={{ color: 'var(--color-muted)', fontVariantNumeric: 'tabular-nums' }}>{pct(p.total_damage, totalDamage)}</span>
-              <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmt(p.total_damage)}</span>
-              <span style={{ color: '#f97316', fontVariantNumeric: 'tabular-nums', minWidth: 44, textAlign: 'right' }}>{fmtRate(dpsForMode(p, mode))}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function DPSContent({ fight, showAll, combine, mode, palette }: { fight: FightState; showAll: boolean; combine: boolean; mode: DPSMode; palette: DPSClassColors }): React.ReactElement {
-  const [expanded, setExpanded] = useState<Set<string>>(new Set())
-  const rolled = rollupCombatants(fight.combatants ?? [], combine, fight.duration_seconds)
-  const rows = showAll ? rolled : rolled.filter(isYouRow)
-  const totalDmg = showAll ? fight.total_damage : fight.you_damage
-  // min-height: 0 lets this flex child honor its allocated height instead of
-  // growing to fit all rows (default min-height: auto on flex items), so
-  // overflow: auto actually scrolls when there are many combatants.
-  return (
-    <div style={{ flex: 1, minHeight: 0, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
-      <ColHeaders />
-      {rows.length === 0 ? (
-        <div style={{ padding: '16px 10px', fontSize: 12, color: 'var(--color-muted)', textAlign: 'center' }}>No damage data</div>
-      ) : (
-        rows.map((s) => (
-          <DPSRow
-            key={s.name}
-            stat={s}
-            totalDamage={totalDmg}
-            isYou={isYouRow(s)}
-            mode={mode}
-            palette={palette}
-            expanded={expanded.has(s.name)}
-            onToggle={() => setExpanded((prev) => {
-              const next = new Set(prev)
-              if (next.has(s.name)) next.delete(s.name)
-              else next.add(s.name)
-              return next
-            })}
-          />
-        ))
-      )}
-    </div>
+    <DPSTable
+      fight={fight}
+      showAll={showAll}
+      combine={combine}
+      mode={mode}
+      palette={palette}
+      barScale={barScale}
+      theme={PANEL_THEME}
+    />
   )
 }
 
@@ -419,6 +310,7 @@ export default function DPSPanel({
   const [combine, setCombine] = useCombinePetWithOwner()
   const { mode: dpsMode, toggle: toggleDPSMode } = useDPSMode()
   const { scope, toggle: toggleScope } = useDPSScope()
+  const { barScale, toggle: toggleBarScale } = useDPSBarScale()
   const [now, setNow] = useState(() => Date.now())
   const palette = useDPSClassColors()
 
@@ -475,6 +367,17 @@ export default function DPSPanel({
             }}
           >
             <Users size={12} />
+          </button>
+          <button
+            onClick={toggleBarScale}
+            title={dpsBarScaleTooltip(barScale)}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              padding: '1px 3px', display: 'flex', alignItems: 'center',
+              color: barScale === 'leader' ? 'var(--color-primary)' : 'var(--color-muted)',
+            }}
+          >
+            {barScale === 'leader' ? <ChartBarDecreasing size={12} /> : <ChartBar size={12} />}
           </button>
           <ScopeButton scope={scope} onToggle={toggleScope} />
           <button
@@ -553,7 +456,7 @@ export default function DPSPanel({
             <>
               <WindowStrip fight={windowFight} mode={dpsMode} />
               {windowFight ? (
-                <DPSContent fight={windowFight} showAll={showAll} combine={combine} mode={dpsMode} palette={palette} />
+                <DPSContent fight={windowFight} showAll={showAll} combine={combine} mode={dpsMode} palette={palette} barScale={barScale} />
               ) : (
                 <NoWindowData />
               )}
@@ -562,7 +465,7 @@ export default function DPSPanel({
             <>
               <CombatStrip combat={combat} now={now} mode={dpsMode} />
               {combat.in_combat && combat.current_fight ? (
-                <DPSContent fight={combat.current_fight} showAll={showAll} combine={combine} mode={dpsMode} palette={palette} />
+                <DPSContent fight={combat.current_fight} showAll={showAll} combine={combine} mode={dpsMode} palette={palette} barScale={barScale} />
               ) : (
                 <NotInCombat />
               )}
