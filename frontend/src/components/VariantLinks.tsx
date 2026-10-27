@@ -1,5 +1,5 @@
 import React from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useAppNavigate } from '../hooks/useAppNavigate'
 
 // VariantLinks surfaces the same-name duplicate rows that the item/spell lists
 // collapse away. The game data ships several rows per name with different ids;
@@ -19,7 +19,7 @@ export default function VariantLinks({
   variantIds,
   canonicalId,
 }: VariantLinksProps): React.ReactElement | null {
-  const navigate = useNavigate()
+  const navigate = useAppNavigate()
   const variants = variantIds ?? []
   const isVariant = !!canonicalId && canonicalId > 0
   // On a variant's detail, the sibling list includes the canonical id; pull it

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useAppNavigate } from '../hooks/useAppNavigate'
 import { ChevronDown, ChevronRight, Hammer, Check, Map as MapIcon } from 'lucide-react'
 import { getRecipe, getItemSources } from '../services/api'
 import { tradeskillLabel } from '../lib/enumsCache'
@@ -122,7 +122,7 @@ interface EntryRowProps {
 // One container/component/product line. Components that are themselves craftable
 // can be expanded in place to reveal the sub-recipe that produces them.
 function EntryRow({ entry, depth, onNavigate, holdingsMap }: EntryRowProps): React.ReactElement {
-  const navigate = useNavigate()
+  const navigate = useAppNavigate()
   const [expanded, setExpanded] = useState(false)
   const [sub, setSub] = useState<RecipeDetail | null>(null)
   const [choices, setChoices] = useState<ItemTradeskillEntry[] | null>(null)
@@ -432,7 +432,7 @@ interface RecipeRowProps {
 // discipline, trivial, a favorite star and a link into the recipe browser. On
 // expand it lazily fetches the full recipe and renders its ingredients.
 function RecipeRow({ entry, onNavigate }: RecipeRowProps): React.ReactElement {
-  const navigate = useNavigate()
+  const navigate = useAppNavigate()
   const [expanded, setExpanded] = useState(false)
   const [recipe, setRecipe] = useState<RecipeDetail | null>(null)
   const [loading, setLoading] = useState(false)

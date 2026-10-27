@@ -5,7 +5,7 @@
  * the SpellHoverCard quick view.
  */
 import React from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useAppNavigate } from '../hooks/useAppNavigate'
 import SpellHoverCard from './SpellHoverCard'
 
 export default function SpellEffectRow({
@@ -19,7 +19,7 @@ export default function SpellEffectRow({
   /** Worn/focus effects: hover card shows only the EFFECTS section. */
   effectsOnly?: boolean
 }): React.ReactElement {
-  const navigate = useNavigate()
+  const navigate = useAppNavigate()
   return (
     <div className="flex justify-between gap-3 py-0.5 text-sm">
       <span className="shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>{label}</span>

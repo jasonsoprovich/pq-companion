@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useAppNavigate } from '../hooks/useAppNavigate'
 import type { ItemSourceNPC } from '../types/item'
 import { formatNPCName } from './SourceNPCLink'
 import { NPCZoneLinks, sourceNPCZones } from './NPCZoneLinks'
@@ -35,7 +35,7 @@ export function SourceNPCTable({
   showLootLevel,
   defaultSort,
 }: SourceNPCTableProps): React.ReactElement {
-  const navigate = useNavigate()
+  const navigate = useAppNavigate()
   const [sort, setSort] = useState<SortState>(
     defaultSort ?? { key: 'zone', dir: 'asc' },
   )

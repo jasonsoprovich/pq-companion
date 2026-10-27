@@ -1,5 +1,5 @@
 import React from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useAppNavigate } from '../hooks/useAppNavigate'
 import QuestWalkthrough from './QuestWalkthrough'
 import type { ItemQuests, ItemQuestRef, ItemRef } from '../types/item'
 
@@ -20,7 +20,7 @@ function ZoneLink({
   name: string
   onNavigate?: () => void
 }): React.ReactElement {
-  const navigate = useNavigate()
+  const navigate = useAppNavigate()
   return (
     <button
       onClick={() => {
@@ -42,7 +42,7 @@ function ItemLinks({
   items: ItemRef[]
   onNavigate?: () => void
 }): React.ReactElement {
-  const navigate = useNavigate()
+  const navigate = useAppNavigate()
   return (
     <>
       {items.map((it, i) => (
