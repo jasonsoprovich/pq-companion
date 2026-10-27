@@ -30,6 +30,10 @@ export const WSEvent = {
   // counter state (killtracker.CountersState) whenever any counter changes.
   KillsNew: 'kills:new',
   KillCounters: 'killcounters:state',
+  // Item Info overlay: an in-game item window was opened (proposed Zeal item
+  // pipe message, or the developer simulate endpoint) — carries
+  // itemdisplay.Shown {item_id, name, character, at, simulated}.
+  ItemDisplay: 'item:display',
   // Broadcast when the active character zones — carries {name, last_zone,
   // last_zone_at} so the Characters page can update its "Camped in …" line.
   CharacterZone: 'character:zone',

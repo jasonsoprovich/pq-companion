@@ -347,7 +347,7 @@ function audioMimeType(ext: string): string {
 
 // ── Overlay bounds persistence ────────────────────────────────────────────────
 
-type OverlayName = 'dps' | 'hps' | 'buffTimer' | 'detrimTimer' | 'customTimer' | 'trigger' | 'npc' | 'threat' | 'rollTracker' | 'respawnTimer' | 'chChain' | 'chMetronome' | 'discordVoice' | 'liveMap' | 'zoneLockouts' | 'raidReadiness' | 'filteredTimer' | 'killCounter'
+type OverlayName = 'dps' | 'hps' | 'buffTimer' | 'detrimTimer' | 'customTimer' | 'trigger' | 'npc' | 'threat' | 'rollTracker' | 'respawnTimer' | 'chChain' | 'chMetronome' | 'discordVoice' | 'liveMap' | 'zoneLockouts' | 'raidReadiness' | 'filteredTimer' | 'killCounter' | 'itemInfo'
 type Bounds = { x: number; y: number; width: number; height: number }
 
 // A window's identity for bounds/lock persistence and the generic per-window
@@ -389,6 +389,7 @@ const OVERLAY_DEFAULTS: Record<Exclude<OverlayName, 'trigger'>, Bounds> = {
   raidReadiness: { x: 0, y: 0, width: 280, height: 260 },
   filteredTimer: { x: 0, y: 0, width: 300, height: 380 },
   killCounter: { x: 0, y: 0, width: 280, height: 220 },
+  itemInfo: { x: 0, y: 0, width: 380, height: 460 },
 }
 
 function boundsFilePath(): string {
@@ -870,6 +871,7 @@ let hpsOverlayWindow: BrowserWindow | null = null
 let buffTimerWindow: BrowserWindow | null = null
 let filteredTimerWindow: BrowserWindow | null = null
 let killCounterWindow: BrowserWindow | null = null
+let itemInfoWindow: BrowserWindow | null = null
 let chChainWindow: BrowserWindow | null = null
 let chMetronomeWindow: BrowserWindow | null = null
 let liveMapWindow: BrowserWindow | null = null
@@ -1696,6 +1698,59 @@ function createKillCounterOverlay(): void {
 
   killCounterWindow.on('closed', () => {
     killCounterWindow = null
+  })
+}
+
+function createItemInfoOverlay(): void {
+  if (itemInfoWindow && !itemInfoWindow.isDestroyed()) {
+    itemInfoWindow.focus()
+    return
+  }
+
+  const { x, y, width, height } = getRestoredBounds('itemInfo', OVERLAY_DEFAULTS.itemInfo)
+  itemInfoWindow = new BrowserWindow({
+    x,
+    y,
+    width,
+    height,
+    minWidth: 260,
+    minHeight: 160,
+    transparent: true,
+    backgroundColor: '#00000000',
+    frame: false,
+    resizable: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    hasShadow: false,
+    show: false, // show after ready-to-show to avoid blank-frame flash
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    },
+  })
+
+  itemInfoWindow.once('ready-to-show', () => {
+    itemInfoWindow?.show()
+  })
+
+  itemInfoWindow.setAlwaysOnTop(true, 'screen-saver')
+  itemInfoWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  windowToOverlayName.set(itemInfoWindow, 'itemInfo')
+  applyInitialOverlayInput(itemInfoWindow, 'itemInfo')
+  trackOverlayBounds('itemInfo', itemInfoWindow)
+
+  if (isDev) {
+    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
+    itemInfoWindow.loadURL(`${rendererUrl}/#/item-info-window`)
+  } else {
+    itemInfoWindow.loadFile(join(__dirname, '../renderer/index.html'), {
+      hash: '/item-info-window',
+    })
+  }
+
+  itemInfoWindow.on('closed', () => {
+    itemInfoWindow = null
   })
 }
 
@@ -2855,6 +2910,28 @@ ipcMain.handle('overlay:chchain:open', () => {
   createCHChainOverlay()
 })
 
+ipcMain.handle('overlay:iteminfo:open', () => {
+  createItemInfoOverlay()
+})
+
+ipcMain.handle('overlay:iteminfo:close', () => {
+  if (itemInfoWindow && !itemInfoWindow.isDestroyed()) {
+    itemInfoWindow.close()
+  }
+})
+
+ipcMain.handle('overlay:iteminfo:toggle', () => {
+  if (itemInfoWindow && !itemInfoWindow.isDestroyed()) {
+    itemInfoWindow.close()
+  } else {
+    createItemInfoOverlay()
+  }
+})
+
+ipcMain.handle('overlay:chchain:open', () => {
+  createCHChainOverlay()
+})
+
 ipcMain.handle('overlay:chchain:close', () => {
   if (chChainWindow && !chChainWindow.isDestroyed()) {
     chChainWindow.close()
@@ -3259,6 +3336,7 @@ function userPopoutWindows(): BrowserWindow[] {
     raidReadinessWindow,
     filteredTimerWindow,
     killCounterWindow,
+    itemInfoWindow,
   ].filter((w): w is BrowserWindow => !!w && !w.isDestroyed())
   return [...fixed, ...customTimerGroupWindows.values()].filter((w) => !w.isDestroyed())
 }
@@ -3304,6 +3382,7 @@ ipcMain.handle('overlay:popouts:open-all', (_event, panels?: PopoutRequestEntry[
   if (wants('raidReadiness') && (!raidReadinessWindow || raidReadinessWindow.isDestroyed())) createRaidReadinessOverlay()
   if (wants('filtered') && (!filteredTimerWindow || filteredTimerWindow.isDestroyed())) createFilteredTimerOverlay()
   if (wants('kills') && (!killCounterWindow || killCounterWindow.isDestroyed())) createKillCounterOverlay()
+  if (wants('itemInfo') && (!itemInfoWindow || itemInfoWindow.isDestroyed())) createItemInfoOverlay()
   for (const g of groupWants) {
     const win = customTimerGroupWindows.get(g.id)
     if (!win || win.isDestroyed()) createCustomTimerGroupOverlay(g.id, g.name)
@@ -3401,6 +3480,7 @@ function overlayWindowByName(name: WindowKey): BrowserWindow | null {
     case 'raidReadiness': return raidReadinessWindow
     case 'filteredTimer': return filteredTimerWindow
     case 'killCounter': return killCounterWindow
+    case 'itemInfo': return itemInfoWindow
     default: return null
   }
 }
@@ -3426,6 +3506,7 @@ function createOverlayByName(name: OverlayName): void {
     case 'raidReadiness': createRaidReadinessOverlay(); break
     case 'filteredTimer': createFilteredTimerOverlay(); break
     case 'killCounter': createKillCounterOverlay(); break
+    case 'itemInfo': createItemInfoOverlay(); break
     default: break
   }
 }

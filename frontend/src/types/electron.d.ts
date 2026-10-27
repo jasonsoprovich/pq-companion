@@ -52,6 +52,9 @@ export interface ElectronAPI {
     openKillCounter: () => Promise<void>
     closeKillCounter: () => Promise<void>
     toggleKillCounter: () => Promise<void>
+    openItemInfo: () => Promise<void>
+    closeItemInfo: () => Promise<void>
+    toggleItemInfo: () => Promise<void>
     openCHChain: () => Promise<void>
     closeCHChain: () => Promise<void>
     toggleCHChain: () => Promise<void>

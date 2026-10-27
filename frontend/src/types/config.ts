@@ -367,6 +367,10 @@ export interface Preferences {
   // Saved Discord incoming webhooks, referenced by id from trigger
   // discord_webhook actions. See DiscordWebhook.
   discord_webhooks?: DiscordWebhook[]
+  // Set by the backend the first time Zeal sends an item display pipe event
+  // (a proposed Zeal message, not yet released). Reveals the Item Info
+  // overlay; never edited by the user.
+  zeal_item_display_seen?: boolean
 }
 
 export interface BackupSettings {

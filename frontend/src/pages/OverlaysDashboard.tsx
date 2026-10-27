@@ -16,6 +16,7 @@ import type { OverlayName } from '../lib/overlays'
 import BuffTimerPanel from '../components/overlays/BuffTimerPanel'
 import FilteredTimerPanel from '../components/overlays/FilteredTimerPanel'
 import KillCounterPanel from '../components/overlays/KillCounterPanel'
+import ItemInfoPanel from '../components/overlays/ItemInfoPanel'
 import DetrimTimerPanel from '../components/overlays/DetrimTimerPanel'
 import DPSPanel from '../components/overlays/DPSPanel'
 import HPSPanel from '../components/overlays/HPSPanel'
@@ -34,6 +35,7 @@ import { ConfirmModal } from '../components/ConfirmModal'
 import TimerGroupsModal from '../components/TimerGroupsModal'
 import { clearTimers, listTimerGroups, getConfig } from '../services/api'
 import { useWebSocket } from '../hooks/useWebSocket'
+import { useItemInfoOffered } from '../hooks/useItemDisplay'
 import { WSEvent } from '../lib/wsEvents'
 import type { TimerGroup } from '../types/trigger'
 import {
@@ -87,6 +89,7 @@ const PANEL_POPOUT: Record<DashboardPanelKey, { name: OverlayName; toggle: () =>
   raidReadiness: { name: 'raidReadiness', toggle: () => { window.electron?.overlay?.toggleRaidReadiness() } },
   filtered:    { name: 'filteredTimer', toggle: () => { window.electron?.overlay?.toggleFilteredTimer() } },
   kills:       { name: 'killCounter',  toggle: () => { window.electron?.overlay?.toggleKillCounter() } },
+  itemInfo:    { name: 'itemInfo',     toggle: () => { window.electron?.overlay?.toggleItemInfo() } },
 }
 
 // Compact square icon button for the manager's per-overlay rows.
@@ -438,15 +441,20 @@ export default function OverlaysDashboard(): React.ReactElement {
     ),
   )
 
+  // Item Info stays out of the dashboard until Zeal has sent an item display
+  // event (or Developer Mode is on) — see itemInfoOffered.
+  const itemInfoOffered = useItemInfoOffered()
+
   // Panel keys actually offered in the UI: hps is gated by SHOW_HPS_PANEL
   // (shared with the sidebar's pop-out-all toggle); discordVoice is gated by
-  // the setting above; the rest (including Raid Readiness and the Threat
-  // Meter) are always available.
+  // the setting above; itemInfo by Zeal support; the rest (including Raid
+  // Readiness and the Threat Meter) are always available.
   const visiblePanelKeys = useMemo(() => {
     let keys = VISIBLE_DASHBOARD_PANEL_KEYS
     if (!discordVoiceEnabled) keys = keys.filter((k) => k !== 'discordVoice')
+    if (!itemInfoOffered) keys = keys.filter((k) => k !== 'itemInfo')
     return keys
-  }, [discordVoiceEnabled])
+  }, [discordVoiceEnabled, itemInfoOffered])
 
   useEffect(() => {
     saveDashboardLayout(layout)
@@ -837,6 +845,17 @@ export default function OverlaysDashboard(): React.ReactElement {
             defaultHeight={layout.kills.height}
             snapGridSize={SNAP_GRID}
             onLayoutChange={handleLayoutChange('kills')}
+          />
+        )}
+        {layout.itemInfo.visible && itemInfoOffered && (
+          <ItemInfoPanel
+            key={`itemInfo-${layoutVersion}`}
+            defaultX={layout.itemInfo.x}
+            defaultY={layout.itemInfo.y}
+            defaultWidth={layout.itemInfo.width}
+            defaultHeight={layout.itemInfo.height}
+            snapGridSize={SNAP_GRID}
+            onLayoutChange={handleLayoutChange('itemInfo')}
           />
         )}
         {layout.detrim.visible && (

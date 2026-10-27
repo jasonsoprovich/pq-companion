@@ -1,6 +1,6 @@
 import type { Config } from '../types/config'
 import type { BlockedBuffEntry, BlockedBuffsView } from '../types/blockbuff'
-import type { Item, ItemSources, ItemQuests, QuestSummary, SearchResult, ItemShoppingRoute, ItemShoppingRouteOptions } from '../types/item'
+import type { Item, ItemSources, ItemQuests, QuestSummary, SearchResult, ItemShoppingRoute, ItemShoppingRouteOptions, ItemDisplayShown } from '../types/item'
 import type { NPC, NPCSpawns, NPCLootTable, NPCFaction, NPCSpells, NPCMerchant, PatrolRoute } from '../types/npc'
 import type {
   MapStatus, MapZone, MapZoneDetail, MapGeometry, UserAnnotation,
@@ -266,6 +266,16 @@ export function searchItems(
 
 export function getItem(id: number): Promise<Item> {
   return get<Item>(`/api/items/${id}`)
+}
+
+// Item Info overlay: the item last opened in game (null before the first
+// item window), and the developer tool that fakes one.
+export function getLastItemDisplay(): Promise<ItemDisplayShown | null> {
+  return get<ItemDisplayShown | null>('/api/item-display/last')
+}
+
+export function simulateItemDisplay(itemId: number): Promise<ItemDisplayShown> {
+  return post<ItemDisplayShown>('/api/item-display/simulate', { item_id: itemId })
 }
 
 export function getItemSources(id: number): Promise<ItemSources> {

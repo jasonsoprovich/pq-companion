@@ -29,6 +29,7 @@ export type OverlayName =
   | 'raidReadiness'
   | 'filteredTimer'
   | 'killCounter'
+  | 'itemInfo'
 
 /**
  * How an overlay behaves while locked.
@@ -74,6 +75,14 @@ const OVERLAY_DEFAULT_LOCKED_MODE: Partial<Record<OverlayName, LockedMode>> = {
   killCounter: 'clickthrough',
 }
 
+// The Item Info overlay runs on a proposed Zeal item pipe message that no
+// released Zeal sends yet, so it's offered only once the backend has seen one
+// (zeal_item_display_seen) — or in Developer Mode, to build it against the
+// simulate endpoint. Until then it's absent from Settings and the dashboard.
+export function itemInfoOffered(prefs: { zeal_item_display_seen?: boolean; developer_mode?: boolean }): boolean {
+  return Boolean(prefs.zeal_item_display_seen || prefs.developer_mode)
+}
+
 export const OVERLAY_DEFS: { name: OverlayName; label: string }[] = [
   { name: 'dps', label: 'DPS Meter' },
   { name: 'hps', label: 'HPS Meter' },
@@ -92,6 +101,7 @@ export const OVERLAY_DEFS: { name: OverlayName; label: string }[] = [
   { name: 'zoneLockouts', label: 'Zone Lockouts' },
   { name: 'raidReadiness', label: 'Raid Readiness' },
   { name: 'killCounter', label: 'Kill Counters' },
+  { name: 'itemInfo', label: 'Item Info' },
 ]
 
 // Matches a StreamKit voice-overlay URL, e.g.

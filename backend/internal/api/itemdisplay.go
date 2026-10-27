@@ -16,15 +16,10 @@ type itemDisplayHandler struct {
 }
 
 // last handles GET /api/item-display/last — the item most recently opened in
-// game, so a freshly opened Item Info overlay has something to show. Responds
-// 204 before the first event.
+// game, so a freshly opened Item Info overlay has something to show. The body
+// is null before the first event.
 func (h *itemDisplayHandler) last(w http.ResponseWriter, r *http.Request) {
-	s := h.tracker.Last()
-	if s == nil {
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-	writeJSON(w, http.StatusOK, s)
+	writeJSON(w, http.StatusOK, h.tracker.Last())
 }
 
 // simulate handles POST /api/item-display/simulate {"item_id": N} — a

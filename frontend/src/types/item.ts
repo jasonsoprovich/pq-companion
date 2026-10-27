@@ -262,3 +262,13 @@ export interface ItemShoppingRouteOptions {
   startZone?: string
   excludeZones?: string[]
 }
+
+// One in-game item window opened, from the Zeal item pipe message — mirrors
+// Go itemdisplay.Shown. simulated marks the developer simulate endpoint.
+export interface ItemDisplayShown {
+  item_id: number
+  name: string
+  character?: string
+  at: string
+  simulated?: boolean
+}

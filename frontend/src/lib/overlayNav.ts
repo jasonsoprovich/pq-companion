@@ -17,3 +17,9 @@ const ROUTE: Record<EntityKind, string> = {
 export function openEntityInMain(kind: EntityKind, id: number | string): void {
   void window.electron?.app?.navigateMain?.(`${ROUTE[kind]}?select=${id}`)
 }
+
+// Same as openEntityInMain, for any app route (e.g. '/recipes?select=12').
+// Used as the AppNavigateContext handler in overlay windows.
+export function openRouteInMain(route: string): void {
+  void window.electron?.app?.navigateMain?.(route)
+}
