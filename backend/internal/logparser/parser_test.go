@@ -833,6 +833,34 @@ func TestParseLine(t *testing.T) {
 			},
 		},
 
+		{
+			name:     "con: glowers at you (dubious, real Quarm wording)",
+			line:     "[Mon Apr 13 06:00:00 2026] Tiam Khonsir glowers at you dubiously -- what would you like your tombstone to say?",
+			wantOK:   true,
+			wantType: EventConsidered,
+			wantData: ConsideredData{
+				TargetName: "Tiam Khonsir", Disposition: "glowers at you dubiously", Bucket: BucketDubious,
+			},
+		},
+		{
+			name:     "con: kindly considers you",
+			line:     "[Mon Apr 13 06:00:00 2026] a Gem Chopper guard kindly considers you -- looks like an even fight.",
+			wantOK:   true,
+			wantType: EventConsidered,
+			wantData: ConsideredData{
+				TargetName: "a Gem Chopper guard", Disposition: "kindly considers you", Bucket: BucketKindly,
+			},
+		},
+		{
+			name:     "con: looks upon you warmly",
+			line:     "[Mon Apr 13 06:00:00 2026] a Gem Chopper guard looks upon you warmly -- You could probably win this fight.",
+			wantOK:   true,
+			wantType: EventConsidered,
+			wantData: ConsideredData{
+				TargetName: "a Gem Chopper guard", Disposition: "looks upon you warmly", Bucket: BucketWarmly,
+			},
+		},
+
 		// --- /who entries ---
 		{
 			name:     "who: named with race and guild",

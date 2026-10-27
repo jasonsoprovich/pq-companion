@@ -169,19 +169,25 @@ var (
 	reVerifiedPlayerTell = regexp.MustCompile(`^(\w+) tells (?:the guild|the raid|the group|you|fellowship|out of character|auction|shout),`)
 
 	// /con output — EQ's consider system. The NPC name precedes a fixed set of
-	// disposition phrases. Ordered longest-first so "warmly regards you" and
-	// "kindly regards you" are tried before the shorter "regards you".
-	// "looks at you" covers dubious faction ("...looks at you dubiously --
-	// what would you like your tombstone to say?"), which is the message
-	// shown once an NPC's faction softens from KOS but is still hostile.
+	// disposition phrases. Project Quarm's actual wording, per bucket:
+	//   ally "regards you as an ally", warmly "looks upon you warmly",
+	//   kindly "kindly considers you", amiable "judges you amiably",
+	//   indifferent "regards you indifferently", apprehensive "looks your
+	//   way apprehensively", dubious "glowers at you dubiously",
+	//   threatening "glares at you threateningly", scowling "scowls at you,
+	//   ready to attack".
+	// Multi-word phrases whose first word is the bucket adverb ("kindly
+	// considers you") must be listed explicitly, or the lazy name group
+	// swallows the adverb and the clause loses its bucket keyword. The
+	// remaining alternatives are older guesses kept for safety.
 	// Group 2 captures the disposition clause itself (verb phrase + any
 	// trailing adverb, e.g. "regards you indifferently" or "regards you as
 	// an ally") up to the " -- " flavor-text delimiter or the closing
 	// period, so classifyConsiderBucket can classify it. Examples:
 	//   "a grimling cadaverist regards you as an ally."
 	//   "a gnoll scowls at you, ready to attack -- what would you like your tombstone to say?"
-	//   "an Icepaw cleric looks at you dubiously -- what would you like your tombstone to say?"
-	reConsider = regexp.MustCompile(`^(.+?) ((?:scowls at you|glares at you|looks at you|looks your way|looks upon you|judges you|warmly regards you|kindly regards you|regards you|considers you)[^-]*?)\s*(?:--.*)?\.?$`)
+	//   "Tiam Khonsir glowers at you dubiously -- what would you like your tombstone to say?"
+	reConsider = regexp.MustCompile(`^(.+?) ((?:scowls at you|glares at you|glowers at you|looks at you|looks your way|looks upon you|judges you|warmly regards you|kindly regards you|kindly considers you|regards you|considers you)[^-]*?)\s*(?:--.*)?\.?$`)
 
 	// Combat — dodge/parry/riposte/block by player:
 	// "You dodge a gnoll's attack!"
@@ -1079,10 +1085,9 @@ func CanonicalNPCName(name string) string {
 // classifyConsiderBucket maps a /con disposition clause (reConsider's group 2)
 // to one of the nine classic EQ faction buckets via keyword match,
 // best-effort. Confirmed against real Project Quarm session logs: scowling,
-// threatening, dubious, indifferent, ally. Apprehensive/amiable/kindly/warmly
-// are inferred from the regex's own phrase alternatives and standard EQ
-// classic wording — not yet observed in a captured log line, so treat those
-// four as unverified. Returns "" when the clause matches no known keyword.
+// threatening, dubious, apprehensive, indifferent, amiable, warmly. Kindly
+// and ally follow standard EQ classic wording but haven't been observed in a
+// captured log line yet. Returns "" when the clause matches no known keyword.
 func classifyConsiderBucket(clause string) FactionBucket {
 	low := strings.ToLower(clause)
 	switch {
