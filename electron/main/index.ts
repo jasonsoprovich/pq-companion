@@ -2928,10 +2928,6 @@ ipcMain.handle('overlay:iteminfo:toggle', () => {
   }
 })
 
-ipcMain.handle('overlay:chchain:open', () => {
-  createCHChainOverlay()
-})
-
 ipcMain.handle('overlay:chchain:close', () => {
   if (chChainWindow && !chChainWindow.isDestroyed()) {
     chChainWindow.close()
