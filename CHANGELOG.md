@@ -9,6 +9,17 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.31.1 — 2026-10-28
+
+Game data from the latest Project Quarm database, a Stone Ring kill counter that follows the reworked event, more charm timers for druids and necromancers, and a PoP Flags grid that drops deleted characters.
+
+### Fixes
+- **Updated game data** — the database now matches Project Quarm's October 25 update, including the Justice Fruit and Habanero Pepper ground spawns, the Hope Stone drop rate raised to 25%, Priest of Duplicity in the Bazaar, Maelin's Planar Concotion, and the Putrescent Blood drops in Torment. Later fixes to Obsidianwood Sap, elemental essence and Ossein/Obsidian Battle Sword icons are included too.
+- **Stone Ring kill counter stopped working** — the reworked Stone Ring event uses new emotes, so the preset's clock, fortification and heap resyncs, and wave reset never fired. The preset now matches the new text (the old text still works), and a failed event resets both counters. Counters you already installed update automatically unless you edited the patterns yourself.
+- **Druid and necromancer charm timers** — the druid pack only timed Command of Tunare. It now has an Animal Charm timer covering Befriend Animal, Charm Animals, Beguile Plants, Beguile Animals, Allure of the Wild, Call of Karana and Tunare's Request. The necromancer Undead Charm timer adds Dominate, Beguile and Cajole Undead and Enslave Death.
+- **Boltran's Agacerie duration** — the enchanter timer ran 19 minutes because it used the wrong spell. It now uses the 7-minute duration of the spell enchanters actually scribe.
+- **Deleted characters stayed in PoP Flags** — a deleted character still showed in the All Characters grid, and clicking it opened another character's flags. The grid now lists only your current characters. Re-adding a character brings back its saved progress.
+
 ## v0.31.0 — 2026-10-27
 
 Filter spell search by target type, resist, school and effect, try what-if gear and AA loadouts in Test Resolution, and read raid-sized DPS parses more easily. Kept-expired timers now have adjustable linger times, and several fixes cover the zone drops filter, the Gear Upgrade Finder focus picker, Faction Tracker cons and the Roll Tracker.
