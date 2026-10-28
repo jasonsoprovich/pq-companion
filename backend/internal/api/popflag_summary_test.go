@@ -31,11 +31,11 @@ func newPopflagSummaryRouter(t *testing.T) (*chi.Mux, *popflag.Store, *character
 	return r, ps, cs
 }
 
-func TestPopflagSummaryUnionAndHidden(t *testing.T) {
+func TestPopflagSummaryProfilesAndHidden(t *testing.T) {
 	r, ps, cs := newPopflagSummaryRouter(t)
 
 	// Alpha: stored character with a flag. Bravo: stored character, no flags.
-	// Charlie: flag rows only (not in the character store). Delta: hidden.
+	// Charlie: flag rows only (a deleted profile). Delta: hidden.
 	for _, n := range []string{"Alpha", "Bravo", "Delta"} {
 		if _, err := cs.Create(n, 1, 1, 60); err != nil {
 			t.Fatalf("Create %s: %v", n, err)
@@ -65,9 +65,10 @@ func TestPopflagSummaryUnionAndHidden(t *testing.T) {
 		got = append(got, c.Name)
 		done[c.Name] = c.Done
 	}
-	want := []string{"Alpha", "Bravo", "Charlie"}
+	want := []string{"Alpha", "Bravo"}
 	if len(got) != len(want) {
-		t.Fatalf("characters = %v, want %v (hidden Delta must be dropped)", got, want)
+		t.Fatalf("characters = %v, want %v (deleted Charlie and hidden Delta "+
+			"must be dropped)", got, want)
 	}
 	for i := range want {
 		if got[i] != want[i] {
@@ -79,6 +80,26 @@ func TestPopflagSummaryUnionAndHidden(t *testing.T) {
 	}
 	if len(resp.Zones) == 0 {
 		t.Error("expected zone columns")
+	}
+
+	// Re-adding Charlie's profile brings the kept flag rows back.
+	if _, err := cs.Create("Charlie", 1, 1, 60); err != nil {
+		t.Fatalf("Create Charlie: %v", err)
+	}
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET", "/api/popflags/summary", nil))
+	resp = popflagSummaryResponse{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	var restored bool
+	for _, c := range resp.Characters {
+		if c.Name == "Charlie" && c.Done == 1 {
+			restored = true
+		}
+	}
+	if !restored {
+		t.Errorf("re-added Charlie missing or lost progress: %+v", resp.Characters)
 	}
 }
 

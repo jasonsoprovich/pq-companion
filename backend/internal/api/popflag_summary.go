@@ -46,9 +46,12 @@ type popflagSummaryResponse struct {
 	Zones      []popflagSummaryZone      `json:"zones"`
 }
 
-// summaryCharacters returns the character names the overview covers: visible
-// characters from the character store unioned with any name that has stored
-// PoP flag rows. Hidden characters are dropped unless they are the active one
+// summaryCharacters returns the character names the overview covers: the
+// visible characters from the character store, matching the tab strip. Names
+// that only have stored PoP flag rows (a deleted profile) are left out unless
+// they are the active character; their rows are kept, so re-adding the profile
+// restores its progress. Without a character store, falls back to every name
+// with flag rows. Hidden characters are dropped unless they are the active one
 // (mirrors charactersHandler.list). Case-insensitive de-dupe, sorted.
 func (h *popflagHandler) summaryCharacters() ([]string, error) {
 	seen := map[string]string{}
@@ -62,13 +65,12 @@ func (h *popflagHandler) summaryCharacters() ([]string, error) {
 		}
 	}
 
-	stored, err := h.store.Characters()
-	if err != nil {
-		return nil, err
+	active := ""
+	if h.mgr != nil {
+		active = h.mgr.Get().Character
 	}
-	for _, n := range stored {
-		add(n)
-	}
+
+	var hidden map[string]struct{}
 	if h.charStore != nil {
 		chars, err := h.charStore.List()
 		if err != nil {
@@ -77,17 +79,18 @@ func (h *popflagHandler) summaryCharacters() ([]string, error) {
 		for _, c := range chars {
 			add(c.Name)
 		}
-	}
-
-	var hidden map[string]struct{}
-	if h.charStore != nil {
+		add(active)
 		if hidden, err = h.charStore.HiddenNames(); err != nil {
 			return nil, err
 		}
-	}
-	active := ""
-	if h.mgr != nil {
-		active = h.mgr.Get().Character
+	} else {
+		stored, err := h.store.Characters()
+		if err != nil {
+			return nil, err
+		}
+		for _, n := range stored {
+			add(n)
+		}
 	}
 
 	out := make([]string, 0, len(seen))
