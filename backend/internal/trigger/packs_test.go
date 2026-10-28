@@ -260,8 +260,8 @@ func TestEnchanterMergedTriggers(t *testing.T) {
 		{"You begin casting Dazzle.", "Dazzle", 96, 190},
 		{"You begin casting Charm.", "Charm", 1140, 300},
 		{"You begin casting Cajoling Whispers.", "Cajoling Whispers", 1140, 183},
-		{"You begin casting Boltran`s Agacerie.", "Boltran`s Agacerie", 1140, 1706},
-		{"You begin casting Boltran's Agacerie.", "Boltran's Agacerie", 1140, 1706},
+		{"You begin casting Boltran`s Agacerie.", "Boltran`s Agacerie", 420, 1705},
+		{"You begin casting Boltran's Agacerie.", "Boltran's Agacerie", 420, 1705},
 		{"You begin casting Lull.", "Lull", 120, 208},
 		{"You begin casting Wake of Tranquility.", "Wake of Tranquility", 42, 1541},
 		{"You begin casting Soothe.", "Soothe", 150, 501},
@@ -302,6 +302,67 @@ func TestEnchanterMergedTriggers(t *testing.T) {
 		// SpellID (the primary spell's) can't remove a sibling's timer.
 		if sink.stopName != c.key || sink.stopSpellID != 0 {
 			t.Errorf("%q: stopped %s/%d, want %s/0", c.line, sink.stopName, sink.stopSpellID, c.key)
+		}
+	}
+}
+
+// TestClassMergedCharmTriggers drives the Druid animal-charm and
+// Necromancer undead-charm merged triggers: each charm's cast line starts a
+// timer keyed by its own name, duration and spell id, and a resist clears
+// only that spell's timer.
+func TestClassMergedCharmTriggers(t *testing.T) {
+	s := openTestStore(t)
+	hub := ws.NewHub()
+	sink := &captureSink{}
+	e := NewEngine(s, hub, sink, nil)
+
+	for _, p := range []TriggerPack{DruidPack(), NecromancerPack()} {
+		if err := InstallPack(s, applyDefaultTimerAlerts(p)); err != nil {
+			t.Fatalf("InstallPack %s: %v", p.PackName, err)
+		}
+	}
+	e.Reload()
+
+	starts := []struct {
+		line     string
+		key      string
+		duration float64
+		spellID  int
+	}{
+		{"You begin casting Befriend Animal.", "Befriend Animal", 1140, 245},
+		{"You begin casting Call of Karana.", "Call of Karana", 1140, 1553},
+		{"You begin casting Tunare's Request.", "Tunare's Request", 10800, 1556},
+		{"You begin casting Command of Tunare.", "Command of Tunare", 1140, 3445},
+		{"You begin casting Dominate Undead.", "Dominate Undead", 1140, 196},
+		{"You begin casting Cajole Undead.", "Cajole Undead", 1140, 198},
+		{"You begin casting Enslave Death.", "Enslave Death", 30, 1629},
+		{"You begin casting Word of Terris.", "Word of Terris", 1140, 3316},
+	}
+	for _, c := range starts {
+		before := sink.calls
+		e.Handle(time.Now(), c.line)
+		if sink.calls != before+1 {
+			t.Errorf("%q: expected 1 timer start, got %d", c.line, sink.calls-before)
+			continue
+		}
+		if sink.name != c.key || sink.duration != c.duration || sink.spellID != c.spellID {
+			t.Errorf("%q: started %s/%v/%d, want %s/%v/%d",
+				c.line, sink.name, sink.duration, sink.spellID, c.key, c.duration, c.spellID)
+		}
+	}
+
+	for _, c := range []struct{ line, key string }{
+		{"Your target resisted the Allure of the Wild spell.", "Allure of the Wild"},
+		{"Your target resisted the Beguile Undead spell.", "Beguile Undead"},
+	} {
+		before := sink.stops
+		e.Handle(time.Now(), c.line)
+		if sink.stops != before+1 {
+			t.Errorf("%q: expected 1 timer stop, got %d", c.line, sink.stops-before)
+			continue
+		}
+		if sink.stopName != c.key {
+			t.Errorf("%q: stopped %s, want %s", c.line, sink.stopName, c.key)
 		}
 	}
 }

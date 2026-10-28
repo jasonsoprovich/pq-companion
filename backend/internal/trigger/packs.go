@@ -695,8 +695,8 @@ func EnchanterPack() TriggerPack {
 			// so the merged trigger matches on "You begin casting
 			// <SpellName>.". Resists clear the stale timer via the
 			// spell-specific resist line.
-			// Charm/Beguile/Cajoling Whispers/Allure/Boltran's Agacerie all
-			// share spells_new buffduration=205 / buffdurationformula=10. With
+			// Charm/Beguile/Cajoling Whispers/Allure all share spells_new
+			// buffduration=205 / buffdurationformula=10. With
 			// formula 10 = min(level*3 + 10, base), level 60 yields 190 ticks
 			// = 1140s. Old formula 10 (`min(level, base)`) returned 60 ticks
 			// = 360s, which is what these were calibrated against; updated in
@@ -715,8 +715,10 @@ func EnchanterPack() TriggerPack {
 					{Pattern: `^You begin casting (Allure)\.$`, Enabled: true, TimerDurationSecs: 1140, SpellID: 184},
 					// quarm.db carries both apostrophe spellings (1705 backtick,
 					// 1706 ASCII); accept either so the captured key always matches
-					// what the log emits. Double-quoted for the backtick.
-					{Pattern: "^You begin casting (Boltran[`']s Agacerie)\\.$", Enabled: true, TimerDurationSecs: 1140, SpellID: 1706},
+					// what the log emits. Double-quoted for the backtick. 1705 is
+					// the enchanter scroll (formula 8, like the PoP charms); 1706
+					// is a non-class copy with the formula 10 duration.
+					{Pattern: "^You begin casting (Boltran[`']s Agacerie)\\.$", Enabled: true, TimerDurationSecs: 420, SpellID: 1705},
 					// PoP charms: formula 8 (min(level+10, base 75)) — 70 ticks
 					// at 60, the full 75 at 65.
 					{Pattern: `^You begin casting (Beckon)\.$`, Enabled: true, TimerDurationSecs: 420, SpellID: 3347},
@@ -972,7 +974,7 @@ func DruidPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Druid",
 		Class:       ClassPtr(ClassDruid),
-		Description: "Crowd-control break alerts (root, snare, charm) plus spell timers for Protection of the Glades, Protection / Blessing of the Nine, Blessing of Replenishment, Legacy of Thorn, Legacy of Bracken, Hand of Ro, Winged Death, Swarming Death, Ensnare, Entrapping Roots, Savage Roots, and Command of Tunare.",
+		Description: "Crowd-control break alerts (root, snare, charm) plus spell timers for Protection of the Glades, Protection / Blessing of the Nine, Blessing of Replenishment, Legacy of Thorn, Legacy of Bracken, Hand of Ro, Winged Death, Swarming Death, Ensnare, Entrapping Roots, Savage Roots, Command of Tunare, and the animal/plant charms (Befriend Animal, Charm Animals, Beguile Plants, Beguile Animals, Allure of the Wild, Call of Karana, Tunare's Request).",
 		Triggers: []Trigger{
 			// ── Crowd-control breaks ─────────────────────────────────────
 			// Caster's "Your <SpellName> spell has worn off." line fires both
@@ -1137,6 +1139,29 @@ func DruidPack() TriggerPack {
 				TimerType:         TimerTypeDetrimental,
 				TimerDurationSecs: 1140,
 				SpellID:           3445,
+				PackName:          "Druid",
+				Actions:           []Action{},
+			},
+			// Pre-PoP animal/plant charms, merged like the enchanter charms
+			// and keyed per spell by the captured name. All formula 10 (190
+			// ticks at 60) except Tunare's Request (formula 3, 1800 ticks).
+			{
+				Name:    "Animal Charm",
+				Enabled: true,
+				Pattern: `^You begin casting (Call of Karana)\.$`,
+				ExtraPatterns: []ExtraPattern{
+					{Pattern: `^You begin casting (Befriend Animal)\.$`, Enabled: true, TimerDurationSecs: 1140, SpellID: 245},
+					{Pattern: `^You begin casting (Charm Animals)\.$`, Enabled: true, TimerDurationSecs: 1140, SpellID: 260},
+					{Pattern: `^You begin casting (Beguile Plants)\.$`, Enabled: true, TimerDurationSecs: 1140, SpellID: 753},
+					{Pattern: `^You begin casting (Beguile Animals)\.$`, Enabled: true, TimerDurationSecs: 1140, SpellID: 141},
+					{Pattern: `^You begin casting (Allure of the Wild)\.$`, Enabled: true, TimerDurationSecs: 1140, SpellID: 142},
+					{Pattern: `^You begin casting (Tunare's Request)\.$`, Enabled: true, TimerDurationSecs: 10800, SpellID: 1556},
+				},
+				WornOffPattern:    `^Your (?:target resisted the )?(Call of Karana|Befriend Animal|Charm Animals|Beguile Plants|Beguile Animals|Allure of the Wild|Tunare's Request) spell(?: has worn off)?\.$`,
+				TimerType:         TimerTypeDetrimental,
+				TimerDurationSecs: 1140,
+				SpellID:           1553,
+				TimerKeyCapture:   "1",
 				PackName:          "Druid",
 				Actions:           []Action{},
 			},
@@ -2439,7 +2464,7 @@ func NecromancerPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Necromancer",
 		Class:       ClassPtr(ClassNecromancer),
-		Description: "Mez/charm/snare break alerts plus spell timers for Arch Lich, Seduction of Saryrn, Splurt, Ignite Blood, Pyrocruor, Blood of Thule, Dark Plague, Embracing Darkness, Bond of Death, Saryrn's Kiss, Harmshield, and undead charm (Thrall of Bones, Word of Terris).",
+		Description: "Mez/charm/snare break alerts plus spell timers for Arch Lich, Seduction of Saryrn, Splurt, Ignite Blood, Pyrocruor, Blood of Thule, Dark Plague, Embracing Darkness, Bond of Death, Saryrn's Kiss, Harmshield, and undead charm (Dominate Undead, Beguile Undead, Cajole Undead, Thrall of Bones, Enslave Death, Word of Terris).",
 		Triggers: []Trigger{
 			// ── Crowd-control breaks ─────────────────────────────────────
 			// Charm covers the undead-charm line (Dominate/Beguile/Cajole
@@ -2584,15 +2609,20 @@ func NecromancerPack() TriggerPack {
 			// ── Undead charm (merged timer) ──────────────────────────────
 			// Keys on the cast line like the enchanter charms; charm can break
 			// on any of the pet's ticks before this runs out — it's the best
-			// case. Both ranks are formula 10 (190 ticks at 60).
+			// case. Every rank is formula 10 (190 ticks at 60) except Enslave
+			// Death, whose base caps it at 5 ticks.
 			{
 				Name:    "Undead Charm",
 				Enabled: true,
 				Pattern: `^You begin casting (Word of Terris)\.$`,
 				ExtraPatterns: []ExtraPattern{
 					{Pattern: `^You begin casting (Thrall of Bones)\.$`, Enabled: true, TimerDurationSecs: 1140, SpellID: 1624},
+					{Pattern: `^You begin casting (Dominate Undead)\.$`, Enabled: true, TimerDurationSecs: 1140, SpellID: 196},
+					{Pattern: `^You begin casting (Beguile Undead)\.$`, Enabled: true, TimerDurationSecs: 1140, SpellID: 197},
+					{Pattern: `^You begin casting (Cajole Undead)\.$`, Enabled: true, TimerDurationSecs: 1140, SpellID: 198},
+					{Pattern: `^You begin casting (Enslave Death)\.$`, Enabled: true, TimerDurationSecs: 30, SpellID: 1629},
 				},
-				WornOffPattern:    `^Your (?:target resisted the )?(Word of Terris|Thrall of Bones) spell(?: has worn off)?\.$`,
+				WornOffPattern:    `^Your (?:target resisted the )?(Word of Terris|Thrall of Bones|Dominate Undead|Beguile Undead|Cajole Undead|Enslave Death) spell(?: has worn off)?\.$`,
 				TimerType:         TimerTypeDetrimental,
 				TimerDurationSecs: 1140,
 				SpellID:           3316,
