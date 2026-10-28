@@ -154,7 +154,13 @@ func NewEngine(store *Store, hub Broadcaster) *Engine {
 		if err != nil {
 			slog.Warn("killtracker: load counters", "err", err)
 		}
-		for _, c := range cs {
+		for i, c := range cs {
+			if def, ok := upgradePresetDef(c.Def); ok {
+				c.Def = def
+				if err := store.SaveCounter(c, i); err != nil {
+					slog.Warn("killtracker: save upgraded preset counter", "id", c.Def.ID, "err", err)
+				}
+			}
 			comp, err := compile(c.Def)
 			if err != nil {
 				slog.Warn("killtracker: skip counter with invalid definition", "id", c.Def.ID, "err", err)

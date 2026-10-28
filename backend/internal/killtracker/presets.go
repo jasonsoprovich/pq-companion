@@ -42,6 +42,75 @@ func presetByKey(key string) (Preset, bool) {
 	return Preset{}, false
 }
 
+// stalePresetPatterns lists line patterns that older builds installed from a
+// preset before the server changed its text. Installed counters keep their
+// own copy of each pattern, so upgradePresetDef swaps in the current preset's
+// pattern wherever the stored one is still one of these. Anything else is a
+// user edit and is left alone.
+var stalePresetPatterns = map[string]map[string]bool{
+	// Quests 2026-10-25 Stone Ring rework replaced every ring emote.
+	"stonering": {
+		"": true,
+		"The ground shudders as stone fortifications are summoned forth": true,
+		`The Rock Monstrosity crumbles into mounds of rubble\.`:          true,
+		"A gigantic formation of rocks appears":                          true,
+		"As the last of the stone heaps collapses":                       true,
+		`(?i)(?:Peregrin Rockskull|an Encrusted Dirt Cloud) (?:has been slain by .+!|died\.)|slain (?:Peregrin Rockskull|an Encrusted Dirt Cloud)!`: true,
+	},
+}
+
+// upgradePresetDef refreshes stale preset patterns in an installed counter.
+// It matches the counter to its preset counter by name and reports whether
+// anything changed.
+func upgradePresetDef(def CounterDef) (CounterDef, bool) {
+	stale := stalePresetPatterns[def.Preset]
+	if stale == nil {
+		return def, false
+	}
+	p, _ := presetByKey(def.Preset)
+	var cur *CounterDef
+	for i := range p.Counters {
+		if p.Counters[i].Name == def.Name {
+			cur = &p.Counters[i]
+		}
+	}
+	if cur == nil {
+		return def, false
+	}
+	changed := false
+	swap := func(have *string, want string) {
+		if *have != want && stale[*have] {
+			*have = want
+			changed = true
+		}
+	}
+	swap(&def.Pattern, cur.Pattern)
+	swap(&def.ResetPattern, cur.ResetPattern)
+	if len(def.Syncs) == len(cur.Syncs) {
+		def.Syncs = append([]SyncRule(nil), def.Syncs...)
+		for i := range def.Syncs {
+			swap(&def.Syncs[i].Pattern, cur.Syncs[i].Pattern)
+		}
+	}
+	if def.Clock != nil && cur.Clock != nil {
+		clock := *def.Clock
+		if len(clock.Marks) == len(cur.Clock.Marks) {
+			clock.Marks = append([]ClockMark(nil), clock.Marks...)
+			for i := range clock.Marks {
+				swap(&clock.Marks[i].Pattern, cur.Clock.Marks[i].Pattern)
+			}
+		}
+		if len(clock.StopPatterns) == len(cur.Clock.StopPatterns) {
+			clock.StopPatterns = append([]string(nil), clock.StopPatterns...)
+			for i := range clock.StopPatterns {
+				swap(&clock.StopPatterns[i], cur.Clock.StopPatterns[i])
+			}
+		}
+		def.Clock = &clock
+	}
+	return def, changed
+}
+
 // slainPattern matches any of the log's death forms for one NPC display name
 // ("X has been slain by Y!", "You have slain X!", "X died.") without matching
 // the combat lines that also carry the name.
@@ -273,15 +342,20 @@ func fenninPreset() Preset {
 // (poeartha/encounters/StoneRing.lua): each of the four trigger mobs
 // summons a batch of fortifications (43 total); the 43rd death crumbles the
 // Rock Monstrosity. Killing it starts 24 stone heaps in waves of four, then
-// Peregrin Rockskull (or an Encrusted Dirt Cloud) rises. The ring fails
-// silently 98 minutes after it starts. Its messages only reach players
-// within 200 units of the temple, so resyncs work for those nearby.
+// Peregrin Rockskull (or an Encrusted Dirt Cloud) rises. The ring fails 98
+// minutes after it starts. The quests 2026-10-25 rework moved the ring's
+// messages to zone-wide emotes and added a failure emote; each pattern also
+// accepts the older temple-only (200 unit) text.
 func stoneRingPreset() Preset {
 	const (
 		group  = "Stone Ring"
 		zone   = "Plane of Earth"
-		forts  = "The ground shudders as stone fortifications are summoned forth"
-		finale = `(?i)(?:Peregrin Rockskull|an Encrusted Dirt Cloud) (?:has been slain by .+!|died\.)|slain (?:Peregrin Rockskull|an Encrusted Dirt Cloud)!`
+		forts  = "Massive slabs of stone wrench themselves from the earth|The ground shudders as stone fortifications are summoned forth"
+		crumbs = "The last fortification shatters with a thunderous crack|The Rock Monstrosity crumbles into mounds of rubble"
+		heaps  = "The Rock Monstrosity crashes apart, its weight shaking the temple|A gigantic formation of rocks appears"
+		boss   = "The last stone heap shatters\\. The temple's remaining strength|As the last of the stone heaps collapses"
+		failed = "The Stone Ring has reset; you may attempt it again"
+		finale = `(?i)(?:Peregrin Rockskull|an Encrusted Dirt Cloud) (?:has been slain by .+!|died\.)|slain (?:Peregrin Rockskull|an Encrusted Dirt Cloud)!|the trial of the Stone Ring is complete`
 	)
 	heapMilestones := []Milestone{}
 	for at := 4; at < 24; at += 4 {
@@ -293,7 +367,7 @@ func stoneRingPreset() Preset {
 		Name: "Stone Ring",
 		Zone: "Plane of Earth",
 		Description: "Fortifications toward the Rock Monstrosity, stone heaps toward the ring " +
-			"boss, and the 98-minute ring clock. Ring messages only reach players near the temple.",
+			"boss, and the 98-minute ring clock. A failed ring resets both counters.",
 		Counters: []CounterDef{
 			{
 				Name:    "Stone fortifications",
@@ -307,13 +381,14 @@ func stoneRingPreset() Preset {
 				},
 				WarnBefore: 3,
 				Syncs: []SyncRule{
-					{Pattern: regexp.QuoteMeta("The Rock Monstrosity crumbles into mounds of rubble."), SetTo: 43},
+					{Pattern: crumbs, SetTo: 43},
 				},
+				ResetPattern: failed,
 				Clock: &Clock{
 					Label:        "Ring time left",
 					DurationSecs: 5880,
 					// Printed once per trigger mob; only the first starts the attempt.
-					Marks:        []ClockMark{{Pattern: regexp.QuoteMeta(forts), AtSecs: 0, IfIdle: true, Reset: true}},
+					Marks:        []ClockMark{{Pattern: forts, AtSecs: 0, IfIdle: true, Reset: true}},
 					StopPatterns: []string{finale},
 				},
 				AlertOverlay: true,
@@ -327,10 +402,10 @@ func stoneRingPreset() Preset {
 				Goal:       24,
 				Milestones: heapMilestones,
 				Syncs: []SyncRule{
-					{Pattern: regexp.QuoteMeta("As the last of the stone heaps collapses"), SetTo: 24},
+					{Pattern: boss, SetTo: 24},
 				},
 				// The first heap wave's emote — heaps only ever start from 0.
-				ResetPattern: regexp.QuoteMeta("A gigantic formation of rocks appears"),
+				ResetPattern: heaps + "|" + failed,
 				AlertOverlay: true,
 			},
 		},

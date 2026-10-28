@@ -407,6 +407,80 @@ func TestFenninStagesAndWarnings(t *testing.T) {
 	}
 }
 
+func TestStoneRingZoneEmotes(t *testing.T) {
+	e := NewEngine(nil, nil)
+	cs := installOne(t, e, "stonering")
+	forts, heaps := cs[0], cs[1]
+	e.HandleLine(t0, "Massive slabs of stone wrench themselves from the earth and lock together. The living fortifications advance with crushing weight, each stride grinding rock beneath them.")
+	if got := countOf(e, forts.Def.ID); got.ClockStartedAt != t0.Unix() {
+		t.Fatalf("clock not started: %+v", got)
+	}
+	e.HandleLine(t0, "The last fortification shatters with a thunderous crack. The Rock Monstrosity's massive frame splits into four mounds of rubble, each grinding with the strength of the broken whole.")
+	if got := countOf(e, forts.Def.ID).Count; got != 43 {
+		t.Fatalf("fortification sync = %d", got)
+	}
+	_ = e.SetCount(heaps.Def.ID, 7)
+	e.HandleLine(t0, "The Rock Monstrosity crashes apart, its weight shaking the temple. A towering stone figure rises and folds into stillness as heaps of broken rock grind forward to crush the intruders.")
+	if got := countOf(e, heaps.Def.ID).Count; got != 0 {
+		t.Fatalf("heaps not reset on first wave: %d", got)
+	}
+	e.HandleLine(t0, "The last stone heap shatters. The temple's remaining strength gathers into its final defender, a grinding mass of stone and packed earth that shakes the ground as it advances.")
+	if got := countOf(e, heaps.Def.ID).Count; got != 24 {
+		t.Fatalf("heap sync = %d", got)
+	}
+	e.HandleLine(t0, "The strength binding the stone temple's guardians falters unexpectedly. Their massive bodies buckle and crash into silent rubble. The Stone Ring has reset; you may attempt it again in 15 minutes.")
+	for _, c := range cs {
+		if got := countOf(e, c.Def.ID); got.Count != 0 || got.ClockStartedAt != 0 {
+			t.Fatalf("%s not reset on failure: %+v", c.Def.Name, got)
+		}
+	}
+}
+
+func TestStoneRingUpgradesStalePatterns(t *testing.T) {
+	s := openTestStore(t)
+	e := NewEngine(s, nil)
+	cs := installOne(t, e, "stonering")
+	// Rewind the stored definitions to what pre-2026-10-25 builds installed,
+	// plus a user edit that the upgrade must keep.
+	old := cs[0].Def
+	old.ResetPattern = ""
+	old.Syncs = []SyncRule{{Pattern: `The Rock Monstrosity crumbles into mounds of rubble\.`, SetTo: 43}}
+	old.Clock = &Clock{
+		Label:        "Ring time left",
+		DurationSecs: 5880,
+		Marks:        []ClockMark{{Pattern: "The ground shudders as stone fortifications are summoned forth", IfIdle: true, Reset: true}},
+		StopPatterns: []string{`(?i)(?:Peregrin Rockskull|an Encrusted Dirt Cloud) (?:has been slain by .+!|died\.)|slain (?:Peregrin Rockskull|an Encrusted Dirt Cloud)!`},
+	}
+	if _, err := e.Update(old); err != nil {
+		t.Fatal(err)
+	}
+	edited := cs[1].Def
+	edited.ResetPattern = "my own reset line"
+	edited.Syncs = []SyncRule{{Pattern: "As the last of the stone heaps collapses", SetTo: 24}}
+	if _, err := e.Update(edited); err != nil {
+		t.Fatal(err)
+	}
+
+	e = NewEngine(s, nil)
+	want := stoneRingPreset().Counters
+	got := countOf(e, cs[0].Def.ID).Def
+	if got.ResetPattern != want[0].ResetPattern || got.Syncs[0].Pattern != want[0].Syncs[0].Pattern ||
+		got.Clock.Marks[0].Pattern != want[0].Clock.Marks[0].Pattern ||
+		got.Clock.StopPatterns[0] != want[0].Clock.StopPatterns[0] {
+		t.Fatalf("fortifications not upgraded: %+v", got)
+	}
+	got = countOf(e, cs[1].Def.ID).Def
+	if got.ResetPattern != "my own reset line" || got.Syncs[0].Pattern != want[1].Syncs[0].Pattern {
+		t.Fatalf("heaps upgrade wrong: %+v", got)
+	}
+	// Persisted: a third load sees the upgraded patterns with nothing stale.
+	for _, c := range NewEngine(s, nil).State().Counters {
+		if _, changed := upgradePresetDef(c.Def); changed {
+			t.Fatalf("%s still stale after reload", c.Def.Name)
+		}
+	}
+}
+
 func TestStoneRingIdleOnlyStart(t *testing.T) {
 	e := NewEngine(nil, nil)
 	forts := installOne(t, e, "stonering")[0]
