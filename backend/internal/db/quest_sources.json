@@ -79771,9 +79771,11 @@
    28278,
    28284,
    28290,
-   28291
+   28291,
+   29778
   ],
   "turnins": [
+   10037,
    28278,
    28283,
    28289
@@ -79783,13 +79785,19 @@
     "triggers": [
      "hail"
     ],
-    "text": "What is it? What do you wan. . . Oh bloody underfoot, do forgive me, traveler. I'm not used to all this bickering and flittering about -- you know, the bustle of the 'living' city. The racket, the noise, and the wails of the children. Bah! I came here to escape it, not to relive it. But if I survived it once, I sure as Brell's holy bottom will do it again! In hopes of getting you all out of here as soon as possible and the peace and quiet being resurrected out of your blessed absence, I've agreed to lend some of my knowledge of the more inferior levels of tinkering to those who have an interest in this art. If you don't intend on purchasing any materials, then be off with you and leave me in peace. However, if you have coin in your pocket and you plan on spending, then do so quickly. I have more pressing things to do with my time than wait while you leisurely browse my wares."
+    "text": "What is it? What do you wan. . . Oh bloody underfoot, do forgive me, traveler. I'm not used to all this bickering and flittering about -- you know, the bustle of the 'living' city. The racket, the noise, and the wails of the children. Bah! I came here to escape it, not to relive it. But if I survived it once, I sure as Brell's holy bottom will do it again! In hopes of getting you all out of here as soon as possible and the peace and quiet being resurrected out of your blessed absence, I've agreed to lend some of my knowledge of the more inferior levels of tinkering to those who have an interest in this art. If you don't intend on purchasing any materials, then be off with you and leave me in peace. However, if you have coin in your pocket and you plan on spending, then do so quickly. I have more pressing things to do with my time than wait while you leisurely browse my wares. Hmm. You've the look of one who's sworn to rely on no one's craft but their own. If it's a [crab cracker] you're needing, I might be persuaded to assemble one -- ask me about it, if you must."
    },
    {
     "triggers": [
      "ready to write down"
     ],
     "text": "Very well. You'll need to gather up a dense hammered casing for the outer shell; a crystalline carapace will act to protect the face of the device; and it requires a fiery power source to propel the rotor mechanism. The device is then attached around the neck, much like the one you are wearing. The only difference will be the strands of living chain that will keep it from slipping from around your neck. Place those four items and your talisman in that box and return it to me. We should be able to get this thing built for you without much fuss at all, should all things go well on your end of the task, of course. Ready for what?"
+   },
+   {
+    "triggers": [
+     "crab cracker"
+    ],
+    "text": "A crab cracker? Hmph. A simple enough device -- two metal rods, a knuckle joint for the hinge, and a diamond for the biting edge, or those regrua shells will dull it inside a week. The rods and joints I keep on my own shelves, but diamonds I do not give away. Bring me a diamond and one hundred platinum pieces for my time and I will assemble one for you on the spot. It is a tool, not a toy -- it should serve you indefinitely, so do try not to lose it. A crab cracker? No. There are gnome tinkerers aplenty in this city who would gladly take your coin -- go and bother one of them. The little service I offer here is only for those who have sworn to rely on no one's craft but their own, and you are not one of them."
    },
    {
     "turnin": [
@@ -79819,6 +79827,15 @@
     "grants": [
      28291,
      28290
+    ]
+   },
+   {
+    "turnin": [
+     10037
+    ],
+    "text": "pockets the platinum and sets the diamond into the cracker's jaw with a series of sharp clicks. 'There. Mind your fingers -- the edge is diamond, and it does not much care what it bites.'",
+    "grants": [
+     29778
     ]
    }
   ]
