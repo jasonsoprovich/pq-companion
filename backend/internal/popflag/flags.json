@@ -650,7 +650,7 @@
     "zone_short": "SolRo",
     "label": "Miak: 'portal's destination' (Tower access)",
     "detail": "Say 'portal's destination' to Miak the Searedsoul in the Plane of Tranquility (near the Plane of Fire) to flag for and reach the Tower of Solusek Ro.",
-    "prereqs": ["pok_maelin_information"],
+    "prereqs": [],
     "step_kind": "hail",
     "qglobal": "pofire",
     "qglobal_value": "1",
