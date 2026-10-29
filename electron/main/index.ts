@@ -676,6 +676,37 @@ function watchOverlayVisibility(name: WindowKey, win: BrowserWindow): void {
   win.on('always-on-top-changed', (_e, isOnTop) => {
     console.log(`[main] overlay ${name} always-on-top-changed: ${isOnTop}`)
   })
+  watchCompositorMessages(`overlay ${name}`, win)
+}
+
+// Win32 messages Windows broadcasts to every top-level window.
+const WM_DISPLAYCHANGE = 0x007e
+const WM_THEMECHANGED = 0x031a
+const WM_DWMCOMPOSITIONCHANGED = 0x031e
+
+// Logs system-wide redraw events: the DWM compositor restarting (or toggling)
+// and display-mode switches (e.g. a game entering/leaving exclusive
+// fullscreen). Either can leave transparent windows blank in place while
+// Electron still reports them visible — the shape of the "every overlay
+// vanished at once" reports. Explorer's TaskbarCreated is a registered message
+// whose id can't be resolved without native code, so it isn't covered.
+function watchCompositorMessages(label: string, win: BrowserWindow): void {
+  if (process.platform !== 'win32') return
+  win.hookWindowMessage(WM_DWMCOMPOSITIONCHANGED, () => {
+    console.warn(`[main] ${label}: WM_DWMCOMPOSITIONCHANGED`)
+  })
+  win.hookWindowMessage(WM_THEMECHANGED, () => {
+    console.warn(`[main] ${label}: WM_THEMECHANGED`)
+  })
+  win.hookWindowMessage(WM_DISPLAYCHANGE, (wParam, lParam) => {
+    // lParam packs the new resolution (low word width, high word height);
+    // wParam is the color depth in bits per pixel.
+    const packed = lParam.readUInt32LE(0)
+    const bpp = wParam.readUInt32LE(0)
+    console.warn(
+      `[main] ${label}: WM_DISPLAYCHANGE ${packed & 0xffff}x${packed >>> 16} ${bpp}bpp`,
+    )
+  })
 }
 
 // ── Main window state persistence ─────────────────────────────────────────────
@@ -1426,6 +1457,7 @@ function createMainWindow(): void {
   // A main-process or renderer stall shows up to the user as a frozen/ghosted
   // taskbar entry; log both edges so a log export shows when and how long.
   mainWindow.on('unresponsive', () => console.warn('[main] main window unresponsive'))
+  watchCompositorMessages('main', mainWindow)
   mainWindow.on('responsive', () => console.log('[main] main window responsive again'))
 
   mainWindow.on('closed', () => {
