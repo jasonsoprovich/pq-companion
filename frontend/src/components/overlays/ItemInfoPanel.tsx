@@ -77,7 +77,7 @@ export default function ItemInfoPanel({
         onLayoutChange={onLayoutChange}
       >
         <div className="flex h-full min-h-0 flex-col">
-          <ItemInfoView {...display} />
+          <ItemInfoView {...display} surface="dashboard" />
         </div>
       </OverlayWindow>
       <ItemSearchModal

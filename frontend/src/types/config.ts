@@ -37,6 +37,19 @@ export interface NPCOutlineRuleSet {
   rules: NPCOutlineRule[]
 }
 
+// Item Info overlay summary-card setup. Mirrors backend
+// config.ItemInfoOverlaySettings; key scheme and defaults in lib/itemInfoLayout.
+export interface ItemInfoOverlaySettings {
+  section_order?: string[] | null
+  hidden_items?: string[] | null
+  list_limit?: number
+  section_limits?: Record<string, number> | null
+  empty_modes?: Record<string, string> | null
+  auto_show?: boolean
+  auto_hide_secs?: number
+  defaults_seeded?: boolean
+}
+
 export interface NPCOverlaySections {
   identity: boolean
   combat: boolean
@@ -371,6 +384,7 @@ export interface Preferences {
   // (a proposed Zeal message, not yet released). Reveals the Item Info
   // overlay; never edited by the user.
   zeal_item_display_seen?: boolean
+  item_info_overlay?: ItemInfoOverlaySettings
 }
 
 export interface BackupSettings {

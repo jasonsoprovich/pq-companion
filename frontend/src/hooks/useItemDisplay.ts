@@ -78,3 +78,29 @@ export function useItemInfoOffered(): boolean {
 
   return offered
 }
+
+// useItemInfoAutoShow opens the Item Info popout (without taking focus) on
+// each in-game item click when the user turned on auto-show in Settings.
+// Mounted once, in the main window.
+export function useItemInfoAutoShow(): void {
+  const enabled = useRef(false)
+
+  useEffect(() => {
+    getConfig()
+      .then((c) => {
+        enabled.current = itemInfoOffered(c.preferences) && Boolean(c.preferences.item_info_overlay?.auto_show)
+      })
+      .catch(() => {})
+  }, [])
+
+  useWebSocket((msg) => {
+    if (msg.type === WSEvent.ConfigUpdated) {
+      const p = (msg.data as Config)?.preferences
+      if (p) enabled.current = itemInfoOffered(p) && Boolean(p.item_info_overlay?.auto_show)
+      return
+    }
+    if (msg.type === WSEvent.ItemDisplay && enabled.current) {
+      window.electron?.overlay?.showItemInfo?.().catch(() => {})
+    }
+  })
+}

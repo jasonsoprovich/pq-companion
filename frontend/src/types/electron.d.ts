@@ -53,6 +53,8 @@ export interface ElectronAPI {
     closeKillCounter: () => Promise<void>
     toggleKillCounter: () => Promise<void>
     openItemInfo: () => Promise<void>
+    // Opens without taking focus; a no-op when already open.
+    showItemInfo: () => Promise<void>
     closeItemInfo: () => Promise<void>
     toggleItemInfo: () => Promise<void>
     openCHChain: () => Promise<void>

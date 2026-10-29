@@ -1,13 +1,15 @@
 /**
- * ItemInfoWindowPage — transparent always-on-top overlay showing the full
- * item detail tabs (Overview, sources, Tradeskills, Quests, Characters) for
- * the item last opened in game, fed by the proposed Zeal item pipe message.
- * Links inside open in the main window rather than navigating this one.
+ * ItemInfoWindowPage — transparent always-on-top overlay showing the summary
+ * card (ItemInfoCard) for the item last opened in game, fed by the proposed
+ * Zeal item pipe message. Links inside open in the main window rather than
+ * navigating this one. With auto-show and an auto-hide delay set, it closes
+ * itself once that long passes without a new item or the mouse over it.
  */
-import React from 'react'
+import React, { useEffect, useRef } from 'react'
 import { Info } from 'lucide-react'
 import ItemInfoView from '../components/overlays/ItemInfoView'
 import { useItemDisplay } from '../hooks/useItemDisplay'
+import { useItemInfoSettings } from '../hooks/useItemInfoSettings'
 import { AppNavigateContext } from '../hooks/useAppNavigate'
 import { openRouteInMain } from '../lib/overlayNav'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
@@ -23,6 +25,25 @@ export default function ItemInfoWindowPage(): React.ReactElement {
   const chrome = useOverlayChromeFade('itemInfo', mode === 'display-only')
   const onDragMouseDown = useWindowDrag()
   const display = useItemDisplay()
+  const { raw } = useItemInfoSettings('popout')
+  const hideSecs = raw?.auto_show ? raw.auto_hide_secs ?? 0 : 0
+  const hovered = useRef(false)
+  const hideTimer = useRef<number | null>(null)
+
+  // (Re)arms the auto-hide countdown; a hovered window re-arms on leave.
+  const armHide = React.useCallback(() => {
+    if (hideTimer.current) window.clearTimeout(hideTimer.current)
+    hideTimer.current = null
+    if (hideSecs <= 0) return
+    hideTimer.current = window.setTimeout(() => {
+      if (!hovered.current) window.electron?.overlay?.closeItemInfo()
+    }, hideSecs * 1000)
+  }, [hideSecs])
+
+  useEffect(() => {
+    armHide()
+    return () => { if (hideTimer.current) window.clearTimeout(hideTimer.current) }
+  }, [armHide, display.shown])
 
   const headerBtn: React.CSSProperties = {
     display: 'flex',
@@ -39,6 +60,16 @@ export default function ItemInfoWindowPage(): React.ReactElement {
   return (
     <div
       {...rootInteractionProps}
+      onMouseEnter={(e) => {
+        hovered.current = true
+        if (hideTimer.current) window.clearTimeout(hideTimer.current)
+        rootInteractionProps.onMouseEnter?.(e)
+      }}
+      onMouseLeave={(e) => {
+        hovered.current = false
+        armHide()
+        rootInteractionProps.onMouseLeave?.(e)
+      }}
       style={{
         width: '100%',
         height: '100%',
@@ -90,7 +121,7 @@ export default function ItemInfoWindowPage(): React.ReactElement {
 
       <AppNavigateContext.Provider value={openRouteInMain}>
         <div className="flex min-h-0 flex-1 flex-col">
-          <ItemInfoView {...display} />
+          <ItemInfoView {...display} surface="popout" />
         </div>
       </AppNavigateContext.Provider>
     </div>

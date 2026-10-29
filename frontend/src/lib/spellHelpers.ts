@@ -13,7 +13,7 @@ import type { TimerAlertThreshold } from '../types/trigger'
 
 // ── Class names ────────────────────────────────────────────────────────────────
 
-const CLASS_NAMES = [
+export const CLASS_NAMES = [
   'WAR', 'CLR', 'PAL', 'RNG', 'SHD', 'DRU', 'MNK',
   'BRD', 'ROG', 'SHM', 'NEC', 'WIZ', 'MAG', 'ENC', 'BST',
 ]

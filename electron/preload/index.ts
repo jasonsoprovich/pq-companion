@@ -78,6 +78,7 @@ contextBridge.exposeInMainWorld('electron', {
     closeKillCounter: (): Promise<void> => ipcRenderer.invoke('overlay:killcounter:close'),
     toggleKillCounter: (): Promise<void> => ipcRenderer.invoke('overlay:killcounter:toggle'),
     openItemInfo: (): Promise<void> => ipcRenderer.invoke('overlay:iteminfo:open'),
+    showItemInfo: (): Promise<void> => ipcRenderer.invoke('overlay:iteminfo:show'),
     closeItemInfo: (): Promise<void> => ipcRenderer.invoke('overlay:iteminfo:close'),
     toggleItemInfo: (): Promise<void> => ipcRenderer.invoke('overlay:iteminfo:toggle'),
     openCHChain: (): Promise<void> => ipcRenderer.invoke('overlay:chchain:open'),

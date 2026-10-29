@@ -1708,9 +1708,12 @@ function createKillCounterOverlay(): void {
   })
 }
 
-function createItemInfoOverlay(): void {
+// inactive opens the window without taking focus, for the auto-show on an
+// in-game item click: stealing focus from EQ mid-game would be worse than not
+// showing the window at all.
+function createItemInfoOverlay(inactive = false): void {
   if (itemInfoWindow && !itemInfoWindow.isDestroyed()) {
-    itemInfoWindow.focus()
+    if (!inactive) itemInfoWindow.focus()
     return
   }
 
@@ -1738,7 +1741,8 @@ function createItemInfoOverlay(): void {
   })
 
   itemInfoWindow.once('ready-to-show', () => {
-    itemInfoWindow?.show()
+    if (inactive) itemInfoWindow?.showInactive()
+    else itemInfoWindow?.show()
   })
 
   itemInfoWindow.setAlwaysOnTop(true, 'screen-saver')
@@ -2919,6 +2923,10 @@ ipcMain.handle('overlay:chchain:open', () => {
 
 ipcMain.handle('overlay:iteminfo:open', () => {
   createItemInfoOverlay()
+})
+
+ipcMain.handle('overlay:iteminfo:show', () => {
+  createItemInfoOverlay(true)
 })
 
 ipcMain.handle('overlay:iteminfo:close', () => {

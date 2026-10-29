@@ -917,6 +917,61 @@ type Preferences struct {
 	// user; it reveals the Item Info overlay, which stays hidden until then
 	// so users on a Zeal without the message never see a dead feature.
 	ZealItemDisplaySeen bool `yaml:"zeal_item_display_seen,omitempty" json:"zeal_item_display_seen"`
+
+	// ItemInfoOverlay is the Item Info overlay's display setup: which
+	// sections and fields show on each surface, their order, and how long a
+	// list gets before it collapses to a count. Frontend-only; the backend
+	// just seeds the defaults (see seedItemInfoOverlay).
+	ItemInfoOverlay ItemInfoOverlaySettings `yaml:"item_info_overlay,omitempty" json:"item_info_overlay"`
+}
+
+// ItemInfoOverlaySettings configures the Item Info overlay's summary card.
+// HiddenItems uses the NPC overlay's key scheme: "section.<id>" hides a whole
+// section and "<section>.<field>" one row inside it; a "dashboard:" or
+// "popout:" prefix limits the key to that surface.
+type ItemInfoOverlaySettings struct {
+	// SectionOrder is the saved section order; unknown ids are dropped and
+	// missing ones keep their default slot at the end.
+	SectionOrder []string `yaml:"section_order,omitempty" json:"section_order"`
+	HiddenItems  []string `yaml:"hidden_items,omitempty" json:"hidden_items"`
+	// ListLimit is how many vendors/quests/recipes a section lists before it
+	// collapses to a count; SectionLimits overrides it per section id.
+	ListLimit     int            `yaml:"list_limit,omitempty" json:"list_limit"`
+	SectionLimits map[string]int `yaml:"section_limits,omitempty" json:"section_limits"`
+	// EmptyModes maps a section id to "show" (an explicit "no" line) or
+	// "hide" when it has nothing; "" or missing means the section's default.
+	EmptyModes map[string]string `yaml:"empty_modes,omitempty" json:"empty_modes"`
+	// AutoShow opens the popout when an item link is clicked in game;
+	// AutoHideSecs (0 = never) closes it again after that long untouched.
+	AutoShow     bool `yaml:"auto_show,omitempty" json:"auto_show"`
+	AutoHideSecs int  `yaml:"auto_hide_secs,omitempty" json:"auto_hide_secs"`
+	// DefaultsSeeded marks that the default hidden sections were applied
+	// once, so a user who later shows everything doesn't get them back.
+	DefaultsSeeded bool `yaml:"defaults_seeded,omitempty" json:"defaults_seeded"`
+}
+
+// DefaultItemInfoListLimit is the list length before a section collapses.
+const DefaultItemInfoListLimit = 5
+
+// seedItemInfoOverlay applies the Item Info overlay defaults: Drops From and
+// Other Sources start hidden (the feature request had them unticked), as does
+// the long Races row, and a missing list limit becomes the default. Returns
+// true when anything changed.
+func seedItemInfoOverlay(p *Preferences) bool {
+	s := &p.ItemInfoOverlay
+	changed := false
+	if !s.DefaultsSeeded {
+		if len(s.HiddenItems) == 0 {
+			s.HiddenItems = []string{"section.drops", "section.sources", "facts.races"}
+		}
+		s.DefaultsSeeded = true
+		changed = true
+	}
+	if s.ListLimit <= 0 {
+		s.ListLimit = DefaultItemInfoListLimit
+		changed = true
+	}
+	return changed
 }
 
 // DiscordVoiceLink is one saved StreamKit voice-overlay link — a name the
@@ -1452,6 +1507,7 @@ func LoadFrom(path string) (*Manager, error) {
 		// raid-threat-on default that predates the Developer-tab gate).
 		cfg.SpellTimer.CastByMeMigrationDone = true
 		cfg.Preferences.RaidThreatMigratedOff = true
+		seedItemInfoOverlay(&cfg.Preferences)
 		m := &Manager{cfg: cfg, path: path}
 		if saveErr := m.save(); saveErr != nil {
 			// Non-fatal: we can operate without a file on disk.
@@ -1675,6 +1731,9 @@ func applyDefaults(cfg *Config) bool {
 	}
 	if cfg.Preferences.NPCOverlayRangedRange < 0 {
 		cfg.Preferences.NPCOverlayRangedRange = 0
+		changed = true
+	}
+	if seedItemInfoOverlay(&cfg.Preferences) {
 		changed = true
 	}
 	// Ranges became automatic by default; anyone who had typed their own keeps

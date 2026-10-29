@@ -653,3 +653,67 @@ func TestLoadFrom_NPCRangesAutoMigration(t *testing.T) {
 		})
 	}
 }
+
+func TestSeedItemInfoOverlay(t *testing.T) {
+	tests := []struct {
+		name       string
+		in         ItemInfoOverlaySettings
+		wantHidden []string
+		wantLimit  int
+	}{
+		{
+			name:       "fresh config gets the default hidden sections",
+			in:         ItemInfoOverlaySettings{},
+			wantHidden: []string{"section.drops", "section.sources", "facts.races"},
+			wantLimit:  DefaultItemInfoListLimit,
+		},
+		{
+			name:       "seeded config that shows everything stays empty",
+			in:         ItemInfoOverlaySettings{DefaultsSeeded: true, ListLimit: 3},
+			wantHidden: nil,
+			wantLimit:  3,
+		},
+		{
+			name:       "existing list is kept",
+			in:         ItemInfoOverlaySettings{HiddenItems: []string{"facts.weight"}},
+			wantHidden: []string{"facts.weight"},
+			wantLimit:  DefaultItemInfoListLimit,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := Preferences{ItemInfoOverlay: tt.in}
+			seedItemInfoOverlay(&p)
+			got := p.ItemInfoOverlay
+			if !slices.Equal(got.HiddenItems, tt.wantHidden) {
+				t.Errorf("HiddenItems = %v, want %v", got.HiddenItems, tt.wantHidden)
+			}
+			if got.ListLimit != tt.wantLimit {
+				t.Errorf("ListLimit = %d, want %d", got.ListLimit, tt.wantLimit)
+			}
+			if !got.DefaultsSeeded {
+				t.Error("DefaultsSeeded = false, want true")
+			}
+		})
+	}
+}
+
+func TestLoadFrom_ItemInfoShowAllSurvivesReload(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	m, err := LoadFrom(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := m.Get()
+	c.Preferences.ItemInfoOverlay.HiddenItems = []string{}
+	if err := m.Update(c); err != nil {
+		t.Fatal(err)
+	}
+	m2, err := LoadFrom(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := m2.Get().Preferences.ItemInfoOverlay.HiddenItems; len(got) != 0 {
+		t.Errorf("HiddenItems after reload = %v, want empty", got)
+	}
+}
