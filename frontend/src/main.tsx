@@ -25,4 +25,22 @@ async function bootstrap(): Promise<void> {
   )
 }
 
+// Overlays are shown once and stay up, so Chromium marking one hidden means
+// it has stopped painting it (e.g. native occlusion tracking deciding it's
+// covered) — the "overlays went blank" reports. console.warn reaches
+// electron.log, which timestamps the edge. The trigger overlay is natively
+// hidden between alerts, so its edges are noise and skipped.
+function logOverlayVisibility(): void {
+  const route = window.location.hash
+  if (!route.includes('-window') || route.includes('trigger-overlay-window')) {
+    return
+  }
+  document.addEventListener('visibilitychange', () => {
+    console.warn(
+      `[overlay-visibility] ${route} ${document.visibilityState}`,
+    )
+  })
+}
+
+logOverlayVisibility()
 void bootstrap()

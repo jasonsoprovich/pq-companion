@@ -175,6 +175,13 @@ protocol.registerSchemesAsPrivileged([
 // set before app is ready.
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 
+// Chromium's native occlusion tracking on Windows marks a window hidden when
+// it decides other windows cover it, and stops painting it. Transparent
+// overlays then go blank while staying visible/topmost/on-screen, until
+// toggled off/on — which matches the "overlays disappeared" reports. The
+// overlays are always on top, so they never need occlusion throttling.
+app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion')
+
 // Under Wine/Proton, Chromium picks up a non-1 DPI scale (e.g. from KDE's
 // fractional scaling) that Wine's mouse coordinates don't follow, so clicks
 // drift away from the cursor. Pinning the scale to 1 fixed this for a Linux
