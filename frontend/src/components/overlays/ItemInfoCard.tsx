@@ -7,7 +7,7 @@
  * Shared by the dashboard panel, the popout window and the Settings preview.
  */
 import React, { useEffect, useMemo, useState } from 'react'
-import { Check, ChevronRight, ExternalLink, MapPin, X } from 'lucide-react'
+import { Check, ChevronRight, MapPin, X } from 'lucide-react'
 import { useAppNavigate } from '../../hooks/useAppNavigate'
 import { useLiveZone } from '../../hooks/useLiveZone'
 import {
@@ -279,21 +279,19 @@ function ToggleLink({ onClick, children, theme }: { onClick: () => void; childre
 }
 
 // Shows every row when there are `limit` or fewer. Past that, it shows the
-// pinned rows (in the current zone) up to the limit plus a summary line that
-// expands the full list in place.
+// first `limit` rows (callers sort current-zone rows first) plus a summary
+// line that expands the full list in place.
 function CollapsibleList<T>({
   rows,
   limit,
   render,
   summary,
-  pinned,
   theme,
 }: {
   rows: T[]
   limit: number
   render: (row: T, i: number) => React.ReactNode
   summary: string
-  pinned?: (row: T) => boolean
   theme: ItemInfoTheme
 }): React.ReactElement {
   const [open, setOpen] = useState(false)
@@ -306,7 +304,7 @@ function CollapsibleList<T>({
       </>
     )
   }
-  const shown = pinned ? rows.filter(pinned).slice(0, limit) : []
+  const shown = rows.slice(0, limit)
   return (
     <>
       {shown.map(render)}
@@ -575,7 +573,6 @@ function QuestsSection(p: SectionProps): React.ReactElement | null {
           rows={hereFirst(rows, isHere)}
           limit={limit}
           summary={`${rows.length} ${noun} in ${zones} zone${zones === 1 ? '' : 's'}`}
-          pinned={isHere}
           theme={theme}
           render={row}
         />
@@ -619,7 +616,6 @@ function NPCList({
       rows={hereFirst(npcs, isHere)}
       limit={limit}
       summary={summary ?? `${npcs.length} ${noun}`}
-      pinned={isHere}
       theme={theme}
       render={(n) => (
         <Row
@@ -721,7 +717,6 @@ function SourcesSection(p: SectionProps): React.ReactElement | null {
         rows={hereFirst(rows, isHere)}
         limit={settings.limitFor('sources')}
         summary={`${rows.length} zones`}
-        pinned={isHere}
         theme={theme}
         render={(r) => (
           <Row
@@ -806,19 +801,6 @@ export default function ItemInfoCard({
         {sections}
       </div>
 
-      {showOpen && (
-        <button
-          onClick={openItem}
-          style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, flexShrink: 0,
-            margin: '0 10px 8px', padding: '4px 8px', borderRadius: 4, cursor: 'pointer',
-            background: 'transparent', border: `1px solid ${theme.divider}`, color: theme.muted, fontSize: 11,
-          }}
-        >
-          View in PQ Companion
-          <ExternalLink size={11} />
-        </button>
-      )}
     </div>
   )
 }
