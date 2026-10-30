@@ -131,7 +131,7 @@ export const ITEM_INFO_SECTIONS: ItemInfoSectionDef[] = [
 export const ITEM_INFO_HEADER_FIELDS: Array<{ key: string; label: string; hint?: string }> = [
   { key: 'header.badge', label: 'Ownership badge', hint: '"You have this" under the name' },
   { key: 'header.wishlist', label: 'Wishlist star' },
-  { key: 'header.open', label: 'Open in PQ Companion link' },
+  { key: 'header.open', label: 'Clickable item name', hint: 'Opens the item in PQ Companion' },
 ]
 
 export const DEFAULT_ITEM_INFO_LIST_LIMIT = 5
