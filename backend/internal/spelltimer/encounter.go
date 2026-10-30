@@ -66,13 +66,14 @@ func (e *Engine) StartOwnedExternal(owner, name string, duration, threshold floa
 func (e *Engine) StopOwnedExternal(owner, name, target string) {
 	e.mu.Lock()
 	key := ownedTimerKey(owner, name, target)
-	_, found := e.timers[key]
+	if _, found := e.timers[key]; !found {
+		e.mu.Unlock()
+		return
+	}
 	delete(e.timers, key)
 	snap := e.snapshot(time.Now())
 	e.mu.Unlock()
-	if found {
-		e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
-	}
+	e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
 }
 
 // Empty owner is used only for context retirement; ordinary definition
@@ -94,9 +95,11 @@ func (e *Engine) RetireOwnedExternal(owner string, contextOnly bool) {
 		delete(e.timers, key)
 		changed = true
 	}
+	if !changed {
+		e.mu.Unlock()
+		return
+	}
 	snap := e.snapshot(time.Now())
 	e.mu.Unlock()
-	if changed {
-		e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
-	}
+	e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
 }

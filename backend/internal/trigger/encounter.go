@@ -79,7 +79,8 @@ func encounterSemantics(t *Trigger) string {
 // These are planning metadata, not timer admission state. Lifetimes are owned
 // by current compiled definitions and any in-flight snapshots; resolved keys
 // exist only while their Handle call is in flight, never as historical epochs.
-// All fields are protected by Engine.managedMu.
+// Lifetime/cancellation state is protected by Engine.managedMu. Captured
+// matches and their extra-pattern index are immutable for the Handle call.
 type managedLifetime struct {
 	retired bool
 	pending map[*managedPlan]struct{}
@@ -88,25 +89,34 @@ type managedPlan struct {
 	lifetime    *managedLifetime
 	key, target string
 	revoked     bool
+	match       []string
+	extra       int // -1 for the primary pattern
 }
 
 func (e *Engine) captureManagedPlansLocked(cs []compiled, message string, stale bool) []*managedPlan {
-	plans := make([]*managedPlan, len(cs))
 	if stale {
-		return plans
+		return nil
 	}
+	var plans []*managedPlan
 	for i, c := range cs {
 		if c.lifetime == nil || c.timerKey == "" || matchesAny(c.excludes, message) {
 			continue
 		}
 		m, names := c.re.FindStringSubmatch(message), c.re.SubexpNames()
+		extra := -1
 		for j := 0; m == nil && j < len(c.extras); j++ {
 			m, names = c.extras[j].re.FindStringSubmatch(message), c.extras[j].re.SubexpNames()
+			if m != nil {
+				extra = j
+			}
 		}
 		if m == nil {
 			continue
 		}
-		p := &managedPlan{lifetime: c.lifetime, key: resolveTimerKey(c.trigger, c.timerKey, m, names), target: resolveTimerTarget(c.trigger, m, names)}
+		if plans == nil {
+			plans = make([]*managedPlan, len(cs))
+		}
+		p := &managedPlan{lifetime: c.lifetime, key: resolveTimerKey(c.trigger, c.timerKey, m, names), target: resolveTimerTarget(c.trigger, m, names), match: m, extra: extra}
 		if c.lifetime.pending == nil {
 			c.lifetime.pending = make(map[*managedPlan]struct{})
 		}

@@ -420,7 +420,9 @@ func (e *Engine) handleContext(timestamp time.Time, message string, source *uint
 	// block. A stop can then revoke just its matching in-flight admission.
 	pending := e.captureManagedPlansLocked(cs, message, stale)
 	e.managedMu.Unlock()
-	defer e.releaseManagedPlans(pending)
+	if pending != nil {
+		defer e.releaseManagedPlans(pending)
+	}
 	e.fc.bossCast.observe(timestamp, message)
 
 	active := ""
@@ -436,21 +438,38 @@ func (e *Engine) handleContext(timestamp time.Time, message string, source *uint
 		// enabled extra. The first match wins — it supplies the capture
 		// groups and (for extras) its per-pattern timer overrides; excludes
 		// suppress regardless of which pattern matched.
-		m, names := c.re.FindStringSubmatch(message), c.re.SubexpNames()
+		var m, names []string
 		var extra *ExtraPattern
-		for i := 0; m == nil && i < len(c.extras); i++ {
-			m, names = c.extras[i].re.FindStringSubmatch(message), c.extras[i].re.SubexpNames()
-			if m != nil {
-				extra = &c.extras[i].meta
+		if c.lifetime != nil {
+			// Managed matches (including exclusions/misses) were already
+			// captured before providers. Keep that identity and reuse the work.
+			if pending != nil && pending[i] != nil {
+				p := pending[i]
+				m, names = p.match, c.re.SubexpNames()
+				if p.extra >= 0 {
+					names = c.extras[p.extra].re.SubexpNames()
+					extra = &c.extras[p.extra].meta
+				}
+			}
+		} else {
+			m, names = c.re.FindStringSubmatch(message), c.re.SubexpNames()
+			for j := 0; m == nil && j < len(c.extras); j++ {
+				m, names = c.extras[j].re.FindStringSubmatch(message), c.extras[j].re.SubexpNames()
+				if m != nil {
+					extra = &c.extras[j].meta
+				}
 			}
 		}
-		if m != nil && !matchesAny(c.excludes, message) {
+		matched := m != nil && (c.lifetime != nil || !matchesAny(c.excludes, message))
+		if matched {
 			e.fc.noteRepeat(c.trigger, timestamp)
 		}
-		if m != nil && !matchesAny(c.excludes, message) && e.fc.passesRefireCooldown(c.trigger, timestamp) {
+		if matched && e.fc.passesRefireCooldown(c.trigger, timestamp) {
 			plan := e.planFire(e.fc, c, message, timestamp, m, names, extra, "")
 			plan.managedEpoch = epoch
-			plan.managedPlan = pending[i]
+			if pending != nil {
+				plan.managedPlan = pending[i]
+			}
 			e.applyFire(plan, fireOpts{})
 		}
 		if c.wornOff != nil && e.sink != nil && c.timerKey != "" {
