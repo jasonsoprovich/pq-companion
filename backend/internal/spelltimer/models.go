@@ -140,7 +140,9 @@ type ActiveTimer struct {
 	// never collide, and this flag lets removeOnKill / worn-off handling treat
 	// them differently from an ordinary single-instance custom timer. Always
 	// false outside CategoryCustom. Internal-only; the frontend doesn't need it.
-	Stacked bool `json:"-"`
+	Stacked        bool `json:"-"`
+	ownerID        string
+	clearOnContext bool
 
 	// Repeat restarts the timer on expiry (Trigger.TimerRepeat) instead of
 	// dropping it; repeatsLeft counts down the remaining cycles.

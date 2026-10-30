@@ -313,6 +313,10 @@ type Trigger struct {
 	// safety cap (see spelltimer.maxRepeatCycles).
 	TimerRepeatMax int `json:"timer_repeat_max,omitempty"`
 
+	// Opt-in encounter lifecycle; only log/custom, nonstacking, nonrepeating.
+	TimerIfIdle               bool `json:"timer_if_idle,omitempty"`
+	TimerClearOnContextChange bool `json:"timer_clear_on_context_change,omitempty"`
+
 	// RefireCooldownSecs suppresses the trigger from firing again for this many
 	// seconds after it fires. 0 (default) means fire on every match — the
 	// out-of-the-box behaviour. Unlike CooldownSecs (a visible spell-recast

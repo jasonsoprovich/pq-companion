@@ -79,8 +79,10 @@ type triggerRequest struct {
 	TimerStack bool `json:"timer_stack"`
 	// TimerRepeat / TimerRepeatMax request restart-on-expiry — see
 	// Trigger.TimerRepeat. Coerced off for non-custom or stacked timers.
-	TimerRepeat    bool `json:"timer_repeat"`
-	TimerRepeatMax int  `json:"timer_repeat_max"`
+	TimerRepeat               bool  `json:"timer_repeat"`
+	TimerRepeatMax            int   `json:"timer_repeat_max"`
+	TimerIfIdle               *bool `json:"timer_if_idle"`
+	TimerClearOnContextChange *bool `json:"timer_clear_on_context_change"`
 	// CustomGroupID selects which Custom Timers window a timer_type="custom"
 	// trigger's timer appears in. Empty = the original/default window.
 	CustomGroupID   string                 `json:"custom_group_id"`
@@ -212,6 +214,13 @@ func (h *triggerHandler) create(w http.ResponseWriter, r *http.Request) {
 	if req.RepeatResetSecs != nil {
 		t.RepeatResetSecs = *req.RepeatResetSecs
 	}
+	if req.TimerIfIdle != nil {
+		t.TimerIfIdle = *req.TimerIfIdle
+	}
+	if req.TimerClearOnContextChange != nil {
+		t.TimerClearOnContextChange = *req.TimerClearOnContextChange
+	}
+	t.NormalizeEncounterTimer()
 	if t.Actions == nil {
 		t.Actions = []trigger.Action{}
 	}
@@ -299,6 +308,13 @@ func (h *triggerHandler) update(w http.ResponseWriter, r *http.Request) {
 	existing.ExtraPatterns = req.ExtraPatterns
 	existing.Source = src
 	existing.PipeCondition = req.PipeCondition
+	if req.TimerIfIdle != nil {
+		existing.TimerIfIdle = *req.TimerIfIdle
+	}
+	if req.TimerClearOnContextChange != nil {
+		existing.TimerClearOnContextChange = *req.TimerClearOnContextChange
+	}
+	existing.NormalizeEncounterTimer()
 	// Only touch the category when the request carries category_id or
 	// pack_name — an omitted field (older callers, edits that don't change
 	// category) leaves the existing value intact. On a category change,

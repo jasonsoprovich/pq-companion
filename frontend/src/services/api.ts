@@ -3307,6 +3307,12 @@ export interface CreateTriggerRequest {
    */
   timer_repeat?: boolean
   timer_repeat_max?: number
+  /** Keep the first active countdown; custom nonstacking/nonrepeating log timers only.
+   * Omitted on update preserves the saved option; false explicitly clears it. */
+  timer_if_idle?: boolean
+  /** Cancel this timer on zone, character or log context changes.
+   * Same eligibility and omitted-update semantics as timer_if_idle. */
+  timer_clear_on_context_change?: boolean
   worn_off_pattern?: string
   spell_id?: number
   /**

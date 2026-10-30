@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 )
 
@@ -66,8 +67,9 @@ type compiledExtra struct {
 type compiled struct {
 	trigger  *Trigger
 	re       *regexp.Regexp
-	wornOff  *regexp.Regexp // non-nil only when the trigger has a worn-off pattern
-	timerKey string         // cached spelltimer key when timer_type != none
+	wornOff  *regexp.Regexp   // non-nil only when the trigger has a worn-off pattern
+	timerKey string           // cached spelltimer key when timer_type != none
+	lifetime *managedLifetime // shared only across semantically identical reloads
 	// extras are the precompiled enabled ExtraPatterns. The trigger fires
 	// when the primary pattern OR any extra matches; the first matching
 	// pattern's capture groups feed the actions and its timer overrides
@@ -111,9 +113,13 @@ type Engine struct {
 	// real channel.
 	replaying atomic.Bool
 
-	mu           sync.RWMutex
-	compiled     []compiled // Source=="log" triggers, indexed by regex
-	pipeCompiled []*Trigger // Source=="pipe" triggers, evaluated by PipeCondition
+	managedMu        sync.Mutex // serializes owned admission, actions and retirement
+	managedEpoch     uint64
+	sourceGeneration uint64
+	reloadMu         sync.Mutex
+	mu               sync.RWMutex
+	compiled         []compiled // Source=="log" triggers, indexed by regex
+	pipeCompiled     []*Trigger // Source=="pipe" triggers, evaluated by PipeCondition
 
 	// Pipe edge state. The engine compares each new pipe update against
 	// these values so "drops below 20%" and "buff X falls off" don't refire
@@ -259,6 +265,8 @@ func (e *Engine) SetWebhookResolver(fn func(id string) (string, bool)) {
 // Reload re-reads all enabled triggers from the store and recompiles their
 // patterns. Must be called after any CRUD mutation to keep the engine in sync.
 func (e *Engine) Reload() {
+	e.reloadMu.Lock()
+	defer e.reloadMu.Unlock()
 	triggers, err := e.store.List()
 	if err != nil {
 		slog.Error("trigger: reload failed", "err", err)
@@ -299,10 +307,33 @@ func (e *Engine) Reload() {
 		cs = append(cs, c)
 	}
 
+	e.managedMu.Lock()
 	e.mu.Lock()
+	next := make(map[string]int, len(cs))
+	for i := range cs {
+		next[cs[i].trigger.ID] = i
+		if cs[i].trigger.managedTimer() {
+			cs[i].lifetime = &managedLifetime{}
+		}
+	}
+	for _, old := range e.compiled {
+		if !old.trigger.managedTimer() {
+			continue
+		}
+		i, exists := next[old.trigger.ID]
+		if !exists || encounterSemantics(old.trigger) != encounterSemantics(cs[i].trigger) {
+			old.lifetime.retired = true
+			if sink, ok := e.sink.(OwnedTimerSink); ok {
+				sink.RetireOwnedExternal(old.trigger.ID, false)
+			}
+		} else {
+			cs[i].lifetime = old.lifetime
+		}
+	}
 	e.compiled = cs
 	e.pipeCompiled = pipeCs
 	e.mu.Unlock()
+	e.managedMu.Unlock()
 
 	slog.Info("trigger: reloaded", "log_active", len(cs), "pipe_active", len(pipeCs))
 }
@@ -366,38 +397,79 @@ func compileOne(t *Trigger, character string) (compiled, []string) {
 // timestamp is when the line was logged; message is the text after the EQ
 // timestamp prefix (i.e. the bare log message, without brackets).
 func (e *Engine) Handle(timestamp time.Time, message string) {
-	e.fc.bossCast.observe(timestamp, message)
+	e.handleContext(timestamp, message, nil)
+}
 
+// HandleSource binds a physical Tailer line to the generation collected with it.
+func (e *Engine) HandleSource(timestamp time.Time, message string, generation uint64) {
+	e.handleContext(timestamp, message, &generation)
+}
+func (e *Engine) handleContext(timestamp time.Time, message string, source *uint64) {
+	e.managedMu.Lock()
+	stale := source != nil && *source != e.sourceGeneration
+	if !stale && strings.HasPrefix(message, "You have entered ") {
+		if ev, ok := logparser.ClassifyMessage(message); ok && ev.Type == logparser.EventZone {
+			e.retireContextLocked()
+		}
+	}
+	epoch := e.managedEpoch
 	e.mu.RLock()
 	cs := e.compiled
 	e.mu.RUnlock()
+	// Bind owner lifetime and resolved identities before any provider can
+	// block. A stop can then revoke just its matching in-flight admission.
+	pending := e.captureManagedPlansLocked(cs, message, stale)
+	e.managedMu.Unlock()
+	if pending != nil {
+		defer e.releaseManagedPlans(pending)
+	}
+	e.fc.bossCast.observe(timestamp, message)
 
 	active := ""
 	if e.activeChar != nil {
 		active = e.activeChar()
 	}
 
-	for _, c := range cs {
-		if !triggerAppliesTo(c.trigger, active) {
+	for i, c := range cs {
+		if !triggerAppliesTo(c.trigger, active) || (stale && c.trigger.managedTimer()) {
 			continue
 		}
 		// Any-pattern semantics: try the primary pattern first, then each
 		// enabled extra. The first match wins — it supplies the capture
 		// groups and (for extras) its per-pattern timer overrides; excludes
 		// suppress regardless of which pattern matched.
-		m, names := c.re.FindStringSubmatch(message), c.re.SubexpNames()
+		var m, names []string
 		var extra *ExtraPattern
-		for i := 0; m == nil && i < len(c.extras); i++ {
-			m, names = c.extras[i].re.FindStringSubmatch(message), c.extras[i].re.SubexpNames()
-			if m != nil {
-				extra = &c.extras[i].meta
+		if c.lifetime != nil {
+			// Managed matches (including exclusions/misses) were already
+			// captured before providers. Keep that identity and reuse the work.
+			if pending != nil && pending[i] != nil {
+				p := pending[i]
+				m, names = p.match, c.re.SubexpNames()
+				if p.extra >= 0 {
+					names = c.extras[p.extra].re.SubexpNames()
+					extra = &c.extras[p.extra].meta
+				}
+			}
+		} else {
+			m, names = c.re.FindStringSubmatch(message), c.re.SubexpNames()
+			for j := 0; m == nil && j < len(c.extras); j++ {
+				m, names = c.extras[j].re.FindStringSubmatch(message), c.extras[j].re.SubexpNames()
+				if m != nil {
+					extra = &c.extras[j].meta
+				}
 			}
 		}
-		if m != nil && !matchesAny(c.excludes, message) {
+		matched := m != nil && (c.lifetime != nil || !matchesAny(c.excludes, message))
+		if matched {
 			e.fc.noteRepeat(c.trigger, timestamp)
 		}
-		if m != nil && !matchesAny(c.excludes, message) && e.fc.passesRefireCooldown(c.trigger, timestamp) {
+		if matched && e.fc.passesRefireCooldown(c.trigger, timestamp) {
 			plan := e.planFire(e.fc, c, message, timestamp, m, names, extra, "")
+			plan.managedEpoch = epoch
+			if pending != nil {
+				plan.managedPlan = pending[i]
+			}
 			e.applyFire(plan, fireOpts{})
 		}
 		if c.wornOff != nil && e.sink != nil && c.timerKey != "" {
@@ -411,7 +483,11 @@ func (e *Engine) Handle(timestamp time.Time, message string) {
 				if key != c.timerKey {
 					spellID = 0
 				}
-				e.sink.StopExternal(key, spellID)
+				if c.trigger.managedTimer() {
+					e.stopOwned(c, key, resolveTimerTarget(c.trigger, wm, c.wornOff.SubexpNames()), epoch)
+				} else {
+					e.sink.StopExternal(key, spellID)
+				}
 			}
 		}
 	}
@@ -838,6 +914,8 @@ type firePlan struct {
 	timerAlerts   json.RawMessage
 	timerStack    bool
 	timerIsSig    bool
+	managedEpoch  uint64
+	managedPlan   *managedPlan
 }
 
 // planFire resolves a trigger match into a firePlan. match/names are the
@@ -954,8 +1032,20 @@ type fireOpts struct {
 
 // applyFire executes a firePlan: dispatches webhooks, records history,
 // broadcasts trigger:fired, and starts the timer/cooldown via the sink.
-func (e *Engine) applyFire(plan firePlan, opts fireOpts) {
+func (e *Engine) applyFire(plan firePlan, opts fireOpts) bool {
 	t := plan.trigger
+	managed := t.managedTimer()
+	if managed {
+		e.managedMu.Lock()
+		defer e.managedMu.Unlock()
+		if !opts.test && (plan.managedEpoch != e.managedEpoch || plan.managedPlan == nil || plan.managedPlan.revoked || plan.managedPlan.lifetime.retired) {
+			return false
+		}
+		sink, ok := e.sink.(OwnedTimerSink)
+		if !ok || !plan.hasTimer || !sink.StartOwnedExternal(t.ID, plan.timerKey, plan.timerDuration, t.DisplayThresholdSecs, plan.firedAt, plan.timerAlerts, plan.timerSpellID, plan.timerTarget, t.BarColor, t.Pinned, t.CustomGroupID, t.TimerIfIdle, t.TimerClearOnContextChange) {
+			return false
+		}
+	}
 
 	// Follow-up matches in a repeat run only refresh the on-screen count, so
 	// they don't re-post webhooks or add history rows (a 12-mob PBAE would
@@ -999,7 +1089,7 @@ func (e *Engine) applyFire(plan firePlan, opts fireOpts) {
 	slog.Debug("trigger fired",
 		"trigger", t.Name, "id", t.ID, "log_ts", plan.firedAt.Format(time.RFC3339), "line", plan.matchedLine, "test", opts.test)
 
-	if e.sink != nil && plan.hasTimer {
+	if !managed && e.sink != nil && plan.hasTimer {
 		e.sink.StartExternal(plan.timerKey, plan.timerCategory, plan.timerDuration, t.DisplayThresholdSecs, plan.firedAt, plan.timerAlerts, plan.timerSpellID, plan.timerTarget, t.BarColor, t.Pinned, t.CustomGroupID, plan.timerIsSig, plan.timerStack)
 		if t.TimerRepeat && t.TimerType == TimerTypeCustom && !plan.timerStack {
 			if rs, ok := e.sink.(RepeatingSink); ok {
@@ -1010,12 +1100,15 @@ func (e *Engine) applyFire(plan firePlan, opts fireOpts) {
 	if !opts.test {
 		e.startCooldownTimer(t, plan.firedAt)
 	}
+	return true
 }
 
 // SetReplaying marks whether incoming lines come from a log replay session
 // rather than the live log. While set, fires skip discord_webhook posts.
 func (e *Engine) SetReplaying(replaying bool) {
-	e.replaying.Store(replaying)
+	if e.replaying.Swap(replaying) != replaying {
+		e.RetireContext()
+	}
 }
 
 // discordWebhookURLRe restricts outbound webhook posts to Discord's own

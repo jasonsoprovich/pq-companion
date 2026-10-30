@@ -414,6 +414,9 @@ func (e *Engine) evictOldestStackedLocked(name string) {
 // both timers carry the same SpellID, so without this they'd show as two
 // separate rows for one cast.
 func sameSpellForDedup(existing *ActiveTimer, name string, spellID int) bool {
+	if existing.ownerID != "" {
+		return false
+	}
 	if existing.SpellName == name {
 		return true
 	}
@@ -2955,7 +2958,7 @@ func (e *Engine) removeBySpellNameOrID(spellName string, spellID int) {
 	allDetrimental := true
 	allStacked := true
 	for k, t := range e.timers {
-		if t.SpellName == spellName || (spellID > 0 && t.SpellID == spellID) {
+		if t.ownerID == "" && (t.SpellName == spellName || (spellID > 0 && t.SpellID == spellID)) {
 			matches = append(matches, k)
 			if !isDetrimentalCategory(t.Category) {
 				allDetrimental = false
@@ -3094,7 +3097,7 @@ func (e *Engine) SetExternalRepeat(name, targetName string, maxRepeats int) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	for _, t := range e.timers {
-		if t.Category == CategoryCustom && !t.Stacked && t.SpellName == name && t.TargetName == targetName {
+		if t.ownerID == "" && t.Category == CategoryCustom && !t.Stacked && t.SpellName == name && t.TargetName == targetName {
 			t.Repeat = true
 			t.repeatsLeft = maxRepeats
 		}
