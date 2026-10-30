@@ -58,6 +58,7 @@ frontend/coverage/
 # ── Electron build output ─────────────────────────────────────────────────────
 electron/dist/
 dist/
+dist-test/
 release/
 out/
 *.dmg
