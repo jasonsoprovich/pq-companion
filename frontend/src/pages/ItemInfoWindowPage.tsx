@@ -5,7 +5,7 @@
  * navigating this one. With auto-show and an auto-hide delay set, it closes
  * itself once that long passes without a new item or the mouse over it.
  */
-import React, { useEffect, useRef } from 'react'
+import React, { useCallback, useEffect, useRef } from 'react'
 import { Info } from 'lucide-react'
 import ItemInfoView from '../components/overlays/ItemInfoView'
 import { useItemDisplay } from '../hooks/useItemDisplay'
@@ -17,6 +17,37 @@ import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
 import OverlayLockButton from '../components/OverlayLockButton'
+import { ActiveCharacterProvider, useActiveCharacter } from '../contexts/ActiveCharacterContext'
+import { useWebSocket, type WsMessage } from '../hooks/useWebSocket'
+import { WSEvent } from '../lib/wsEvents'
+import { listCharacters } from '../services/api'
+
+// Overlay windows render outside the main Layout, so nothing fills the
+// active-character context here. The card's wishlist star needs it, so this
+// mirrors CharacterSwitcher's sync: initial fetch, 30s poll, live detection.
+function ActiveCharacterSync(): null {
+  const { setActive } = useActiveCharacter()
+  useEffect(() => {
+    const refresh = () => {
+      listCharacters()
+        .then((d) => setActive(d.active, d.manual))
+        .catch(() => undefined)
+    }
+    refresh()
+    const id = setInterval(refresh, 30_000)
+    return () => clearInterval(id)
+  }, [setActive])
+  const handle = useCallback(
+    (msg: WsMessage) => {
+      if (msg.type !== WSEvent.ConfigCharacterDetected) return
+      const name = (msg.data as { character?: string } | null)?.character ?? ''
+      if (name) setActive(name, false)
+    },
+    [setActive],
+  )
+  useWebSocket(handle)
+  return null
+}
 
 export default function ItemInfoWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity('itemInfo')
@@ -119,11 +150,14 @@ export default function ItemInfoWindowPage(): React.ReactElement {
         </div>
       </div>
 
-      <AppNavigateContext.Provider value={openRouteInMain}>
-        <div className="flex min-h-0 flex-1 flex-col">
-          <ItemInfoView {...display} surface="popout" />
-        </div>
-      </AppNavigateContext.Provider>
+      <ActiveCharacterProvider>
+        <ActiveCharacterSync />
+        <AppNavigateContext.Provider value={openRouteInMain}>
+          <div className="flex min-h-0 flex-1 flex-col">
+            <ItemInfoView {...display} surface="popout" />
+          </div>
+        </AppNavigateContext.Provider>
+      </ActiveCharacterProvider>
     </div>
   )
 }
