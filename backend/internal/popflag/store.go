@@ -435,6 +435,92 @@ func (s *Store) ApplyPopFlagsReport(character string, report PopFlagsReport, raw
 	return done, nil
 }
 
+// ApplyHailGrant records a confirmed in-game hail grant (see hailgrant.go) for
+// flagID: the NPC's Lua set the flag's qglobal to at least its QglobalValue,
+// so that floor is merged into the stored qglobal snapshot exactly like a
+// '#popflags' AtLeast value, and every flag the merged snapshot now derives as
+// complete is recorded as an 'auto' row.
+//
+// Folding the grant into the snapshot (rather than only writing a bare auto
+// row) is what keeps it alive across a later PARTIAL '#popflags' reading:
+// ApplyPopFlagsReport clears non-manual qglobal-backed rows and re-derives
+// from the merged snapshot, which now carries this floor. A floor only ever
+// raises a value, so a grant can add completions but never retract one, and
+// rows already present (manual, seer, popflags) are left untouched. The
+// snapshot's raw_text and taken_at stay those of the last real reading.
+// Returns whether any new row was written.
+func (s *Store) ApplyHailGrant(character, flagID string, observedAt time.Time) (bool, error) {
+	if character == "" {
+		return false, fmt.Errorf("character required")
+	}
+	f, ok := ByID(flagID)
+	if !ok {
+		return false, fmt.Errorf("unknown flag id %q", flagID)
+	}
+	if f.Qglobal == "" || f.BitPosition > 0 {
+		return false, fmt.Errorf("flag %q has no scalar qglobal to grant", flagID)
+	}
+	if observedAt.IsZero() {
+		observedAt = time.Now()
+	}
+	floor := atoi(f.QglobalValue)
+	if floor < 1 {
+		floor = 1
+	}
+
+	prev, err := s.GetSnapshot(character)
+	if err != nil {
+		return false, fmt.Errorf("load prior snapshot for %q: %w", character, err)
+	}
+	q := map[string]string{}
+	rawText, takenAt := "", observedAt.Unix()
+	if prev != nil {
+		for k, v := range prev.Qglobals {
+			q[k] = v
+		}
+		rawText, takenAt = prev.RawText, prev.TakenAt
+	}
+	if atoi(q[f.Qglobal]) < floor {
+		q[f.Qglobal] = strconv.Itoa(floor)
+	}
+	qjson, err := json.Marshal(q)
+	if err != nil {
+		return false, fmt.Errorf("marshal merged qglobals: %w", err)
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	changed := false
+	for _, id := range DeriveCompletion(q) {
+		res, err := tx.Exec(`
+			INSERT INTO pop_flag_state (character, flag_id, done, source, updated_at)
+			VALUES (?, ?, 1, ?, ?)
+			ON CONFLICT(character, flag_id) DO NOTHING
+		`, character, id, SourceAuto, observedAt.Unix())
+		if err != nil {
+			return false, fmt.Errorf("insert hail-grant row char=%q flag=%q: %w", character, id, err)
+		}
+		if n, _ := res.RowsAffected(); n > 0 {
+			changed = true
+		}
+	}
+	if _, err := tx.Exec(`
+		INSERT INTO pop_seer_snapshot (character, qglobals, raw_text, taken_at)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(character) DO UPDATE SET qglobals = excluded.qglobals
+	`, character, string(qjson), rawText, takenAt); err != nil {
+		return false, fmt.Errorf("upsert snapshot for %q: %w", character, err)
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return changed, nil
+}
+
 // GetSnapshot returns the stored raw Seer snapshot for a character, or nil when
 // none has been recorded.
 func (s *Store) GetSnapshot(character string) (*Snapshot, error) {

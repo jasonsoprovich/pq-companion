@@ -40,6 +40,15 @@ type Consumer struct {
 	popflagsCharacter   string
 	popflagsLastMatchAt time.Time
 	popflagsTimer       *time.Timer
+
+	// Hail-grant pairing (see hailgrant.go): the NPC half of a pair, waiting
+	// for the character-flag line that must immediately follow it.
+	pending *pendingGrant
+	// zone is the long name from the last zone-in event, "" until one is
+	// seen. Gates grant pairs to the NPC's own zone when known.
+	zone string
+
+	onHailReminder func(character, zone string, hails []HailReminder)
 }
 
 // NewConsumer constructs a consumer wired to store. activeChar should return
@@ -57,11 +66,22 @@ func (c *Consumer) SetOnSnapshot(fn func(character string)) {
 	c.mu.Unlock()
 }
 
+// SetOnHailReminder registers a callback fired on each zone-in where the
+// active character has hails available in that zone (see PendingHails).
+// Characters with no stored flag rows at all are skipped — with nothing
+// synced, every prereq-free preflag would read as "needed".
+func (c *Consumer) SetOnHailReminder(fn func(character, zone string, hails []HailReminder)) {
+	c.mu.Lock()
+	c.onHailReminder = fn
+	c.mu.Unlock()
+}
+
 // HandleLine processes one raw log line (same feed the keyring/trigger paths use).
 func (c *Consumer) HandleLine(ts time.Time, msg string) {
 	if msg == "" {
 		return
 	}
+	c.checkGrant(ts, msg)
 	if MatchSeerLine(msg) {
 		c.appendSeerMatch(msg, ts)
 		return
@@ -84,17 +104,26 @@ func (c *Consumer) HandleLine(ts time.Time, msg string) {
 // 'auto'-sourced rows for the active character. Auto never overwrites a manual
 // or seer/popflags row (enforced by Store.SetAuto), and a snapshot event is
 // broadcast only when something actually changed. Independent of both buffers.
+//
+// A "zone" event also records the current zone for grant gating and, after
+// any keyring auto-detection, evaluates the zone-in hail reminder.
 func (c *Consumer) HandleEvent(kind, name string) {
 	if c.store == nil {
-		return
-	}
-	ids := MatchEvent(kind, name)
-	if len(ids) == 0 {
 		return
 	}
 	character := ""
 	if c.activeChar != nil {
 		character = c.activeChar()
+	}
+	if kind == "zone" {
+		c.mu.Lock()
+		c.zone = strings.TrimSpace(name)
+		c.mu.Unlock()
+		defer c.remindHails(character, name)
+	}
+	ids := MatchEvent(kind, name)
+	if len(ids) == 0 {
+		return
 	}
 	if character == "" {
 		return
@@ -120,6 +149,78 @@ func (c *Consumer) HandleEvent(kind, name string) {
 	if cb != nil {
 		cb(character)
 	}
+}
+
+// remindHails fires the hail-reminder callback when the character has hails
+// available in zone. Best-effort: a store read failure just skips it.
+func (c *Consumer) remindHails(character, zone string) {
+	c.mu.Lock()
+	cb := c.onHailReminder
+	c.mu.Unlock()
+	if cb == nil || character == "" {
+		return
+	}
+	states, err := c.store.Get(character)
+	if err != nil {
+		slog.Debug("popflag: hail reminder skipped", "character", character, "err", err)
+		return
+	}
+	if len(states) == 0 {
+		return
+	}
+	if hails := PendingHails(Resolve(states), zone); len(hails) > 0 {
+		cb(character, zone, hails)
+	}
+}
+
+// ── Hail-grant pairing ──────────────────────────────────────────────────────
+
+// checkGrant advances the two-line grant matcher. A pending NPC line is
+// consumed by whatever line comes next: committed if that line is the
+// character-flag line within grantPairWindow, discarded otherwise.
+func (c *Consumer) checkGrant(ts time.Time, msg string) {
+	c.mu.Lock()
+	p := c.pending
+	c.pending = nil
+	if p == nil || !IsFlagGrantLine(msg) {
+		if id, ok := MatchGrantLine(msg); ok {
+			c.pending = c.newPendingLocked(id, ts)
+		}
+		c.mu.Unlock()
+		return
+	}
+	c.mu.Unlock()
+
+	if d := ts.Sub(p.at); d > grantPairWindow || d < -grantPairWindow {
+		return
+	}
+	changed, err := c.store.ApplyHailGrant(p.character, p.flagID, ts)
+	if err != nil {
+		slog.Warn("popflag: hail grant failed", "character", p.character, "flag", p.flagID, "err", err)
+		return
+	}
+	slog.Info("popflag: hail grant detected", "character", p.character, "flag", p.flagID, "changed", changed)
+	if changed {
+		c.notify(p.character)
+	}
+}
+
+// newPendingLocked builds the pending half of a grant pair, or nil when there
+// is no active character or the current zone is known and isn't the NPC's.
+// Caller holds c.mu.
+func (c *Consumer) newPendingLocked(flagID string, ts time.Time) *pendingGrant {
+	if c.store == nil || c.activeChar == nil {
+		return nil
+	}
+	character := c.activeChar()
+	if character == "" {
+		return nil
+	}
+	if f, ok := ByID(flagID); ok && c.zone != "" && f.HailZone != "" &&
+		!strings.EqualFold(c.zone, f.HailZone) {
+		return nil
+	}
+	return &pendingGrant{flagID: flagID, character: character, at: ts}
 }
 
 // ── Seer guided-meditation buffer ───────────────────────────────────────────

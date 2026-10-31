@@ -111,6 +111,21 @@ type PoPFlag struct {
 	SatisfiedBy  []QualifyCond `json:"satisfied_by,omitempty"`  // any-of replacement conditions
 	SeerPhrases  []string      `json:"seer_phrases,omitempty"`  // Phase 2: Seer guided-meditation substrings
 	Events       []EventRule   `json:"events,omitempty"`        // Phase 3: live-log auto-detection signals
+
+	// HailZone is the zone long name (as printed by "You have entered X.")
+	// where this step's NPC stands — not the plane the step belongs to (the
+	// Plane of Nightmares preflag is hailed in Tranquility). Set only on
+	// always-up "hail" steps; drives the zone-in hail reminder (see
+	// PendingHails). HailNPC is the NPC's display name for that reminder.
+	HailZone string `json:"hail_zone,omitempty"`
+	HailNPC  string `json:"hail_npc,omitempty"`
+
+	// GrantLines are the exact NPC lines (copied from the SecretsOTheP/quests
+	// Lua) printed IMMEDIATELY before the server's "You have received a
+	// character flag!" line when this step's qglobal is granted. A match is
+	// only committed when the very next log line is that flag line — see
+	// hailgrant.go. Each line is matched as a whitespace-normalized prefix.
+	GrantLines []string `json:"grant_lines,omitempty"`
 }
 
 var (

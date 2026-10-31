@@ -868,6 +868,12 @@ type Preferences struct {
 	// default — opt-in like the other alert-style preview features.
 	WishlistWatch WishlistWatchSettings `yaml:"wishlist_watch,omitempty" json:"wishlist_watch"`
 
+	// PoPHailReminder configures the zone-in PoP flag hail reminder: an alert
+	// fired on entering a zone where the active character has a flag hail
+	// available (e.g. Elder Poxbourne in Tranquility after Terris Thule). See
+	// internal/popflag. Off by default.
+	PoPHailReminder PoPHailReminderSettings `yaml:"pop_hail_reminder,omitempty" json:"pop_hail_reminder"`
+
 	// ── Discord Voice overlay ─────────────────────────────────────────────
 	// Embeds Discord's own hosted StreamKit Overlay page
 	// (streamkit.discord.com/overlay/voice/{guild}/{channel}) in a popout
@@ -1035,6 +1041,44 @@ type WishlistWatchSettings struct {
 	SoundPath    string `yaml:"sound_path,omitempty" json:"sound_path"`
 	SoundVolume  int    `yaml:"sound_volume,omitempty" json:"sound_volume"`
 }
+
+// PoPHailReminderSettings configures the zone-in PoP flag hail reminder's
+// text and alert actions. Same overlay/TTS/sound field set as
+// WishlistWatchSettings.
+type PoPHailReminderSettings struct {
+	// Enabled turns the reminder on.
+	Enabled bool `yaml:"enabled,omitempty" json:"enabled"`
+
+	// Template is the alert text. {hails}, {zone} and {character} expand to
+	// the NPC names to hail, the zone entered, and the active character.
+	// Empty falls back to DefaultPoPHailReminderTemplate.
+	Template string `yaml:"template,omitempty" json:"template"`
+
+	// CooldownSecs suppresses a repeat reminder for the same character and
+	// zone within this window, so bouncing through a zone line doesn't
+	// re-alert. 0 means "use the default" (DefaultPoPHailReminderCooldownSecs).
+	CooldownSecs int `yaml:"cooldown_secs,omitempty" json:"cooldown_secs"`
+
+	OverlayEnabled      bool    `yaml:"overlay_enabled,omitempty" json:"overlay_enabled"`
+	OverlayColor        string  `yaml:"overlay_color,omitempty" json:"overlay_color"`
+	OverlayDurationSecs float64 `yaml:"overlay_duration_secs,omitempty" json:"overlay_duration_secs"`
+
+	TTSEnabled bool   `yaml:"tts_enabled,omitempty" json:"tts_enabled"`
+	TTSVoice   string `yaml:"tts_voice,omitempty" json:"tts_voice"`
+	TTSVolume  int    `yaml:"tts_volume,omitempty" json:"tts_volume"`
+
+	SoundEnabled bool   `yaml:"sound_enabled,omitempty" json:"sound_enabled"`
+	SoundPath    string `yaml:"sound_path,omitempty" json:"sound_path"`
+	SoundVolume  int    `yaml:"sound_volume,omitempty" json:"sound_volume"`
+}
+
+// DefaultPoPHailReminderTemplate is the reminder text used when the user
+// hasn't customized PoPHailReminderSettings.Template.
+const DefaultPoPHailReminderTemplate = "Flag hail available: {hails}"
+
+// DefaultPoPHailReminderCooldownSecs is the per-character, per-zone repeat
+// suppression window used when PoPHailReminderSettings.CooldownSecs is unset.
+const DefaultPoPHailReminderCooldownSecs = 60
 
 // DefaultWishlistWatchTemplate is the alert text used when the user hasn't
 // customized WishlistWatchSettings.Template.
@@ -1446,6 +1490,10 @@ func defaults() Config {
 				Template:     DefaultWishlistWatchTemplate,
 				CooldownSecs: DefaultWishlistWatchCooldownSecs,
 			},
+			PoPHailReminder: PoPHailReminderSettings{
+				Template:     DefaultPoPHailReminderTemplate,
+				CooldownSecs: DefaultPoPHailReminderCooldownSecs,
+			},
 		},
 		Backup: BackupSettings{
 			AutoBackup: false,
@@ -1764,6 +1812,15 @@ func applyDefaults(cfg *Config) bool {
 	}
 	if cfg.Preferences.WishlistWatch.CooldownSecs == 0 {
 		cfg.Preferences.WishlistWatch.CooldownSecs = DefaultWishlistWatchCooldownSecs
+		changed = true
+	}
+	// PoP hail reminder: same backfill, same off-by-default Enabled.
+	if cfg.Preferences.PoPHailReminder.Template == "" {
+		cfg.Preferences.PoPHailReminder.Template = DefaultPoPHailReminderTemplate
+		changed = true
+	}
+	if cfg.Preferences.PoPHailReminder.CooldownSecs == 0 {
+		cfg.Preferences.PoPHailReminder.CooldownSecs = DefaultPoPHailReminderCooldownSecs
 		changed = true
 	}
 	return changed

@@ -1,7 +1,7 @@
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Flag, RefreshCw, AlertCircle,
-  ChevronDown, ChevronRight, ScrollText, ListChecks, Waypoints, Download,
+  ChevronDown, ChevronRight, ScrollText, ListChecks, Waypoints, Download, Bell,
 } from 'lucide-react'
 import { getPopFlagDataset, getPopFlags, setPopFlag } from '../services/api'
 import type { PoPFlagStatus, PoPResolved } from '../types/popflag'
@@ -13,6 +13,7 @@ import { useWebSocket } from '../hooks/useWebSocket'
 import { usePersistentState } from '../hooks/usePersistentState'
 import CharacterSubTabs from '../components/CharacterSubTabs'
 import ImportSeerModal from '../components/ImportSeerModal'
+import PopHailReminderSettings from '../components/PopHailReminderSettings'
 import { PopFlagRow } from '../components/PopFlagRow'
 import PopFlagOverviewGrid from '../components/PopFlagOverviewGrid'
 import { downloadPopFlagsExport } from '../lib/popFlagExport'
@@ -209,6 +210,7 @@ export default function PoPFlaggingPage(): React.ReactElement {
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [showImport, setShowImport] = useState(false)
+  const [showReminders, setShowReminders] = useState(false)
   const [view, setView] = usePersistentState<'checklist' | 'flow'>(
     'pq-tab:pop-flags', 'checklist', ['checklist', 'flow'],
   )
@@ -433,6 +435,19 @@ export default function PoPFlaggingPage(): React.ReactElement {
             </button>
           )}
           <button
+            onClick={() => setShowReminders(true)}
+            className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
+            style={{
+              backgroundColor: 'var(--color-surface-2)',
+              color: 'var(--color-muted-foreground)',
+              border: '1px solid var(--color-border)',
+            }}
+            title="Remind me of available flag hails when I zone in"
+          >
+            <Bell size={11} />
+            Reminders
+          </button>
+          <button
             onClick={load}
             className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
             style={{
@@ -590,6 +605,10 @@ export default function PoPFlaggingPage(): React.ReactElement {
           onCommitted={applyAuthoritative}
         />
       )}
+      <PopHailReminderSettings
+        open={showReminders}
+        onClose={() => setShowReminders(false)}
+      />
     </div>
   )
 }

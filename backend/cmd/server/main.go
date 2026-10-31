@@ -1274,6 +1274,7 @@ func main() {
 				Data: map[string]any{"character": character},
 			})
 		})
+		popflagConsumer.SetOnHailReminder(popflag.NewReminder(hub, cfgMgr).Fire)
 	}
 
 	if chatStore != nil {

@@ -145,6 +145,32 @@ export interface WishlistWatchSettings {
 }
 
 /**
+ * PoP hail reminder: an alert fired on entering a zone where the active
+ * character has a PoP flag hail available (e.g. Elder Poxbourne in
+ * Tranquility after Terris Thule). Mirrors backend
+ * config.PoPHailReminderSettings.
+ */
+export interface PoPHailReminderSettings {
+  enabled: boolean
+  // Alert text. {hails}, {zone} and {character} tokens expand to the NPC
+  // names to hail, the zone entered, and the active character. Empty = the
+  // backend default.
+  template?: string
+  // Suppresses a repeat reminder for the same character and zone within this
+  // window (seconds). 0/missing = backend default (60s).
+  cooldown_secs?: number
+  overlay_enabled?: boolean
+  overlay_color?: string
+  overlay_duration_secs?: number
+  tts_enabled?: boolean
+  tts_voice?: string
+  tts_volume?: number
+  sound_enabled?: boolean
+  sound_path?: string
+  sound_volume?: number
+}
+
+/**
  * One saved StreamKit voice-overlay link — a name the user picked (e.g.
  * "Raid channel", "Guild Hangout") plus the URL Discord's StreamKit tool
  * generated for that one guild+channel. See Preferences.discord_voice_links/
@@ -359,6 +385,8 @@ export interface Preferences {
   kokoro_speed?: number
   // Wishlist watcher settings. See WishlistWatchSettings.
   wishlist_watch: WishlistWatchSettings
+  // PoP hail reminder settings. See PoPHailReminderSettings.
+  pop_hail_reminder?: PoPHailReminderSettings
   // ── Discord Voice overlay ──────────────────────────────────────────────
   // Embeds Discord's own hosted StreamKit Overlay page in a popout overlay
   // window (see issue #150) — we never talk to Discord's API ourselves, the

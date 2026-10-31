@@ -11,7 +11,10 @@
     "step_kind": "hail",
     "qglobal": "mavuin",
     "qglobal_value": "1",
-    "counter": true
+    "counter": true,
+    "hail_zone": "Plane of Justice",
+    "hail_npc": "Mavuin",
+    "grant_lines": ["Mavuin tells you, 'I know it has been said for years before me, and will be said for years after me, but I was truly framed for my crime."]
   },
   {
     "id": "poj_trial_mark",
@@ -129,7 +132,10 @@
     "step_kind": "hail",
     "qglobal": "mavuin",
     "qglobal_value": "3",
-    "counter": true
+    "counter": true,
+    "hail_zone": "Plane of Justice",
+    "hail_npc": "Mavuin",
+    "grant_lines": ["Mavuin tells you, 'So you have pleaded my case to the Tribunal, I am most thankful."]
   },
   {
     "id": "ponb_preflag",
@@ -143,7 +149,10 @@
     "step_kind": "hail",
     "qglobal": "thelin",
     "qglobal_value": "1",
-    "counter": true
+    "counter": true,
+    "hail_zone": "Plane of Tranquility",
+    "hail_npc": "Adroha Jezith",
+    "grant_lines": ["Adroha Jezith tells you, 'It is our belief that Terris-Thule is punishing him for allowing entrance into her plane."]
   },
   {
     "id": "ponb_hedge",
@@ -184,7 +193,10 @@
     "step_kind": "hail",
     "qglobal": "thelin",
     "qglobal_value": "4",
-    "counter": true
+    "counter": true,
+    "hail_zone": "Plane of Tranquility",
+    "hail_npc": "Elder Poxbourne",
+    "grant_lines": ["Thelin tells you, 'I apologize but I cannot stand to greet you."]
   },
   {
     "id": "pod_preflag",
@@ -198,7 +210,10 @@
     "step_kind": "hail",
     "qglobal": "fuirstel",
     "qglobal_value": "1",
-    "counter": true
+    "counter": true,
+    "hail_zone": "Plane of Tranquility",
+    "hail_npc": "Adler Fuirstel",
+    "grant_lines": ["Adler Fuirstel tells you, 'The ward is carried by the one that Bertoxxulous has created to protect the entrance into his den."]
   },
   {
     "id": "pod_grummus",
@@ -238,7 +253,10 @@
     "step_kind": "hail",
     "qglobal": "fuirstel",
     "qglobal_value": "3",
-    "counter": true
+    "counter": true,
+    "hail_zone": "Plane of Tranquility",
+    "hail_npc": "Elder Fuirstel",
+    "grant_lines": ["Elder Fuirstel slowly turns towards you. You can feel the heat radiating from his face."]
   },
   {
     "id": "poi_xanamech",
@@ -268,7 +286,10 @@
     "step_kind": "hail",
     "qglobal": "zeks",
     "qglobal_value": "1",
-    "counter": true
+    "counter": true,
+    "hail_zone": "Plane of Innovation",
+    "hail_npc": "Giwin Mirakon",
+    "grant_lines": ["Giwin Mirakon tells you, 'Haha! I knew I sensed the warring spirit within you."]
   },
   {
     "id": "poi_mb",
@@ -404,7 +425,10 @@
     "step_kind": "hail",
     "qglobal": "fuirstel",
     "qglobal_value": "5",
-    "counter": true
+    "counter": true,
+    "hail_zone": "Plane of Tranquility",
+    "hail_npc": "Elder Fuirstel",
+    "grant_lines": ["Elder Fuirstel tells you, 'Welcome back friend. I must tell you that my brother and I shall never forget what you have done for us."]
   },
   {
     "id": "potor_preflag",
@@ -417,7 +441,10 @@
     "step_kind": "hail",
     "qglobal": "tylis",
     "qglobal_value": "1",
-    "counter": true
+    "counter": true,
+    "hail_zone": "Plane of Tranquility",
+    "hail_npc": "Fahlia Shadyglade",
+    "grant_lines": ["Fahlia Shadyglade tells you, 'Wonderful. I did not think that an outsider was one that I could trust to aid me in this."]
   },
   {
     "id": "potor_sphere_key",
@@ -602,7 +629,10 @@
     "step_kind": "hail",
     "qglobal": "cipher",
     "qglobal_value": "1",
-    "counter": true
+    "counter": true,
+    "hail_zone": "Plane of Knowledge",
+    "hail_npc": "Grand Librarian Maelin",
+    "grant_lines": ["Maelin tells you, 'Astounding, this truly is the Cipher of Druzzil!"]
   },
   {
     "id": "pok_maelin_zek_notes",
@@ -615,7 +645,10 @@
     "step_kind": "hail",
     "qglobal": "zeks",
     "qglobal_value": "6",
-    "counter": true
+    "counter": true,
+    "hail_zone": "Plane of Knowledge",
+    "hail_npc": "Grand Librarian Maelin",
+    "grant_lines": ["Maelin tells you, 'This cannot be. You must hurry! Rallos Zek seems to be planing a massive raid on Norrath."]
   },
   {
     "id": "pok_librarian",
@@ -628,7 +661,10 @@
     "step_kind": "hail",
     "qglobal": "zebuxoruk",
     "qglobal_value": "1",
-    "counter": true
+    "counter": true,
+    "hail_zone": "Plane of Knowledge",
+    "hail_npc": "Grand Librarian Maelin",
+    "grant_lines": ["Maelin tells you, 'This is quite interesting friends. It is a detailed document on what has become of Zebuxoruk."]
   },
   {
     "id": "pok_maelin_information",
@@ -641,7 +677,10 @@
     "step_kind": "hail",
     "qglobal": "zebuxoruk",
     "qglobal_value": "2",
-    "counter": true
+    "counter": true,
+    "hail_zone": "Plane of Knowledge",
+    "hail_npc": "Grand Librarian Maelin",
+    "grant_lines": ["Maelin takes a deep breath and continues, 'I can see now that he was not joking at all."]
   },
   {
     "id": "solro_miak",
@@ -654,7 +693,10 @@
     "step_kind": "hail",
     "qglobal": "pofire",
     "qglobal_value": "1",
-    "counter": true
+    "counter": true,
+    "hail_zone": "Plane of Tranquility",
+    "hail_npc": "Miak the Searedsoul",
+    "grant_lines": ["Miak the Searedsoul says 'I do not know if I will ever be able to correct the portal's destination"]
   },
   {
     "id": "solro_xuzl",
