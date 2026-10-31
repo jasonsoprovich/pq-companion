@@ -15,6 +15,7 @@ export interface KillCountersHook {
   // Seconds to add to Date.now()/1000 to get server time — clock math uses
   // backend-stamped (log) times, so a skewed local clock must not shift them.
   skewSecs: number
+  killSource: 'log' | 'zeal'
   loaded: boolean
   error: string
   act: (id: string, body: KillCounterAction) => Promise<void>
@@ -24,12 +25,14 @@ export interface KillCountersHook {
 export function useKillCounters(): KillCountersHook {
   const [counters, setCounters] = useState<KillCounter[]>([])
   const [skewSecs, setSkewSecs] = useState(0)
+  const [killSource, setKillSource] = useState<'log' | 'zeal'>('log')
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState('')
 
   const apply = useCallback((s: KillCountersState) => {
     setCounters(s.counters ?? [])
     if (s.now) setSkewSecs(s.now - Date.now() / 1000)
+    setKillSource(s.kill_source ?? 'log')
     setLoaded(true)
   }, [])
 
@@ -53,7 +56,7 @@ export function useKillCounters(): KillCountersHook {
     }
   }, [apply])
 
-  return { counters, skewSecs, loaded, error, act, apply }
+  return { counters, skewSecs, killSource, loaded, error, act, apply }
 }
 
 // useNowSecs ticks once a second while `active`, returning server-adjusted

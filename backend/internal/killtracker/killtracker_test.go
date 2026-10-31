@@ -504,3 +504,67 @@ func TestStoneRingIdleOnlyStart(t *testing.T) {
 		t.Fatalf("new attempt after silent failure: %+v", got)
 	}
 }
+
+func TestCounterKillSource(t *testing.T) {
+	type step struct {
+		pipe    bool          // a Zeal death event (else a log kill line)
+		reset   bool          // pipe disconnect
+		advance time.Duration // wall time passing before this step
+		mob     string
+	}
+	tests := []struct {
+		name       string
+		steps      []step
+		want       int
+		wantSource string
+	}{
+		{"log only", []step{{mob: "Knight of Decay"}, {mob: "Knight of Decay"}}, 2, KillSourceLog},
+		{"pipe only", []step{{pipe: true, mob: "Knight of Decay"}, {pipe: true, mob: "Knight of Decay"}}, 2, KillSourceZeal},
+		{"log line ignored once pipe deaths arrive", []step{
+			{pipe: true, mob: "Knight of Decay"}, {mob: "Knight of Decay"}, {pipe: true, mob: "Knight of Decay"},
+		}, 2, KillSourceZeal},
+		{"first pipe death matching a just-counted log kill is skipped", []step{
+			{mob: "Knight of Decay"}, {pipe: true, advance: time.Second, mob: "Knight of Decay"},
+		}, 1, KillSourceZeal},
+		{"pipe death long after a log kill counts", []step{
+			{mob: "Knight of Decay"}, {pipe: true, advance: time.Minute, mob: "Knight of Decay"},
+		}, 2, KillSourceZeal},
+		{"pipe death of another mob counts", []step{
+			{mob: "Priest of Decay"}, {pipe: true, mob: "Knight of Decay"},
+		}, 2, KillSourceZeal},
+		{"pipe disconnect falls back to log lines", []step{
+			{pipe: true, mob: "Knight of Decay"}, {reset: true}, {mob: "Knight of Decay"},
+		}, 2, KillSourceLog},
+		{"unnamed pipe death still switches source", []step{
+			{pipe: true, mob: ""}, {mob: "Knight of Decay"},
+		}, 0, KillSourceZeal},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			e := NewEngine(nil, &fakeHub{})
+			// now drives the engine's wall clock for the log/pipe dedup window.
+			now := t0
+			e.now = func() time.Time { return now }
+			c := newTestCounter(t, e, CounterDef{
+				Name: "Decay", Enabled: true, Mobs: []string{"knight of decay", "priest of decay"},
+			})
+			for _, s := range tc.steps {
+				now = now.Add(s.advance)
+				switch {
+				case s.reset:
+					e.HandlePipeReset()
+				case s.pipe:
+					e.HandlePipeDeath(now, s.mob)
+				default:
+					e.Handle(killEv(now, s.mob, "x"))
+				}
+			}
+			if got := countOf(e, c.Def.ID).Count; got != tc.want {
+				t.Errorf("count = %d, want %d", got, tc.want)
+			}
+			if got := e.State().KillSource; got != tc.wantSource {
+				t.Errorf("kill source = %q, want %q", got, tc.wantSource)
+			}
+		})
+	}
+}

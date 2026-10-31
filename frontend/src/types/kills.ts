@@ -76,6 +76,9 @@ export interface KillCounter {
 export interface KillCountersState {
   counters: KillCounter[]
   now: number
+  // Where kills are counted from: 'zeal' once a Zeal death event has arrived
+  // on the current pipe connection (every death in the zone), else 'log'.
+  kill_source?: 'log' | 'zeal'
 }
 
 export interface KillCounterPreset {

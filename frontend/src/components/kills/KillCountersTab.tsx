@@ -73,9 +73,20 @@ export default function KillCountersTab(): React.ReactElement {
         <Info size={14} className="shrink-0 mt-0.5" style={{ color: 'var(--color-primary)' }} />
         <span>
           Counters count kills of the mobs you list (or every log line matching a pattern) and call out
-          milestones on the Trigger Alerts overlay. Your log only shows kills near you, so a raid count can
-          fall behind. <span className="font-medium">Resync lines</span> fix that by setting the count
-          when the server announces a known number, like a boss-spawn emote. Show them in game with the
+          milestones on the Trigger Alerts overlay.{' '}
+          {k.killSource === 'zeal' ? (
+            <>
+              Zeal death events are active, so every kill in the zone counts, not just the ones your log
+              shows.
+            </>
+          ) : (
+            <>
+              Your log only shows kills near you, so a raid count can fall behind. A Zeal build that sends
+              death events fixes this automatically.
+            </>
+          )}{' '}
+          <span className="font-medium">Resync lines</span> also correct the count when the server
+          announces a known number, like a boss-spawn emote. Show them in game with the
           <span className="font-medium"> Kill Counters</span> overlay.
         </span>
       </div>

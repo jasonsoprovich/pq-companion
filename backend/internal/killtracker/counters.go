@@ -98,10 +98,20 @@ type Counter struct {
 	UpdatedAt      int64      `json:"updated_at"`
 }
 
+// Kill sources reported in CountersState.KillSource.
+const (
+	KillSourceLog  = "log"  // "has been slain" log lines only
+	KillSourceZeal = "zeal" // Zeal pipe death events (every death in the zone)
+)
+
 // CountersState is the payload of GET /api/kill-counters and the WS event.
 type CountersState struct {
 	Counters []Counter `json:"counters"`
 	Now      int64     `json:"now"` // server unix seconds, for clock math
+	// KillSource is where kills are currently counted from: KillSourceZeal
+	// once a Zeal death event has arrived on the current pipe connection,
+	// KillSourceLog otherwise.
+	KillSource string `json:"kill_source"`
 }
 
 // Broadcaster is the WS hub surface the engine needs.
@@ -143,12 +153,37 @@ type Engine struct {
 	counters []*Counter
 	comp     map[string]*compiled
 	zone     string
+
+	// pipeDeaths is set by the first Zeal death event (HandlePipeDeath) and
+	// cleared on pipe disconnect (HandlePipeReset). While set, kills are
+	// counted from the pipe — which sees every death in the zone, not only
+	// the ones the client prints a "has been slain" line for — and log kill
+	// lines are ignored so nothing counts twice. Released Zeal builds never
+	// send death events, so counting stays log-driven there.
+	pipeDeaths bool
+	// recentLogKills are kills counted from the log shortly before the
+	// switch to pipe deaths; the matching pipe event is skipped so the kill
+	// that first lights up the pipe isn't counted twice.
+	recentLogKills []recentKill
+	now            func() time.Time // time.Now; overridden in tests
 }
+
+// recentKill is one log-counted kill, by lowercase mob name and the wall
+// time it was counted.
+type recentKill struct {
+	name string
+	at   time.Time
+}
+
+// logKillDedupWindow is how long a log-counted kill can still absorb the
+// pipe death event for the same mob. The two arrive over different channels
+// within a poll or two of each other.
+const logKillDedupWindow = 5 * time.Second
 
 // NewEngine loads stored counters and returns a ready engine. store may be nil
 // (counters then live in memory only).
 func NewEngine(store *Store, hub Broadcaster) *Engine {
-	e := &Engine{store: store, hub: hub, comp: map[string]*compiled{}}
+	e := &Engine{store: store, hub: hub, comp: map[string]*compiled{}, now: time.Now}
 	if store != nil {
 		cs, err := store.LoadCounters()
 		if err != nil {
@@ -290,13 +325,75 @@ func (e *Engine) Handle(ev logparser.LogEvent) {
 		if target == "" {
 			return
 		}
-		e.apply(ev.Timestamp, func(c *Counter, comp *compiled) (int, bool) {
-			if !comp.mobs[target] {
-				return 0, false
+		e.mu.Lock()
+		if e.pipeDeaths {
+			e.mu.Unlock()
+			return
+		}
+		now := e.now()
+		kept := e.recentLogKills[:0]
+		for _, k := range e.recentLogKills {
+			if now.Sub(k.at) <= logKillDedupWindow {
+				kept = append(kept, k)
 			}
-			return c.Count + 1, true
-		})
+		}
+		e.recentLogKills = append(kept, recentKill{name: target, at: now})
+		e.mu.Unlock()
+		e.countKill(ev.Timestamp, target)
 	}
+}
+
+// HandlePipeDeath consumes a Zeal death event (zealpipe.MsgDeath): one death
+// anywhere in the zone, by display name. The first one switches counting
+// from log kill lines to pipe deaths for the rest of the pipe connection.
+func (e *Engine) HandlePipeDeath(at time.Time, name string) {
+	target := strings.ToLower(strings.TrimSpace(name))
+	e.mu.Lock()
+	switched := !e.pipeDeaths
+	e.pipeDeaths = true
+	skip := false
+	now := e.now()
+	for i, k := range e.recentLogKills {
+		if k.name == target && now.Sub(k.at) <= logKillDedupWindow {
+			e.recentLogKills = append(e.recentLogKills[:i], e.recentLogKills[i+1:]...)
+			skip = true
+			break
+		}
+	}
+	e.mu.Unlock()
+	if switched {
+		slog.Info("killtracker: counting kills from Zeal death events")
+		e.broadcast()
+	}
+	if target == "" || skip {
+		return
+	}
+	e.countKill(at, target)
+}
+
+// HandlePipeReset drops back to counting log kill lines when the Zeal pipe
+// disconnects.
+func (e *Engine) HandlePipeReset() {
+	e.mu.Lock()
+	switched := e.pipeDeaths
+	e.pipeDeaths = false
+	e.recentLogKills = nil
+	e.mu.Unlock()
+	if switched {
+		slog.Info("killtracker: counting kills from log lines")
+		e.broadcast()
+	}
+}
+
+// countKill adds one kill of target (lowercase display name) to every
+// counter tracking that mob.
+func (e *Engine) countKill(ts time.Time, target string) {
+	e.apply(ts, func(c *Counter, comp *compiled) (int, bool) {
+		if !comp.mobs[target] {
+			return 0, false
+		}
+		return c.Count + 1, true
+	})
 }
 
 // HandleLine consumes raw log lines: resets, clock marks/stops, syncs and
@@ -522,7 +619,10 @@ func (e *Engine) broadcast() {
 func (e *Engine) State() CountersState {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	out := CountersState{Counters: make([]Counter, 0, len(e.counters)), Now: time.Now().Unix()}
+	out := CountersState{Counters: make([]Counter, 0, len(e.counters)), Now: time.Now().Unix(), KillSource: KillSourceLog}
+	if e.pipeDeaths {
+		out.KillSource = KillSourceZeal
+	}
 	for _, c := range e.counters {
 		cp := *c
 		out.Counters = append(out.Counters, cp)

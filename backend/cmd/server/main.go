@@ -1576,6 +1576,11 @@ func main() {
 	// Item Info overlay: the item the player last opened an item window for.
 	itemDisplayTracker := itemdisplay.NewTracker(hub, cfgMgr)
 
+	// Kill counters: user-defined counts (with the built-in Bertoxxulous
+	// preset) driven by kills and raw lines; live state persists in user.db.
+	// Built ahead of the pipe supervisor, which feeds it Zeal death events.
+	killCounters := killtracker.NewEngine(killStore, hub)
+
 	pipeSupervisor := zealpipe.NewSupervisor(func(env zealpipe.Envelope) {
 		// Proposed Zeal item display message. Its type number is 7 on a build
 		// with only that PR and 8 alongside the death PR, so it's matched by
@@ -1666,6 +1671,9 @@ func main() {
 				return
 			}
 			timerEngine.HandlePipeDeath(d.SpawnID, d.Name)
+			// Kill counters switch to pipe deaths on the first one, so raid
+			// kills the log never printed still count.
+			killCounters.HandlePipeDeath(time.Now(), d.Name)
 			return
 		case zealpipe.MsgGroup:
 			// Groupmates' live map positions. Only members Zeal resolved in the
@@ -1870,6 +1878,7 @@ func main() {
 		timerEngine.SetPipeTargetID(nil)
 		timerEngine.ResetPipeTargetTracking()
 		triggerEngine.HandlePipeReset()
+		killCounters.HandlePipeReset()
 		hub.Broadcast(ws.Event{Type: "zeal:disconnected", Data: map[string]any{}})
 	})
 	go pipeSupervisor.Start(context.Background())
@@ -1924,10 +1933,6 @@ func main() {
 		// always user-overridable.
 		rollTracker.SetItemMatcher(database.MatchItemNameInText)
 	}
-
-	// Kill counters: user-defined counts (with the built-in Bertoxxulous
-	// preset) driven by kills and raw lines; live state persists in user.db.
-	killCounters := killtracker.NewEngine(killStore, hub)
 
 	// Central dispatch callbacks, shared by the live tailer and the log
 	// replayer so a replayed line drives the same in-memory consumers as a
