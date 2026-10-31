@@ -327,9 +327,8 @@ func qglobalBackedFlagIDs() []string {
 }
 
 // clearNonManualQglobalBackedRows deletes every non-manual pop_flag_state row
-// for character that belongs to a qglobal-backed flag, within tx. Shared by
-// ApplySeerOverriding and ApplyPopFlagsReport so both readings scope their
-// retraction the same way.
+// for character that belongs to a qglobal-backed flag, within tx. Used by
+// ApplySeerOverriding, whose reading covers every tracked qglobal at once.
 func clearNonManualQglobalBackedRows(tx *sql.Tx, character string) error {
 	ids := qglobalBackedFlagIDs()
 	if len(ids) == 0 {
@@ -351,10 +350,51 @@ func clearNonManualQglobalBackedRows(tx *sql.Tx, character string) error {
 	return nil
 }
 
+// clearNonManualRowsForQglobals deletes the non-manual rows of every flag
+// backed (directly or via SatisfiedBy) by a qglobal in exact, within tx. Used
+// by ApplyPopFlagsReport: a section report is authoritative only for the
+// qglobals it printed an exact value (or confirmed absence) for. A floor
+// (AtLeast) can't refute a higher state, so it never retracts anything.
+func clearNonManualRowsForQglobals(tx *sql.Tx, character string, exact map[string]string) error {
+	var ids []string
+	for _, f := range Flags() {
+		covered := false
+		if _, ok := exact[f.Qglobal]; ok && f.Qglobal != "" {
+			covered = true
+		}
+		for _, c := range f.SatisfiedBy {
+			if _, ok := exact[c.Qglobal]; ok {
+				covered = true
+			}
+		}
+		if covered {
+			ids = append(ids, f.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+	args := make([]any, 0, len(ids)+1)
+	args = append(args, character)
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	query := fmt.Sprintf(
+		`DELETE FROM pop_flag_state WHERE character = ? AND source != 'manual' AND flag_id IN (%s)`,
+		placeholders,
+	)
+	if _, err := tx.Exec(query, args...); err != nil {
+		return fmt.Errorf("clear non-manual rows for reported qglobals of %q: %w", character, err)
+	}
+	return nil
+}
+
 // ApplyPopFlagsReport merges one '#popflags' report (see popflags_cmd.go)
 // into the character's stored qglobal snapshot, re-derives completion, and
-// persists it exactly like a Seer reading (source='popflags', same manual >
-// (seer/popflags) > auto precedence enforced via clearNonManualQglobalBackedRows).
+// persists it like a Seer reading (source='popflags', same manual >
+// (seer/popflags) > auto precedence), except that retraction is scoped to the
+// qglobals the report printed — see clearNonManualRowsForQglobals.
 //
 // Unlike ApplySeer (one self-contained reading that covers every qglobal),
 // one '#popflags' report only covers the section the player ran — so this
@@ -407,7 +447,11 @@ func (s *Store) ApplyPopFlagsReport(character string, report PopFlagsReport, raw
 	}
 	defer tx.Rollback() //nolint:errcheck
 
-	if err := clearNonManualQglobalBackedRows(tx, character); err != nil {
+	// Retract only what this report can actually refute: one section covers
+	// one tier, so clearing every qglobal-backed row (as a full Seer reading
+	// does) would wipe e.g. a kill-detected Tier 1 row on a '#popflags 2'
+	// run, re-deriving it from a stale snapshot.
+	if err := clearNonManualRowsForQglobals(tx, character, report.Exact); err != nil {
 		return nil, err
 	}
 	for _, id := range done {
