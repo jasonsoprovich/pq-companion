@@ -199,6 +199,10 @@ type NPC struct {
 	SeeInvis       int `json:"see_invis"`
 	SeeInvisUndead int `json:"see_invis_undead"`
 
+	// SlowMitigation is the percent by which slow spells are weakened on this
+	// NPC (0-99).
+	SlowMitigation int `json:"slow_mitigation"`
+
 	SpellScale float64 `json:"spell_scale"`
 	HealScale  float64 `json:"heal_scale"`
 	ExpPct     int     `json:"exp_pct"`

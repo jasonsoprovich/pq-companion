@@ -429,7 +429,7 @@ function StatsBody({
       </div>
     ),
     combat: sections.combat &&
-      anyVis('combat.hp', 'combat.mana', 'combat.ac', 'combat.dmg', 'combat.atk', 'combat.speed', 'combat.pbaoe') && (
+      anyVis('combat.hp', 'combat.mana', 'combat.ac', 'combat.dmg', 'combat.atk', 'combat.speed', 'combat.slowmit', 'combat.pbaoe') && (
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
         {vis('combat.hp') && (
           <Chip label="HP" value={npc.hp.toLocaleString()} color="#22c55e" />
@@ -446,6 +446,9 @@ function StatsBody({
         )}
         {vis('combat.speed') && (
           <Chip label="Speed" value={`${npcRunSpeedPct(npc.run_speed)}%`} />
+        )}
+        {vis('combat.slowmit') && npc.slow_mitigation > 0 && (
+          <Chip label="Slow Mit" value={`${npc.slow_mitigation}%`} color="#f59e0b" />
         )}
         {vis('combat.pbaoe') && pbaoe?.applies && (
           <span

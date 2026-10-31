@@ -1036,6 +1036,9 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
             <StatRow label="Attacks" value={npc.attack_count} />
           )}
           <StatRow label="AC" value={npc.ac} />
+          {npc.slow_mitigation > 0 && (
+            <StatRow label="Slow Mitigation" value={`${npc.slow_mitigation}%`} />
+          )}
           {pbaoe?.applies && (
             <StatRow
               label="PBAoE XP"

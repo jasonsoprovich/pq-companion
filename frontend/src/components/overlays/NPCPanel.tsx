@@ -559,7 +559,7 @@ function NPCDetails({
       </div>
     ),
     combat: sections.combat &&
-      anyVis('combat.hp', 'combat.mana', 'combat.ac', 'combat.dmg', 'combat.atk', 'combat.speed', 'combat.pbaoe') && (
+      anyVis('combat.hp', 'combat.mana', 'combat.ac', 'combat.dmg', 'combat.atk', 'combat.speed', 'combat.slowmit', 'combat.pbaoe') && (
       <div>
         <p className="mb-1 text-[9px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>Combat</p>
         <div className="flex flex-wrap gap-1.5">
@@ -581,6 +581,9 @@ function NPCDetails({
           )}
           {vis('combat.speed') && (
             <Stat label="Speed" value={`${npcRunSpeedPct(npc.run_speed)}%`} />
+          )}
+          {vis('combat.slowmit') && npc.slow_mitigation > 0 && (
+            <Stat label="Slow Mit" value={`${npc.slow_mitigation}%`} color="#f59e0b" />
           )}
         </div>
         {vis('combat.pbaoe') && pbaoe?.applies && (

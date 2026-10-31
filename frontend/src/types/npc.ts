@@ -57,6 +57,9 @@ export interface NPC {
   see_invis: number
   see_invis_undead: number
 
+  // Percent by which slow spells are weakened on this NPC (0-99).
+  slow_mitigation: number
+
   spell_scale: number
   heal_scale: number
   exp_pct: number

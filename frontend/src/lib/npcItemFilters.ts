@@ -81,6 +81,7 @@ export const NPC_ITEM_GROUPS: NPCItemGroup[] = [
       { key: 'combat.dmg', label: 'Damage' },
       { key: 'combat.atk', label: 'Attacks per round' },
       { key: 'combat.speed', label: 'Run speed' },
+      { key: 'combat.slowmit', label: 'Slow mitigation' },
       { key: 'combat.pbaoe', label: 'PBAoE XP warning' },
     ],
   },

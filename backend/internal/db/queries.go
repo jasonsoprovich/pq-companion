@@ -742,7 +742,7 @@ const npcColumns = `
   n.raid_target, COALESCE(n.rare_spawn, 0),
   n.loottable_id, n.merchant_id, n.npc_spells_id, n.npc_faction_id,
   COALESCE(n.special_abilities, ''),
-  n.see_invis, n.see_invis_undead,
+  n.see_invis, n.see_invis_undead, n.slow_mitigation,
   n.spellscale, n.healscale, n.exp_pct`
 
 const npcJoin = `LEFT JOIN races r ON r.id = n.race`
@@ -760,7 +760,7 @@ func scanNPC(row interface {
 		&n.RaidTarget, &n.RareSpawn,
 		&n.LootTableID, &n.MerchantID, &n.NPCSpellsID, &n.NPCFactionID,
 		&n.SpecialAbilities,
-		&n.SeeInvis, &n.SeeInvisUndead,
+		&n.SeeInvis, &n.SeeInvisUndead, &n.SlowMitigation,
 		&n.SpellScale, &n.HealScale, &n.ExpPct,
 	)
 	if err != nil {
@@ -925,7 +925,7 @@ func (db *DB) GetNPCVariantsByNameInZone(name, zoneShortName string) ([]NPCVaria
 			&n.RaidTarget, &n.RareSpawn,
 			&n.LootTableID, &n.MerchantID, &n.NPCSpellsID, &n.NPCFactionID,
 			&n.SpecialAbilities,
-			&n.SeeInvis, &n.SeeInvisUndead,
+			&n.SeeInvis, &n.SeeInvisUndead, &n.SlowMitigation,
 			&n.SpellScale, &n.HealScale, &n.ExpPct,
 			&spawngroupID, &x, &y, &z,
 		)
