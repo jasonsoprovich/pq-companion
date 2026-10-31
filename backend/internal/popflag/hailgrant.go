@@ -5,8 +5,8 @@ import (
 	"time"
 )
 
-// Hail-grant detection: every PoP NPC that sets a progression qglobal on a
-// hail/keyword follows the same Lua shape —
+// Hail-grant detection: the always-up PoP hail NPCs annotated with
+// GrantLines all set their qglobal in the same Lua shape —
 //
 //	e.other:Message(0, "<NPC line>")
 //	eq.set_global("<qglobal>", "<value>", 5, "F")
@@ -20,6 +20,14 @@ import (
 // while a groupmate does the step never matches on its own. Each GrantLine
 // prints only in qglobal states at or above the step's own value, so a repeat
 // hail (which re-prints both lines) can never mark anything that isn't done.
+//
+// NOT every progression step prints the flag line, which is why grant lines
+// are opt-in per step rather than inferred. Audited against SecretsOTheP/quests
+// (572bc06): the HoH trials set hohtrials with flavor text only, the Grummus
+// projection sets grummus (CoD access) silently, the Mithaniel projection sets
+// mmarr_book silently, and a projection hailed without its preflag prints
+// "You have received a new checklist flag!" instead — none of those are
+// matched. Steps without a flag line simply aren't auto-detected here.
 //
 // Verified against a live Quarm log (2026-10): the pair always lands as two
 // consecutive lines with the same timestamp, in both server wordings below.

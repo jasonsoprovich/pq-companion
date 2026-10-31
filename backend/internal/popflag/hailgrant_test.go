@@ -90,6 +90,11 @@ func TestGrantLinesDisjointFromReadings(t *testing.T) {
 			}
 		}
 	}
+	// The checklist-memory line a projection prints when hailed without its
+	// preflag is a different grant and must never pair.
+	if IsFlagGrantLine("You have received a new checklist flag!") {
+		t.Error("checklist flag line accepted as a character flag line")
+	}
 	for l := range flagGrantLines {
 		if MatchSeerLine(l) || MatchPopFlagsLine(l) {
 			t.Errorf("flag line %q matches a reading buffer", l)
@@ -321,5 +326,37 @@ func TestReminderFireCooldownAndText(t *testing.T) {
 	r.Fire("Osui", "Plane of Tranquility", hails)
 	if len(hub.events) != 2 {
 		t.Errorf("events after cooldown = %d, want 2", len(hub.events))
+	}
+}
+
+// A '#popflags' section only retracts flags whose qglobals it printed an
+// exact value for: a Tier 2 run must leave a kill-detected Tier 1 row alone,
+// while a Tier 1 run that reports the stage still retracts it.
+func TestPopFlagsReportRetractionScopedToReportedQglobals(t *testing.T) {
+	s := openTempStore(t)
+	const char = "Osui"
+	if _, err := s.SetAuto(char, "ponb_terris"); err != nil {
+		t.Fatal(err)
+	}
+	tier2 := ParsePopFlagsReport([]string{"=== Tier 2 Progression ===", "Lower Crypt access: Unlocked"})
+	if _, err := s.ApplyPopFlagsReport(char, tier2, "raw", time.Unix(100, 0)); err != nil {
+		t.Fatal(err)
+	}
+	if row := doneByID(t, s, char)["ponb_terris"]; !row.Done || row.Source != SourceAuto {
+		t.Fatalf("ponb_terris = %+v, want auto row kept across a Tier 2 report", row)
+	}
+
+	tier1 := newPopFlagsReport()
+	tier1.Section = PopFlagsTier1
+	tier1.Exact["thelin"] = "2"
+	if _, err := s.ApplyPopFlagsReport(char, tier1, "raw", time.Unix(200, 0)); err != nil {
+		t.Fatal(err)
+	}
+	rows := doneByID(t, s, char)
+	if row, ok := rows["ponb_terris"]; ok && row.Done {
+		t.Errorf("ponb_terris = %+v, want retracted by a report showing thelin=2", row)
+	}
+	if !rows["ponb_hedge"].Done {
+		t.Error("ponb_hedge should be done at thelin=2")
 	}
 }
