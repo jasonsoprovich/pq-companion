@@ -179,6 +179,14 @@ export interface Trigger {
    */
   timer_repeat?: boolean
   timer_repeat_max?: number
+  /**
+   * Log-source, nonstacking/nonrepeating custom timers only. Keep the
+   * original active countdown and skip duplicate starts/actions until
+   * that timer stops or expires. Omitted/false preserves legacy restart.
+   */
+  timer_if_idle?: boolean
+  /** Cancel only this timer when its zone, character or log context changes. */
+  timer_clear_on_context_change?: boolean
   worn_off_pattern: string
   spell_id: number
   /**
@@ -299,6 +307,9 @@ export interface TestTimerInfo {
   category?: string
   duration_secs?: number
   target?: string
+  /** Selected policy only; a silent draft does not execute timer admission. */
+  timer_if_idle?: boolean
+  timer_clear_on_context_change?: boolean
 }
 
 export interface TestWebhook {
