@@ -180,12 +180,13 @@ export interface Trigger {
   timer_repeat?: boolean
   timer_repeat_max?: number
   /**
-   * Log-source, nonstacking/nonrepeating custom timers only. Keep the
-   * original active countdown and skip duplicate starts/actions until
-   * that timer stops or expires. Omitted/false preserves legacy restart.
+   * Encounter options for a log-source custom timer that isn't stacked or
+   * repeating. timer_if_idle keeps the first countdown: while the timer is
+   * running, another match is ignored (no restart, no actions).
+   * timer_clear_on_context_change removes the timer on a zone change, a
+   * character change, or a log replay starting/ending.
    */
   timer_if_idle?: boolean
-  /** Cancel only this timer when its zone, character or log context changes. */
   timer_clear_on_context_change?: boolean
   worn_off_pattern: string
   spell_id: number
@@ -307,9 +308,6 @@ export interface TestTimerInfo {
   category?: string
   duration_secs?: number
   target?: string
-  /** Selected policy only; a silent draft does not execute timer admission. */
-  timer_if_idle?: boolean
-  timer_clear_on_context_change?: boolean
 }
 
 export interface TestWebhook {

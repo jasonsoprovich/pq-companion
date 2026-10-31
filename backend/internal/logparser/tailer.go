@@ -66,9 +66,6 @@ type Tailer struct {
 	remainderStable   bool   // remainder survived one idle poll — safe to flush as a complete line
 	detectedCharacter string // last auto-detected character name (empty when manually configured)
 	paused            bool   // true while a log replay session owns the dispatch pipeline
-	generation        uint64
-	contextHandler    func(uint64)
-	sourceLineHandler func(time.Time, string, uint64)
 
 	// rawFeed, when set, makes the live feed also surface lines that match no
 	// known event pattern (chat, system messages, "X is no longer mezzed", …)
@@ -99,33 +96,12 @@ func (t *Tailer) RawFeed() bool { return t.rawFeed.Load() }
 // manually set or auto-detected; the callback is expected to decide
 // whether to drop a stale manual override.
 func NewTailer(cfgMgr *config.Manager, handler func(LogEvent), lineHandler func(time.Time, string), onCharacterChange func(string)) *Tailer {
-	t := &Tailer{
+	return &Tailer{
 		cfgMgr:            cfgMgr,
 		handler:           handler,
 		lineHandler:       lineHandler,
 		onCharacterChange: onCharacterChange,
 	}
-	cfgMgr.SetSourceChangeHandler(t.invalidateSource)
-	return t
-}
-
-// SetContextHandlers binds opt-in lifecycle handling without changing the
-// legacy raw-before-parsed dispatch contract. Configure before Start.
-func (t *Tailer) SetContextHandlers(change func(uint64), line func(time.Time, string, uint64)) {
-	t.contextHandler = change
-	t.sourceLineHandler = line
-}
-func (t *Tailer) notifyContext(g uint64) {
-	if t.contextHandler != nil {
-		t.contextHandler(g)
-	}
-}
-func (t *Tailer) invalidateSource() {
-	t.mu.Lock()
-	t.closeFile()
-	g := t.generation
-	t.mu.Unlock()
-	t.notifyContext(g)
 }
 
 // Start begins the polling loop. It blocks until ctx is done.
@@ -139,9 +115,7 @@ func (t *Tailer) Start(ctx interface{ Done() <-chan struct{} }) {
 		case <-ctx.Done():
 			t.mu.Lock()
 			t.closeFile()
-			g := t.generation
 			t.mu.Unlock()
-			t.notifyContext(g)
 			return
 		case <-ticker.C:
 			t.tick()
@@ -196,15 +170,14 @@ func (t *Tailer) ActiveCharacter() string {
 // with the first-open behavior).
 func (t *Tailer) SetPaused(paused bool) {
 	t.mu.Lock()
+	defer t.mu.Unlock()
 	if t.paused == paused {
-		t.mu.Unlock()
 		return
 	}
 	t.paused = paused
-	t.closeFile()
-	g := t.generation
-	t.mu.Unlock()
-	t.notifyContext(g)
+	if paused {
+		t.closeFile()
+	}
 	slog.Info("logparser: live tailing", "paused", paused)
 }
 
@@ -241,16 +214,6 @@ func (t *Tailer) tick() {
 	if autoDetected {
 		character = autoDetectedChar
 		if character == "" {
-			t.mu.Lock()
-			hadFile := t.file != nil
-			if hadFile {
-				t.closeFile()
-			}
-			g := t.generation
-			t.mu.Unlock()
-			if hadFile {
-				t.notifyContext(g)
-			}
 			return
 		}
 	}
@@ -263,13 +226,6 @@ func (t *Tailer) tick() {
 	var changedCharacter string
 
 	t.mu.Lock()
-	// A config notification can invalidate a source after cfg was copied but
-	// before file I/O. Never reopen that stale path under its newer generation.
-	latest := t.cfgMgr.Get()
-	if t.paused || latest.EQPath != cfg.EQPath || latest.Character != cfg.Character || latest.Preferences.ParseCombatLog != cfg.Preferences.ParseCombatLog {
-		t.mu.Unlock()
-		return
-	}
 	prevDetected := t.detectedCharacter
 	t.detectedCharacter = autoDetectedChar
 	// Fire onCharacterChange when the auto-detected character changes:
@@ -289,24 +245,17 @@ func (t *Tailer) tick() {
 		}
 	}
 	events, rawLines = t.readLines(logPath)
-	generation := t.generation
 	t.mu.Unlock()
-	t.notifyContext(generation)
 
 	// Notify listener of character change outside the mutex.
 	if changedCharacter != "" && t.onCharacterChange != nil {
 		t.onCharacterChange(changedCharacter)
 	}
 
-	// Deliver lifecycle-aware raw lines in physical order. Zone retirement
-	// occurs here, never from the later all-parsed-events batch.
-	for _, rl := range rawLines {
-		ts := t.clockGuard(rl.ts)
-		if t.sourceLineHandler != nil {
-			t.sourceLineHandler(ts, rl.msg, generation)
-		}
-		if t.lineHandler != nil {
-			t.lineHandler(ts, rl.msg)
+	// Deliver raw lines first so trigger handlers see every line.
+	if t.lineHandler != nil {
+		for _, rl := range rawLines {
+			t.lineHandler(t.clockGuard(rl.ts), rl.msg)
 		}
 	}
 	for _, ev := range events {
@@ -388,9 +337,6 @@ func (t *Tailer) readLines(logPath string) ([]LogEvent, []rawLine) {
 			t.closeFile()
 			return t.readLines(logPath)
 		}
-	} else {
-		t.closeFile()
-		return nil, nil
 	}
 
 	// Re-stat to detect file truncation (shouldn't happen with EQ, but be safe).
@@ -401,7 +347,6 @@ func (t *Tailer) readLines(logPath string) ([]LogEvent, []rawLine) {
 		return nil, nil
 	}
 	if info.Size() < t.offset {
-		t.generation++
 		// A re-read hazard: the live file is now smaller than where we'd read
 		// to. Seek to the new end rather than rewinding to 0 — rewinding would
 		// re-dispatch every historical line (mass duplicate trigger fires).
@@ -542,9 +487,6 @@ func (t *Tailer) parseChunk(data []byte) ([]LogEvent, []rawLine) {
 // closeFile closes the current file handle if open.
 // Must be called with t.mu held.
 func (t *Tailer) closeFile() {
-	t.generation++
-	t.remainder = nil
-	t.remainderStable = false
 	if t.file != nil {
 		_ = t.file.Close()
 		t.file = nil

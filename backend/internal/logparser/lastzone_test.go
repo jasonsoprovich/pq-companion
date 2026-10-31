@@ -74,3 +74,22 @@ func TestLastZoneInLog_ZoneStraddlesChunkBoundary(t *testing.T) {
 		t.Fatalf("zone = %q ok = %v, want %q true", zone, ok, "Firiona Vie")
 	}
 }
+
+func TestZoneEntered(t *testing.T) {
+	tests := []struct {
+		msg    string
+		want   string
+		wantOK bool
+	}{
+		{"You have entered The Plane of Water.", "The Plane of Water", true},
+		{"You have entered an area where levitation effects do not function.", "", false},
+		{"You have entered an area where Bind Affinity is not allowed.", "", false},
+		{"Osui says, 'You have entered The Plane of Water.'", "", false},
+	}
+	for _, tc := range tests {
+		got, ok := ZoneEntered(tc.msg)
+		if got != tc.want || ok != tc.wantOK {
+			t.Errorf("ZoneEntered(%q) = %q, %v; want %q, %v", tc.msg, got, ok, tc.want, tc.wantOK)
+		}
+	}
+}

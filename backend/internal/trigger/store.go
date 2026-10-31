@@ -1171,7 +1171,7 @@ func (s *Store) insertWith(ex execer, t *Trigger) error {
 	if t.TimerType == "" {
 		t.TimerType = TimerTypeNone
 	}
-	t.NormalizeEncounterTimer()
+	t.NormalizeTimerPolicy()
 	source, pipeJSON := normalizeSourceAndCondition(t)
 	if err := s.resolveCategoryLink(t); err != nil {
 		return fmt.Errorf("resolve category link: %w", err)
@@ -1295,7 +1295,7 @@ func (s *Store) Update(t *Trigger) error {
 	if t.TimerType == "" {
 		t.TimerType = TimerTypeNone
 	}
-	t.NormalizeEncounterTimer()
+	t.NormalizeTimerPolicy()
 	source, pipeJSON := normalizeSourceAndCondition(t)
 	if err := s.resolveCategoryLink(t); err != nil {
 		return fmt.Errorf("resolve category link: %w", err)

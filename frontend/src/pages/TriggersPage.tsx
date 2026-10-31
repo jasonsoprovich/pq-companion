@@ -614,7 +614,10 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, timerG
   const [timerClearOnContextChange, setTimerClearOnContextChange] = useState(
     initial?.timer_clear_on_context_change ?? false,
   )
-  const canUseEncounterTimerOptions = source === 'log' && timerType === 'custom'
+  // Keep first countdown / Clear on zone or character change only apply to
+  // a log-source custom timer that isn't stacked or repeating — mirrors
+  // Trigger.timerPolicyEligible in the backend.
+  const timerPolicyEligible = source === 'log' && timerType === 'custom'
     && !timerStack && !timerRepeat
   // Which Custom Timers window this trigger's timer appears in (only used
   // when timerType === 'custom'). '' = the original/default window. The
@@ -708,8 +711,8 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, timerG
     display_threshold_secs: timerType === 'none' ? 0 : Math.max(0, displayThreshold),
     bar_color: timerType === 'none' ? '' : barColor,
     characters: Array.from(selectedChars),
-    timer_if_idle: canUseEncounterTimerOptions && timerIfIdle,
-    timer_clear_on_context_change: canUseEncounterTimerOptions && timerClearOnContextChange,
+    timer_if_idle: timerPolicyEligible && timerIfIdle,
+    timer_clear_on_context_change: timerPolicyEligible && timerClearOnContextChange,
     timer_alerts: timerType === 'none' ? [] : timerAlerts,
     exclude_patterns: excludePatternsText.split('\n').map((s) => s.trim()).filter((s) => s.length > 0),
     extra_patterns: extraPatterns
@@ -721,7 +724,7 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, timerG
     timerDurationCapture, timerKeyCapture, timerTargetCapture, wornOffPattern,
     prefill, refireCooldown, repeatReset, displayThreshold, barColor, selectedChars,
     timerAlerts, excludePatternsText, extraPatterns,
-    canUseEncounterTimerOptions, timerIfIdle, timerClearOnContextChange,
+    timerPolicyEligible, timerIfIdle, timerClearOnContextChange,
   ])
 
   // Plain new triggers start from the default action template when one is
@@ -941,8 +944,8 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, timerG
       timer_stack: timerType === 'custom' ? timerStack : false,
       timer_repeat: timerType === 'custom' && !timerStack ? timerRepeat : false,
       timer_repeat_max: Math.max(0, Math.floor(timerRepeatMax)),
-      timer_if_idle: canUseEncounterTimerOptions && timerIfIdle,
-      timer_clear_on_context_change: canUseEncounterTimerOptions && timerClearOnContextChange,
+      timer_if_idle: timerPolicyEligible && timerIfIdle,
+      timer_clear_on_context_change: timerPolicyEligible && timerClearOnContextChange,
       custom_group_id: timerType === 'custom' ? customGroupID : '',
       characters: Array.from(selectedChars),
       timer_alerts: timerType === 'none' ? [] : timerAlerts,
@@ -1627,41 +1630,26 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, timerG
                 </span>
               </div>
             )}
-            {source === 'log' && timerType === 'custom' && (
-              <div className="space-y-2 text-[11px]" style={{ color: 'var(--color-muted-foreground)' }}>
-                <label className="flex items-start gap-2">
-                  <input
-                    type="checkbox"
-                    checked={canUseEncounterTimerOptions && timerIfIdle}
-                    onChange={(e) => setTimerIfIdle(e.target.checked)}
-                    disabled={!canUseEncounterTimerOptions || submitting}
-                  />
-                  <span>
-                    Keep the first countdown
-                    <span className="block text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
-                      ignore duplicate starts while active; stopping or expiry allows a new start
-                    </span>
-                  </span>
+            {timerPolicyEligible && (
+              <div className="flex items-center gap-1.5">
+                <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+                  Keep first countdown
                 </label>
-                <label className="flex items-start gap-2">
-                  <input
-                    type="checkbox"
-                    checked={canUseEncounterTimerOptions && timerClearOnContextChange}
-                    onChange={(e) => setTimerClearOnContextChange(e.target.checked)}
-                    disabled={!canUseEncounterTimerOptions || submitting}
-                  />
-                  <span>
-                    Cancel on zone, character, or log change
-                    <span className="block text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
-                      clear only this timer when its event context changes; other timers are unchanged
-                    </span>
-                  </span>
+                <Toggle checked={timerIfIdle} onChange={setTimerIfIdle} />
+                <span className="text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
+                  ignore this trigger while its timer is running — no restart, no alerts; the worn-off pattern or expiry allows a new start
+                </span>
+              </div>
+            )}
+            {timerPolicyEligible && (
+              <div className="flex items-center gap-1.5">
+                <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+                  Clear on zone or character change
                 </label>
-                {!canUseEncounterTimerOptions && (
-                  <p className="text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
-                    These options require a custom timer with stacking and repeating off.
-                  </p>
-                )}
+                <Toggle checked={timerClearOnContextChange} onChange={setTimerClearOnContextChange} />
+                <span className="text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
+                  remove this timer when you zone, switch characters or start a log replay
+                </span>
               </div>
             )}
             <div className="flex items-center gap-1.5">

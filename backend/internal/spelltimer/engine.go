@@ -414,9 +414,6 @@ func (e *Engine) evictOldestStackedLocked(name string) {
 // both timers carry the same SpellID, so without this they'd show as two
 // separate rows for one cast.
 func sameSpellForDedup(existing *ActiveTimer, name string, spellID int) bool {
-	if existing.ownerID != "" {
-		return false
-	}
 	if existing.SpellName == name {
 		return true
 	}
@@ -1321,10 +1318,56 @@ func divergenceKey(names []string) string {
 // overwriting any existing same-name timer — the "stack timers" trigger
 // option (Trigger.TimerStack). Only meaningful alongside category "custom".
 func (e *Engine) StartExternal(name string, category string, durationSecs, displayThresholdSecs float64, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string, pinned bool, customGroup string, targetIsCaster bool, stack ...bool) {
-	if name == "" || durationSecs <= 0 {
+	stacking := len(stack) > 0 && stack[0]
+	e.startExternal(name, category, durationSecs, displayThresholdSecs, startedAt, alerts, spellID, targetName, barColor, pinned, customGroup, targetIsCaster, stacking, externalPolicy{})
+}
+
+// externalPolicy is the opt-in encounter behaviour of a trigger's custom
+// timer (Trigger.TimerIfIdle / Trigger.TimerClearOnContextChange).
+type externalPolicy struct {
+	// ifIdle keeps a running timer's original deadline: a start whose key
+	// already holds an unexpired timer is refused instead of restarting it.
+	ifIdle bool
+	// clearOnContext marks the timer for removal by ClearContextTimers.
+	clearOnContext bool
+}
+
+// StartExternalWithPolicy is StartExternal for a non-stacking custom timer
+// with the trigger's encounter options (see externalPolicy). It reports
+// whether the timer was started; false means ifIdle refused it because the
+// same timer is still running, so the trigger engine can skip that firing's
+// actions too.
+func (e *Engine) StartExternalWithPolicy(ifIdle, clearOnContext bool, name, category string, durationSecs, displayThresholdSecs float64, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string, pinned bool, customGroup string, targetIsCaster bool) bool {
+	policy := externalPolicy{ifIdle: ifIdle, clearOnContext: clearOnContext}
+	return e.startExternal(name, category, durationSecs, displayThresholdSecs, startedAt, alerts, spellID, targetName, barColor, pinned, customGroup, targetIsCaster, false, policy)
+}
+
+// ClearContextTimers removes every timer started with
+// StartExternalWithPolicy clearOnContext. Called by the trigger engine on a zone
+// change, an active-character change, or a log replay starting/ending.
+func (e *Engine) ClearContextTimers() {
+	e.mu.Lock()
+	removed := 0
+	for k, t := range e.timers {
+		if t.clearOnContext {
+			delete(e.timers, k)
+			removed++
+		}
+	}
+	if removed == 0 {
+		e.mu.Unlock()
 		return
 	}
-	stacking := len(stack) > 0 && stack[0]
+	snap := e.snapshot(time.Now())
+	e.mu.Unlock()
+	slog.Debug("timer-debug: context timers cleared", "removed", removed)
+	e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
+}
+
+func (e *Engine) startExternal(name string, category string, durationSecs, displayThresholdSecs float64, startedAt time.Time, alerts json.RawMessage, spellID int, targetName, barColor string, pinned bool, customGroup string, targetIsCaster bool, stacking bool, policy externalPolicy) bool {
+	if name == "" || durationSecs <= 0 {
+		return false
+	}
 	cat := Category(category)
 	switch cat {
 	case CategoryBuff, CategoryDebuff, CategoryMez, CategoryDot, CategoryStun, CategoryCHChain, CategoryCHChain2, CategoryCustom:
@@ -1379,6 +1422,20 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 	// independent rows instead of colliding on name alone.
 	key := timerKey(name, e.keyTargetTokenLocked(spell, targetName, startedAt))
 
+	// IfIdle: the same timer is still counting down, so keep its original
+	// deadline rather than restarting it. An expired row (e.g. a pinned
+	// timer left at 0) doesn't count as running.
+	if policy.ifIdle {
+		if existing := e.timers[key]; existing != nil && existing.ExpiresAt.After(time.Now()) {
+			e.mu.Unlock()
+			slog.Debug("timer-debug: if-idle start refused, timer still running",
+				"name", name,
+				"remaining_secs", time.Until(existing.ExpiresAt).Seconds(),
+			)
+			return false
+		}
+	}
+
 	// A stacking firing always gets its own row: skip the deferred-render
 	// mez path (which is keyed by name and would otherwise swallow it into
 	// a pendingArm) and uniquify the key with a per-name counter so it can
@@ -1423,7 +1480,7 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 			"active_timer_count", len(snap.Timers),
 		)
 		e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
-		return
+		return true
 	}
 
 	// Deferred-render path: spells in deferredRenderSpells (currently the
@@ -1447,7 +1504,7 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 			"threshold_secs", displayThresholdSecs,
 			"alerts_bytes", len(alerts),
 		)
-		return
+		return true
 	}
 
 	// If a same-spell-name timer was just created (typically by the
@@ -1494,7 +1551,7 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 			"applied_alerts_bytes", len(alerts),
 		)
 		e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
-		return
+		return true
 	}
 	timer := &ActiveTimer{
 		ID:                   key,
@@ -1515,6 +1572,7 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 		CustomGroup:          customGroup,
 		IsCharm:              isCharm,
 		CasterCharacter:      caster,
+		clearOnContext:       policy.clearOnContext,
 	}
 	e.timers[key] = timer
 	snap := e.snapshot(time.Now())
@@ -1527,6 +1585,7 @@ func (e *Engine) StartExternal(name string, category string, durationSecs, displ
 		"active_timer_count", len(snap.Timers),
 	)
 	e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
+	return true
 }
 
 // StopExternal removes any timer with this spell name, irrespective of
@@ -2958,7 +3017,7 @@ func (e *Engine) removeBySpellNameOrID(spellName string, spellID int) {
 	allDetrimental := true
 	allStacked := true
 	for k, t := range e.timers {
-		if t.ownerID == "" && (t.SpellName == spellName || (spellID > 0 && t.SpellID == spellID)) {
+		if t.SpellName == spellName || (spellID > 0 && t.SpellID == spellID) {
 			matches = append(matches, k)
 			if !isDetrimentalCategory(t.Category) {
 				allDetrimental = false
@@ -3097,7 +3156,7 @@ func (e *Engine) SetExternalRepeat(name, targetName string, maxRepeats int) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	for _, t := range e.timers {
-		if t.ownerID == "" && t.Category == CategoryCustom && !t.Stacked && t.SpellName == name && t.TargetName == targetName {
+		if t.Category == CategoryCustom && !t.Stacked && t.SpellName == name && t.TargetName == targetName {
 			t.Repeat = true
 			t.repeatsLeft = maxRepeats
 		}

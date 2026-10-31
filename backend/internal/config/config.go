@@ -1477,10 +1477,9 @@ func defaults() Config {
 
 // Manager holds a loaded Config and serializes concurrent access.
 type Manager struct {
-	mu           sync.RWMutex
-	cfg          Config
-	path         string
-	sourceChange func() // optional Tailer observer; invoked outside manager locks
+	mu   sync.RWMutex
+	cfg  Config
+	path string
 }
 
 // Load reads (or creates) the config file at the default location
@@ -1819,7 +1818,10 @@ func (m *Manager) Get() Config {
 
 // Update replaces the current config with c and persists it to disk.
 func (m *Manager) Update(c Config) error {
-	return m.Modify(func(current *Config) { *current = c })
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cfg = c
+	return m.save()
 }
 
 // Modify applies mutate to the live config under the manager lock, then
@@ -1828,30 +1830,11 @@ func (m *Manager) Update(c Config) error {
 // persist, character auto-detect, …) can no longer clobber each other's fields
 // by writing back a stale copy.
 func (m *Manager) Modify(mutate func(*Config)) error {
-	var fn func()
-	var changed bool
-	err := func() error {
-		m.mu.Lock()
-		defer m.mu.Unlock()
-		old := m.cfg
-		mutate(&m.cfg)
-		changed = sourceChanged(old, m.cfg)
-		fn = m.sourceChange
-		return m.save()
-	}()
-	if changed && fn != nil {
-		fn()
-	}
-	return err
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	mutate(&m.cfg)
+	return m.save()
 }
-
-func sourceChanged(a, b Config) bool {
-	return a.EQPath != b.EQPath || a.Character != b.Character || a.Preferences.ParseCombatLog != b.Preferences.ParseCombatLog
-}
-
-// SetSourceChangeHandler installs the existing Tailer source observer.
-// The callback may read/modify config, so it must never run under m.mu.
-func (m *Manager) SetSourceChangeHandler(fn func()) { m.mu.Lock(); m.sourceChange = fn; m.mu.Unlock() }
 
 // save writes the current config to disk (must be called with m.mu held).
 func (m *Manager) save() error {

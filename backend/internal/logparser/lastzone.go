@@ -82,6 +82,18 @@ func LastZoneInLog(eqPath, character string) (zone string, ts time.Time, ok bool
 	return "", time.Time{}, false
 }
 
+// ZoneEntered reports whether msg (a bare log message, no timestamp) is a
+// real zone change, returning the zone long name. Unlike ClassifyMessage's
+// EventZone it rejects the non-zone "You have entered an area where …"
+// system messages.
+func ZoneEntered(msg string) (string, bool) {
+	m := reZone.FindStringSubmatch(msg)
+	if m == nil || isNonZoneEnterLine(m[1]) {
+		return "", false
+	}
+	return m[1], true
+}
+
 // isNonZoneEnterLine reports whether a string captured by reZone is actually
 // one of EQ's non-zone "You have entered …" system messages rather than a real
 // zone name — e.g. "You have entered an area where levitation effects do not

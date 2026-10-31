@@ -313,7 +313,18 @@ type Trigger struct {
 	// safety cap (see spelltimer.maxRepeatCycles).
 	TimerRepeatMax int `json:"timer_repeat_max,omitempty"`
 
-	// Opt-in encounter lifecycle; only log/custom, nonstacking, nonrepeating.
+	// TimerIfIdle keeps a running timer's original deadline: while it is
+	// still counting down, another match is ignored entirely — no restart,
+	// no actions. The worn-off pattern, a dismiss or expiry allows the next
+	// start. Unlike RefireCooldownSecs this tracks the real timer, so an
+	// early reset (a wipe) can start a fresh attempt.
+	//
+	// TimerClearOnContextChange removes the timer on a zone change, an
+	// active-character change, or a log replay starting/ending, so an event
+	// timer doesn't linger into the next session.
+	//
+	// Both only apply to log-source, non-stacking, non-repeating custom
+	// timers (see NormalizeTimerPolicy).
 	TimerIfIdle               bool `json:"timer_if_idle,omitempty"`
 	TimerClearOnContextChange bool `json:"timer_clear_on_context_change,omitempty"`
 
@@ -427,6 +438,29 @@ type Trigger struct {
 	// window position are unaffected. Ignored for buff/detrimental timers,
 	// which always render in their single dedicated overlay.
 	CustomGroupID string `json:"custom_group_id,omitempty"`
+}
+
+// timerPolicyEligible reports whether t can use TimerIfIdle /
+// TimerClearOnContextChange: a log-source, non-stacking, non-repeating
+// custom timer. An empty Source is the historical spelling of "log".
+func (t *Trigger) timerPolicyEligible() bool {
+	return (t.Source == "" || t.Source == SourceLog) && t.TimerType == TimerTypeCustom && !t.TimerStack && !t.TimerRepeat
+}
+
+// usesTimerPolicy reports whether t's timer goes through the sink's
+// StartExternalWithPolicy path.
+func (t *Trigger) usesTimerPolicy() bool {
+	return t.timerPolicyEligible() && (t.TimerIfIdle || t.TimerClearOnContextChange)
+}
+
+// NormalizeTimerPolicy clears TimerIfIdle / TimerClearOnContextChange on a
+// trigger that can't use them, so a stale flag never survives a switch to
+// stacking, repeating or a non-custom timer.
+func (t *Trigger) NormalizeTimerPolicy() {
+	if !t.timerPolicyEligible() {
+		t.TimerIfIdle = false
+		t.TimerClearOnContextChange = false
+	}
 }
 
 // TriggerFired is the payload of a WSEventTriggerFired WebSocket event and a

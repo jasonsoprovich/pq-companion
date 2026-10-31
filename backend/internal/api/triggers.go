@@ -79,8 +79,12 @@ type triggerRequest struct {
 	TimerStack bool `json:"timer_stack"`
 	// TimerRepeat / TimerRepeatMax request restart-on-expiry — see
 	// Trigger.TimerRepeat. Coerced off for non-custom or stacked timers.
-	TimerRepeat               bool  `json:"timer_repeat"`
-	TimerRepeatMax            int   `json:"timer_repeat_max"`
+	TimerRepeat    bool `json:"timer_repeat"`
+	TimerRepeatMax int  `json:"timer_repeat_max"`
+	// TimerIfIdle / TimerClearOnContextChange request the encounter timer
+	// options — see Trigger.TimerIfIdle. Pointers so an omitted field keeps
+	// the saved value on update (like RefireCooldownSecs); coerced off for
+	// triggers that can't use them (Trigger.NormalizeTimerPolicy).
 	TimerIfIdle               *bool `json:"timer_if_idle"`
 	TimerClearOnContextChange *bool `json:"timer_clear_on_context_change"`
 	// CustomGroupID selects which Custom Timers window a timer_type="custom"
@@ -220,7 +224,7 @@ func (h *triggerHandler) create(w http.ResponseWriter, r *http.Request) {
 	if req.TimerClearOnContextChange != nil {
 		t.TimerClearOnContextChange = *req.TimerClearOnContextChange
 	}
-	t.NormalizeEncounterTimer()
+	t.NormalizeTimerPolicy()
 	if t.Actions == nil {
 		t.Actions = []trigger.Action{}
 	}
@@ -314,7 +318,7 @@ func (h *triggerHandler) update(w http.ResponseWriter, r *http.Request) {
 	if req.TimerClearOnContextChange != nil {
 		existing.TimerClearOnContextChange = *req.TimerClearOnContextChange
 	}
-	existing.NormalizeEncounterTimer()
+	existing.NormalizeTimerPolicy()
 	// Only touch the category when the request carries category_id or
 	// pack_name — an omitted field (older callers, edits that don't change
 	// category) leaves the existing value intact. On a category change,

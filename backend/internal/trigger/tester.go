@@ -54,12 +54,10 @@ const (
 // TestTimerInfo describes the spell-timer a matched trigger would start (or,
 // for a worn-off match, the timer key it would stop).
 type TestTimerInfo struct {
-	Key                       string  `json:"key"`
-	Category                  string  `json:"category,omitempty"`
-	Duration                  float64 `json:"duration_secs,omitempty"`
-	Target                    string  `json:"target,omitempty"`
-	TimerIfIdle               bool    `json:"timer_if_idle,omitempty"`
-	TimerClearOnContextChange bool    `json:"timer_clear_on_context_change,omitempty"`
+	Key      string  `json:"key"`
+	Category string  `json:"category,omitempty"`
+	Duration float64 `json:"duration_secs,omitempty"`
+	Target   string  `json:"target,omitempty"`
 }
 
 // TestWebhook previews a discord_webhook action's outcome. A test run never
@@ -276,7 +274,7 @@ func (e *Engine) testLine(fc *fireContext, cs []compiled, character string, ts t
 				tm.Actions = plan.actions
 				tm.Webhooks = e.previewWebhooks(plan.actions)
 				if plan.hasTimer {
-					tm.Timer = &TestTimerInfo{Key: plan.timerKey, Category: plan.timerCategory, Duration: plan.timerDuration, Target: plan.timerTarget, TimerIfIdle: c.trigger.EncounterTimerEligible() && c.trigger.TimerIfIdle, TimerClearOnContextChange: c.trigger.EncounterTimerEligible() && c.trigger.TimerClearOnContextChange}
+					tm.Timer = &TestTimerInfo{Key: plan.timerKey, Category: plan.timerCategory, Duration: plan.timerDuration, Target: plan.timerTarget}
 				}
 				if fireEffects {
 					tm.Fired = e.applyFire(plan, fireOpts{test: true})
@@ -303,12 +301,8 @@ func (e *Engine) testLine(fc *fireContext, cs []compiled, character string, ts t
 				} else {
 					wtm.Status = LineStatusMatched
 					if fireEffects && e.sink != nil {
-						if c.trigger.managedTimer() {
-							wtm.Fired = e.stopOwnedDraft(c.trigger.ID, key, resolveTimerTarget(c.trigger, wm, c.wornOff.SubexpNames()))
-						} else {
-							e.sink.StopExternal(key, spellID)
-							wtm.Fired = true
-						}
+						e.sink.StopExternal(key, spellID)
+						wtm.Fired = true
 					}
 				}
 				out = append(out, wtm)

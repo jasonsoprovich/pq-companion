@@ -140,8 +140,9 @@ type ActiveTimer struct {
 	// never collide, and this flag lets removeOnKill / worn-off handling treat
 	// them differently from an ordinary single-instance custom timer. Always
 	// false outside CategoryCustom. Internal-only; the frontend doesn't need it.
-	Stacked        bool `json:"-"`
-	ownerID        string
+	Stacked bool `json:"-"`
+	// clearOnContext is set by StartExternalWithPolicy: the timer is
+	// removed by ClearContextTimers on a zone/character/replay change.
 	clearOnContext bool
 
 	// Repeat restarts the timer on expiry (Trigger.TimerRepeat) instead of

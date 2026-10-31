@@ -2048,8 +2048,7 @@ func main() {
 				}})
 			}
 		}
-		// Live trigger dispatch carries a Tailer source generation below.
-		// Replay uses its own explicit owner in the replayer callback.
+		guard.run("triggerEngine", func() { triggerEngine.Handle(ts, msg) })
 		guard.run("wishlistWatcher", func() { wishlistWatcher.HandleLine(msg) })
 		durable("wishlistRemover", func() { wishlistRemover.HandleLine(msg) })
 		guard.run("timerEngineCastStarts", func() { timerEngine.HandleLine(ts, msg) })
@@ -2130,7 +2129,6 @@ func main() {
 		// previous character's tracked-faction set.
 		reloadFactionTracking()
 	})
-	wireEncounterTimers(tailer, triggerEngine, guard)
 	go tailer.Start(context.Background())
 
 	// Log replayer: streams a historical log segment through the same
@@ -2139,10 +2137,7 @@ func main() {
 	// debugging trigger setups against real gameplay. Live tailing pauses
 	// for the duration of a session; replay-driven state (timers, current
 	// fight) is cleared when the session ends so ghosts don't linger.
-	replayer := logparser.NewReplayer(dispatchEvent, func(ts time.Time, msg string) {
-		guard.run("triggerEngine", func() { triggerEngine.Handle(ts, msg) })
-		dispatchLine(ts, msg)
-	}, func(active bool) {
+	replayer := logparser.NewReplayer(dispatchEvent, dispatchLine, func(active bool) {
 		tailer.SetPaused(active)
 		triggerEngine.SetReplaying(active)
 		replaying.Store(active)
