@@ -9,6 +9,22 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.32.0 — 2026-11-01
+
+PoP hail flags tick themselves off as you earn them, an optional zone-in reminder of hails you can do now, NPC slow mitigation on the overlay, and new custom timer options for encounter timers. Fixes cover PoP flag readings, pet DPS in multi-fight parses and disappearing overlays.
+
+### Highlights
+- **PoP hail flags tick themselves off** — hail steps for Mavuin, Adroha, Elder Poxbourne, Adler and Elder Fuirstel, Fahlia, Giwin, Miak and Grand Librarian Maelin are marked complete as soon as the NPC grants the flag. A later partial #popflags reading won't undo them, and they never override a step you set by hand.
+- **Hail reminders on zone-in** — an opt-in reminder (Reminders button on the PoP Flagging page) lists the hails your current character can do now when you enter Tranquility, Justice, Innovation or Knowledge.
+- **Slow mitigation on NPCs** — the NPC overlay and NPC page show a Slow Mit chip for the ~720 NPCs that resist part of a slow (Rallos Zek the Warlord, for example, at 75%). It can be hidden from the overlay filters.
+- **Encounter-safe custom timers** — custom timers have two new options: keep the first countdown instead of restarting while it's running, and clear the timer on zoning or switching characters. Thanks to alphablueofficial for the original contribution (#163).
+
+### Fixes
+- **#popflags tier readings wiped other tiers** — running `#popflags 2` cleared kill-detected Tier 1 flags like Terris Thule. A report now only changes the flags it printed.
+- **Miak Tower access step locked** — it required the Grand Librarian flag, which Quarm doesn't check, so it couldn't be ticked off by hand.
+- **Pet DPS in "Last N mobs" parses** — merging a pet into its owner divided by fights the owner wasn't in, which lowered their Encounter DPS. The dashboard DPS panel header also now shows which mode (Personal/Raid/Encounter) it's in.
+- **Overlays going blank** — Windows could stop drawing overlays it wrongly thought were covered, leaving them invisible until recreated. That tracking is now off, and overlay visibility and display changes are logged to help diagnose any further reports.
+
 ## v0.31.1 — 2026-10-28
 
 Game data from the latest Project Quarm database, a Stone Ring kill counter that follows the reworked event, more charm timers for druids and necromancers, and a PoP Flags grid that drops deleted characters.
