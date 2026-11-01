@@ -25,6 +25,7 @@ export type DashboardPanelKey =
   | 'filtered'
   | 'kills'
   | 'itemInfo'
+  | 'pet'
 
 export interface PanelLayout {
   x: number
@@ -58,10 +59,11 @@ export const DEFAULT_DASHBOARD_LAYOUT: DashboardLayout = {
   filtered: { x: 1376, y: 16, width: 304, height: 384, visible: false },
   kills: { x: 1376, y: 416, width: 304, height: 240, visible: false },
   itemInfo: { x: 1072, y: 416, width: 320, height: 464, visible: false },
+  pet: { x: 1376, y: 672, width: 304, height: 432, visible: false },
 }
 
 export const DASHBOARD_PANEL_KEYS: DashboardPanelKey[] =
-  ['buff', 'filtered', 'detrim', 'dps', 'npc', 'threat', 'hps', 'rolls', 'respawn', 'chChain', 'chMetronome', 'custom', 'discordVoice', 'liveMap', 'zoneLockouts', 'raidReadiness', 'kills', 'itemInfo']
+  ['buff', 'filtered', 'detrim', 'dps', 'npc', 'threat', 'hps', 'rolls', 'respawn', 'chChain', 'chMetronome', 'custom', 'discordVoice', 'liveMap', 'zoneLockouts', 'raidReadiness', 'kills', 'itemInfo', 'pet']
 
 // HPS tracking is wired up end-to-end (panel, dashboard layout, popout window)
 // but no log-parsing pipeline currently produces healer stats, so the UI is
@@ -96,6 +98,7 @@ export const DASHBOARD_PANEL_LABELS: Record<DashboardPanelKey, string> = {
   filtered: 'Filtered Timers',
   kills: 'Kill Counters',
   itemInfo: 'Item Info',
+  pet: 'Pet',
 }
 
 export function isPanelLayout(v: unknown): v is PanelLayout {

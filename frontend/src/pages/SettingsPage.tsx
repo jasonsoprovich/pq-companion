@@ -26,7 +26,7 @@ import type { Config, DPSClassColors, LogTrimSettings, TimerAlertPref } from '..
 import { DEFAULT_DPS_CLASS_COLORS, DEFAULT_LOG_TRIM } from '../types/config'
 import { withTimerAlertDefaults } from '../lib/timerAlerts'
 import { mergeConfigEdits } from '../lib/configMerge'
-import { OVERLAY_DEFS, itemInfoOffered, resolveLockedMode } from '../lib/overlays'
+import { OVERLAY_DEFS, itemInfoOffered, petOverlayOffered, resolveLockedMode } from '../lib/overlays'
 import type { OverlayName, LockedMode, FadeMode } from '../lib/overlays'
 import { DEV_HPS } from '../lib/devFlags'
 import {
@@ -2166,6 +2166,7 @@ export default function SettingsPage(): React.ReactElement {
             <div className="mt-2">
               {OVERLAY_DEFS.filter((o) => o.name !== 'hps' || DEV_HPS)
                 .filter((o) => o.name !== 'itemInfo' || itemInfoOffered(config.preferences))
+                .filter((o) => o.name !== 'pet' || petOverlayOffered(config.preferences))
                 .map((o) => {
                 const factor = config.preferences.overlay_zoom_factors?.[o.name] ?? 1
                 return (
@@ -2497,6 +2498,7 @@ export default function SettingsPage(): React.ReactElement {
         {tab === 'overlays' && (
         <OverlayLockModeCard
           offerItemInfo={itemInfoOffered(config.preferences)}
+          offerPet={petOverlayOffered(config.preferences)}
           modes={config.preferences.overlay_locked_modes ?? {}}
           onChange={(next) =>
             setConfig({
@@ -4529,6 +4531,7 @@ const OVERLAY_POPOUT_TOGGLE: Record<OverlayName, () => void> = {
   discordVoice: () => { window.electron?.overlay?.toggleDiscordVoice() },
   killCounter:  () => { window.electron?.overlay?.toggleKillCounter() },
   itemInfo:     () => { window.electron?.overlay?.toggleItemInfo() },
+  pet:          () => { window.electron?.overlay?.togglePet() },
 }
 
 // The HPS overlay can't be implemented correctly until EQ logs expose real
@@ -4585,6 +4588,7 @@ function OverlayOpacitySelect({
 
 function OverlayLockModeCard({
   offerItemInfo,
+  offerPet,
   modes,
   onChange,
   fadeModes,
@@ -4595,6 +4599,7 @@ function OverlayLockModeCard({
   onOpacityChange,
 }: {
   offerItemInfo: boolean
+  offerPet: boolean
   modes: Partial<Record<OverlayName, LockedMode>>
   onChange: (next: Partial<Record<OverlayName, LockedMode>>) => void
   fadeModes: Partial<Record<OverlayName, FadeMode | ''>>
@@ -4604,9 +4609,9 @@ function OverlayLockModeCard({
   opacityGlobal: number
   onOpacityChange: (next: Partial<Record<OverlayName, number>>) => void
 }): React.ReactElement {
-  const defs = offerItemInfo
-    ? VISIBLE_OVERLAY_DEFS
-    : VISIBLE_OVERLAY_DEFS.filter((def) => def.name !== 'itemInfo')
+  const defs = VISIBLE_OVERLAY_DEFS.filter(
+    (def) => (def.name !== 'itemInfo' || offerItemInfo) && (def.name !== 'pet' || offerPet),
+  )
 
   // Per-overlay popout open-state + the monitor each overlay currently sits on,
   // keyed by canonical overlay name. Polled like the dashboard's manager since

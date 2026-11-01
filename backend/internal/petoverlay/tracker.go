@@ -118,6 +118,12 @@ type State struct {
 	BrokeAt *time.Time `json:"broke_at,omitempty"`
 	SwapAt  *time.Time `json:"swap_at,omitempty"`
 
+	// Zone / ZoneName are the player's current zone (short and long name),
+	// carried for the panel's charm finder. Independent of the pet: they
+	// survive pet changes and resets.
+	Zone     string `json:"zone,omitempty"`
+	ZoneName string `json:"zone_name,omitempty"`
+
 	// ZealLimited is true while no Zeal pipe is connected: pet death can't be
 	// detected promptly and HP comes only from `/pet health`.
 	ZealLimited bool `json:"zeal_limited"`
@@ -142,6 +148,8 @@ type Config struct {
 	// Called on every pipe tick and log event while a pet is up, so it must
 	// be cheap (spelltimer.Engine.ActiveCharm).
 	CharmTimer func() (spell, target string, ok bool)
+	// ZoneShort maps a log zone long name ("The Grey") to its short name.
+	ZoneShort func(long string) string
 	// IsSpell reports whether a line is an exact spell name (for `/pet
 	// health` member lines); IsCharmSpell whether a spell name is a charm.
 	IsSpell      func(name string) bool
@@ -168,6 +176,9 @@ type Tracker struct {
 	health        healthAssembler
 	healthTimer   *time.Timer
 	swapTimer     *time.Timer
+
+	zoneShort string
+	zoneLong  string
 
 	lastSentHP *int
 	lastSentAt time.Time
@@ -200,7 +211,9 @@ func (t *Tracker) SetSwapDelay(d time.Duration) {
 func (t *Tracker) GetState() State {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.st
+	st := t.st
+	st.Zone, st.ZoneName = t.zoneShort, t.zoneLong
+	return st
 }
 
 // ── Zeal pipe inputs ─────────────────────────────────────────────────────────
@@ -309,6 +322,18 @@ func (t *Tracker) SetPipePetHPPercent(raw string) {
 	t.commitLocked(false)
 }
 
+// SetZone records the player's zone from the pipe (called every tick; a no-op
+// unless it changed).
+func (t *Tracker) SetZone(short, long string) {
+	t.mu.Lock()
+	if short == "" || (short == t.zoneShort && long == t.zoneLong) {
+		t.mu.Unlock()
+		return
+	}
+	t.zoneShort, t.zoneLong = short, long
+	t.commitLocked(true)
+}
+
 // ── Log inputs ───────────────────────────────────────────────────────────────
 
 // Handle consumes parsed log events.
@@ -339,18 +364,22 @@ func (t *Tracker) Handle(ev logparser.LogEvent) {
 		t.commitLocked(true)
 	case logparser.EventZone:
 		t.mu.Lock()
+		if d, ok := ev.Data.(logparser.ZoneData); ok && d.ZoneName != "" {
+			t.zoneLong = d.ZoneName
+			if t.cfg.ZoneShort != nil {
+				t.zoneShort = t.cfg.ZoneShort(d.ZoneName)
+			}
+		}
 		// Spawn ids and the NPC overlay's resolution cache are per zone. With
 		// Zeal, pet_id re-reports the pet on the far side (a new id starts a
 		// new pet). Without it, a charm doesn't survive the zone; a summoned
 		// pet follows, so keep it but drop the zone-scoped row.
 		t.resolvedName = ""
-		changed := false
+		changed := true // the zone itself changed
 		if !t.pipeConnected && t.st.Mode == ModePet && t.st.Kind == KindCharm {
 			t.resetLocked()
-			changed = true
 		} else if t.st.Stats != nil && t.st.Kind != KindCharm {
 			t.st.Stats, t.st.Variants = nil, 0
-			changed = true
 		}
 		t.commitLocked(changed)
 	default:
@@ -614,6 +643,7 @@ func (t *Tracker) commitLocked(changed bool) {
 		t.mu.Unlock()
 		return
 	}
+	t.st.Zone, t.st.ZoneName = t.zoneShort, t.zoneLong
 	t.st.UpdatedAt = now
 	t.lastSentAt = now
 	if t.st.HPPercent != nil {

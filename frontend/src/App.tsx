@@ -61,6 +61,7 @@ const HPSOverlayWindowPage = lazy(() => import('./pages/HPSOverlayWindowPage'))
 const BuffTimerWindowPage = lazy(() => import('./pages/BuffTimerWindowPage'))
 const FilteredTimerWindowPage = lazy(() => import('./pages/FilteredTimerWindowPage'))
 const KillCounterWindowPage = lazy(() => import('./pages/KillCounterWindowPage'))
+const PetWindowPage = lazy(() => import('./pages/PetWindowPage'))
 const ItemInfoWindowPage = lazy(() => import('./pages/ItemInfoWindowPage'))
 const KillTrackerPage = lazy(() => import('./pages/KillTrackerPage'))
 const CHChainOverlayWindowPage = lazy(() => import('./pages/CHChainOverlayWindowPage'))
@@ -302,6 +303,7 @@ export default function App(): React.ReactElement {
         <Route path="buff-timer-window" element={<OverlayPage overlayKey="buffTimer"><BuffTimerWindowPage /></OverlayPage>} />
         <Route path="filtered-timer-window" element={<OverlayPage overlayKey="filteredTimer"><FilteredTimerWindowPage /></OverlayPage>} />
         <Route path="kill-counter-window" element={<OverlayPage overlayKey="killCounter"><KillCounterWindowPage /></OverlayPage>} />
+        <Route path="pet-window" element={<OverlayPage overlayKey="pet"><PetWindowPage /></OverlayPage>} />
         <Route path="item-info-window" element={<OverlayPage overlayKey="itemInfo"><ItemInfoWindowPage /></OverlayPage>} />
         <Route path="detrim-timer-window" element={<OverlayPage overlayKey="detrimTimer"><DetrimTimerWindowPage /></OverlayPage>} />
         <Route path="custom-timer-window" element={<OverlayPage overlayKey="customTimer"><CustomTimerWindowPage /></OverlayPage>} />

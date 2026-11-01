@@ -30,6 +30,9 @@ export const WSEvent = {
   // counter state (killtracker.CountersState) whenever any counter changes.
   KillsNew: 'kills:new',
   KillCounters: 'killcounters:state',
+  // Pet overlay: the active character's pet (petoverlay.State) on every
+  // meaningful change — appear/break, HP, resolved stats, /pet health.
+  PetState: 'pet:state',
   // Item Info overlay: an in-game item window was opened (proposed Zeal item
   // pipe message, or the developer simulate endpoint) — carries
   // itemdisplay.Shown {item_id, name, character, at, simulated}.

@@ -344,3 +344,33 @@ func TestTracker_HPBroadcastRateLimited(t *testing.T) {
 		t.Fatalf("broadcasts = %d, last hp %v", n, h.sent[len(h.sent)-1].HPPercent)
 	}
 }
+
+func TestTracker_ZoneSurvivesPetChanges(t *testing.T) {
+	h := newHarness()
+	h.tr.cfg.ZoneShort = func(long string) string {
+		if long == "The Grey" {
+			return "grey"
+		}
+		return ""
+	}
+	h.tr.Handle(logparser.LogEvent{
+		Type: logparser.EventZone,
+		Data: logparser.ZoneData{ZoneName: "The Grey"},
+	})
+	if st := h.state(); st.Zone != "grey" || st.ZoneName != "The Grey" {
+		t.Fatalf("zone = %q/%q", st.Zone, st.ZoneName)
+	}
+	h.tr.Handle(logparser.LogEvent{
+		Type: logparser.EventCharmedPet,
+		Data: logparser.CharmedPetData{Pet: "a Shissar Revenant"},
+	})
+	h.tr.Reset()
+	if st := h.state(); st.Zone != "grey" || h.sent[len(h.sent)-1].Zone != "grey" {
+		t.Fatalf("zone lost across a reset: state %q, last broadcast %q",
+			st.Zone, h.sent[len(h.sent)-1].Zone)
+	}
+	h.tr.SetZone("ssratemple", "Ssraeshza Temple")
+	if st := h.state(); st.Zone != "ssratemple" || st.ZoneName != "Ssraeshza Temple" {
+		t.Fatalf("pipe zone = %q/%q", st.Zone, st.ZoneName)
+	}
+}

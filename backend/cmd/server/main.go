@@ -968,6 +968,13 @@ func main() {
 		},
 		ActiveChar: activeChar,
 		CharmTimer: timerEngine.ActiveCharm,
+		ZoneShort: func(long string) string {
+			short, err := database.GetZoneShortNameByLongName(long)
+			if err != nil {
+				return ""
+			}
+			return short
+		},
 	}
 	if all, charms, err := database.SpellNameSets(); err != nil {
 		slog.Warn("load spell names (pet health parsing disabled)", "err", err)
@@ -1648,12 +1655,13 @@ func main() {
 			// Maps need the short name, and heading, which the trackers above
 			// discard. An unresolved zone yields "" and the tracker declines to
 			// broadcast rather than place the arrow on whatever map is open.
-			zoneShort := ""
+			zoneShort, zoneLong := "", ""
 			if p.Zone > 0 {
 				if z, err := database.GetZoneByZoneIDNumber(p.Zone); err == nil && z != nil {
-					zoneShort = z.ShortName
+					zoneShort, zoneLong = z.ShortName, z.LongName
 				}
 			}
+			petTracker.SetZone(zoneShort, zoneLong)
 			pipeZoneShort = zoneShort
 			pipeZoneID = p.Zone
 			curPipeZone.Store(liveZone{id: p.Zone, short: zoneShort})

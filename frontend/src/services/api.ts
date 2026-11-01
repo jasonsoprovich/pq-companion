@@ -1610,6 +1610,14 @@ export function getKillCounters(): Promise<KillCountersState> {
   return get<KillCountersState>('/api/kill-counters')
 }
 
+// Pet overlay: the active character's charmed/summoned pet (mode "none" when
+// there is no pet). Live updates arrive as pet:state broadcasts.
+type PetState = import('../types/pet').PetState
+
+export function getPetState(): Promise<PetState> {
+  return get<PetState>('/api/overlay/pet')
+}
+
 export function getKillCounterPresets(): Promise<{ presets: import('../types/kills').KillCounterPreset[] }> {
   return get<{ presets: import('../types/kills').KillCounterPreset[] }>('/api/kill-counters/presets')
 }

@@ -301,6 +301,8 @@ export interface Preferences {
   threat_hatemod_pct?: number
   // Experimental raid-estimate threat mode (dev-gated, off by default).
   raid_threat_enabled?: boolean
+  // In-development Pet overlay (dev-gated, off by default).
+  pet_overlay_enabled?: boolean
   // Per-class hate adjustment (class name → signed %) for the raid estimate;
   // an entry overrides the built-in default (tanks +30 when unset).
   raid_threat_class_mods?: Record<string, number>

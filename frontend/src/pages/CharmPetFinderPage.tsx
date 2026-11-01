@@ -12,18 +12,7 @@ import {
   type CharmSpellOption,
 } from '../services/api'
 import type { Zone } from '../types/zone'
-
-// The charm-capable classes, in the spells_new / eqstat 0-based ordering.
-// Magician's only charm is the level-65 PoP spell Call of the Arch Mage
-// (summoned/elemental targets only).
-const CHARM_CLASSES = [
-  { idx: 13, name: 'Enchanter' },
-  { idx: 10, name: 'Necromancer' },
-  { idx: 5, name: 'Druid' },
-  { idx: 7, name: 'Bard' },
-  { idx: 12, name: 'Magician' },
-]
-const ENCHANTER = 13
+import { CHARM_CLASSES, ENCHANTER, landColor, pickDefaultSpell } from '../lib/charmFinder'
 
 type SortKey =
   | 'level'
@@ -41,19 +30,6 @@ type SortKey =
 interface SortState {
   key: SortKey
   dir: 'asc' | 'desc'
-}
-
-// pickDefaultSpell returns the strongest charm the class can cast at the given
-// level (highest req level ≤ level), falling back to the lowest-tier charm so
-// the dropdown always has a sensible selection.
-function pickDefaultSpell(opts: CharmSpellOption[], level: number): number | null {
-  if (opts.length === 0) return null
-  const castable = opts.filter((o) => o.req_level <= level)
-  if (castable.length > 0) {
-    return castable.reduce((best, o) => (o.req_level > best.req_level ? o : best)).spell_id
-  }
-  // None castable yet — show the earliest charm in the line.
-  return opts.reduce((low, o) => (o.req_level < low.req_level ? o : low)).spell_id
 }
 
 export default function CharmPetFinderPage(): React.ReactElement {
@@ -493,8 +469,7 @@ function PetRow({ pet, onOpen }: { pet: CharmPet; onOpen: () => void }): React.R
   const hpText = range(pet.hp_min, pet.hp_max, (n) => n.toLocaleString())
   const hitText = range(pet.max_hit_min, pet.max_hit_max)
   const dpsText = range1(pet.dps_min, pet.dps_max)
-  const landColor =
-    pet.land_chance >= 0.9 ? '#4ade80' : pet.land_chance >= 0.6 ? '#facc15' : '#f87171'
+  const landTint = landColor(pet.land_chance)
 
   return (
     <tr style={{ borderTop: '1px solid var(--color-border)' }}>
@@ -530,7 +505,7 @@ function PetRow({ pet, onOpen }: { pet: CharmPet; onOpen: () => void }): React.R
       <td className="px-2 py-1.5">{(pet.attack_delay / 10).toFixed(1)}s</td>
       <td className="px-2 py-1.5 font-medium">{dpsText}</td>
       <td className="px-2 py-1.5">{pet.mr}</td>
-      <td className="px-2 py-1.5 font-medium" style={{ color: landColor }}>
+      <td className="px-2 py-1.5 font-medium" style={{ color: landTint }}>
         {(pet.land_chance * 100).toFixed(0)}%
       </td>
       <td className="px-2 py-1.5" style={{ color: 'var(--color-muted-foreground)' }}>

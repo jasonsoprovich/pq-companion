@@ -122,6 +122,10 @@ function FlagsPanel(): React.ReactElement {
   const raidThreatEnabled = Boolean(config?.preferences?.raid_threat_enabled)
   const toggleRaidThreat = (): void => savePrefs({ raid_threat_enabled: !raidThreatEnabled })
 
+  // ── Pet overlay ───────────────────────────────────────────────────────
+  const petOverlayEnabled = Boolean(config?.preferences?.pet_overlay_enabled)
+  const togglePetOverlay = (): void => savePrefs({ pet_overlay_enabled: !petOverlayEnabled })
+
   return (
     <div className="flex flex-col gap-4">
       <div
@@ -174,6 +178,44 @@ function FlagsPanel(): React.ReactElement {
             }}
           >
             {raidThreatEnabled ? 'Enabled' : 'Disabled'}
+          </button>
+        </div>
+      </section>
+
+      {/* ── Pet overlay ───────────────────────────────────────────────────── */}
+      <section
+        className="rounded-lg p-4"
+        style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+      >
+        <div className="mb-3 flex items-center gap-2">
+          <FlaskConical size={14} style={{ color: 'var(--color-primary)' }} />
+          <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+            Pet overlay
+          </h2>
+        </div>
+        <div className="flex items-start justify-between gap-4">
+          <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+            Adds a <strong>Pet</strong> overlay to the Overlays dashboard: your
+            charmed or summoned pet&rsquo;s HP, charm timer, the timers on it, and
+            its stats, summon/gate and immunities. With no pet up it shows a
+            compact charm finder for your zone. Best with Zeal (pet id and HP);
+            without it, type <code>/pet health</code> for readings. Still being
+            tested in game.
+          </p>
+          <button
+            type="button"
+            onClick={togglePetOverlay}
+            disabled={!config || saving}
+            className="shrink-0 rounded px-3 py-1.5 text-xs font-medium transition-colors"
+            style={{
+              backgroundColor: petOverlayEnabled ? 'var(--color-primary)' : 'var(--color-surface-2)',
+              color: petOverlayEnabled ? 'var(--color-background)' : 'var(--color-muted-foreground)',
+              border: '1px solid var(--color-border)',
+              cursor: !config || saving ? 'default' : 'pointer',
+              opacity: !config || saving ? 0.6 : 1,
+            }}
+          >
+            {petOverlayEnabled ? 'Enabled' : 'Disabled'}
           </button>
         </div>
       </section>

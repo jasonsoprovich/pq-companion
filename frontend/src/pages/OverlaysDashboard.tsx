@@ -17,6 +17,7 @@ import BuffTimerPanel from '../components/overlays/BuffTimerPanel'
 import FilteredTimerPanel from '../components/overlays/FilteredTimerPanel'
 import KillCounterPanel from '../components/overlays/KillCounterPanel'
 import ItemInfoPanel from '../components/overlays/ItemInfoPanel'
+import PetPanel from '../components/overlays/PetPanel'
 import DetrimTimerPanel from '../components/overlays/DetrimTimerPanel'
 import DPSPanel from '../components/overlays/DPSPanel'
 import HPSPanel from '../components/overlays/HPSPanel'
@@ -36,6 +37,7 @@ import TimerGroupsModal from '../components/TimerGroupsModal'
 import { clearTimers, listTimerGroups, getConfig } from '../services/api'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useItemInfoOffered } from '../hooks/useItemDisplay'
+import { usePetOverlayOffered } from '../hooks/usePetState'
 import { WSEvent } from '../lib/wsEvents'
 import type { TimerGroup } from '../types/trigger'
 import {
@@ -90,6 +92,7 @@ const PANEL_POPOUT: Record<DashboardPanelKey, { name: OverlayName; toggle: () =>
   filtered:    { name: 'filteredTimer', toggle: () => { window.electron?.overlay?.toggleFilteredTimer() } },
   kills:       { name: 'killCounter',  toggle: () => { window.electron?.overlay?.toggleKillCounter() } },
   itemInfo:    { name: 'itemInfo',     toggle: () => { window.electron?.overlay?.toggleItemInfo() } },
+  pet:         { name: 'pet',          toggle: () => { window.electron?.overlay?.togglePet() } },
 }
 
 // Compact square icon button for the manager's per-overlay rows.
@@ -444,17 +447,22 @@ export default function OverlaysDashboard(): React.ReactElement {
   // Item Info stays out of the dashboard until Zeal has sent an item display
   // event (or Developer Mode is on) — see itemInfoOffered.
   const itemInfoOffered = useItemInfoOffered()
+  // The Pet overlay is in development — offered only behind its Developer-tab
+  // flag (pet_overlay_enabled).
+  const petOffered = usePetOverlayOffered()
 
   // Panel keys actually offered in the UI: hps is gated by SHOW_HPS_PANEL
   // (shared with the sidebar's pop-out-all toggle); discordVoice is gated by
-  // the setting above; itemInfo by Zeal support; the rest (including Raid
+  // the setting above; itemInfo by Zeal support; pet by its Developer-tab
+  // flag; the rest (including Raid
   // Readiness and the Threat Meter) are always available.
   const visiblePanelKeys = useMemo(() => {
     let keys = VISIBLE_DASHBOARD_PANEL_KEYS
     if (!discordVoiceEnabled) keys = keys.filter((k) => k !== 'discordVoice')
     if (!itemInfoOffered) keys = keys.filter((k) => k !== 'itemInfo')
+    if (!petOffered) keys = keys.filter((k) => k !== 'pet')
     return keys
-  }, [discordVoiceEnabled, itemInfoOffered])
+  }, [discordVoiceEnabled, itemInfoOffered, petOffered])
 
   useEffect(() => {
     saveDashboardLayout(layout)
@@ -856,6 +864,17 @@ export default function OverlaysDashboard(): React.ReactElement {
             defaultHeight={layout.itemInfo.height}
             snapGridSize={SNAP_GRID}
             onLayoutChange={handleLayoutChange('itemInfo')}
+          />
+        )}
+        {layout.pet.visible && petOffered && (
+          <PetPanel
+            key={`pet-${layoutVersion}`}
+            defaultX={layout.pet.x}
+            defaultY={layout.pet.y}
+            defaultWidth={layout.pet.width}
+            defaultHeight={layout.pet.height}
+            snapGridSize={SNAP_GRID}
+            onLayoutChange={handleLayoutChange('pet')}
           />
         )}
         {layout.detrim.visible && (

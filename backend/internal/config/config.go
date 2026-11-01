@@ -639,6 +639,12 @@ type Preferences struct {
 	// per-class/player tuning card in Settings > Overlays.
 	RaidThreatEnabled bool `yaml:"raid_threat_enabled,omitempty" json:"raid_threat_enabled"`
 
+	// PetOverlayEnabled reveals the in-development Pet overlay (charm/summoned
+	// pet card + charm finder) in the Overlays dashboard and Settings. Gated
+	// behind a Developer-tab flag until it has been tested in game; the
+	// backend tracker runs regardless, so flipping it needs no restart.
+	PetOverlayEnabled bool `yaml:"pet_overlay_enabled,omitempty" json:"pet_overlay_enabled"`
+
 	// RaidThreatMigratedOff marks the one-time migration that turned the raid-
 	// estimate threat mode off (it previously defaulted on) when it became an
 	// experimental, Developer-tab-gated feature. The marker keeps the migration

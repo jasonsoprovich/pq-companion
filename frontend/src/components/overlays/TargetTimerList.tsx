@@ -140,12 +140,18 @@ function TimerRow({ timer, showSeconds }: { timer: ActiveTimer; showSeconds: boo
  * detrimentals that are still hidden from the main timer overlays. Shared by
  * the dashboard NPC panel and the popped-out NPC overlay window.
  */
-export default function TargetTimerList({ timers }: { timers: ActiveTimer[] }): React.ReactElement {
+export default function TargetTimerList({
+  timers,
+  emptyText = 'No active timers on this target.',
+}: {
+  timers: ActiveTimer[]
+  emptyText?: string
+}): React.ReactElement {
   const appearance = useTimerAppearance()
   if (timers.length === 0) {
     return (
       <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', margin: 0, padding: '4px 2px' }}>
-        No active timers on this target.
+        {emptyText}
       </p>
     )
   }
