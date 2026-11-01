@@ -118,6 +118,8 @@ export interface ActiveTimer {
    * that died. Only ever set on a spawn-id-disambiguated timer.
    */
   maybe_dead?: boolean
+  /** True for a Charm-effect (SPA 22) timer — the Pet overlay pins it. */
+  is_charm?: boolean
 }
 
 export interface TimerState {

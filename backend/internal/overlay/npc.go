@@ -194,6 +194,10 @@ type resolvedTarget struct {
 	abilities []db.SpecialAbility
 	summary   *db.NPCCasterSummary
 	variants  []TargetVariant
+	// level is the live spawn level from the Zeal target descriptors the
+	// entry was resolved with (0 when none were reported). Kept so the pet
+	// overlay can read an exact level for the player's pet by spawn id.
+	level int
 	// sig is the descriptor input this entry was resolved with. An entry
 	// that is still ambiguous (variants non-empty) is re-resolved when a
 	// materially better input arrives — see resolveSig.changed.
@@ -441,6 +445,9 @@ func (t *NPCTracker) SetPipeTargetSnapshot(id *int, desc *zealpipe.TargetDescrip
 	if !valid || refine {
 		npc, abs, sum, vars := t.lookupNPCVariants(name, zoneShort, pos, matched)
 		fresh := resolvedTarget{name: name, npc: npc, abilities: abs, summary: sum, variants: vars, sig: sig}
+		if matched != nil {
+			fresh.level = matched.Level
+		}
 		switch {
 		case !valid:
 			r = fresh
@@ -448,6 +455,9 @@ func (t *NPCTracker) SetPipeTargetSnapshot(id *int, desc *zealpipe.TargetDescrip
 			r = fresh // narrowed
 		default:
 			r.sig = sig // no better; remember the attempt so it isn't retried every tick
+		}
+		if r.level == 0 && matched != nil {
+			r.level = matched.Level
 		}
 		t.mu.Lock()
 		if len(t.variantCache) >= variantCacheMax {
@@ -554,6 +564,56 @@ func (t *NPCTracker) cachedResolve(id *int, lookupName string) (resolvedTarget, 
 		return resolvedTarget{}, false
 	}
 	return r, true
+}
+
+// Resolution is an NPC row resolved for a live spawn — the overlay's variant
+// pick, exposed for other consumers (the pet overlay). Variants > 1 means the
+// row could not be narrowed to one; NPC is then the deterministic first pick.
+// Level is the spawn's exact live level, or 0 when unknown.
+type Resolution struct {
+	NPC       *db.NPC
+	Abilities []db.SpecialAbility
+	Summary   *db.NPCCasterSummary
+	Variants  int
+	Level     int
+}
+
+func (r resolvedTarget) export() Resolution {
+	return Resolution{
+		NPC:       r.npc,
+		Abilities: r.abilities,
+		Summary:   r.summary,
+		Variants:  len(r.variants),
+		Level:     r.level,
+	}
+}
+
+// ResolvedForID returns the resolution memoised for a spawn id, if the player
+// has targeted that spawn in the current zone. The player's pet is almost
+// always targeted while it is charmed (and whenever the player selects it
+// afterwards), so the pet overlay reads its row here by pet_id instead of
+// re-running the same-name disambiguation.
+func (t *NPCTracker) ResolvedForID(id int) (Resolution, bool) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	r, ok := t.variantCache[id]
+	if !ok || r.npc == nil {
+		return Resolution{}, false
+	}
+	return r.export(), true
+}
+
+// ResolveByName resolves a display name against the current zone the same way
+// a log-inferred target is — the fallback for a pet whose spawn id was never
+// targeted (or on a Zeal build without ids). No descriptors are available, so
+// the level is unknown.
+func (t *NPCTracker) ResolveByName(displayName string) Resolution {
+	t.mu.RLock()
+	zoneShort := t.pipeZoneShort
+	pos := playerPos{known: t.pipePlayerKnown, x: t.pipePlayerX, y: t.pipePlayerY}
+	t.mu.RUnlock()
+	npc, abs, sum, vars := t.lookupNPCVariants(displayName, zoneShort, pos, nil)
+	return resolvedTarget{npc: npc, abilities: abs, summary: sum, variants: vars}.export()
 }
 
 // applyResolved swaps a resolved NPC / variant set onto the current target,

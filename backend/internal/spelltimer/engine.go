@@ -1007,6 +1007,24 @@ func (e *Engine) GetState() TimerState {
 	return e.snapshot(time.Now())
 }
 
+// ActiveCharm reports the running charm timer's spell and bound target name
+// (the newest one, should more than one linger). Unlike GetState it builds no
+// snapshot, so the pet overlay can poll it on every pipe tick.
+func (e *Engine) ActiveCharm() (spell, target string, ok bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	var best *ActiveTimer
+	for _, t := range e.timers {
+		if t.IsCharm && (best == nil || t.StartsAt.After(best.StartsAt)) {
+			best = t
+		}
+	}
+	if best == nil {
+		return "", "", false
+	}
+	return best.SpellName, best.TargetName, true
+}
+
 // SetPipeCasting records the current in-flight cast as reported by the Zeal
 // pipe (LabelCastingName, id 134). Empty value means "not casting." The
 // engine consults this value during EventSpellCast to detect parser

@@ -6,6 +6,7 @@ import (
 	"math"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
@@ -1037,5 +1038,36 @@ func TestPreviewState(t *testing.T) {
 	}
 	if _, err := tr.PreviewState(-1); err == nil {
 		t.Error("want error for unknown id")
+	}
+}
+
+// ── Pet overlay accessors ────────────────────────────────────────────────────
+
+func TestResolvedForID_CarriesLiveLevel(t *testing.T) {
+	tr := newRealDBTracker(t)
+	if _, ok := tr.ResolvedForID(812); ok {
+		t.Fatal("hit for a spawn id that was never targeted")
+	}
+	targetWithDesc(tr, 812, descAt("A Shissar Revenant", 52, 11, 217, false, 0, 0))
+	r, ok := tr.ResolvedForID(812)
+	if !ok || r.NPC == nil {
+		t.Fatal("no resolution cached for the targeted spawn id")
+	}
+	if r.Level != 52 {
+		t.Errorf("level = %d, want the live 52", r.Level)
+	}
+	if !strings.EqualFold(r.NPC.Name, "A_Shissar_Revenant") {
+		t.Errorf("npc = %q", r.NPC.Name)
+	}
+}
+
+func TestResolveByName_UnknownLevel(t *testing.T) {
+	tr := newRealDBTracker(t)
+	r := tr.ResolveByName("A Shissar Revenant")
+	if r.NPC == nil || r.Level != 0 {
+		t.Fatalf("got npc %v level %d, want a row with unknown level", r.NPC, r.Level)
+	}
+	if r := tr.ResolveByName("Gobeker"); r.NPC != nil {
+		t.Errorf("generated pet name resolved to %q", r.NPC.Name)
 	}
 }

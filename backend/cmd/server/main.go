@@ -42,6 +42,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/maps"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/mystats"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/overlay"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/petoverlay"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/playerpos"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/players"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/popflag"
@@ -957,6 +958,25 @@ func main() {
 		}
 		return cfgMgr.Get().Character
 	}
+	// Pet overlay: the active character's charmed/summoned pet. Its npc_types
+	// row comes from the NPC overlay's spawn-id cache (target_id == pet_id
+	// while charming); the spell-name sets recognise `/pet health` replies.
+	petCfg := petoverlay.Config{
+		Resolver: npcTracker,
+		Broadcast: func(st petoverlay.State) {
+			hub.Broadcast(ws.Event{Type: petoverlay.WSEventPetState, Data: st})
+		},
+		ActiveChar: activeChar,
+		CharmTimer: timerEngine.ActiveCharm,
+	}
+	if all, charms, err := database.SpellNameSets(); err != nil {
+		slog.Warn("load spell names (pet health parsing disabled)", "err", err)
+	} else {
+		petCfg.IsSpell = func(name string) bool { return all[name] }
+		petCfg.IsCharmSpell = func(name string) bool { return charms[name] }
+	}
+	petTracker := petoverlay.New(petCfg)
+
 	triggerEngine := trigger.NewEngine(triggerStore, hub, timerEngine, activeChar)
 	// {target}/{t} tokens in action text resolve to the NPC overlay's
 	// inferred combat target.
@@ -1654,6 +1674,9 @@ func main() {
 			// feed the overlay's live level/class and distance readout.
 			dist, distOK := p.DistanceToTarget()
 			npcTracker.SetPipeTargetSnapshot(p.TargetID, p.TargetDescriptors(), dist, distOK)
+			// After the NPC tracker so a pet the player just targeted (or
+			// charmed) has its resolution cached under target_id == pet_id.
+			petTracker.SetPipePetID(p.PetID)
 			// Also feed the spell-timer engine: it snapshots this alongside
 			// the active character's own spell casts so a trigger-driven
 			// detrimental (e.g. the Slows pack) landing on a mob can be keyed
@@ -1811,6 +1834,9 @@ func main() {
 				targetPetOwner = l.Value
 			case zealpipe.LabelPlayerPetName:
 				combatTracker.SetPipePetName(l.Value)
+				petTracker.SetPipePetName(l.Value)
+			case zealpipe.LabelPlayerPetHPPerc:
+				petTracker.SetPipePetHPPercent(l.Value)
 			case zealpipe.LabelCurrentAAPoints:
 				// Unspent AA-point pool (label 71). Persist it against the
 				// active character so the Character Info -> AA tab can show
@@ -1854,6 +1880,7 @@ func main() {
 		// notification. Re-fires on every reconnect — the toast component
 		// dedupes if it's been shown recently.
 		npcTracker.SetPipeConnected(true)
+		petTracker.SetPipeConnected(true)
 		hub.Broadcast(ws.Event{Type: "zeal:connected", Data: map[string]any{
 			"pipe_name": pipeName,
 			"pid":       pid,
@@ -1865,6 +1892,7 @@ func main() {
 		// the normal Handle() flow.
 		npcTracker.SetPipeConnected(false)
 		npcTracker.ResetPipeFields()
+		petTracker.SetPipeConnected(false)
 		combatTracker.ResetPipeState()
 		respawnEngine.ResetPipeZone()
 		posTracker.Reset()
@@ -1956,6 +1984,7 @@ func main() {
 		hub.Broadcast(ws.Event{Type: string(ev.Type), Data: ev})
 		guard.run("npcTracker", func() { npcTracker.Handle(ev) })
 		guard.run("combatTracker", func() { combatTracker.Handle(ev) })
+		guard.run("petTracker", func() { petTracker.Handle(ev) })
 		guard.run("threatTracker", func() { threatTracker.Handle(ev) })
 		guard.run("raidThreatAssembler", func() { raidThreatAssembler.Handle(ev) })
 		guard.run("timerEngine", func() { timerEngine.Handle(ev) })
@@ -2085,6 +2114,7 @@ func main() {
 		// Loot lines identify which same-name raid-boss row just died
 		// (Kaas Thox pair) — see overlay/variant_elimination.go.
 		guard.run("npcTracker", func() { npcTracker.HandleLootLine(ts, msg) })
+		guard.run("petTracker", func() { petTracker.HandleLine(ts, msg) })
 		if playersConsumer != nil {
 			durable("playersConsumer", func() { playersConsumer.HandleLine(ts, msg) })
 		}
@@ -2126,6 +2156,8 @@ func main() {
 		// Active character changed — drop cached buffmod contributors so the
 		// next cast recomputes against the new character's inventory + AAs.
 		timerEngine.RefreshModifiers()
+		// The previous character's pet isn't this one's.
+		petTracker.Reset()
 		// Recompile trigger patterns: {c}/{char}/{self} tokens expand to the
 		// active character name at compile time.
 		triggerEngine.Reload()
@@ -2151,6 +2183,9 @@ func main() {
 			timerEngine.ClearAll()
 			combatTracker.Reset()
 		}
+		// A replayed `/pet health` or charm line would otherwise leave a ghost
+		// pet behind (or carry the live one into the replay).
+		petTracker.Reset()
 	}, func(st logparser.ReplayStatus) {
 		hub.Broadcast(ws.Event{Type: "replay:status", Data: st})
 	})
@@ -2265,7 +2300,7 @@ func main() {
 	}
 	defer mapStore.Close()
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, replayer, npcTracker, combatTracker, historyStore, threatTracker, raidThreatAssembler, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, blockbuffStore, sb, savedQueryStore, skillsStore, traderStore, traderCapturer, popflagStore, wishlistWatcher, changelogEntries, factionEngine, emoteService, mapStore, mapAnnotations, progressStore, mystatsStore, raidStore, rosterKeeper, killStore, killCounters, itemDisplayTracker, liveZoneFn, actualPort)
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, replayer, npcTracker, combatTracker, historyStore, threatTracker, raidThreatAssembler, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, blockbuffStore, sb, savedQueryStore, skillsStore, traderStore, traderCapturer, popflagStore, wishlistWatcher, changelogEntries, factionEngine, emoteService, mapStore, mapAnnotations, progressStore, mystatsStore, raidStore, rosterKeeper, killStore, killCounters, itemDisplayTracker, petTracker, liveZoneFn, actualPort)
 
 	// Raid disband watcher. Zeal emits MsgRaid only while is_in_raid(); on
 	// disband the envelopes just STOP — there is no "raid over" message on the

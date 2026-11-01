@@ -9,10 +9,18 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/overlay"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/petoverlay"
 )
 
 type overlayHandler struct {
 	npcTracker *overlay.NPCTracker
+	petTracker *petoverlay.Tracker
+}
+
+// petState handles GET /api/overlay/pet.
+// Returns the active character's pet state (mode "none" when there is no pet).
+func (h *overlayHandler) petState(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, h.petTracker.GetState())
 }
 
 // npcTarget handles GET /api/overlay/npc/target.

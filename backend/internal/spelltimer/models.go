@@ -158,8 +158,8 @@ type ActiveTimer struct {
 	// the orphan sweep and a log-driven name match; they clear only via
 	// EventCharmBroken (charm expiry / resist break / manual /pet), their own
 	// duration expiry, or the Zeal corpse-target signal (player killed their
-	// own targeted pet). Internal-only; the frontend doesn't need it.
-	IsCharm bool `json:"-"`
+	// own targeted pet). Exposed so the Pet overlay can pin the charm bar.
+	IsCharm bool `json:"is_charm,omitempty"`
 
 	// CasterManaPct is the caster's self-reported remaining mana percentage,
 	// parsed from a CategoryCHChain / CategoryCHChain2 callout's trailing
