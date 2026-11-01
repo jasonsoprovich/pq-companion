@@ -2961,6 +2961,72 @@ func (e *Engine) removeCharmTimers() {
 	}
 }
 
+// ReconcileTargetEffects drops spell timers on target that an authoritative
+// effect list (the player's `/pet health` reply) shows are no longer on it —
+// worn off early, dispelled, or overwritten by a stronger buff, none of which
+// EQ reliably logs for an NPC. keep reports whether a timer's spell is still
+// accounted for (listed in the reply, or not a spell name the list could
+// contain); only timers keep rejects are dropped.
+//
+// Conservative by design:
+//   - only spell categories (buff/debuff/dot/mez/stun) — never charm, custom,
+//     CH chain or stacked trigger rows;
+//   - only timers that started before `before` (the reply's time minus a
+//     margin), so a land racing the reply isn't mistaken for a missing one;
+//   - targetID (the pet's spawn id, 0 when unknown) must match a timer's
+//     spawn-id tag when it has one; detrimentals additionally require that
+//     tag, since a same-named enemy the player is debuffing would otherwise
+//     lose its timers to the pet's list.
+//
+// Like a worn-off line, it honours keep-expired (the row flips to overdue
+// instead of disappearing). Returns the affected spell names.
+func (e *Engine) ReconcileTargetEffects(target string, targetID int, keep func(spellName string) bool, before time.Time) []string {
+	norm := normalizeNPCName(target)
+	if norm == "" || keep == nil {
+		return nil
+	}
+	now := time.Now()
+	keepExpired := e.keepExpired()
+	e.mu.Lock()
+	var removed []string
+	for k, t := range e.timers {
+		if t.IsCharm || t.Stacked || normalizeNPCName(t.TargetName) != norm {
+			continue
+		}
+		detrimental := isDetrimentalCategory(t.Category)
+		if !detrimental && t.Category != CategoryBuff {
+			continue
+		}
+		if !t.StartsAt.Before(before) || keep(t.SpellName) {
+			continue
+		}
+		kid := parseKeyTargetID(k)
+		switch {
+		case kid != 0 && kid != targetID:
+			continue // tagged to a different spawn (or the pet's id is unknown)
+		case detrimental && kid == 0:
+			continue // untagged debuff: can't tell the pet from a same-named enemy
+		}
+		if keepExpired {
+			if !t.ExpiresAt.After(now) {
+				continue // already flagged overdue by an earlier reply
+			}
+			t.ExpiresAt = now
+		} else {
+			delete(e.timers, k)
+		}
+		removed = append(removed, t.SpellName)
+	}
+	snap := e.snapshot(now)
+	e.mu.Unlock()
+
+	if len(removed) > 0 {
+		slog.Debug("timer-debug: pet health dropped timers missing from the pet", "target", target, "spells", removed)
+		e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
+	}
+	return removed
+}
+
 // isDetrimentalCategory reports whether a timer category represents a
 // hostile effect cast on an enemy. Mirrors the categories the cast index
 // routes through the detrimental scope path.

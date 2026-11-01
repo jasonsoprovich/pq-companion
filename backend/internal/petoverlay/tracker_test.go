@@ -40,6 +40,27 @@ type harness struct {
 	charm    string // active charm timer spell ("" = none)
 	sent     []State
 	charmTgt string
+
+	// Spell timers on the pet as the fake engine sees them, and the
+	// reconcile calls the tracker made.
+	petTimers  []string
+	reconciles []reconcileCall
+}
+
+type reconcileCall struct {
+	target  string
+	id      int
+	before  time.Time
+	dropped []string
+}
+
+// testSpells is a tiny spells_new stand-in.
+var testSpells = map[string]SpellInfo{
+	"Boltran`s Agacerie":   {ID: 1705, Icon: 26, Charm: true},
+	"Boltran's Agacerie":   {ID: 1706, Icon: 26, Charm: true},
+	"Speed of the Shissar": {ID: 1939, Icon: 134, Beneficial: true},
+	"Primal Essence":       {ID: 1819, Icon: 49, Beneficial: true},
+	"Tashanian":            {ID: 1702, Icon: 72},
 }
 
 func newHarness() *harness {
@@ -54,10 +75,20 @@ func newHarness() *harness {
 		CharmTimer: func() (string, string, bool) {
 			return h.charm, h.charmTgt, h.charm != ""
 		},
-		IsSpell: func(s string) bool {
-			return s == "Boltran`s Agacerie" || s == "Speed of the Shissar"
+		LookupSpell: func(s string) (SpellInfo, bool) {
+			m, ok := testSpells[s]
+			return m, ok
 		},
-		IsCharmSpell: func(s string) bool { return s == "Boltran`s Agacerie" },
+		Reconcile: func(target string, id int, keep func(string) bool, before time.Time) []string {
+			var dropped []string
+			for _, sp := range h.petTimers {
+				if !keep(sp) {
+					dropped = append(dropped, sp)
+				}
+			}
+			h.reconciles = append(h.reconciles, reconcileCall{target, id, before, dropped})
+			return dropped
+		},
 	})
 	h.tr.now = func() time.Time { return h.now }
 	return h
@@ -372,5 +403,74 @@ func TestTracker_ZoneSurvivesPetChanges(t *testing.T) {
 	h.tr.SetZone("ssratemple", "Ssraeshza Temple")
 	if st := h.state(); st.Zone != "ssratemple" || st.ZoneName != "Ssraeshza Temple" {
 		t.Fatalf("pipe zone = %q/%q", st.Zone, st.ZoneName)
+	}
+}
+
+func TestTracker_PetHealthReconcilesTimers(t *testing.T) {
+	h := newHarness()
+	h.tr.SetPipeConnected(true)
+	h.tr.SetPipePetName("a Shissar Revenant")
+	h.tr.SetPipePetID(ip(812))
+	h.petTimers = []string{
+		"Speed of the Shissar", // listed: kept
+		"Primal Essence",       // not listed: wore off early, dropped
+		"Boltran's Agacerie",   // listed in the backtick form: kept
+		"Haste",                // a trigger label, not a spell: can't judge, kept
+	}
+
+	ts := h.now
+	h.tr.HandleLine(ts, "I have 90 percent of my hit points left.")
+	h.tr.HandleLine(ts, "Boltran`s Agacerie")
+	h.tr.HandleLine(ts, "Speed of the Shissar")
+	h.tr.flushHealth()
+
+	if len(h.reconciles) != 1 {
+		t.Fatalf("reconcile calls = %d, want 1", len(h.reconciles))
+	}
+	c := h.reconciles[0]
+	if c.target != "a Shissar Revenant" || c.id != 812 {
+		t.Errorf("reconciled %q/%d, want the pet by name and spawn id", c.target, c.id)
+	}
+	if want := ts.Add(-reconcileMargin); !c.before.Equal(want) {
+		t.Errorf("before = %v, want reply time minus the margin (%v)", c.before, want)
+	}
+	if len(c.dropped) != 1 || c.dropped[0] != "Primal Essence" {
+		t.Errorf("dropped = %q, want only Primal Essence", c.dropped)
+	}
+}
+
+func TestTracker_PetHealthNoReconcileWithoutName(t *testing.T) {
+	h := newHarness()
+	// No Zeal and nothing named the pet yet: the reply opens an unnamed pet,
+	// and there is no name to match timers against.
+	h.tr.HandleLine(h.now, "I have 90 percent of my hit points left.")
+	h.tr.flushHealth()
+	if len(h.reconciles) != 0 {
+		t.Fatalf("reconciled an unnamed pet: %+v", h.reconciles)
+	}
+	st := h.state()
+	if st.Mode != ModePet || st.Health == nil {
+		t.Fatalf("mode %v health %v", st.Mode, st.Health)
+	}
+}
+
+func TestTracker_PetHealthSpellsCarryMetadata(t *testing.T) {
+	h := newHarness()
+	h.tr.HandleLine(h.now, "I have 90 percent of my hit points left.")
+	h.tr.HandleLine(h.now, "Tashanian")
+	h.tr.HandleLine(h.now, "Speed of the Shissar")
+	h.tr.flushHealth()
+	got := h.state().Health.Spells
+	want := []HealthSpell{
+		{Name: "Tashanian", SpellID: 1702, Icon: 72},
+		{Name: "Speed of the Shissar", SpellID: 1939, Icon: 134, Beneficial: true},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("spells = %+v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("[%d] = %+v, want %+v", i, got[i], want[i])
+		}
 	}
 }

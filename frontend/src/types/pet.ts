@@ -47,12 +47,22 @@ export interface PetStats {
   offense?: string[]
 }
 
+// PetHealthSpell is one effect line of a `/pet health` reply.
+export interface PetHealthSpell {
+  name: string
+  spell_id: number
+  icon: number
+  beneficial: boolean
+  charm?: boolean
+}
+
 // PetHealthSnapshot is the latest `/pet health` reply: HP and every effect on
-// the pet (beneficial and detrimental), with no durations.
+// the pet (beneficial and detrimental), with no durations. The backend has
+// already dropped timers for effects this list shows are gone.
 export interface PetHealthSnapshot {
   at: string
   hp_percent: number
-  spells: string[]
+  spells: PetHealthSpell[]
 }
 
 export interface PetState {

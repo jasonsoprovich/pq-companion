@@ -976,11 +976,15 @@ func main() {
 			return short
 		},
 	}
-	if all, charms, err := database.SpellNameSets(); err != nil {
+	if spells, err := database.SpellMetaByName(); err != nil {
 		slog.Warn("load spell names (pet health parsing disabled)", "err", err)
 	} else {
-		petCfg.IsSpell = func(name string) bool { return all[name] }
-		petCfg.IsCharmSpell = func(name string) bool { return charms[name] }
+		petCfg.LookupSpell = func(name string) (petoverlay.SpellInfo, bool) {
+			m, ok := spells[name]
+			return petoverlay.SpellInfo{ID: m.ID, Icon: m.Icon, Beneficial: m.Beneficial, Charm: m.Charm}, ok
+		}
+		// `/pet health` replies prune timers the pet no longer carries.
+		petCfg.Reconcile = timerEngine.ReconcileTargetEffects
 	}
 	petTracker := petoverlay.New(petCfg)
 

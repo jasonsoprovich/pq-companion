@@ -33,17 +33,34 @@ const healthMaxSpan = time.Second
 // grow it without bound. A pet carries at most ~30 effects.
 const healthMaxSpells = 40
 
+// SpellInfo labels a spell name for the pet card (see db.SpellMeta).
+type SpellInfo struct {
+	ID         int
+	Icon       int
+	Beneficial bool
+	Charm      bool
+}
+
+// HealthSpell is one effect line of a `/pet health` reply.
+type HealthSpell struct {
+	Name       string `json:"name"`
+	SpellID    int    `json:"spell_id"`
+	Icon       int    `json:"icon"`
+	Beneficial bool   `json:"beneficial"`
+	Charm      bool   `json:"charm,omitempty"`
+}
+
 // HealthSnapshot is one parsed `/pet health` reply.
 type HealthSnapshot struct {
-	At        time.Time `json:"at"`
-	HPPercent int       `json:"hp_percent"`
-	Spells    []string  `json:"spells"`
+	At        time.Time     `json:"at"`
+	HPPercent int           `json:"hp_percent"`
+	Spells    []HealthSpell `json:"spells"`
 }
 
 // healthAssembler collects a `/pet health` block from the raw line stream.
 // Not safe for concurrent use; the Tracker serialises calls under its mutex.
 type healthAssembler struct {
-	isSpell func(name string) bool
+	lookup func(name string) (SpellInfo, bool)
 
 	open  bool
 	cur   HealthSnapshot
@@ -61,7 +78,7 @@ func (a *healthAssembler) handleLine(ts time.Time, msg string) *HealthSnapshot {
 		hp, _ := strconv.Atoi(m[1])
 		a.open = true
 		a.start = ts
-		a.cur = HealthSnapshot{At: ts, HPPercent: hp, Spells: []string{}}
+		a.cur = HealthSnapshot{At: ts, HPPercent: hp, Spells: []HealthSpell{}}
 		return done
 	}
 	if !a.open {
@@ -70,8 +87,16 @@ func (a *healthAssembler) handleLine(ts time.Time, msg string) *HealthSnapshot {
 	if !ts.IsZero() && !a.start.IsZero() && ts.Sub(a.start) > healthMaxSpan {
 		return a.flush()
 	}
-	if len(a.cur.Spells) < healthMaxSpells && a.isSpell != nil && a.isSpell(msg) {
-		a.cur.Spells = append(a.cur.Spells, msg)
+	if len(a.cur.Spells) < healthMaxSpells && a.lookup != nil {
+		if info, ok := a.lookup(msg); ok {
+			a.cur.Spells = append(a.cur.Spells, HealthSpell{
+				Name:       msg,
+				SpellID:    info.ID,
+				Icon:       info.Icon,
+				Beneficial: info.Beneficial,
+				Charm:      info.Charm,
+			})
+		}
 	}
 	// A same-second non-spell line is interleaved chat: skip it, stay open.
 	return nil

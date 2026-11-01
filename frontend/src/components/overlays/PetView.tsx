@@ -24,7 +24,7 @@ import { useAppNavigate } from '../../hooks/useAppNavigate'
 import { landColor } from '../../lib/charmFinder'
 import { fmtRemaining } from '../../lib/timeFormat'
 import type { CharmPet } from '../../services/api'
-import type { PetState, PetStats } from '../../types/pet'
+import type { PetHealthSpell, PetState, PetStats } from '../../types/pet'
 import type { ActiveTimer } from '../../types/timer'
 
 const FG = 'rgba(255,255,255,0.92)'
@@ -87,6 +87,7 @@ function PetCard({
   onFinder: () => void
 }): React.ReactElement {
   const { charm, timers } = usePetTimers(state.name)
+  const { untimed, age: healthAge } = useUntimedEffects(state, timers, charm)
   const s = state.stats
   const kindColor = state.kind === 'charm' ? CHARM : state.kind === 'summoned' ? SUMMONED : MUTED
 
@@ -97,7 +98,12 @@ function PetCard({
       {(state.kind === 'charm' || charm) && <CharmBar timer={charm} spell={state.charm_spell} />}
 
       <Section label="On pet">
-        <TargetTimerList timers={timers} emptyText="No timers on your pet." />
+        {(timers.length > 0 || untimed.length === 0) && (
+          <TargetTimerList timers={timers} emptyText="No timers on your pet." />
+        )}
+        {untimed.length > 0 && (
+          <UntimedEffects spells={untimed} age={healthAge ?? 0} />
+        )}
       </Section>
 
       {s ? (
@@ -327,6 +333,76 @@ function Badges({ stats }: { stats: PetStats }): React.ReactElement | null {
           {b.label}
         </span>
       ))}
+    </div>
+  )
+}
+
+// UNTIMED_TTL_SECS is how long a `/pet health` effect with no timer stays on
+// the card. The reply carries no durations, so past this it is more likely
+// stale than useful; a newer reply replaces the list outright.
+const UNTIMED_TTL_SECS = 5 * 60
+
+const foldSpell = (n: string): string => n.replace(/`/g, "'").toLowerCase()
+
+// useUntimedEffects returns the latest `/pet health` reply's effects that no
+// timer covers — typically buffs other players cast on the pet, or debuffs an
+// enemy landed — with the reply's age in seconds. The charm spell is left out
+// (the charm bar covers it). Empty once the reply is UNTIMED_TTL_SECS old.
+function useUntimedEffects(
+  state: PetState,
+  timers: ActiveTimer[],
+  charm: ActiveTimer | null,
+): { untimed: PetHealthSpell[]; age: number | null } {
+  const health = state.health
+  const now = useNowTick(Boolean(health))
+  if (!health) return { untimed: [], age: null }
+  const age = Math.max(0, Math.round((now - Date.parse(health.at)) / 1000))
+  if (age > UNTIMED_TTL_SECS) return { untimed: [], age }
+  const timed = new Set(timers.map((t) => foldSpell(t.spell_name)))
+  if (charm) timed.add(foldSpell(charm.spell_name))
+  const untimed = health.spells.filter((sp) => !sp.charm && !timed.has(foldSpell(sp.name)))
+  return { untimed, age }
+}
+
+// UntimedEffects lists effects the pet carries (per `/pet health`) that have
+// no timer: what's on it is known, how long it has left is not.
+function UntimedEffects({ spells, age }: { spells: PetHealthSpell[]; age: number }): React.ReactElement {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      {spells.map((sp) => {
+        const color = sp.beneficial ? '#86efac' : '#fca5a5'
+        return (
+          <div
+            key={sp.name}
+            title="On your pet per /pet health — no timer, so time left is unknown"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              padding: '2px 6px',
+              borderRadius: 3,
+              border: `1px dashed ${BORDER}`,
+            }}
+          >
+            <SpellIcon id={sp.icon} name={sp.name} size={15} loading="eager" />
+            <span
+              style={{
+                fontSize: 11,
+                color,
+                flex: 1,
+                minWidth: 0,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {sp.name}
+            </span>
+            <span style={{ fontSize: 9, color: FAINT, flexShrink: 0 }}>no timer</span>
+          </div>
+        )
+      })}
+      <span style={{ fontSize: 9, color: FAINT }}>Untimed effects via /pet health · {fmtAge(age)}</span>
     </div>
   )
 }

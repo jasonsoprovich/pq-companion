@@ -17,6 +17,7 @@
 package petoverlay
 
 import (
+	"log/slog"
 	"strconv"
 	"strings"
 	"sync"
@@ -86,6 +87,11 @@ const kindSettle = 3 * time.Second
 // a better pick. Zeal builds without pet_id still fall back after this.
 const nameFallbackDelay = time.Second
 
+// reconcileMargin is how far before a `/pet health` reply a timer must have
+// started to be judged by it: a buff landing in the same moment as the reply
+// may not be in the list yet.
+const reconcileMargin = 6 * time.Second
+
 // healthFlushDelay closes a `/pet health` block when no later line arrives to
 // close it (quiet log).
 const healthFlushDelay = 1500 * time.Millisecond
@@ -150,10 +156,13 @@ type Config struct {
 	CharmTimer func() (spell, target string, ok bool)
 	// ZoneShort maps a log zone long name ("The Grey") to its short name.
 	ZoneShort func(long string) string
-	// IsSpell reports whether a line is an exact spell name (for `/pet
-	// health` member lines); IsCharmSpell whether a spell name is a charm.
-	IsSpell      func(name string) bool
-	IsCharmSpell func(name string) bool
+	// LookupSpell resolves an exact spell name (a `/pet health` member line)
+	// to its icon, beneficial and charm flags; ok=false for non-spell text.
+	LookupSpell func(name string) (SpellInfo, bool)
+	// Reconcile drops spell timers on the pet that a `/pet health` reply
+	// shows are gone (spelltimer.Engine.ReconcileTargetEffects). targetID is
+	// the pet's spawn id, 0 when unknown.
+	Reconcile func(target string, targetID int, keep func(spellName string) bool, before time.Time) []string
 }
 
 // Tracker holds the pet state. Safe for concurrent use.
@@ -192,7 +201,7 @@ func New(cfg Config) *Tracker {
 		swapDelay: DefaultSwapDelay,
 		st:        State{Mode: ModeNone, ZealLimited: true},
 	}
-	t.health.isSpell = cfg.IsSpell
+	t.health.lookup = cfg.LookupSpell
 	return t
 }
 
@@ -454,18 +463,62 @@ func (t *Tracker) applyHealthLocked(snap *HealthSnapshot) {
 		t.startPetLocked("")
 	}
 	t.st.Health = snap
-	if t.cfg.IsCharmSpell != nil {
-		for _, s := range snap.Spells {
-			if t.cfg.IsCharmSpell(s) {
-				t.charmSeen = true
-				break
-			}
+	for _, s := range snap.Spells {
+		if s.Charm {
+			t.charmSeen = true
+			break
 		}
 	}
 	t.refreshKindLocked()
 	if t.zealHPAt.IsZero() || t.now().Sub(t.zealHPAt) > zealHPFresh {
 		t.setHPLocked(snap.HPPercent, HPSourcePetHealth, snap.At)
 	}
+	t.reconcileLocked(snap)
+}
+
+// reconcileLocked has the timer engine drop timers on the pet that the reply
+// shows are gone. A timer survives when its spell is listed (names compared
+// with backticks folded, as the log and quarm.db disagree for some spells) or
+// isn't a spell name at all — a trigger timer labelled "Haste" can't be judged
+// by the list. Skipped until the pet has a name to match timers against.
+func (t *Tracker) reconcileLocked(snap *HealthSnapshot) {
+	if t.cfg.Reconcile == nil || t.st.Name == "" {
+		return
+	}
+	listed := make(map[string]bool, len(snap.Spells))
+	for _, s := range snap.Spells {
+		listed[foldSpellName(s.Name)] = true
+	}
+	lookup := t.cfg.LookupSpell
+	keep := func(spellName string) bool {
+		if listed[foldSpellName(spellName)] {
+			return true
+		}
+		if lookup == nil {
+			return true
+		}
+		_, known := lookup(spellName)
+		if !known {
+			// Try the other quote form before giving up on it as a spell.
+			_, known = lookup(strings.ReplaceAll(spellName, "'", "`"))
+		}
+		return !known
+	}
+	id := 0
+	if t.st.PetID != nil {
+		id = *t.st.PetID
+	}
+	if removed := t.cfg.Reconcile(t.st.Name, id, keep, snap.At.Add(-reconcileMargin)); len(removed) > 0 {
+		slog.Info("pet overlay: /pet health cleared timers no longer on the pet",
+			"pet", t.st.Name, "spells", removed)
+	}
+}
+
+// foldSpellName normalises a spell name for comparison: quarm.db and the log
+// write some names with a backtick ("Boltran`s") and others with an
+// apostrophe, and the same spell can appear both ways.
+func foldSpellName(s string) string {
+	return strings.ToLower(strings.ReplaceAll(strings.TrimSpace(s), "`", "'"))
 }
 
 // Reset returns to ModeNone (character switch, log replay).
