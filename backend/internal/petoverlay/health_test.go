@@ -16,6 +16,16 @@ import (
 // backtick forms like "Boltran`s Agacerie").
 func realSpells(t *testing.T) map[string]db.SpellMeta {
 	t.Helper()
+	m, err := openRealDB(t).SpellMetaByName()
+	if err != nil {
+		t.Fatalf("SpellMetaByName: %v", err)
+	}
+	return m
+}
+
+// openRealDB opens the on-disk quarm.db for tests that check real data.
+func openRealDB(t *testing.T) *db.DB {
+	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("runtime.Caller failed")
@@ -25,11 +35,7 @@ func realSpells(t *testing.T) map[string]db.SpellMeta {
 		t.Fatalf("open db: %v", err)
 	}
 	t.Cleanup(func() { d.Close() })
-	m, err := d.SpellMetaByName()
-	if err != nil {
-		t.Fatalf("SpellMetaByName: %v", err)
-	}
-	return m
+	return d
 }
 
 // realLookup adapts realSpells to the assembler's lookup.

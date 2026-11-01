@@ -603,6 +603,24 @@ func (t *NPCTracker) ResolvedForID(id int) (Resolution, bool) {
 	return r.export(), true
 }
 
+// ResolveNPCID loads one npc_types row with its abilities and caster summary,
+// for a pet identified some other way than its name (a summoned pet, by its
+// summoning spell or live attributes). The level is unknown (0).
+func (t *NPCTracker) ResolveNPCID(id int) (Resolution, bool) {
+	if t.db == nil {
+		return Resolution{}, false
+	}
+	npc, err := t.db.GetNPC(id)
+	if err != nil || npc == nil {
+		return Resolution{}, false
+	}
+	return Resolution{
+		NPC:       npc,
+		Abilities: mergeInvisFlags(db.ParseSpecialAbilities(npc.SpecialAbilities), npc),
+		Summary:   t.casterSummary(npc.ID),
+	}, true
+}
+
 // ResolveByName resolves a display name against the current zone the same way
 // a log-inferred target is — the fallback for a pet whose spawn id was never
 // targeted (or on a Zeal build without ids). No descriptors are available, so

@@ -995,6 +995,13 @@ func main() {
 		// `/pet health` replies prune timers the pet no longer carries.
 		petCfg.Reconcile = timerEngine.ReconcileTargetEffects
 	}
+	// Summoned pets: each summoning spell's pet row, and the rows for
+	// matching a targeted pet's live attributes.
+	if bySpell, rows, err := database.PetSummons(); err != nil {
+		slog.Warn("load pet summons (summoned pet stats disabled)", "err", err)
+	} else {
+		petCfg.Summons = petoverlay.PetSummons{BySpell: bySpell, Rows: rows}
+	}
 	petTracker := petoverlay.New(petCfg)
 	go petTracker.Start(context.Background())
 
@@ -1699,6 +1706,7 @@ func main() {
 			// After the NPC tracker so a pet the player just targeted (or
 			// charmed) has its resolution cached under target_id == pet_id.
 			petTracker.SetPipePetID(p.PetID)
+			petTracker.SetPipeTargetSnapshot(p.TargetID, p.TargetDescriptors())
 			// Also feed the spell-timer engine: it snapshots this alongside
 			// the active character's own spell casts so a trigger-driven
 			// detrimental (e.g. the Slows pack) landing on a mob can be keyed

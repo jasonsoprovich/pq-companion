@@ -24,9 +24,11 @@ import (
 	"time"
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/overlay"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/trigger"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/zealpipe"
 )
 
 // WSEventPetState is the WebSocket event type carrying a State.
@@ -95,6 +97,11 @@ const nameFallbackDelay = time.Second
 // may not be in the list yet.
 const reconcileMargin = 6 * time.Second
 
+// summonBindWindow is how long after "You begin casting <pet spell>" a new
+// pet is taken to be that spell's pet. Covers the longest pet cast time plus
+// the gap before Zeal reports the new pet_id.
+const summonBindWindow = 30 * time.Second
+
 // healthFlushDelay closes a `/pet health` block when no later line arrives to
 // close it (quiet log).
 const healthFlushDelay = 1500 * time.Millisecond
@@ -144,6 +151,15 @@ type State struct {
 type Resolver interface {
 	ResolvedForID(id int) (overlay.Resolution, bool)
 	ResolveByName(displayName string) overlay.Resolution
+	ResolveNPCID(npcID int) (overlay.Resolution, bool)
+}
+
+// PetSummons is the pet-summoning spell data (db.PetSummons): each summoning
+// spell's pet npc_types id, and those pet rows for matching a targeted pet's
+// live level/race/class/texture.
+type PetSummons struct {
+	BySpell map[string]int
+	Rows    []db.PetNPC
 }
 
 // Config wires a Tracker's collaborators. Every func is optional.
@@ -163,6 +179,8 @@ type Config struct {
 	// Settings returns the user's Pet overlay settings (swap delay, alerts,
 	// watch lists).
 	Settings func() config.PetOverlaySettings
+	// Summons identifies summoned pets' npc_types rows.
+	Summons PetSummons
 	// FireAlert publishes a synthetic alert (hub.Broadcast of
 	// trigger.WSEventTriggerFired), like the wishlist watcher's.
 	FireAlert func(trigger.TriggerFired)
@@ -200,6 +218,14 @@ type Tracker struct {
 
 	zoneShort string
 	zoneLong  string
+
+	// Summoned-pet identity: the player's last pet-summoning cast (npc id and
+	// when), the npc id bound to the current pet from it or from its live
+	// attributes, and whether Stats came from that binding.
+	petCastNPC      int
+	petCastAt       time.Time
+	summonNPC       int
+	statsFromSummon bool
 
 	lastSentHP *int
 	lastSentAt time.Time
@@ -361,11 +387,79 @@ func (t *Tracker) SetZone(short, long string) {
 	t.commitLocked(true)
 }
 
+// SetPipeTargetSnapshot consumes the player's target spawn id and descriptors
+// (~10 Hz). When the player has their own summoned pet targeted and its row
+// is still unknown (the summoning cast wasn't seen — e.g. the pet was up
+// before the app started), the live level/race/class, plus texture when
+// Zeal reports appearance, pick the pet row.
+func (t *Tracker) SetPipeTargetSnapshot(targetID *int, desc *zealpipe.TargetDescriptors) {
+	t.mu.Lock()
+	if t.st.Mode != ModePet || t.st.Stats != nil || t.st.Kind == KindCharm ||
+		t.st.PetID == nil || targetID == nil || *targetID != *t.st.PetID || desc == nil ||
+		t.cfg.Resolver == nil {
+		t.mu.Unlock()
+		return
+	}
+	npcID, n := matchPetRow(t.cfg.Summons.Rows, desc)
+	if npcID == 0 {
+		t.mu.Unlock()
+		return
+	}
+	r, ok := t.cfg.Resolver.ResolveNPCID(npcID)
+	if !ok {
+		t.mu.Unlock()
+		return
+	}
+	r.Level = desc.Level
+	if n > 1 {
+		r.Variants = n
+	}
+	t.summonNPC = npcID
+	t.applyResolutionLocked(r)
+	t.statsFromSummon = true
+	t.refreshKindLocked()
+	t.commitLocked(true)
+}
+
+// matchPetRow returns the summoned-pet row matching a targeted pet's live
+// attributes and how many rows matched (the first is returned when several
+// do). Texture only narrows when Zeal reported appearance.
+func matchPetRow(rows []db.PetNPC, d *zealpipe.TargetDescriptors) (npcID, matches int) {
+	for _, r := range rows {
+		if r.Level != d.Level || r.Race != d.Race || r.Class != d.Class {
+			continue
+		}
+		if d.HasAppearance && r.Texture != d.Texture {
+			continue
+		}
+		if matches == 0 {
+			npcID = r.NPCID
+		}
+		matches++
+	}
+	return npcID, matches
+}
+
 // ── Log inputs ───────────────────────────────────────────────────────────────
 
 // Handle consumes parsed log events.
 func (t *Tracker) Handle(ev logparser.LogEvent) {
 	switch ev.Type {
+	case logparser.EventSpellCast:
+		d, ok := ev.Data.(logparser.SpellCastData)
+		if !ok {
+			return
+		}
+		t.mu.Lock()
+		if id, isPet := t.cfg.Summons.BySpell[d.SpellName]; isPet {
+			t.petCastNPC, t.petCastAt = id, ev.Timestamp
+		}
+		changed := t.st.Mode == ModePet && t.refreshKindLocked()
+		t.commitLocked(changed)
+	case logparser.EventSpellInterrupt:
+		t.mu.Lock()
+		t.petCastNPC = 0
+		t.commitLocked(false)
 	case logparser.EventCharmedPet:
 		d, ok := ev.Data.(logparser.CharmedPetData)
 		if !ok || d.Pet == "" {
@@ -488,6 +582,7 @@ func (t *Tracker) applyHealthLocked(snap *HealthSnapshot) {
 		}
 	}
 	t.refreshKindLocked()
+	t.resolveLocked()
 	if t.zealHPAt.IsZero() || t.now().Sub(t.zealHPAt) > zealHPFresh {
 		t.setHPLocked(snap.HPPercent, HPSourcePetHealth, snap.At)
 	}
@@ -563,6 +658,13 @@ func (t *Tracker) startPetLocked(name string) {
 	t.zealHPAt = time.Time{}
 	t.lastSentHP = nil
 	t.alerts = newAlertState()
+	t.summonNPC, t.statsFromSummon = 0, false
+	if t.petCastNPC != 0 && t.startedAt.Sub(t.petCastAt) <= summonBindWindow {
+		// The pet the player just summoned. Consumed so a later pet (a
+		// charm) can't inherit it.
+		t.summonNPC = t.petCastNPC
+		t.petCastNPC = 0
+	}
 	t.refreshKindLocked()
 }
 
@@ -614,6 +716,7 @@ func (t *Tracker) resetLocked() {
 	t.zealHPAt = time.Time{}
 	t.lastSentHP = nil
 	t.alerts = newAlertState()
+	t.summonNPC, t.statsFromSummon = 0, false
 }
 
 func (t *Tracker) setHPLocked(pct int, source string, at time.Time) {
@@ -635,8 +738,18 @@ func (t *Tracker) refreshKindLocked() bool {
 	switch {
 	case spell != "" || t.charmSeen:
 		kind = KindCharm
-	case t.now().Sub(t.startedAt) >= kindSettle:
+	case t.summonNPC != 0 || t.now().Sub(t.startedAt) >= kindSettle:
 		kind = KindSummoned
+	}
+	if kind == KindCharm && t.summonNPC != 0 {
+		// Charm evidence outranks a summon binding: drop it, and any stats
+		// it supplied, so the charm resolution path takes over.
+		t.summonNPC = 0
+		if t.statsFromSummon {
+			t.st.Stats, t.st.Variants = nil, 0
+			t.statsFromSummon = false
+			t.resolvedName = ""
+		}
 	}
 	if kind == t.st.Kind && spell == t.st.CharmSpell {
 		return false
@@ -667,6 +780,14 @@ func (t *Tracker) resolveLocked() bool {
 	if t.st.PetID != nil {
 		if r, ok := t.cfg.Resolver.ResolvedForID(*t.st.PetID); ok && t.betterLocked(r) {
 			t.applyResolutionLocked(r)
+			t.statsFromSummon = false
+			return true
+		}
+	}
+	if t.st.Stats == nil && t.summonNPC != 0 && t.st.Kind != KindCharm {
+		if r, ok := t.cfg.Resolver.ResolveNPCID(t.summonNPC); ok {
+			t.applyResolutionLocked(r)
+			t.statsFromSummon = true
 			return true
 		}
 	}

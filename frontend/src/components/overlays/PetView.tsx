@@ -115,7 +115,7 @@ function PetCard({
       ) : (
         <p style={{ fontSize: 10, color: FAINT, margin: 0 }}>
           {state.kind === 'summoned'
-            ? 'Stats for summoned pets aren’t available yet.'
+            ? 'Stats unknown — target your pet (Zeal) or resummon it to look it up.'
             : 'Stats unknown — target your pet to look it up.'}
         </p>
       )}

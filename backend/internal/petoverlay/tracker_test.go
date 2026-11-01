@@ -16,11 +16,19 @@ import (
 type fakeResolver struct {
 	byID      map[int]overlay.Resolution
 	byName    map[string]overlay.Resolution
+	byNPC     map[int]overlay.Resolution
 	nameCalls int
+	idCalls   int
 }
 
 func (f *fakeResolver) ResolvedForID(id int) (overlay.Resolution, bool) {
 	r, ok := f.byID[id]
+	return r, ok
+}
+
+func (f *fakeResolver) ResolveNPCID(id int) (overlay.Resolution, bool) {
+	f.idCalls++
+	r, ok := f.byNPC[id]
 	return r, ok
 }
 
@@ -71,7 +79,11 @@ var testSpells = map[string]SpellInfo{
 
 func newHarness() *harness {
 	h := &harness{
-		res: &fakeResolver{byID: map[int]overlay.Resolution{}, byName: map[string]overlay.Resolution{}},
+		res: &fakeResolver{
+			byID:   map[int]overlay.Resolution{},
+			byName: map[string]overlay.Resolution{},
+			byNPC:  map[int]overlay.Resolution{},
+		},
 		now: time.Date(2026, 11, 1, 20, 0, 0, 0, time.Local),
 	}
 	h.tr = New(Config{
