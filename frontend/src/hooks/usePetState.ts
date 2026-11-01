@@ -13,10 +13,12 @@ import { useWebSocket } from './useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
 import { petOverlayOffered } from '../lib/overlays'
 import { normalizeTargetName } from '../lib/targetName'
-import { getConfig, getPetState, getTimerState } from '../services/api'
+import { getCombatState, getConfig, getPetState, getTimerState } from '../services/api'
+import { dpsForMode, useDPSMode, type DPSMode } from './useDPSMode'
 import type { Config, PetOverlaySettings } from '../types/config'
 import type { PetState } from '../types/pet'
 import type { ActiveTimer, TimerState } from '../types/timer'
+import type { CombatState, EntityStats } from '../types/combat'
 
 const EMPTY: PetState = { mode: 'none', kind: '', zeal_limited: true, updated_at: '' }
 
@@ -119,4 +121,55 @@ export function usePetTimers(petName: string | undefined): {
       .sort((a, b) => a.remaining_seconds - b.remaining_seconds)
     return { charm, timers }
   }, [state, petName])
+}
+
+export interface PetDPS {
+  // DPS under the DPS meter's current mode (so the two agree).
+  dps: number
+  mode: DPSMode
+  // Pet damage as a share of you + pet, 0–1.
+  share: number
+  // False when the numbers come from the last finished fight.
+  live: boolean
+}
+
+/**
+ * usePetDPS finds the pet's own row in the combat tracker's current fight
+ * (or, between fights, the most recent one). Pets are separate combatants
+ * whose owner_name is the player's name — or "You" before the name is
+ * known — so the row is matched on owner plus pet name, falling back to the
+ * player's only pet row when the name differs (article casing, a renamed
+ * pet). Null when the pet dealt no damage in that fight.
+ */
+export function usePetDPS(petName: string | undefined): PetDPS | null {
+  const [combat, setCombat] = useState<CombatState | null>(null)
+  const { mode } = useDPSMode()
+
+  useEffect(() => {
+    getCombatState().then(setCombat).catch(() => {})
+  }, [])
+
+  useWebSocket((msg) => {
+    if (msg.type === WSEvent.OverlayCombat) setCombat(msg.data as CombatState)
+  })
+
+  return useMemo(() => {
+    if (!combat || !petName) return null
+    const live = Boolean(combat.current_fight)
+    const fight = combat.current_fight ?? combat.recent_fights?.[0]
+    const rows: EntityStats[] = fight?.combatants ?? []
+    const you = rows.find((c) => c.is_you)
+    const owners = new Set(['You', you?.name].filter(Boolean) as string[])
+    const mine = rows.filter((c) => c.owner_name && owners.has(c.owner_name))
+    const want = normalizeTargetName(petName)
+    const pet = mine.find((c) => normalizeTargetName(c.name) === want) ?? (mine.length === 1 ? mine[0] : undefined)
+    if (!pet || pet.total_damage <= 0) return null
+    const total = pet.total_damage + (you?.total_damage ?? 0)
+    return {
+      dps: dpsForMode(pet, mode),
+      mode,
+      share: total > 0 ? pet.total_damage / total : 0,
+      live,
+    }
+  }, [combat, petName, mode])
 }

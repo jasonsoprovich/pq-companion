@@ -17,7 +17,8 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, ExternalLink, PawPrint, Search } from 'lucide-react'
 import TargetTimerList from './TargetTimerList'
 import { SpellIcon } from '../Icon'
-import { usePetOverlaySettings, usePetTimers } from '../../hooks/usePetState'
+import { usePetDPS, usePetOverlaySettings, usePetTimers } from '../../hooks/usePetState'
+import { dpsModeAbbrev } from '../../hooks/useDPSMode'
 import { useCharmFinder, type CharmFinderHook } from '../../hooks/useCharmFinder'
 import { usePersistentState } from '../../hooks/usePersistentState'
 import { useAppNavigate } from '../../hooks/useAppNavigate'
@@ -107,11 +108,10 @@ function PetCard({
         )}
       </Section>
 
+      {s && <StatsLine stats={s} />}
+      <PetDPSLine name={state.name} />
       {s ? (
-        <>
-          <StatsLine stats={s} />
-          <Badges stats={s} />
-        </>
+        <Badges stats={s} />
       ) : (
         <p style={{ fontSize: 10, color: FAINT, margin: 0 }}>
           {state.kind === 'summoned'
@@ -276,7 +276,9 @@ function CharmBar({ timer, spell }: { timer: ActiveTimer | null; spell?: string 
 
 function StatsLine({ stats: s }: { stats: PetStats }): React.ReactElement {
   const items: [string, string][] = [
-    ['DPS', range1(s.dps_min, s.dps_max)],
+    // Estimated from the npc_types row (no haste/double attack), as in the
+    // Charm Pet Finder — the measured number is PetDPSLine's.
+    ['Est. DPS', range1(s.dps_min, s.dps_max)],
     ['Max hit', range(s.max_hit_min, s.max_hit_max)],
     ['Delay', `${(s.attack_delay / 10).toFixed(1)}s`],
     ['MR', String(s.mr)],
@@ -288,6 +290,22 @@ function StatsLine({ stats: s }: { stats: PetStats }): React.ReactElement {
           <span style={{ color: MUTED }}>{k}</span> <span style={{ color: FG, fontWeight: 600 }}>{v}</span>
         </span>
       ))}
+    </div>
+  )
+}
+
+// PetDPSLine shows the pet's damage in the current fight (or the last one,
+// marked as such) under the DPS meter's mode, and its share of your damage.
+function PetDPSLine({ name }: { name?: string }): React.ReactElement | null {
+  const d = usePetDPS(name)
+  if (!d) return null
+  return (
+    <div style={{ fontSize: 11, fontVariantNumeric: 'tabular-nums', opacity: d.live ? 1 : 0.6 }}>
+      <span style={{ color: MUTED }}>Pet {dpsModeAbbrev(d.mode)}</span>{' '}
+      <span style={{ color: '#f97316', fontWeight: 700 }}>{Math.round(d.dps)}</span>
+      <span style={{ color: MUTED }}>
+        {' '}· {(d.share * 100).toFixed(0)}% of your damage{d.live ? '' : ' · last fight'}
+      </span>
     </div>
   )
 }
