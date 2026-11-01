@@ -23,8 +23,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/overlay"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/trigger"
 )
 
 // WSEventPetState is the WebSocket event type carrying a State.
@@ -59,8 +61,9 @@ const (
 	HPSourcePetHealth = "pet_health"
 )
 
-// DefaultSwapDelay is how long ModeBroken lasts before returning to ModeNone.
-const DefaultSwapDelay = 10 * time.Second
+// DefaultSwapDelay is how long ModeBroken lasts before returning to ModeNone
+// when PetOverlaySettings.SwapDelaySecs is unset.
+const DefaultSwapDelay = config.DefaultPetSwapDelaySecs * time.Second
 
 // petLossMissThreshold mirrors spelltimer's debounce of the same name: Zeal
 // omits pet_id for a single frame around zone lines and gates, so a pet only
@@ -150,10 +153,19 @@ type Config struct {
 	Broadcast func(State)
 	// ActiveChar returns the active character's name.
 	ActiveChar func() string
-	// CharmTimer reports the active charm timer's spell and bound target name.
-	// Called on every pipe tick and log event while a pet is up, so it must
-	// be cheap (spelltimer.Engine.ActiveCharm).
-	CharmTimer func() (spell, target string, ok bool)
+	// CharmTimer reports the active charm timer's spell, bound target name
+	// and expiry. Called on every pipe tick and log event while a pet is up,
+	// so it must be cheap (spelltimer.Engine.ActiveCharm).
+	CharmTimer func() (spell, target string, expiresAt time.Time, ok bool)
+	// PetTimers lists the spells with a live timer on the named target
+	// (spelltimer.Engine.SpellsOnTarget), for the buff watch list.
+	PetTimers func(target string) []string
+	// Settings returns the user's Pet overlay settings (swap delay, alerts,
+	// watch lists).
+	Settings func() config.PetOverlaySettings
+	// FireAlert publishes a synthetic alert (hub.Broadcast of
+	// trigger.WSEventTriggerFired), like the wishlist watcher's.
+	FireAlert func(trigger.TriggerFired)
 	// ZoneShort maps a log zone long name ("The Grey") to its short name.
 	ZoneShort func(long string) string
 	// LookupSpell resolves an exact spell name (a `/pet health` member line)
@@ -170,9 +182,9 @@ type Tracker struct {
 	cfg Config
 	now func() time.Time
 
-	mu        sync.Mutex
-	st        State
-	swapDelay time.Duration
+	mu     sync.Mutex
+	st     State
+	alerts alertState
 
 	pipeConnected bool
 	petMisses     int
@@ -196,24 +208,30 @@ type Tracker struct {
 // New returns a Tracker in ModeNone.
 func New(cfg Config) *Tracker {
 	t := &Tracker{
-		cfg:       cfg,
-		now:       time.Now,
-		swapDelay: DefaultSwapDelay,
-		st:        State{Mode: ModeNone, ZealLimited: true},
+		cfg:    cfg,
+		now:    time.Now,
+		st:     State{Mode: ModeNone, ZealLimited: true},
+		alerts: newAlertState(),
 	}
 	t.health.lookup = cfg.LookupSpell
 	return t
 }
 
-// SetSwapDelay sets how long ModeBroken lasts. Non-positive restores the
-// default.
-func (t *Tracker) SetSwapDelay(d time.Duration) {
-	if d <= 0 {
-		d = DefaultSwapDelay
+// settings returns the user's Pet overlay settings (zero value without a
+// provider, so every default applies).
+func (t *Tracker) settings() config.PetOverlaySettings {
+	if t.cfg.Settings == nil {
+		return config.PetOverlaySettings{}
 	}
-	t.mu.Lock()
-	t.swapDelay = d
-	t.mu.Unlock()
+	return t.cfg.Settings()
+}
+
+// swapDelay is how long ModeBroken lasts (PetOverlaySettings.SwapDelaySecs).
+func (t *Tracker) swapDelay() time.Duration {
+	if secs := t.settings().SwapDelaySecs; secs > 0 {
+		return time.Duration(secs) * time.Second
+	}
+	return DefaultSwapDelay
 }
 
 // GetState returns the current state.
@@ -544,6 +562,7 @@ func (t *Tracker) startPetLocked(name string) {
 	t.startedAt = t.now()
 	t.zealHPAt = time.Time{}
 	t.lastSentHP = nil
+	t.alerts = newAlertState()
 	t.refreshKindLocked()
 }
 
@@ -554,7 +573,8 @@ func (t *Tracker) endPetLocked() {
 		return
 	}
 	now := t.now()
-	swapAt := now.Add(t.swapDelay)
+	delay := t.swapDelay()
+	swapAt := now.Add(delay)
 	t.st.Mode = ModeBroken
 	t.brokenID = t.st.PetID
 	t.st.PetID = nil
@@ -563,7 +583,7 @@ func (t *Tracker) endPetLocked() {
 	t.st.BrokeAt = &now
 	t.st.SwapAt = &swapAt
 	t.stopSwapLocked()
-	t.swapTimer = time.AfterFunc(t.swapDelay, t.expireBroken)
+	t.swapTimer = time.AfterFunc(delay, t.expireBroken)
 }
 
 // expireBroken ends ModeBroken once SwapAt has passed.
@@ -593,6 +613,7 @@ func (t *Tracker) resetLocked() {
 	t.brokenID = nil
 	t.zealHPAt = time.Time{}
 	t.lastSentHP = nil
+	t.alerts = newAlertState()
 }
 
 func (t *Tracker) setHPLocked(pct int, source string, at time.Time) {
@@ -606,7 +627,7 @@ func (t *Tracker) setHPLocked(pct int, source string, at time.Time) {
 func (t *Tracker) refreshKindLocked() bool {
 	spell := ""
 	if t.cfg.CharmTimer != nil {
-		if s, target, ok := t.cfg.CharmTimer(); ok && t.charmTimerMatchesLocked(target) {
+		if s, target, _, ok := t.cfg.CharmTimer(); ok && t.charmTimerMatchesLocked(target) {
 			spell = s
 		}
 	}

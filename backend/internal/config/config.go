@@ -935,7 +935,76 @@ type Preferences struct {
 	// list gets before it collapses to a count. Frontend-only; the backend
 	// just seeds the defaults (see seedItemInfoOverlay).
 	ItemInfoOverlay ItemInfoOverlaySettings `yaml:"item_info_overlay,omitempty" json:"item_info_overlay"`
+
+	// PetOverlay configures the Pet overlay: the broken→finder swap delay,
+	// the finder's row count, its three alerts, and the per-character buff
+	// watch lists. Read by the backend pet tracker (swap delay, alerts) and
+	// the panel (finder rows).
+	PetOverlay PetOverlaySettings `yaml:"pet_overlay,omitempty" json:"pet_overlay"`
 }
+
+// PetOverlaySettings configures the Pet overlay. Zero values mean "use the
+// default" (see the Default* constants below), matching this file's
+// convention for omitempty numeric settings.
+type PetOverlaySettings struct {
+	// SwapDelaySecs is how long the broken-pet card stays up before the panel
+	// returns to the charm finder.
+	SwapDelaySecs int `yaml:"swap_delay_secs,omitempty" json:"swap_delay_secs"`
+	// FinderRows is how many pets the compact finder lists.
+	FinderRows int `yaml:"finder_rows,omitempty" json:"finder_rows"`
+
+	// CharmExpiring fires once per charm when its timer reaches Threshold
+	// seconds left. LowHP fires when the pet's HP drops to Threshold percent
+	// (re-arming once it recovers 10 points above). BuffMissing fires when a
+	// spell on the active character's watch list is neither timed on the pet
+	// nor in a recent /pet health reply.
+	CharmExpiring PetAlertSettings `yaml:"charm_expiring,omitempty" json:"charm_expiring"`
+	LowHP         PetAlertSettings `yaml:"low_hp,omitempty" json:"low_hp"`
+	BuffMissing   PetAlertSettings `yaml:"buff_missing,omitempty" json:"buff_missing"`
+
+	// WatchLists maps a lowercase character name to the spells that
+	// character keeps on its pets, separately for charmed and summoned pets.
+	WatchLists map[string]PetWatchList `yaml:"watch_lists,omitempty" json:"watch_lists,omitempty"`
+}
+
+// PetAlertSettings is one Pet overlay alert. Template tokens: {pet} always;
+// {spell} and {secs} for CharmExpiring; {hp} for LowHP; {spells} for
+// BuffMissing. Threshold is seconds (CharmExpiring) or percent (LowHP) and is
+// unused by BuffMissing. The action fields mirror WishlistWatchSettings.
+type PetAlertSettings struct {
+	Enabled   bool   `yaml:"enabled,omitempty" json:"enabled"`
+	Threshold int    `yaml:"threshold,omitempty" json:"threshold"`
+	Template  string `yaml:"template,omitempty" json:"template"`
+
+	OverlayEnabled      bool    `yaml:"overlay_enabled,omitempty" json:"overlay_enabled"`
+	OverlayColor        string  `yaml:"overlay_color,omitempty" json:"overlay_color"`
+	OverlayDurationSecs float64 `yaml:"overlay_duration_secs,omitempty" json:"overlay_duration_secs"`
+
+	TTSEnabled bool   `yaml:"tts_enabled,omitempty" json:"tts_enabled"`
+	TTSVoice   string `yaml:"tts_voice,omitempty" json:"tts_voice"`
+	TTSVolume  int    `yaml:"tts_volume,omitempty" json:"tts_volume"`
+
+	SoundEnabled bool   `yaml:"sound_enabled,omitempty" json:"sound_enabled"`
+	SoundPath    string `yaml:"sound_path,omitempty" json:"sound_path"`
+	SoundVolume  int    `yaml:"sound_volume,omitempty" json:"sound_volume"`
+}
+
+// PetWatchList is one character's pet buff watch list.
+type PetWatchList struct {
+	Charm    []string `yaml:"charm,omitempty" json:"charm,omitempty"`
+	Summoned []string `yaml:"summoned,omitempty" json:"summoned,omitempty"`
+}
+
+// Pet overlay defaults, applied where a PetOverlaySettings field is zero.
+const (
+	DefaultPetSwapDelaySecs         = 10
+	DefaultPetFinderRows            = 8
+	DefaultPetCharmExpiringSecs     = 30
+	DefaultPetLowHPPct              = 30
+	DefaultPetCharmExpiringTemplate = "Charm on {pet} breaks in {secs}s"
+	DefaultPetLowHPTemplate         = "{pet} at {hp}% HP"
+	DefaultPetBuffMissingTemplate   = "{pet} is missing {spells}"
+)
 
 // ItemInfoOverlaySettings configures the Item Info overlay's summary card.
 // HiddenItems uses the NPC overlay's key scheme: "section.<id>" hides a whole

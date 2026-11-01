@@ -4,9 +4,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/overlay"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/trigger"
 )
 
 // fakeResolver stands in for the NPC overlay: byID mimics its spawn-id
@@ -45,6 +47,10 @@ type harness struct {
 	// reconcile calls the tracker made.
 	petTimers  []string
 	reconciles []reconcileCall
+
+	charmExp time.Time // active charm timer's expiry
+	prefs    config.PetOverlaySettings
+	fired    []trigger.TriggerFired
 }
 
 type reconcileCall struct {
@@ -72,9 +78,12 @@ func newHarness() *harness {
 		Resolver:   h.res,
 		Broadcast:  func(s State) { h.sent = append(h.sent, s) },
 		ActiveChar: func() string { return "Osui" },
-		CharmTimer: func() (string, string, bool) {
-			return h.charm, h.charmTgt, h.charm != ""
+		CharmTimer: func() (string, string, time.Time, bool) {
+			return h.charm, h.charmTgt, h.charmExp, h.charm != ""
 		},
+		PetTimers: func(string) []string { return h.petTimers },
+		Settings:  func() config.PetOverlaySettings { return h.prefs },
+		FireAlert: func(f trigger.TriggerFired) { h.fired = append(h.fired, f) },
 		LookupSpell: func(s string) (SpellInfo, bool) {
 			m, ok := testSpells[s]
 			return m, ok

@@ -17,7 +17,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, ExternalLink, PawPrint, Search } from 'lucide-react'
 import TargetTimerList from './TargetTimerList'
 import { SpellIcon } from '../Icon'
-import { usePetTimers } from '../../hooks/usePetState'
+import { usePetOverlaySettings, usePetTimers } from '../../hooks/usePetState'
 import { useCharmFinder, type CharmFinderHook } from '../../hooks/useCharmFinder'
 import { usePersistentState } from '../../hooks/usePersistentState'
 import { useAppNavigate } from '../../hooks/useAppNavigate'
@@ -37,8 +37,9 @@ const SUMMONED = '#38bdf8'
 const BROKE = '#ef4444'
 const WARN = '#f59e0b'
 
-// Rows shown in the compact finder before deferring to the full page.
-const FINDER_ROWS = 8
+// Rows shown in the compact finder before deferring to the full page, unless
+// Settings → Pet overrides it (pet_overlay.finder_rows).
+const DEFAULT_FINDER_ROWS = 8
 
 interface PetViewProps {
   state: PetState
@@ -493,6 +494,7 @@ function FinderView({
   interactive: boolean
 }): React.ReactElement {
   const navigate = useAppNavigate()
+  const finderRows = usePetOverlaySettings().finder_rows || DEFAULT_FINDER_ROWS
   const [hideOverCap, setHideOverCap] = usePersistentState<'on' | 'off'>('pq-pet-finder-hide-overcap', 'on', ['on', 'off'])
   const [hideSummon, setHideSummon] = usePersistentState<'on' | 'off'>('pq-pet-finder-hide-summon', 'off', ['on', 'off'])
   const [hideGate, setHideGate] = usePersistentState<'on' | 'off'>('pq-pet-finder-hide-gate', 'off', ['on', 'off'])
@@ -572,13 +574,13 @@ function FinderView({
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           <FinderHeader />
-          {pets.slice(0, FINDER_ROWS).map((p) => <FinderRow key={p.npc_id} pet={p} />)}
+          {pets.slice(0, finderRows).map((p) => <FinderRow key={p.npc_id} pet={p} />)}
         </div>
       )}
 
       {interactive && (
         <ToggleLink onClick={() => navigate('/charm-pet-finder')}>
-          {pets.length > FINDER_ROWS ? `${pets.length - FINDER_ROWS} more in ` : 'Open '}Charm Pet Finder
+          {pets.length > finderRows ? `${pets.length - finderRows} more in ` : 'Open '}Charm Pet Finder
           <ExternalLink size={10} style={{ marginLeft: 3 }} />
         </ToggleLink>
       )}

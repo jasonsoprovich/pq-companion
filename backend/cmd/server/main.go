@@ -968,6 +968,15 @@ func main() {
 		},
 		ActiveChar: activeChar,
 		CharmTimer: timerEngine.ActiveCharm,
+		PetTimers:  timerEngine.SpellsOnTarget,
+		Settings: func() config.PetOverlaySettings {
+			return cfgMgr.Get().Preferences.PetOverlay
+		},
+		// Pet alerts (charm expiring, low HP, buff missing) are synthetic
+		// trigger fires, like the wishlist watcher's.
+		FireAlert: func(f trigger.TriggerFired) {
+			hub.Broadcast(ws.Event{Type: trigger.WSEventTriggerFired, Data: f})
+		},
 		ZoneShort: func(long string) string {
 			short, err := database.GetZoneShortNameByLongName(long)
 			if err != nil {
@@ -987,6 +996,7 @@ func main() {
 		petCfg.Reconcile = timerEngine.ReconcileTargetEffects
 	}
 	petTracker := petoverlay.New(petCfg)
+	go petTracker.Start(context.Background())
 
 	triggerEngine := trigger.NewEngine(triggerStore, hub, timerEngine, activeChar)
 	// {target}/{t} tokens in action text resolve to the NPC overlay's

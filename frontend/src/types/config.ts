@@ -150,6 +150,43 @@ export interface WishlistWatchSettings {
  * Tranquility after Terris Thule). Mirrors backend
  * config.PoPHailReminderSettings.
  */
+// PetAlertSettings is one Pet overlay alert (mirrors config.PetAlertSettings).
+// threshold is seconds for charm_expiring, percent for low_hp, unused for
+// buff_missing; 0/missing = the backend default. Template tokens: {pet}
+// always, plus {spell}/{secs} (charm), {hp} (low HP), {spells} (buff missing).
+export interface PetAlertSettings {
+  enabled?: boolean
+  threshold?: number
+  template?: string
+  overlay_enabled?: boolean
+  overlay_color?: string
+  overlay_duration_secs?: number
+  tts_enabled?: boolean
+  tts_voice?: string
+  tts_volume?: number
+  sound_enabled?: boolean
+  sound_path?: string
+  sound_volume?: number
+}
+
+// PetWatchList is one character's pet buff watch list.
+export interface PetWatchList {
+  charm?: string[]
+  summoned?: string[]
+}
+
+// PetOverlaySettings configures the Pet overlay (mirrors
+// config.PetOverlaySettings). Zero/missing numbers = backend defaults.
+export interface PetOverlaySettings {
+  swap_delay_secs?: number
+  finder_rows?: number
+  charm_expiring?: PetAlertSettings
+  low_hp?: PetAlertSettings
+  buff_missing?: PetAlertSettings
+  // Lowercase character name → watch list.
+  watch_lists?: Record<string, PetWatchList>
+}
+
 export interface PoPHailReminderSettings {
   enabled: boolean
   // Alert text. {hails}, {zone} and {character} tokens expand to the NPC
@@ -389,6 +426,7 @@ export interface Preferences {
   wishlist_watch: WishlistWatchSettings
   // PoP hail reminder settings. See PoPHailReminderSettings.
   pop_hail_reminder?: PoPHailReminderSettings
+  pet_overlay?: PetOverlaySettings
   // ── Discord Voice overlay ──────────────────────────────────────────────
   // Embeds Discord's own hosted StreamKit Overlay page in a popout overlay
   // window (see issue #150) — we never talk to Discord's API ourselves, the

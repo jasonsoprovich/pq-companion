@@ -14,7 +14,7 @@ import { WSEvent } from '../lib/wsEvents'
 import { petOverlayOffered } from '../lib/overlays'
 import { normalizeTargetName } from '../lib/targetName'
 import { getConfig, getPetState, getTimerState } from '../services/api'
-import type { Config } from '../types/config'
+import type { Config, PetOverlaySettings } from '../types/config'
 import type { PetState } from '../types/pet'
 import type { ActiveTimer, TimerState } from '../types/timer'
 
@@ -59,6 +59,28 @@ export function usePetOverlayOffered(): boolean {
   })
 
   return offered
+}
+
+// usePetOverlaySettings returns preferences.pet_overlay, tracking
+// config:updated so a Settings change (autosaved) reaches open panels live.
+export function usePetOverlaySettings(): PetOverlaySettings {
+  const [settings, setSettings] = useState<PetOverlaySettings>({})
+
+  useEffect(() => {
+    let cancelled = false
+    getConfig()
+      .then((c) => { if (!cancelled) setSettings(c.preferences.pet_overlay ?? {}) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+
+  useWebSocket((msg) => {
+    if (msg.type !== WSEvent.ConfigUpdated) return
+    const cfg = msg.data as Config
+    if (cfg?.preferences) setSettings(cfg.preferences.pet_overlay ?? {})
+  })
+
+  return settings
 }
 
 /**

@@ -1007,10 +1007,10 @@ func (e *Engine) GetState() TimerState {
 	return e.snapshot(time.Now())
 }
 
-// ActiveCharm reports the running charm timer's spell and bound target name
-// (the newest one, should more than one linger). Unlike GetState it builds no
-// snapshot, so the pet overlay can poll it on every pipe tick.
-func (e *Engine) ActiveCharm() (spell, target string, ok bool) {
+// ActiveCharm reports the running charm timer's spell, bound target name and
+// expiry (the newest one, should more than one linger). Unlike GetState it
+// builds no snapshot, so the pet overlay can poll it on every pipe tick.
+func (e *Engine) ActiveCharm() (spell, target string, expiresAt time.Time, ok bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	var best *ActiveTimer
@@ -1020,9 +1020,29 @@ func (e *Engine) ActiveCharm() (spell, target string, ok bool) {
 		}
 	}
 	if best == nil {
-		return "", "", false
+		return "", "", time.Time{}, false
 	}
-	return best.SpellName, best.TargetName, true
+	return best.SpellName, best.TargetName, best.ExpiresAt, true
+}
+
+// SpellsOnTarget returns the spell names of the live (not yet expired or
+// overdue), non-charm timers on target — what the pet overlay's buff watch
+// list checks the pet against. Names match normalized, like removeOnKill.
+func (e *Engine) SpellsOnTarget(target string) []string {
+	norm := normalizeNPCName(target)
+	if norm == "" {
+		return nil
+	}
+	now := time.Now()
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	var out []string
+	for _, t := range e.timers {
+		if !t.IsCharm && t.ExpiresAt.After(now) && normalizeNPCName(t.TargetName) == norm {
+			out = append(out, t.SpellName)
+		}
+	}
+	return out
 }
 
 // SetPipeCasting records the current in-flight cast as reported by the Zeal
