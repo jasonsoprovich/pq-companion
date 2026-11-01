@@ -54,6 +54,13 @@ export function isYouRow(c: Pick<EntityStats, 'name' | 'is_you'>): boolean {
   return c.is_you === true || c.name === 'You'
 }
 
+// encounterSeconds is an entity's Encounter-mode denominator: its own pooled
+// wall-clock when the row came from aggregateRecentFights, otherwise the
+// fight's duration (shared by every row of a single fight).
+function encounterSeconds(c: EntityStats, fightDuration: number): number {
+  return c.encounter_seconds ?? fightDuration
+}
+
 // rollupCombatants groups pet rows under their owners when combine=true.
 // When combine=false, returns the original list with empty pets[] on each row.
 //
@@ -102,15 +109,23 @@ export function rollupCombatants(
     // active DPS comparable to a non-pet class's active DPS instead of
     // double-crediting overlapping engagement.
     const activeSecs = Math.max(owner.active_seconds, ...pets.map((p) => p.active_seconds))
-    // raid_seconds is constant across the fight; the owner row carries the
-    // canonical value (every pet shares it). Inherit via the spread.
-    const raidSecs = owner.raid_seconds
+    // Encounter and raid denominators use the same max() union. Within one
+    // fight they're identical across owner and pets, so this changes nothing
+    // there; in the pooled "Last N mobs" scope each entity's value covers
+    // only the fights it appeared in, and the fight-wide pooled duration
+    // would divide the owner's damage by fights they took no part in.
+    const encounterSecs = Math.max(
+      encounterSeconds(owner, fightDuration),
+      ...pets.map((p) => encounterSeconds(p, fightDuration)),
+    )
+    const raidSecs = Math.max(owner.raid_seconds, ...pets.map((p) => p.raid_seconds))
     rolled.push({
       ...owner,
       total_damage: totalDamage,
       hit_count: hitCount,
       max_hit: maxHit,
-      dps: fightDuration > 0 ? totalDamage / fightDuration : 0,
+      dps: encounterSecs > 0 ? totalDamage / encounterSecs : 0,
+      encounter_seconds: encounterSecs,
       active_dps: activeSecs > 0 ? totalDamage / activeSecs : 0,
       active_seconds: activeSecs,
       raid_dps: raidSecs > 0 ? totalDamage / raidSecs : 0,
@@ -129,14 +144,16 @@ export function rollupCombatants(
     const hitCount = sumHits(pets)
     const maxHit = Math.max(...pets.map((p) => p.max_hit))
     const activeSecs = Math.max(...pets.map((p) => p.active_seconds))
-    // Pull raid_seconds from any pet — it's constant across the fight.
-    const raidSecs = pets[0]?.raid_seconds ?? 0
+    // See the owner branch above for why these take the max across pets.
+    const encounterSecs = Math.max(...pets.map((p) => encounterSeconds(p, fightDuration)))
+    const raidSecs = Math.max(...pets.map((p) => p.raid_seconds))
     rolled.push({
       name: ownerName,
       total_damage: totalDamage,
       hit_count: hitCount,
       max_hit: maxHit,
-      dps: fightDuration > 0 ? totalDamage / fightDuration : 0,
+      dps: encounterSecs > 0 ? totalDamage / encounterSecs : 0,
+      encounter_seconds: encounterSecs,
       active_dps: activeSecs > 0 ? totalDamage / activeSecs : 0,
       active_seconds: activeSecs,
       raid_dps: raidSecs > 0 ? totalDamage / raidSecs : 0,

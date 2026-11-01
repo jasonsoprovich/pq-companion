@@ -20,8 +20,6 @@ export interface DPSTableTheme {
   headerLetterSpacing: string
   headerColor: string
   headerBorder: string
-  // Label for the rate column; null shows the current mode's abbreviation.
-  rateLabel: string | null
   rowPadding: string
   rowBorder: string
   barAlpha: number
@@ -50,7 +48,6 @@ export const PANEL_THEME: DPSTableTheme = {
   headerLetterSpacing: '0.05em',
   headerColor: 'var(--color-muted)',
   headerBorder: '1px solid var(--color-border)',
-  rateLabel: 'DPS',
   rowPadding: '5px 10px',
   rowBorder: '1px solid var(--color-border)',
   barAlpha: 0.22,
@@ -79,7 +76,6 @@ export const OVERLAY_THEME: DPSTableTheme = {
   headerLetterSpacing: '0.06em',
   headerColor: 'rgba(255,255,255,0.3)',
   headerBorder: '1px solid rgba(255,255,255,0.08)',
-  rateLabel: null,
   rowPadding: '4px 8px',
   rowBorder: '1px solid rgba(255,255,255,0.06)',
   barAlpha: 0.28,
@@ -261,7 +257,7 @@ export default function DPSTable({ fight, showAll, combine, mode, palette, barSc
           <span>Name</span>
           <span>%</span>
           <span>Dmg</span>
-          <span style={{ textAlign: 'right' }}>{theme.rateLabel ?? dpsModeAbbrev(mode)}</span>
+          <span style={{ textAlign: 'right' }}>{dpsModeAbbrev(mode)}</span>
         </div>
         {rows.length === 0 ? (
           <p style={theme.emptyStyle}>{theme.emptyText}</p>

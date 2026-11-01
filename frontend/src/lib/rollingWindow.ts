@@ -174,6 +174,7 @@ export function aggregateRecentFights(
       hit_count: a.hit_count,
       max_hit: a.max_hit,
       dps: a.encounter_seconds > 0 ? a.total_damage / a.encounter_seconds : 0,
+      encounter_seconds: a.encounter_seconds,
       active_dps: a.active_seconds > 0 ? a.total_damage / a.active_seconds : 0,
       active_seconds: a.active_seconds,
       raid_dps: a.raid_seconds > 0 ? a.total_damage / a.raid_seconds : 0,
