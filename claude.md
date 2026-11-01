@@ -101,7 +101,9 @@ Capabilities (see `FEATURES.md` for the full implementation log):
 ## EverQuest-Specific Knowledge
 
 ### Log File Format
-- Located at: `<EQ_DIR>/Logs/eqlog_<CharName>_pq.proj.txt`
+- Located at: `<EQ_DIR>/eqlog_<CharName>_pq.proj.txt` — the EQ folder
+  itself, not a `Logs/` subfolder (TAKP client; see `logFilePath` in
+  `internal/logparser/tailer.go`)
 - Each line: `[Mon Apr 13 06:00:00 2026] <message>`
 - Combat: "You slash a gnoll for 150 points of damage."
 - Spell cast: "You begin casting Mesmerization."
