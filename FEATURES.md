@@ -2014,6 +2014,23 @@ name-based path when a field is nil, so older Zeal is unaffected.
   the `wornHere` (same-Location) and `wornLore` (any-slot LORE) sets in
   the same canonical id space the candidate list already uses.
 
+## v0.32.0 — PoP Hail Grants, Slow Mitigation, Encounter Timer Options
+
+- **PoP hail grants** — NPC grant line + "You have received a
+  character flag!" (zone-gated) auto-ticks 14 always-up hail steps;
+  folded into the qglobal snapshot as a floor, never overrides manual.
+- **Hail reminder** — opt-in `PoPHailReminder` zone-in alert (synthetic
+  trigger:fired) listing hails available now in PoTranq/PoJ/PoI/PoK.
+- **Slow mitigation** — `npc_types.slow_mitigation` as a Slow Mit chip on
+  the NPC overlay (filterable) and a Combat row on the NPC page.
+- **Encounter timer options** — custom timers: keep first countdown
+  (if-idle start via PolicySink) and clear on zone/character change
+  (from #163). `logparser.ZoneEntered` ignores the levitation line.
+- Fixes: #popflags retraction scoped to printed qglobals; Miak Tower
+  Maelin prereq dropped; per-entity encounter time in pet rollups; DPS
+  panel header shows mode; Chromium native occlusion disabled for
+  overlays, plus visibility/compositor logging.
+
 ## v0.31.0 — Spell Search Filters, What-If Loadouts, Leader-Relative DPS
 
 - **Spell search filters** — collapsible "More filters" on the Spells
