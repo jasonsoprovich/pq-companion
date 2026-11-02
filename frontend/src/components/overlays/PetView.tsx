@@ -574,10 +574,10 @@ function FinderView({
 
       {interactive && (
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 4, fontSize: 10, color: FAINT }}>
-          Hide
-          <Chip on={hideOverCap === 'on'} onClick={() => setHideOverCap(hideOverCap === 'on' ? 'off' : 'on')}>Over cap</Chip>
-          <Chip on={hideSummon === 'on'} onClick={() => setHideSummon(hideSummon === 'on' ? 'off' : 'on')}>Summoners</Chip>
-          <Chip on={hideGate === 'on'} onClick={() => setHideGate(hideGate === 'on' ? 'off' : 'on')}>Gaters</Chip>
+          Show
+          <Chip on={hideOverCap !== 'on'} onClick={() => setHideOverCap(hideOverCap === 'on' ? 'off' : 'on')} title="Include pets above your charm spell's level cap">Over cap</Chip>
+          <Chip on={hideSummon !== 'on'} onClick={() => setHideSummon(hideSummon === 'on' ? 'off' : 'on')} title="Include pets that summon">Summoners</Chip>
+          <Chip on={hideGate !== 'on'} onClick={() => setHideGate(hideGate === 'on' ? 'off' : 'on')} title="Include pets that gate">Gaters</Chip>
         </div>
       )}
 
@@ -710,11 +710,12 @@ function ToggleLink({ onClick, children }: { onClick: () => void; children: Reac
   )
 }
 
-function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; children: React.ReactNode }): React.ReactElement {
+function Chip({ on, onClick, title, children }: { on: boolean; onClick: () => void; title?: string; children: React.ReactNode }): React.ReactElement {
   return (
     <button
       type="button"
       onClick={onClick}
+      title={title}
       style={{
         fontSize: 10,
         padding: '1px 6px',
