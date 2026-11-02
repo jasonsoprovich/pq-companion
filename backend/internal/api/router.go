@@ -330,6 +330,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/{id}/equipped-in-slots", charactersH.equippedInSlots)
 			r.Get("/{id}/upgrades/overview", charactersH.upgradesOverview)
 			r.Get("/{id}/upgrades/zone", charactersH.upgradesZone)
+			r.Get("/{id}/upgrades/items", charactersH.upgradesItems)
 			r.Get("/{id}/upgrade-weights", charactersH.upgradeWeights)
 			r.Put("/{id}/upgrade-weights", charactersH.updateUpgradeWeights)
 			r.Delete("/{id}/upgrade-weights", charactersH.resetUpgradeWeights)

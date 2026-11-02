@@ -1,6 +1,9 @@
 package db
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // UpgradeCandidate is a lean item row for the gear upgrade finder: just the
 // flat scorable stats plus the metadata the UI needs (name/icon/usability/
@@ -149,6 +152,10 @@ type CandidateFilter struct {
 	ExcludeCrafted bool // drop tradeskill-made items (results of a recipe combine)
 	ExcludeNoDrop  bool // drop NO DROP items (can't be traded for)
 	FocusOnly      bool // keep only items that carry a focus effect
+	// ItemIDs, when non-empty, restricts the scan to exactly these items (a
+	// loot table, a clicked item). The hidden/variant filters are skipped:
+	// they dedupe catalog browsing, and an explicit id was asked for by name.
+	ItemIDs []int
 }
 
 // UpgradeCandidates returns every equippable item that fits the slot and is
@@ -198,13 +205,20 @@ func (db *DB) UpgradeCandidates(f CandidateFilter) ([]UpgradeCandidate, error) {
 		where += " AND i.nodrop <> 0"
 	}
 
-	if clause, hargs := hiddenItemClause(); clause != "" {
-		where += " AND " + clause
-		args = append(args, hargs...)
-	}
-	db.ensureVariants()
-	if clause := db.itemVariants.excludeNonCanonical("i.id"); clause != "" {
-		where += " AND " + clause
+	if len(f.ItemIDs) > 0 {
+		where += " AND i.id IN (?" + strings.Repeat(",?", len(f.ItemIDs)-1) + ")"
+		for _, id := range f.ItemIDs {
+			args = append(args, id)
+		}
+	} else {
+		if clause, hargs := hiddenItemClause(); clause != "" {
+			where += " AND " + clause
+			args = append(args, hargs...)
+		}
+		db.ensureVariants()
+		if clause := db.itemVariants.excludeNonCanonical("i.id"); clause != "" {
+			where += " AND " + clause
+		}
 	}
 
 	q := `SELECT i.id, i.Name, i.icon, i.slots, i.classes, i.races,

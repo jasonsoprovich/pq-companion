@@ -10,6 +10,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { Check, ChevronRight, MapPin, X } from 'lucide-react'
 import { useAppNavigate } from '../../hooks/useAppNavigate'
 import { useLiveZone } from '../../hooks/useLiveZone'
+import { useUpgradeScores } from '../../hooks/useUpgradeScores'
 import {
   useItemInfoSettings,
   type ItemInfoSettings,
@@ -757,6 +758,7 @@ export default function ItemInfoCard({
   const settings = useItemInfoSettings(surface)
   const data = useSummaryData(item.id)
   const { zone } = useLiveZone()
+  const upgrade = useUpgradeScores([item.id]).get(item.id)
   const navigate = useAppNavigate()
   const vis = useMemo(() => (key: string) => !settings.hidden.has(key), [settings.hidden])
   const openItem = () => navigate(`/items?select=${item.id}`)
@@ -787,6 +789,14 @@ export default function ItemInfoCard({
             ) : (
               <Verdict yes={false} theme={theme}>Not on any character</Verdict>
             )
+          )}
+          {upgrade && (
+            <div
+              style={{ fontSize: 12, fontWeight: 600, color: YES, margin: '0 0 2px' }}
+              title="Gear Upgrade Finder score for your active character"
+            >
+              +{upgrade.score.toFixed(0)} upgrade · {upgrade.slot_label}
+            </div>
           )}
         </div>
         {vis('header.wishlist') && (

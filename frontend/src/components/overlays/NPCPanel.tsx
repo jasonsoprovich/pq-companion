@@ -14,6 +14,7 @@ import { useWishlistItemIds } from '../../hooks/useWishlistItemIds'
 import { useTargetTimers } from '../../hooks/useTargetTimers'
 import { useTargetPlayer } from '../../hooks/useTargetPlayer'
 import { useActiveCharacterLevel } from '../../hooks/useActiveCharacterLevel'
+import { useUpgradeScores } from '../../hooks/useUpgradeScores'
 import { useNPCTargetDistance, type NPCTargetDistance } from '../../hooks/useNPCTargetDistance'
 import { WSEvent } from '../../lib/wsEvents'
 import { getOverlayNPCTarget, getLogStatus, getNPCLoot, getNPCFaction, getItem } from '../../services/api'
@@ -218,6 +219,13 @@ function LootSection({
       .finally(() => setLoading(false))
   }, [npcId])
 
+  // Gear Upgrade Finder scores for the active character, so an upgrade on
+  // the table reads at a glance without opening the Gear Upgrades page.
+  const upgrades = useUpgradeScores(
+    [...(loot?.drops ?? []), ...(loot?.zone_wide_drops ?? [])]
+      .flatMap((d) => d.items.map((i) => i.item_id)),
+  )
+
   if (loading) {
     return <p className="px-1 py-1 text-xs" style={{ color: 'var(--color-muted)' }}>Loading loot…</p>
   }
@@ -259,6 +267,7 @@ function LootSection({
       drop.items.map((item) => {
         const eff = effectiveDropPct(drop, item)
         const wished = wishlistItemIds.has(item.item_id)
+        const upgrade = upgrades.get(item.item_id)
         return (
           <button
             key={`${drop.id}-${item.item_id}`}
@@ -282,6 +291,15 @@ function LootSection({
             >
               {item.item_name}
             </span>
+            {upgrade && (
+              <span
+                className="shrink-0 text-[11px] font-semibold tabular-nums"
+                style={{ color: '#22c55e' }}
+                title={`Gear upgrade for your active character (${upgrade.slot_label})`}
+              >
+                +{upgrade.score.toFixed(0)}
+              </span>
+            )}
             <span className="shrink-0 text-[11px] tabular-nums" style={{ color: 'var(--color-muted)' }}>
               {item.chance.toFixed(1)}%
               {item.multiplier > 1 && ` ×${item.multiplier}`}

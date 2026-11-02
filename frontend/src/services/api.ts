@@ -2597,6 +2597,22 @@ export function getCharacterZoneUpgrades(
   return get<ZoneUpgradesResponse>(`/api/characters/${id}/upgrades/zone?${p.toString()}`)
 }
 
+export interface ItemUpgradeScore {
+  score: number
+  slot_label: string
+}
+
+// getCharacterItemUpgradeScores scores specific items with the Gear Upgrade
+// Finder's saved weights. Only upgrades (score > 0) come back, keyed by id.
+export function getCharacterItemUpgradeScores(
+  id: number,
+  itemIds: number[],
+): Promise<{ scores: Record<string, ItemUpgradeScore> }> {
+  return get<{ scores: Record<string, ItemUpgradeScore> }>(
+    `/api/characters/${id}/upgrades/items?ids=${itemIds.join(',')}`,
+  )
+}
+
 export interface FocusOption {
   spell_id: number
   name: string

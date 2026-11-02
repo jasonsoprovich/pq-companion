@@ -582,6 +582,65 @@ func (h *charactersHandler) upgradesZone(w http.ResponseWriter, r *http.Request)
 	})
 }
 
+type itemUpgradeScore struct {
+	Score float64 `json:"score"`
+	Slot  string  `json:"slot_label"`
+}
+
+// upgradesItems handles GET /api/characters/{id}/upgrades/items?ids=1,2,3 —
+// the Gear Upgrade Finder score for specific items (an NPC's loot table, the
+// Item Info overlay), keyed by item id. Only actual upgrades (score > 0) are
+// returned; an item fitting several slots reports its best one. Like the zone
+// view, PoP and crafted gear are never filtered — the caller named the items.
+func (h *charactersHandler) upgradesItems(w http.ResponseWriter, r *http.Request) {
+	var ids []int
+	for _, part := range strings.Split(r.URL.Query().Get("ids"), ",") {
+		if v, err := strconv.Atoi(strings.TrimSpace(part)); err == nil && v > 0 {
+			ids = append(ids, v)
+		}
+	}
+	if len(ids) == 0 {
+		writeJSON(w, http.StatusOK, map[string]any{"scores": map[int]itemUpgradeScore{}})
+		return
+	}
+	if len(ids) > 500 {
+		ids = ids[:500]
+	}
+	sw, ok := h.loadUpgradeSweep(w, r)
+	if !ok {
+		return
+	}
+	sw.excludePoP = false
+	sw.excludeCrafted = false
+	combinedMask := 0
+	for _, s := range upgradeSlots {
+		combinedMask |= s.Mask
+	}
+	cands, err := h.db.UpgradeCandidates(db.CandidateFilter{
+		SlotMask: combinedMask,
+		ClassBit: charClassBit(sw.char),
+		RaceBit:  enums.RaceBitForCharRace(sw.char.Race),
+		MaxLevel: upgradeMaxLevel(sw.char.Level, false),
+		ItemIDs:  ids,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load upgrade candidates")
+		return
+	}
+	scores := make(map[int]itemUpgradeScore)
+	if len(cands) > 0 {
+		for _, s := range upgradeSlots {
+			_, results, _ := h.scoreSweepSlot(sw, s, cands, len(cands))
+			for _, res := range results {
+				if res.Score > 0 && res.Score > scores[res.ID].Score {
+					scores[res.ID] = itemUpgradeScore{Score: res.Score, Slot: s.Label}
+				}
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"scores": scores})
+}
+
 // upgradeMaxLevel is the reqlevel ceiling for candidate items. When PoP gear is
 // included, raise it to the PoP cap (65) so level-65 Planes gear isn't filtered
 // out for a level-60 character — the player is browsing PoP-era upgrades and
