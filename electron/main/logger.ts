@@ -45,12 +45,19 @@ function rotate(base: string, keep: number): void {
 
 // initLogger opens the rotated log file and patches console.{log,warn,error,info}
 // to also append a timestamped line to it. Safe to call once at app start.
-export function initLogger(appVersion: string): { logPath: string | null; error: Error | null } {
+// A second launch that's about to hand off to the running instance passes
+// rotate=false and appends to the live log instead: rotating there would push
+// the running session's log out of the kept set (relaunching from the
+// shortcut to reopen a tray-hidden window did exactly that, 4 times over).
+export function initLogger(
+  appVersion: string,
+  rotateLogs = true,
+): { logPath: string | null; error: Error | null } {
   try {
     const dir = join(homedir(), '.pq-companion', 'logs')
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
     logPath = join(dir, 'electron.log')
-    rotate(logPath, KEEP_SESSIONS)
+    if (rotateLogs) rotate(logPath, KEEP_SESSIONS)
     fd = openSync(logPath, 'a')
   } catch (err) {
     return { logPath: null, error: err as Error }
@@ -58,6 +65,7 @@ export function initLogger(appVersion: string): { logPath: string | null; error:
 
   patchConsole()
 
+  if (!rotateLogs) appendLine('INFO', 'second launch; handing off to the running instance')
   appendLine('INFO', `electron starting version=${appVersion} pid=${process.pid} platform=${process.platform} arch=${process.arch}`)
   appendLine('INFO', `node=${process.versions.node} electron=${process.versions.electron} chrome=${process.versions.chrome}`)
   appendLine('INFO', `exec=${process.execPath}`)

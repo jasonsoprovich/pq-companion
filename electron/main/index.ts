@@ -60,7 +60,10 @@ if (loadHardwareAccelDisabled()) {
 // rest of main-process bootstrap are captured. Packaged Windows builds
 // have no attached console — without this we lose every console.* call,
 // every [backend] line piped from the sidecar, and every unhandledRejection.
-const loggerInit = initLogger(app.getVersion())
+// The single-instance lock is taken first so a second launch appends to the
+// running instance's log rather than rotating it away (see initLogger).
+const gotSingleInstanceLock = app.requestSingleInstanceLock()
+const loggerInit = initLogger(app.getVersion(), gotSingleInstanceLock)
 if (loggerInit.error) {
   console.warn(`[main] file logging disabled: ${loggerInit.error.message}`)
 } else if (loggerInit.logPath) {
@@ -210,8 +213,8 @@ if (isRunningUnderWine() && !app.commandLine.hasSwitch('force-device-scale-facto
 // #160). For packaged Windows builds we check for that before quitting and
 // warn the user (see otherCopy.ts). app.exit() rather than app.quit() so the
 // before-quit handlers (overlay auto-open snapshot, sidecar stop) never run
-// in this instance and can't clobber the running copy's saved state.
-const gotSingleInstanceLock = app.requestSingleInstanceLock()
+// in this instance and can't clobber the running copy's saved state. The lock
+// itself is requested up top, before initLogger.
 if (!gotSingleInstanceLock) {
   if (process.platform === 'win32' && app.isPackaged) {
     app.whenReady()
