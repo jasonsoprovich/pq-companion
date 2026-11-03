@@ -1,0 +1,21 @@
+PQ Companion
+Copyright (c) 2026 jasonsoprovich and PQ Companion contributors
+
+The MIT License in LICENSE covers the PQ Companion source code in this
+repository. It does not cover the following, which come from third parties
+and remain under their owners' terms:
+
+- EverQuest game data in backend/data/quarm.db, converted from Project Quarm
+  database dumps (sql/).
+- Zone geometry in backend/data/maps.db, generated from EverQuest client
+  files, and any user-installed map packs the app reads.
+- EverQuest artwork, including the spell and item icons in
+  frontend/public/icons.
+- Text-to-speech engines and voice models (Piper, Kokoro and others) that
+  users install separately.
+- Third-party libraries, each under its own license as listed in
+  backend/go.mod, package.json and their dependency trees.
+
+EverQuest is a registered trademark of Daybreak Game Company LLC. PQ
+Companion is a fan-made project and is not affiliated with or endorsed by
+Daybreak Game Company or the Project Quarm team.

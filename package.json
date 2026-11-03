@@ -4,6 +4,7 @@
   "description": "Desktop companion app for Project Quarm (EverQuest emulated server)",
   "main": "out/main/index.js",
   "author": "jasonsoprovich",
+  "license": "MIT",
   "private": true,
   "scripts": {
     "postinstall": "node node_modules/electron/install.js",
