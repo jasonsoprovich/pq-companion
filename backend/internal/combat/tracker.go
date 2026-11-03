@@ -139,8 +139,32 @@ type internalEntity struct {
 	// threat. See lastSpellHit / EventDamageShield.
 	dsDamage int64
 
+	// finishingBlows counts this attacker's melee hits at or above
+	// finishingBlowMin. They are left out of totalDamage/hitCount/maxHit; see
+	// isFinishingBlow.
+	finishingBlows int
+
 	firstActivity time.Time
 	lastActivity  time.Time
+}
+
+// finishingBlowMin is the melee damage at and above which a hit is treated as
+// an instant-kill special (finishing blow, slay, assassinate) rather than a
+// swing. These log as an ordinary melee line with a fixed huge number —
+// "Playerone backstabs a mob for 32000 points of damage.", "Playertwo pierces
+// a mob for 32011 points of damage." — far beyond the mob's
+// remaining HP, and no real swing comes anywhere near it. Counted as damage, a
+// single one can double an attacker's total for the fight.
+const finishingBlowMin = 32000
+
+// isFinishingBlow reports whether an outgoing hit is an instant-kill special
+// that should be counted, not added to damage. Spell and DoT damage is never
+// treated this way: only melee and ranged lines carry the fixed number.
+func isFinishingBlow(data logparser.CombatHitData) bool {
+	if data.Damage < finishingBlowMin {
+		return false
+	}
+	return data.Skill != "spell" && data.Skill != "dot"
 }
 
 // internalHealer accumulates raw heal data for one healer inside an active
@@ -1146,14 +1170,20 @@ func (t *Tracker) recordHit(ts time.Time, data logparser.CombatHitData) {
 			ent = &internalEntity{}
 			f.outgoing[data.Actor] = ent
 		}
-		ent.totalDamage += int64(data.Damage)
-		ent.hitCount++
-		if data.Damage > ent.maxHit {
-			ent.maxHit = data.Damage
-		}
-		if t.popPendingCritLocked(data.Actor, data.Damage) {
-			ent.critCount++
-			ent.critDamage += int64(data.Damage)
+		if isFinishingBlow(data) {
+			// Counted, never added: the fixed number is not damage the
+			// attacker dealt in any meaningful sense (see finishingBlowMin).
+			ent.finishingBlows++
+		} else {
+			ent.totalDamage += int64(data.Damage)
+			ent.hitCount++
+			if data.Damage > ent.maxHit {
+				ent.maxHit = data.Damage
+			}
+			if t.popPendingCritLocked(data.Actor, data.Damage) {
+				ent.critCount++
+				ent.critDamage += int64(data.Damage)
+			}
 		}
 		noteActivityEntity(ent, ts)
 
@@ -1432,6 +1462,7 @@ func mergeEntityInto(dst, src *internalEntity) {
 	dst.hitCount += src.hitCount
 	dst.critCount += src.critCount
 	dst.critDamage += src.critDamage
+	dst.finishingBlows += src.finishingBlows
 	if src.maxHit > dst.maxHit {
 		dst.maxHit = src.maxHit
 	}
@@ -1903,17 +1934,18 @@ func buildEntityStats(entities map[string]*internalEntity, duration, raidSeconds
 	for name, e := range entities {
 		personal := personalSecondsEntity(e)
 		stats = append(stats, EntityStats{
-			Name:          name,
-			TotalDamage:   e.totalDamage,
-			HitCount:      e.hitCount,
-			MaxHit:        e.maxHit,
-			DPS:           safeDivide(float64(e.totalDamage), duration),
-			ActiveDPS:     safeDivide(float64(e.totalDamage), personal),
-			ActiveSeconds: personal,
-			RaidDPS:       safeDivide(float64(e.totalDamage), raidSeconds),
-			RaidSeconds:   raidSeconds,
-			CritCount:     e.critCount,
-			CritDamage:    e.critDamage,
+			Name:           name,
+			TotalDamage:    e.totalDamage,
+			HitCount:       e.hitCount,
+			MaxHit:         e.maxHit,
+			DPS:            safeDivide(float64(e.totalDamage), duration),
+			ActiveDPS:      safeDivide(float64(e.totalDamage), personal),
+			ActiveSeconds:  personal,
+			RaidDPS:        safeDivide(float64(e.totalDamage), raidSeconds),
+			RaidSeconds:    raidSeconds,
+			CritCount:      e.critCount,
+			CritDamage:     e.critDamage,
+			FinishingBlows: e.finishingBlows,
 		})
 	}
 	sort.Slice(stats, func(i, j int) bool {

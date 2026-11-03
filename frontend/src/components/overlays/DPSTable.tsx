@@ -108,6 +108,10 @@ function rowTooltip(stat: RolledUpEntity): string {
   if (stat.crit_count > 0) {
     parts.push(`${stat.crit_count} crit${stat.crit_count !== 1 ? 's' : ''} (${fmt(stat.crit_damage)} dmg)`)
   }
+  const fb = stat.finishing_blows ?? 0
+  if (fb > 0) {
+    parts.push(`${fb} finishing blow${fb !== 1 ? 's' : ''} (not counted)`)
+  }
   return parts.join(' · ')
 }
 

@@ -86,6 +86,10 @@ type EntityStats struct {
 	// CritDamage is the sum of damage from those matched crits — useful for
 	// "X% of your damage was from crits" displays.
 	CritDamage int64 `json:"crit_damage"`
+	// FinishingBlows counts instant-kill melee specials (finishing blow, slay,
+	// assassinate) that log a fixed ~32000 damage. They are not included in
+	// TotalDamage, HitCount or MaxHit.
+	FinishingBlows int `json:"finishing_blows,omitempty"`
 	// OwnerName is the controlling player's name when this entity is a pet
 	// (charmed NPC or summoned pet). Empty for player damage dealers and for
 	// pets whose owner could not be identified.

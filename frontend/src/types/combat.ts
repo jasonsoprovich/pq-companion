@@ -25,6 +25,9 @@ export interface EntityStats {
   // crit_damage  — sum of damage from those matched crit hits.
   crit_count: number
   crit_damage: number
+  // Instant-kill melee specials (finishing blow, slay, assassinate) that log
+  // a fixed ~32000 damage. Counted here, left out of total_damage/hit_count.
+  finishing_blows?: number
   // Controlling player's name when this entity is a pet (charmed NPC or
   // summoned pet). Empty/undefined for player damage dealers and for pets
   // whose owner could not be identified.

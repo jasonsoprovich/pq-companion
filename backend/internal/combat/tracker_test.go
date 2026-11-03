@@ -2192,3 +2192,32 @@ func TestPipePetIDNoopOnOlderZeal(t *testing.T) {
 		t.Error("nil pet_id (older Zeal) should not touch the pet binding")
 	}
 }
+
+// TestFinishingBlowCountedNotAdded covers the instant-kill melee specials that
+// log a fixed ~32000 damage ("Playertwo pierces a mob for 32011 points
+// of damage."). They must not inflate damage, hit count or max hit, but are
+// counted on the attacker's row. A spell that large is still damage.
+func TestFinishingBlowCountedNotAdded(t *testing.T) {
+	tr := newTestTracker(t)
+	now := time.Now()
+
+	tr.Handle(hitEvent("Playertwo", "a fire giant wizard", 300, now))
+	tr.Handle(hitEvent("Playertwo", "a fire giant wizard", 32011, now.Add(time.Second)))
+	tr.Handle(hitEvent("You", "a fire giant wizard", 200, now.Add(time.Second)))
+	tr.Handle(spellHitEvent("You", "a fire giant wizard", 32500, now.Add(2*time.Second)))
+
+	st := tr.GetState()
+	pt := requireCombatant(t, st, "Playertwo")
+	if pt.TotalDamage != 300 || pt.HitCount != 1 || pt.MaxHit != 300 {
+		t.Fatalf("Playertwo = %d dmg / %d hits / max %d, want 300 / 1 / 300",
+			pt.TotalDamage, pt.HitCount, pt.MaxHit)
+	}
+	if pt.FinishingBlows != 1 {
+		t.Fatalf("Playertwo FinishingBlows = %d, want 1", pt.FinishingBlows)
+	}
+	you := requireCombatant(t, st, "You")
+	if you.TotalDamage != 32700 || you.FinishingBlows != 0 {
+		t.Fatalf("You = %d dmg / %d finishing blows, want 32700 / 0",
+			you.TotalDamage, you.FinishingBlows)
+	}
+}
