@@ -80,8 +80,11 @@ var (
 	//   "Playerone slashes a gnoll for 75 points of damage."
 	//   "Enchanted Golem hits Tank for 50 points of damage."
 	//   "an enchanted golem slashes Hakammer for 100 points of damage."
+	// Ranged attacks use their own verbs ("Playertwo shoots a gnoll for 245
+	// points of damage."); without them a ranger's bow damage never reaches
+	// another player's meter.
 	// Checked after reYouHit and reNPCHitYou so those take priority.
-	reThirdPartyHit = regexp.MustCompile(`^(.+?) (slashes|slices|crushes|pierces|bashes|punches|kicks|slams|bites|mauls|claws|gores|stings|jabs|gouges|smashes|hits|strikes|backstabs|throws|chops|stabs|rends|frenzies on) (.+?) for (\d+) points? of damage\.$`)
+	reThirdPartyHit = regexp.MustCompile(`^(.+?) (slashes|slices|crushes|pierces|bashes|punches|kicks|slams|bites|mauls|claws|gores|stings|jabs|gouges|smashes|hits|strikes|backstabs|throws|shoots|fires|flings|chops|stabs|rends|frenzies on) (.+?) for (\d+) points? of damage\.$`)
 
 	// Combat — player misses NPC: "You try to slash a gnoll, but miss!"
 	reYouMiss = regexp.MustCompile(`^You try to (\w+) (.+?), but miss!$`)

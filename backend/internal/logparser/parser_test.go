@@ -536,6 +536,13 @@ func TestParseLine(t *testing.T) {
 			wantType: EventCombatHit,
 			wantData: CombatHitData{Actor: "Guildmate", Skill: "pierces", Target: "a young gnoll", Damage: 30},
 		},
+		{
+			name:     "combat: other player shoots NPC (ranged)",
+			line:     "[Mon Apr 13 06:00:00 2026] Playertwo shoots a gnoll for 245 points of damage.",
+			wantOK:   true,
+			wantType: EventCombatHit,
+			wantData: CombatHitData{Actor: "Playertwo", Skill: "shoots", Target: "a gnoll", Damage: 245},
+		},
 		// Multi-word NPC actors must be captured intact. The verb-anchored
 		// regex covers article-prefixed mobs ("an orc warrior") as well as
 		// proper-noun multi-word NPCs ("Sambata Tribal Member", "Enchanted
