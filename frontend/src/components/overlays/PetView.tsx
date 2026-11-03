@@ -18,7 +18,7 @@ import { AlertTriangle, ExternalLink, PawPrint, Search } from 'lucide-react'
 import TargetTimerList from './TargetTimerList'
 import { SpellIcon } from '../Icon'
 import { usePetDPS, usePetOverlaySettings, usePetTimers } from '../../hooks/usePetState'
-import { dpsModeAbbrev } from '../../hooks/useDPSMode'
+import { dpsModeAbbrev, useDPSMode } from '../../hooks/useDPSMode'
 import { useCharmFinder, type CharmFinderHook } from '../../hooks/useCharmFinder'
 import { usePersistentState } from '../../hooks/usePersistentState'
 import { useAppNavigate } from '../../hooks/useAppNavigate'
@@ -109,7 +109,7 @@ function PetCard({
       </Section>
 
       {s && <StatsLine stats={s} />}
-      <PetDPSLine name={state.name} />
+      <PetDPSLine name={state.name} owner={state.owner} />
       {s ? (
         <Badges stats={s} />
       ) : (
@@ -296,9 +296,18 @@ function StatsLine({ stats: s }: { stats: PetStats }): React.ReactElement {
 
 // PetDPSLine shows the pet's damage in the current fight (or the last one,
 // marked as such) under the DPS meter's mode, and its share of your damage.
-function PetDPSLine({ name }: { name?: string }): React.ReactElement | null {
-  const d = usePetDPS(name)
-  if (!d) return null
+// Before the pet has hit anything it holds its place with a dash.
+function PetDPSLine({ name, owner }: { name?: string; owner?: string }): React.ReactElement {
+  const d = usePetDPS(name, owner)
+  const { mode } = useDPSMode()
+  if (!d) {
+    return (
+      <div style={{ fontSize: 11, fontVariantNumeric: 'tabular-nums' }}>
+        <span style={{ color: MUTED }}>Pet {dpsModeAbbrev(mode)}</span>{' '}
+        <span style={{ color: FAINT }}>— no damage yet</span>
+      </div>
+    )
+  }
   return (
     <div style={{ fontSize: 11, fontVariantNumeric: 'tabular-nums', opacity: d.live ? 1 : 0.6 }}>
       <span style={{ color: MUTED }}>Pet {dpsModeAbbrev(d.mode)}</span>{' '}
@@ -377,8 +386,14 @@ function useUntimedEffects(
   if (!health) return { untimed: [], age: null }
   const age = Math.max(0, Math.round((now - Date.parse(health.at)) / 1000))
   if (age > UNTIMED_TTL_SECS) return { untimed: [], age }
-  const timed = new Set(timers.map((t) => foldSpell(t.spell_name)))
-  if (charm) timed.add(foldSpell(charm.spell_name))
+  const timed = new Set<string>()
+  for (const t of charm ? [...timers, charm] : timers) {
+    timed.add(foldSpell(t.spell_name))
+    // A combined land-group timer ("Speed of the Shissar/Brood") covers the
+    // spell /pet health names in full.
+    const slash = t.spell_name.indexOf('/')
+    if (slash > 0) timed.add(foldSpell(t.spell_name.slice(0, slash)))
+  }
   const untimed = health.spells.filter((sp) => !sp.charm && !timed.has(foldSpell(sp.name)))
   return { untimed, age }
 }

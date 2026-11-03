@@ -82,6 +82,8 @@ export interface PetState {
   swap_at?: string
   zone?: string
   zone_name?: string
+  // The active character's name — the owner_name on the pet's DPS row.
+  owner?: string
   zeal_limited: boolean
   updated_at: string
 }

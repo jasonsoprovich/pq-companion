@@ -140,6 +140,11 @@ type State struct {
 	Zone     string `json:"zone,omitempty"`
 	ZoneName string `json:"zone_name,omitempty"`
 
+	// Owner is the active character's name: the combat tracker's owner_name
+	// for the pet's damage row, which the panel can't learn from the fight
+	// when the player dealt no damage of their own.
+	Owner string `json:"owner,omitempty"`
+
 	// ZealLimited is true while no Zeal pipe is connected: pet death can't be
 	// detected promptly and HP comes only from `/pet health`.
 	ZealLimited bool `json:"zeal_limited"`
@@ -266,7 +271,16 @@ func (t *Tracker) GetState() State {
 	defer t.mu.Unlock()
 	st := t.st
 	st.Zone, st.ZoneName = t.zoneShort, t.zoneLong
+	st.Owner = t.ownerLocked()
 	return st
+}
+
+// ownerLocked returns the active character's name ("" without a provider).
+func (t *Tracker) ownerLocked() string {
+	if t.cfg.ActiveChar == nil {
+		return ""
+	}
+	return t.cfg.ActiveChar()
 }
 
 // ── Zeal pipe inputs ─────────────────────────────────────────────────────────
@@ -839,6 +853,7 @@ func (t *Tracker) commitLocked(changed bool) {
 		return
 	}
 	t.st.Zone, t.st.ZoneName = t.zoneShort, t.zoneLong
+	t.st.Owner = t.ownerLocked()
 	t.st.UpdatedAt = now
 	t.lastSentAt = now
 	if t.st.HPPercent != nil {

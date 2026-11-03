@@ -139,9 +139,11 @@ export interface PetDPS {
  * whose owner_name is the player's name — or "You" before the name is
  * known — so the row is matched on owner plus pet name, falling back to the
  * player's only pet row when the name differs (article casing, a renamed
- * pet). Null when the pet dealt no damage in that fight.
+ * pet). owner is the active character's name from pet:state: a caster who
+ * dealt no damage has no row of their own to learn it from. Null when the
+ * pet dealt no damage in that fight.
  */
-export function usePetDPS(petName: string | undefined): PetDPS | null {
+export function usePetDPS(petName: string | undefined, owner?: string): PetDPS | null {
   const [combat, setCombat] = useState<CombatState | null>(null)
   const { mode } = useDPSMode()
 
@@ -159,8 +161,12 @@ export function usePetDPS(petName: string | undefined): PetDPS | null {
     const fight = combat.current_fight ?? combat.recent_fights?.[0]
     const rows: EntityStats[] = fight?.combatants ?? []
     const you = rows.find((c) => c.is_you)
-    const owners = new Set(['You', you?.name].filter(Boolean) as string[])
-    const mine = rows.filter((c) => c.owner_name && owners.has(c.owner_name))
+    const owners = new Set(
+      ['You', you?.name, owner].filter(Boolean).map((n) => n!.toLowerCase()),
+    )
+    const mine = rows.filter(
+      (c) => c.owner_name && owners.has(c.owner_name.toLowerCase()),
+    )
     const want = normalizeTargetName(petName)
     const pet = mine.find((c) => normalizeTargetName(c.name) === want) ?? (mine.length === 1 ? mine[0] : undefined)
     if (!pet || pet.total_damage <= 0) return null
@@ -171,5 +177,5 @@ export function usePetDPS(petName: string | undefined): PetDPS | null {
       share: total > 0 ? pet.total_damage / total : 0,
       live,
     }
-  }, [combat, petName, mode])
+  }, [combat, petName, owner, mode])
 }
