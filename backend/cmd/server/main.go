@@ -1004,6 +1004,13 @@ func main() {
 	}
 	petTracker := petoverlay.New(petCfg)
 	go petTracker.Start(context.Background())
+	// A same-named mob's death mustn't clear the live pet's buff timers.
+	timerEngine.SetPetNameProvider(func() string {
+		if st := petTracker.GetState(); st.Mode == petoverlay.ModePet {
+			return st.Name
+		}
+		return ""
+	})
 
 	triggerEngine := trigger.NewEngine(triggerStore, hub, timerEngine, activeChar)
 	// {target}/{t} tokens in action text resolve to the NPC overlay's

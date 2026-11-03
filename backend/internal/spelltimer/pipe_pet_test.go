@@ -1,6 +1,9 @@
 package spelltimer
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func intp(n int) *int { return &n }
 
@@ -89,5 +92,38 @@ func TestResetPipePetID_DoesNotClearCharm(t *testing.T) {
 	}
 	if e.pipePetID != nil || e.pipePetMisses != 0 {
 		t.Errorf("ResetPipePetID left state: id=%v misses=%d", e.pipePetID, e.pipePetMisses)
+	}
+}
+
+// Charm pets are usually one of the zone's many same-named NPCs. A namesake's
+// death must not clear the buffs on the live pet, while debuffs under that
+// name (which could be on the mob that died) still clear as before.
+func TestRemoveOnKill_KeepsLivePetBuffs(t *testing.T) {
+	e := newTestEngine()
+	pet := "Rygan Anisher"
+	e.SetPetNameProvider(func() string { return pet })
+	now := time.Now()
+	e.timers[timerKey("Speed of the Shissar", "Rygan Anisher")] = &ActiveTimer{
+		SpellName: "Speed of the Shissar", TargetName: "Rygan Anisher", Category: CategoryBuff,
+		CastAt: now, StartsAt: now, ExpiresAt: now.Add(time.Hour),
+	}
+	e.timers[timerKey("Tashanian", "Rygan Anisher")] = &ActiveTimer{
+		SpellName: "Tashanian", TargetName: "Rygan Anisher", Category: CategoryDebuff,
+		CastAt: now, StartsAt: now, ExpiresAt: now.Add(time.Hour),
+	}
+
+	e.removeOnKill("Rygan Anisher", false, false)
+	if _, ok := e.timers[timerKey("Speed of the Shissar", "Rygan Anisher")]; !ok {
+		t.Error("namesake death cleared the live pet's buff")
+	}
+	if _, ok := e.timers[timerKey("Tashanian", "Rygan Anisher")]; ok {
+		t.Error("untagged debuff under the dead mob's name should still clear")
+	}
+
+	// No pet (or a different one): the buff clears like any other.
+	pet = ""
+	e.removeOnKill("Rygan Anisher", false, false)
+	if len(e.timers) != 0 {
+		t.Errorf("without a namesake pet the buff should clear, got %v", e.timers)
 	}
 }
