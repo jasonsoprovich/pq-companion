@@ -659,6 +659,19 @@ type Engine struct {
 	// single dropped frame doesn't read as "pet gone" — see SetPipePetID.
 	pipePetID     *int
 	pipePetMisses int
+	// pipePetFeedAt is when SetPipePetID last ran: a recent call means the
+	// pipe is reporting pet ids, so "no pet" from it is meaningful.
+	pipePetFeedAt time.Time
+
+	// pendingCharm is the player's in-flight charm cast awaiting its outcome
+	// (see charm.go); charmSeq numbers casts so a stale confirm is ignored.
+	pendingCharm *pendingCharm
+	charmSeq     uint64
+
+	// petNameFn reports the player's live pet name ("" when none), so a
+	// same-named mob's death doesn't clear the pet's buff timers. nil means
+	// no pet awareness.
+	petNameFn func() string
 
 	// nextStackIndex counts firings per spell name for stacking timers
 	// (StartExternal's stack param), giving each fired instance a unique,
@@ -673,6 +686,17 @@ type Engine struct {
 func (e *Engine) SetHiddenDetrimProvider(fn func(spellName string) bool) {
 	e.mu.Lock()
 	e.hiddenDetrimFn = fn
+	e.mu.Unlock()
+}
+
+// SetPetNameProvider wires the player's live pet name ("" when there is no
+// pet). removeOnKill uses it to keep the pet's buff timers when a same-named
+// mob dies — common with charm pets, which are usually one of the zone's
+// many identically named NPCs. fn must not call back into the engine while
+// holding its own lock: it is called without e.mu held.
+func (e *Engine) SetPetNameProvider(fn func() string) {
+	e.mu.Lock()
+	e.petNameFn = fn
 	e.mu.Unlock()
 }
 
@@ -862,6 +886,7 @@ func (e *Engine) Handle(ev logparser.LogEvent) {
 		e.lastCastAt = time.Now()
 		e.lastCastTarget = e.lastPipeTarget
 		e.lastCastTargetID = e.lastPipeTargetID
+		castTarget, castTargetID := e.lastCastTarget, e.lastCastTargetID
 		// Cross-check: if Zeal is reporting a different in-flight cast than
 		// the log, that's a parser miss worth investigating. Logged once per
 		// cast event so this can't spam during fast cast chains.
@@ -872,6 +897,7 @@ func (e *Engine) Handle(ev logparser.LogEvent) {
 				"log_spell", data.SpellName, "pipe_spell", pipeName, "ts", ev.Timestamp)
 		}
 		slog.Debug("timer-debug: spell-cast recorded (awaiting land)", "spell", data.SpellName, "ts", ev.Timestamp)
+		e.armCharm(ev.Timestamp, data.SpellName, castTarget, castTargetID)
 
 	case logparser.EventSpellLanded:
 		data, ok := ev.Data.(logparser.SpellLandedData)
@@ -891,6 +917,7 @@ func (e *Engine) Handle(ev logparser.LogEvent) {
 		e.lastCastAt = time.Time{}
 		e.lastCastTarget = ""
 		e.lastCastTargetID = 0
+		e.pendingCharm = nil
 		e.mu.Unlock()
 
 	case logparser.EventSpellFade:
@@ -938,6 +965,9 @@ func (e *Engine) Handle(ev logparser.LogEvent) {
 		// EventSpellFade path never sees it (the parser routes it here). Only
 		// one charm is active at a time, so clear every charm timer — the same
 		// charm-break signal the combat tracker uses to release the pet.
+		e.mu.Lock()
+		e.pendingCharm = nil
+		e.mu.Unlock()
 		e.removeCharmTimers()
 
 	case logparser.EventZone:
@@ -1190,6 +1220,7 @@ const petLossMissThreshold = 3
 // safe to call every frame and safe on any Zeal build.
 func (e *Engine) SetPipePetID(id *int) {
 	e.mu.Lock()
+	e.pipePetFeedAt = time.Now()
 	prev := e.pipePetID
 	var lost, changed bool
 	switch {
@@ -1223,6 +1254,7 @@ func (e *Engine) SetPipePetID(id *int) {
 // own expiry) is correct, not clearing the timer.
 func (e *Engine) ResetPipePetID() {
 	e.mu.Lock()
+	e.pipePetFeedAt = time.Time{}
 	e.pipePetID = nil
 	e.pipePetMisses = 0
 	e.mu.Unlock()
@@ -2676,6 +2708,15 @@ func (e *Engine) removeOnKill(target string, viaCorpseTarget bool, trustPipeTarg
 	}
 	normTarget := normalizeNPCName(target)
 	now := time.Now()
+	// The pet name is read before taking e.mu: the pet tracker's own lock
+	// is held while it calls back into the engine (ActiveCharm).
+	e.mu.Lock()
+	petNameFn := e.petNameFn
+	e.mu.Unlock()
+	petIsNamesake := false
+	if petNameFn != nil && !viaCorpseTarget {
+		petIsNamesake = normalizeNPCName(petNameFn()) == normTarget
+	}
 	e.mu.Lock()
 	knownDeadID := 0
 	if trustPipeTargetID {
@@ -2707,6 +2748,13 @@ func (e *Engine) removeOnKill(target string, viaCorpseTarget bool, trustPipeTarg
 			// timer (see the doc comment above removeOnKill).
 			match = !t.Stacked && normalizeNPCName(t.TargetName) == normTarget &&
 				(!t.IsCharm || viaCorpseTarget)
+			// The player's pet shares the dead mob's name and is still up.
+			// A buff under that name is the pet's (players don't buff the
+			// enemies), so a namesake's death leaves it alone. Debuffs can't
+			// be told apart and still clear.
+			if match && petIsNamesake && t.Category == CategoryBuff {
+				match = false
+			}
 		}
 		orphan := t.TargetName == "" && isDetrimentalCategory(t.Category) && !t.IsCharm
 		if match || orphan {
