@@ -790,10 +790,17 @@ These are inherent to log-file parsing and affect multiple features:
   the caster's worn slots); the log line on the recipient's side carries no
   caster identity or AA/gear state.
 - **Sources checked:** Log (land messages don't name the caster); DB (no
-  per-character data); Zeal (pipe reports buff slots but not durations).
-- **Could a future data source fix this?** **Partially** — a future Zeal
-  build exposing the client's real per-slot buff tick counts would make all
-  received-buff timers exact regardless of caster.
+  per-character data); Zeal (the label message's buff slots, labels 45–59
+  and song slots 135–140, carry the slot's spell name **and a `meta.ticks`
+  remaining-tick count**).
+- **Could a future data source fix this?** **Yes — the data already exists.**
+  The pipe's per-slot remaining ticks make your own buff timers exact
+  regardless of who cast them. PQ Companion does not read `meta.ticks` yet
+  (`zealpipe.Label.Meta` is decoded but unused). To do: confirm on a live
+  Windows capture that current Zeal fills it (fresh lands and song-window
+  slots may arrive without ticks), then let it override the formula timer.
+  This only covers *your* buffs; other players' buff slots are still not
+  exposed (§21.1).
 
 ### 11.3 Discipline reuse (cooldown) timers — RESOLVED
 
@@ -1476,6 +1483,26 @@ These are inherent to log-file parsing and affect multiple features:
 - **Sources checked:** Log (caster-less land text), Zeal (local client only).
 - **Could a future data source fix this?** No, not with the current Zeal
   pipe, which reports only the local client's casts.
+
+### 21.3 A leash or evade reset clears a mob's debuffs without any log line
+
+- **Limitation:** When a mob leashes or evades back to its spawn point, the
+  server strips every buff and debuff on it, but the detrimental timers keep
+  counting down as if the mob were still tashed/slowed/DoT'd. The overlay
+  shows debuffs the mob no longer has until they expire or the mob dies.
+- **Root cause:** EQMacEmu's leash path (`zone/mob_ai.cpp`, SpecialAbility
+  Leash and the PvP-zone leash; also the return-home path in
+  `mob_movement_manager.cpp`) calls `BuffFadeAll()`, whose `message`
+  parameter defaults to `false` (`zone/mob.h`, `zone/spells.cpp`), so no
+  "worn off" text is sent to anyone. The mob also returns to full HP, which
+  is the only visible hint.
+- **Sources checked:** Log (no fade or worn-off line is written), Zeal (the
+  pipe has no buff list for NPCs; only the target's HP%, which jumps back to
+  100), DB (`special_abilities` shows which mobs have Leash/Tether).
+- **Could a future data source fix this?** Partially. A manual "clear this
+  target's debuffs" control is the reliable answer. A heuristic is possible
+  for the current target only: a Zeal target-HP jump back to 100% on a mob
+  with the Leash ability, with no death line, likely means a reset.
 
 ---
 
