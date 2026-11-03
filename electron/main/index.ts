@@ -3426,14 +3426,39 @@ ipcMain.handle('overlay:rolltracker:toggle', () => {
 // shows a hidden window — the trigger overlay is hidden whenever it's idle.
 // Discord Voice goes last so it stays above the rest (issue #150).
 function reassertOverlaysOnTop(): void {
-  const wins = userPopoutWindows().filter((w) => w !== discordVoiceOverlayWindow)
-  if (triggerOverlayWindow) wins.push(triggerOverlayWindow)
-  if (discordVoiceOverlayWindow) wins.push(discordVoiceOverlayWindow)
-  for (const win of wins) {
-    if (win.isDestroyed()) continue
+  for (const win of overlaysInStackOrder()) {
     win.setAlwaysOnTop(true, 'screen-saver')
     if (win.isVisible()) win.moveTop()
   }
+}
+
+// Every overlay bottom-to-top: popouts, then the trigger overlay so alerts
+// sit above them, then Discord Voice so its roster stays above everything
+// (issue #150).
+function overlaysInStackOrder(): BrowserWindow[] {
+  const wins = userPopoutWindows().filter((w) => w !== discordVoiceOverlayWindow)
+  if (triggerOverlayWindow) wins.push(triggerOverlayWindow)
+  if (discordVoiceOverlayWindow) wins.push(discordVoiceOverlayWindow)
+  return wins.filter((w) => !w.isDestroyed())
+}
+
+// Re-raises every visible overlay to the top of the topmost band on an
+// interval. Being topmost isn't enough: another topmost window (the game, via
+// its windowed-mode wrapper) can be stacked above ours later, burying every
+// overlay while each still reports visible + topmost — the Grimrose reports,
+// where toggling an overlay off/on (a fresh window lands on top) is the only
+// recovery. The trigger and Discord Voice overlays already did this for the
+// same reason. moveTop() is SetWindowPos(HWND_TOP) with SWP_NOACTIVATE, so it
+// never takes focus from the game. It also passes SWP_SHOWWINDOW, hence the
+// isVisible() guard: hidden overlays (the idle trigger overlay) stay hidden.
+const OVERLAY_RAISE_INTERVAL_MS = 2000
+
+function startOverlayRaiseInterval(): void {
+  setInterval(() => {
+    for (const win of overlaysInStackOrder()) {
+      if (win.isVisible() && !win.isMinimized()) win.moveTop()
+    }
+  }, OVERLAY_RAISE_INTERVAL_MS)
 }
 
 function userPopoutWindows(): BrowserWindow[] {
@@ -4335,9 +4360,9 @@ app.whenReady().then(async () => {
   }
   // A display change (resolution/DPI change, a monitor waking) and a resume
   // or unlock are plausible points where Windows resets the topmost z-order
-  // band, leaving overlays open but buried behind the game. Only the trigger
-  // and Discord Voice windows reassert on an interval; every other overlay
-  // set topmost once at creation, so reassert all of them here.
+  // band, leaving overlays open but buried behind the game. The raise
+  // interval only re-stacks; these also re-apply the topmost flag itself.
+  startOverlayRaiseInterval()
   const onDisplayChanged = (): void => {
     console.log('[main] display layout changed; reasserting overlays')
     resizeTriggerOverlay()
