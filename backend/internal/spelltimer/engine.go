@@ -128,19 +128,18 @@ func isItemClicky(spell *db.Spell) bool {
 // different cases that the spell data can't tell apart: item clickies the
 // user triggered, OTHER players' item clickies, and NPC-only buffs/recourses
 // (e.g. Fiery Might, Harmonize, Shroud of Pain Recourse — all target-self,
-// all classes 255). The only signal that distinguishes "mine" from "someone
-// else's" is where the spell landed: the user triggered a clicky by clicking
-// the item, so it lands on *them*. We therefore exempt an all-classes-255
-// spell from the filter ONLY when it lands on the active player. Without the
-// isSelfTarget gate, scope=anyone surfaces every clicky and NPC self-buff
-// cast by anyone in the zone, flooding the overlay with spells the user's
-// class can't cast. (This exemption is effectively inert for detrimentals,
-// which almost never land on the caster themselves.)
-func classFilterAllowsSpell(spell *db.Spell, isSelfTarget, enabled bool, classIdx int) bool {
+// all classes 255). Two signals distinguish "mine" from "someone else's":
+// the spell landed on the active player (a self clicky), or it matches the
+// player's own recent "You begin casting" line (a targeted clicky such as the
+// enchanter epic's Speed of the Shissar cast on a pet or groupmate — see
+// recentSelfCastMatches). mine carries either. Without that gate,
+// scope=anyone surfaces every clicky and NPC self-buff cast by anyone in the
+// zone, flooding the overlay with spells the user's class can't cast.
+func classFilterAllowsSpell(spell *db.Spell, mine, enabled bool, classIdx int) bool {
 	if !enabled {
 		return true
 	}
-	if isItemClicky(spell) && isSelfTarget {
+	if isItemClicky(spell) && mine {
 		return true
 	}
 	if classIdx < 0 || classIdx >= len(spell.ClassLevels) {
@@ -1904,9 +1903,12 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 	// (Coldain Insignia Ring) and friends still reach the buff overlay. The
 	// isSelfTarget gate keeps OTHER players' clickies and NPC
 	// self-buffs/recourses out of the overlay under scope=anyone — see
-	// classFilterAllowsSpell.
+	// classFilterAllowsSpell. A clicky the player aimed at someone else
+	// (Staff of the Serpent's Speed of the Shissar on a pet) counts as theirs
+	// via castByMe.
+	castByMe := e.recentSelfCastMatches(spellName, target, isSingleTargetSpellType(spell.TargetType))
 	if e.classFilterFn != nil {
-		if enabled, classIdx := e.classFilterFn(); !classFilterAllowsSpell(spell, isSelfTarget, enabled, classIdx) {
+		if enabled, classIdx := e.classFilterFn(); !classFilterAllowsSpell(spell, isSelfTarget || castByMe, enabled, classIdx) {
 			slog.Debug("timer-debug: spell-landed skipped (class filter)",
 				"spell", spellName, "target", target, "category", cat, "class_idx", classIdx)
 			return
@@ -1921,7 +1923,6 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 		return
 	}
 
-	castByMe := e.recentSelfCastMatches(spellName, target, isSingleTargetSpellType(spell.TargetType))
 	durationTicks := SpellDurationTicks(spell, e.casterLevelFor(spell, castByMe, target, landedAt))
 	if durationTicks <= 0 {
 		slog.Debug("timer-debug: landed spell has zero duration (no timer created)",
@@ -2186,9 +2187,12 @@ var ambiguousLandGroups = []ambiguousLandGroup{
 	{
 		// 1939 Speed of the Shissar (single) + 2895 Speed of the Brood (group)
 		// — identical "...body pulses with the spirit of the Shissar." text.
+		// 2692 Beta Shissar is a later quarm.db copy with the same text and
+		// duration; without it the candidate set no longer matched exactly
+		// and every unattributed land was dropped.
 		displayName: "Speed of the Shissar/Brood",
 		repSpellID:  1939,
-		memberIDs:   map[int]bool{1939: true, 2895: true},
+		memberIDs:   map[int]bool{1939: true, 2692: true, 2895: true},
 	},
 	{
 		// 64 Resist Magic, 72 Group Resist Magic, 964 Resistance to Magic,

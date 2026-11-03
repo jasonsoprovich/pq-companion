@@ -38,14 +38,17 @@ func TestClassFilterAllowsSpell(t *testing.T) {
 	onClassBuff := &db.Spell{ClassLevels: enchanterCastable(), GoodEffect: 1}
 
 	tests := []struct {
-		name         string
-		spell        *db.Spell
-		isSelfTarget bool
-		enabled      bool
-		classIdx     int
-		want         bool
+		name     string
+		spell    *db.Spell
+		mine     bool
+		enabled  bool
+		classIdx int
+		want     bool
 	}{
 		{"my own clicky lands on me", clicky, true, true, enchanterClassIdx, true},
+		// mine also covers a clicky the player aimed at someone else (Staff
+		// of the Serpent's Speed of the Shissar on a pet).
+		{"my own clicky cast on my pet", clicky, true, true, enchanterClassIdx, true},
 		// The regression: other player's clicky / NPC self-buff under scope=anyone.
 		{"other player's clicky lands on them", clicky, false, true, enchanterClassIdx, false},
 		{"npc recourse on other (all 255)", clicky, false, true, enchanterClassIdx, false},
@@ -59,7 +62,7 @@ func TestClassFilterAllowsSpell(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := classFilterAllowsSpell(tc.spell, tc.isSelfTarget, tc.enabled, tc.classIdx)
+			got := classFilterAllowsSpell(tc.spell, tc.mine, tc.enabled, tc.classIdx)
 			if got != tc.want {
 				t.Errorf("classFilterAllowsSpell = %v, want %v", got, tc.want)
 			}
