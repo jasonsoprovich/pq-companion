@@ -42,6 +42,19 @@ func TestResolveActiveCharacterIgnoresReserved(t *testing.T) {
 	}
 }
 
+func TestDiscoverCharactersSkipsCopiedLogs(t *testing.T) {
+	dir := t.TempDir()
+	writeLog(t, dir, "Sandrian")
+	writeLog(t, dir, "Sandrian2")    // backup copy with a digit
+	writeLog(t, dir, "Sandrian (1)") // OS duplicate-file naming
+	writeLog(t, dir, "Sandrian-old") // hand-renamed backup
+
+	got := DiscoverCharacters(dir)
+	if len(got) != 1 || got[0].Name != "Sandrian" {
+		t.Fatalf("expected only Sandrian, got %+v", got)
+	}
+}
+
 func TestDiscoverCharactersEmptyPath(t *testing.T) {
 	if got := DiscoverCharacters(""); len(got) != 0 {
 		t.Fatalf("expected empty, got %+v", got)

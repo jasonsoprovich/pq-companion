@@ -17,6 +17,23 @@ var reservedLogNames = map[string]bool{
 	"everquest": true,
 }
 
+// isCharacterName reports whether name could be an EverQuest character name.
+// EQ names are letters only, so a log whose name part has digits, spaces or
+// punctuation is a copy or backup left in the folder (eqlog_Name2_pq.proj.txt,
+// eqlog_Name (1)_pq.proj.txt), not a character. Treating it as one would add a
+// phantom character that replays an old log as if it were live.
+func isCharacterName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for _, r := range name {
+		if (r < 'A' || r > 'Z') && (r < 'a' || r > 'z') {
+			return false
+		}
+	}
+	return true
+}
+
 // DiscoveredCharacter describes a character found on disk via their EQ log file.
 type DiscoveredCharacter struct {
 	// Name is the character name (no server suffix).
@@ -48,7 +65,7 @@ func DiscoverCharacters(eqPath string) []DiscoveredCharacter {
 		base := filepath.Base(path)
 		name := strings.TrimPrefix(base, "eqlog_")
 		name = strings.TrimSuffix(name, "_pq.proj.txt")
-		if name == "" || reservedLogNames[strings.ToLower(name)] {
+		if !isCharacterName(name) || reservedLogNames[strings.ToLower(name)] {
 			continue
 		}
 		out = append(out, DiscoveredCharacter{
