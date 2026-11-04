@@ -387,6 +387,12 @@ func (t *Tracker) Handle(ev logparser.LogEvent) {
 			// can attribute. Incoming and third-party hits are ignored.
 			return
 		}
+		if logparser.IsFinishingBlow(data) {
+			// Instant-kill specials log a fixed ~32000. That isn't the hate the
+			// hit generated, and the mob is dead anyway; counted, one would
+			// swamp every other line on the meter.
+			return
+		}
 		switch {
 		case data.Skill == "spell":
 			// Direct spell damage — our own nuke, or a weapon proc. Hate is the

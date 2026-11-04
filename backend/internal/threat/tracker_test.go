@@ -156,6 +156,16 @@ func TestDamageAccumulatesPerMob(t *testing.T) {
 	}
 }
 
+func TestFinishingBlowGeneratesNoHate(t *testing.T) {
+	tr := NewTracker(nil, nil, nil)
+	t0 := time.Now()
+	tr.Handle(hit("a gnoll", 100, t0))
+	tr.Handle(hit("a gnoll", 32000, t0.Add(time.Second)))
+	if got := hateFor(tr.GetState(), "a gnoll"); got != 100 {
+		t.Errorf("a gnoll hate = %d, want 100", got)
+	}
+}
+
 func TestIncomingAndThirdPartyDamageIgnored(t *testing.T) {
 	tr := NewTracker(nil, nil, nil)
 	t0 := time.Now()

@@ -140,31 +140,12 @@ type internalEntity struct {
 	dsDamage int64
 
 	// finishingBlows counts this attacker's melee hits at or above
-	// finishingBlowMin. They are left out of totalDamage/hitCount/maxHit; see
-	// isFinishingBlow.
+	// logparser.FinishingBlowMin. They are left out of totalDamage/hitCount/
+	// maxHit; see logparser.IsFinishingBlow.
 	finishingBlows int
 
 	firstActivity time.Time
 	lastActivity  time.Time
-}
-
-// finishingBlowMin is the melee damage at and above which a hit is treated as
-// an instant-kill special (finishing blow, slay, assassinate) rather than a
-// swing. These log as an ordinary melee line with a fixed huge number —
-// "Playerone backstabs a mob for 32000 points of damage.", "Playertwo pierces
-// a mob for 32011 points of damage." — far beyond the mob's
-// remaining HP, and no real swing comes anywhere near it. Counted as damage, a
-// single one can double an attacker's total for the fight.
-const finishingBlowMin = 32000
-
-// isFinishingBlow reports whether an outgoing hit is an instant-kill special
-// that should be counted, not added to damage. Spell and DoT damage is never
-// treated this way: only melee and ranged lines carry the fixed number.
-func isFinishingBlow(data logparser.CombatHitData) bool {
-	if data.Damage < finishingBlowMin {
-		return false
-	}
-	return data.Skill != "spell" && data.Skill != "dot"
 }
 
 // internalHealer accumulates raw heal data for one healer inside an active
@@ -1200,9 +1181,9 @@ func (t *Tracker) recordHit(ts time.Time, data logparser.CombatHitData) {
 			ent = &internalEntity{}
 			f.outgoing[data.Actor] = ent
 		}
-		if isFinishingBlow(data) {
+		if logparser.IsFinishingBlow(data) {
 			// Counted, never added: the fixed number is not damage the
-			// attacker dealt in any meaningful sense (see finishingBlowMin).
+			// attacker dealt in any meaningful sense (see logparser.FinishingBlowMin).
 			ent.finishingBlows++
 		} else {
 			ent.totalDamage += int64(data.Damage)
