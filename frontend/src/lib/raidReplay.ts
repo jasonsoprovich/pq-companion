@@ -5,6 +5,10 @@
 
 import type { RaidEvent, RaidFrame } from '../types/raidReplay'
 
+// RETENTION_CHOICES are the "keep recordings for" options in days; -1 (keep
+// forever) is offered alongside.
+export const RETENTION_CHOICES = [7, 14, 30, 60, 90]
+
 // MAX_GAP_MS is the longest gap interpolated across. A raider missing for
 // longer (zoned out, a recording gap) is shown at their last frame instead
 // of sliding across the map.

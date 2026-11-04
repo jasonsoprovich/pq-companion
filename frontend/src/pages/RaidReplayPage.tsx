@@ -11,7 +11,7 @@ import {
   listRaidSessions,
   saveConfigChanges,
 } from '../services/api'
-import { lastSeenAt, raidersAt, recentDeaths } from '../lib/raidReplay'
+import { RETENTION_CHOICES, lastSeenAt, raidersAt, recentDeaths } from '../lib/raidReplay'
 import type { Config, DPSClassColors } from '../types/config'
 import type { RaidRecording, RaidSession } from '../types/raidReplay'
 
@@ -23,7 +23,6 @@ import type { RaidRecording, RaidSession } from '../types/raidReplay'
 const ZoneMap3D = lazy(() => import('../components/maps/ZoneMap3D'))
 
 const SPEEDS = [1, 4, 16, 60]
-const RETENTION_CHOICES = [7, 14, 30, 60, 90]
 
 // Zeal class ids are 1-indexed in this order.
 const CLASS_KEYS: (keyof DPSClassColors)[] = [

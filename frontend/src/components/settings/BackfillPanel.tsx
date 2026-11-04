@@ -1,15 +1,18 @@
 import React, { useEffect, useState } from 'react'
-import { Archive, DatabaseBackup, RefreshCw, AlertTriangle, CheckCircle2, AlertCircle, Clock } from 'lucide-react'
+import { Archive, DatabaseBackup, RefreshCw, AlertTriangle, CheckCircle2, AlertCircle, Clock, Film } from 'lucide-react'
 import {
   getBackfillInfo,
   getConfig,
   updateConfig,
+  saveConfigChanges,
   compressLegacyArchives,
   type BackfillSection,
   type BackfillArchiveInfo,
   type BackfillScope,
 } from '../../services/api'
 import { DEV_SKILLS } from '../../lib/devFlags'
+import { RETENTION_CHOICES } from '../../lib/raidReplay'
+import type { Config } from '../../types/config'
 import { useEscapeToClose } from '../../hooks/useEscapeToClose'
 import { useBackfill } from '../../contexts/BackfillContext'
 
@@ -107,6 +110,7 @@ export default function BackfillPanel(): React.ReactElement {
   return (
     <>
       <ChatRetentionCard />
+      <RaidReplayRetentionCard />
 
       {(totalLegacy > 0 || legacyState === 'done' || legacyState === 'error') && (
         <section
@@ -461,6 +465,59 @@ function ChatRetentionCard(): React.ReactElement {
             <CheckCircle2 size={12} /> Saved
           </span>
         )}
+      </div>
+    </section>
+  )
+}
+
+// RaidReplayRetentionCard mirrors the Raid Replay page's recording controls:
+// whether raids are recorded, and how long recordings are kept before the
+// daily cleanup. Saves on change.
+function RaidReplayRetentionCard(): React.ReactElement {
+  const [cfg, setCfg] = useState<Config | null>(null)
+  useEffect(() => {
+    getConfig().then(setCfg).catch(() => {})
+  }, [])
+  const rr = cfg?.raid_replay ?? { disabled: false, retention_days: 30 }
+  const save = (next: { disabled: boolean; retention_days: number }): void => {
+    if (!cfg) return
+    saveConfigChanges({ ...cfg, raid_replay: next }, cfg).then(setCfg).catch(() => {})
+  }
+  return (
+    <section
+      className="rounded-lg p-4"
+      style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+    >
+      <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
+        <Film size={13} /> Raid Replay recordings
+      </h2>
+      <p className="mb-3 text-xs leading-relaxed" style={{ color: 'var(--color-muted-foreground)' }}>
+        With Zeal running, raid positions are recorded for Parsing → Raid Replay (about 1.5 MB for a 4-hour
+        raid). Recordings older than this are deleted by a daily cleanup.
+      </p>
+      <div className="flex flex-wrap items-center gap-4">
+        <label className="flex cursor-pointer items-center gap-2 text-sm" style={{ color: 'var(--color-foreground)' }}>
+          <input
+            type="checkbox"
+            checked={!rr.disabled}
+            disabled={!cfg}
+            onChange={(e) => save({ ...rr, disabled: !e.target.checked })}
+          />
+          Record raids
+        </label>
+        <label className="flex items-center gap-2 text-sm" style={{ color: 'var(--color-foreground)' }}>
+          Keep
+          <select
+            value={rr.retention_days || 30}
+            disabled={!cfg}
+            onChange={(e) => save({ ...rr, retention_days: Number(e.target.value) })}
+            className="rounded px-2 py-1 text-sm outline-none disabled:opacity-50"
+            style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
+          >
+            {RETENTION_CHOICES.map((d) => <option key={d} value={d}>{d} days</option>)}
+            <option value={-1}>forever</option>
+          </select>
+        </label>
       </div>
     </section>
   )
