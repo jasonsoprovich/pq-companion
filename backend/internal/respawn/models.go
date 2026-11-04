@@ -54,6 +54,16 @@ type RespawnTimer struct {
 	// points that already have a timer. See Engine.placeSpawnLocked.
 	SpawnID int `json:"spawn_id,omitempty"`
 
+	// Instance is the zone copy the kill happened in: the zone server's
+	// "host:port" from the client's dbg.txt (see logparser.ZoneCopyReader).
+	// Empty when the copy wasn't known. Two copies of a zone have their own
+	// spawns, so a timer from one doesn't apply to the other.
+	Instance string `json:"instance,omitempty"`
+
+	// OtherCopy is set in a snapshot when the timer is for the player's
+	// current zone but a different copy of it.
+	OtherCopy bool `json:"other_copy,omitempty"`
+
 	// Pinned marks a timer the player has flagged as their camp/farm target
 	// (see Engine.TogglePin). Pinned timers sort first, are never auto-pruned
 	// after they pop, and hand the pin off to a later kill at the same spot
@@ -95,8 +105,11 @@ type RespawnState struct {
 	Timers []RespawnTimer `json:"timers"`
 	// CurrentZone is the player's current zone short_name, so the UI can
 	// emphasise rows for where the player is standing. Empty when unknown.
-	CurrentZone string    `json:"current_zone"`
-	LastUpdated time.Time `json:"last_updated"`
+	CurrentZone string `json:"current_zone"`
+	// CurrentInstance is the zone copy the player is in ("host:port"), when
+	// dbg.txt has named one for the current zone.
+	CurrentInstance string    `json:"current_instance,omitempty"`
+	LastUpdated     time.Time `json:"last_updated"`
 	// InstanceMode is a user-toggled flag (see Engine.SetInstanceMode). When
 	// true, newly started timers use the raw spawn2.respawntime instead of
 	// Quarm's fast-respawn reduction — correct for the Guild-1 PvP instance,

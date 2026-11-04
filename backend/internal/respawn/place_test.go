@@ -52,7 +52,7 @@ func TestPlaceSpawn(t *testing.T) {
 			e := NewEngine(nil, nil)
 			tc.setup(e)
 			e.mu.Lock()
-			got := e.placeSpawnLocked("z", "a gnoll", infos, now)
+			got := e.placeSpawnLocked("z", "", "a gnoll", infos, now)
 			e.mu.Unlock()
 			if got != tc.want {
 				t.Fatalf("spawn = %d, want %d", got, tc.want)

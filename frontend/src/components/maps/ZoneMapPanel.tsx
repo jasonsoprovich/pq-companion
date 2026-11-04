@@ -386,7 +386,7 @@ export function ZoneMapPanel({
   const spawnDots = useMemo((): SpawnDot[] => {
     const bySpawn = new Map<number, number>()
     for (const t of respawns?.timers ?? []) {
-      if (t.zone !== zoneShortName || !t.spawn_id) continue
+      if (t.zone !== zoneShortName || !t.spawn_id || t.other_copy) continue
       const prev = bySpawn.get(t.spawn_id)
       if (prev === undefined || t.remaining_seconds < prev) bySpawn.set(t.spawn_id, t.remaining_seconds)
     }

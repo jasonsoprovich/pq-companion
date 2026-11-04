@@ -83,6 +83,10 @@ type Engine struct {
 	targetX, targetY float64
 	targetAt         time.Time
 
+	// The zone copy the client is in, from dbg.txt (see SetZoneCopy).
+	// copyToken applies only while copyZone is the current zone.
+	copyZone, copyToken string
+
 	// instanceMode is a manual, session-only override (see SetInstanceMode).
 	instanceMode bool
 
@@ -207,6 +211,46 @@ func (e *Engine) SetPipeTargetLocAt(name string, x, y float64, at time.Time) {
 	e.mu.Unlock()
 }
 
+// SetZoneCopy records the zone copy the client is in, from dbg.txt: the zone
+// short name and its server's "host:port" (empty when unknown). Kills in that
+// zone are tagged with the copy, and timers from another copy of the zone are
+// kept apart from the player's.
+func (e *Engine) SetZoneCopy(zone, token string) {
+	e.mu.Lock()
+	e.copyZone, e.copyToken = zone, token
+	snap := e.snapshot(time.Now())
+	e.mu.Unlock()
+	e.hub.Broadcast(ws.Event{Type: WSEventRespawns, Data: snap})
+}
+
+// copyForLocked returns the current copy token when it's for zone. Caller
+// must hold e.mu.
+func (e *Engine) copyForLocked(zone string) string {
+	if zone == "" || e.copyZone != zone {
+		return ""
+	}
+	return e.copyToken
+}
+
+// sameCopy reports whether two copy tokens can be the same zone copy. An
+// unknown copy matches any.
+func sameCopy(a, b string) bool {
+	return a == "" || b == "" || a == b
+}
+
+// inCopy reports whether t is in zone and could be in copy inst.
+func (t *RespawnTimer) inCopy(zone, inst string) bool {
+	return t.Zone == zone && sameCopy(t.Instance, inst)
+}
+
+// numberKey is the per-zone-copy+name key for label numbering.
+func numberKey(zone, inst, name string) string {
+	if inst != "" {
+		zone += "@" + inst
+	}
+	return zone + keySep + name
+}
+
 // targetLocFresh is how long a target position stays usable for placing a
 // kill. A corpse keeps its location, but the last live reading before the
 // kill line is what matters, and the line can trail it by a second or two.
@@ -216,11 +260,12 @@ const targetLocFresh = 10 * time.Second
 // from: of the candidate points (infos) without a running timer, the one
 // nearest the mob's target position, or the player's position when the
 // target position isn't known. A single free candidate needs no position.
-// Returns 0 when there is nothing to go on. Caller must hold e.mu.
-func (e *Engine) placeSpawnLocked(zone, name string, infos []db.RespawnInfo, diedAt time.Time) int {
+// Only timers in the same zone copy (inst) hold a point. Returns 0 when there
+// is nothing to go on. Caller must hold e.mu.
+func (e *Engine) placeSpawnLocked(zone, inst, name string, infos []db.RespawnInfo, diedAt time.Time) int {
 	taken := map[int]bool{}
 	for _, t := range e.timers {
-		if t.Zone == zone && t.SpawnID != 0 && diedAt.Before(t.RespawnAt) {
+		if t.inCopy(zone, inst) && t.SpawnID != 0 && diedAt.Before(t.RespawnAt) {
 			taken[t.SpawnID] = true
 		}
 	}
@@ -363,10 +408,14 @@ func (e *Engine) onKill(displayName string, diedAt time.Time) {
 	}
 
 	e.mu.Lock()
-	key := zoneShort + keySep + displayName
+	inst := e.copyForLocked(zoneShort)
+	key := numberKey(zoneShort, inst, displayName)
 	e.nextIndex[key]++
 	idx := e.nextIndex[key]
 	id := fmt.Sprintf("%s|%s|%d", zoneShort, displayName, idx)
+	if inst != "" {
+		id = fmt.Sprintf("%s@%s|%s|%d", zoneShort, inst, displayName, idx)
+	}
 	newTimer := &RespawnTimer{
 		ID:              id,
 		NPCName:         displayName,
@@ -380,15 +429,16 @@ func (e *Engine) onKill(displayName string, diedAt time.Time) {
 		Ambiguous:       ambiguous,
 		MinSeconds:      minS,
 		MaxSeconds:      maxS,
+		Instance:        inst,
 	}
 	if hasPos {
 		newTimer.killX, newTimer.killY, newTimer.hasKillPos = posX, posY, true
 	}
-	newTimer.SpawnID = e.placeSpawnLocked(zoneShort, displayName, infos, diedAt)
+	newTimer.SpawnID = e.placeSpawnLocked(zoneShort, inst, displayName, infos, diedAt)
 	handoffFrom := ""
 	var match *RespawnTimer
 	if e.pinHandoffOn() {
-		match = e.claimPinLocked(zoneShort, displayName, hasPos, posX, posY, diedAt)
+		match = e.claimPinLocked(zoneShort, inst, displayName, hasPos, posX, posY, diedAt)
 	}
 	if match != nil {
 		newTimer.Pinned = true
@@ -468,7 +518,8 @@ func summarize(infos []db.RespawnInfo) (estimate int, ambiguous bool, minS, maxS
 	return estimate, ambiguous, minS, maxS, npcID
 }
 
-// claimPinLocked looks for a pinned, already-popped timer in zone that a new
+// claimPinLocked looks for a pinned, already-popped timer in zone copy
+// (zone, inst) that a new
 // kill of name should inherit the pin from, and returns it without removing
 // it (the caller deletes it once the new timer is inserted). Returns nil if
 // nothing matches. Caller must hold e.mu.
@@ -481,12 +532,12 @@ func summarize(infos []db.RespawnInfo) (estimate int, ambiguous bool, minS, maxS
 // against, so the match falls back to same name only, oldest death first.
 // A pinned timer that hasn't popped yet is never a candidate — it's still
 // tracking its own mob.
-func (e *Engine) claimPinLocked(zone, name string, hasPos bool, x, y float64, now time.Time) *RespawnTimer {
+func (e *Engine) claimPinLocked(zone, inst, name string, hasPos bool, x, y float64, now time.Time) *RespawnTimer {
 	if hasPos {
 		var best *RespawnTimer
 		bestDist := anchorRadiusSquared
 		for _, t := range e.timers {
-			if !t.Pinned || t.Zone != zone || !t.hasAnchor || !now.After(t.RespawnAt) {
+			if !t.Pinned || !t.inCopy(zone, inst) || !t.hasAnchor || !now.After(t.RespawnAt) {
 				continue
 			}
 			dx, dy := x-t.anchorX, y-t.anchorY
@@ -499,7 +550,7 @@ func (e *Engine) claimPinLocked(zone, name string, hasPos bool, x, y float64, no
 
 	var best *RespawnTimer
 	for _, t := range e.timers {
-		if !t.Pinned || t.Zone != zone || t.NPCName != name || !now.After(t.RespawnAt) {
+		if !t.Pinned || !t.inCopy(zone, inst) || t.NPCName != name || !now.After(t.RespawnAt) {
 			continue
 		}
 		if best == nil || t.DiedAt.Before(best.DiedAt) {
@@ -570,9 +621,10 @@ func (e *Engine) PinLatestInCurrentZone() bool {
 		return false
 	}
 	e.mu.Lock()
+	inst := e.copyForLocked(zoneShort)
 	var latest *RespawnTimer
 	for _, t := range e.timers {
-		if t.Zone != zoneShort {
+		if !t.inCopy(zoneShort, inst) {
 			continue
 		}
 		if latest == nil || t.DiedAt.After(latest.DiedAt) {
@@ -749,7 +801,7 @@ func (e *Engine) pruneExpired() {
 func (e *Engine) resetEmptyIndexesLocked() {
 	active := make(map[string]bool, len(e.timers))
 	for _, t := range e.timers {
-		active[t.Zone+keySep+t.NPCName] = true
+		active[numberKey(t.Zone, t.Instance, t.NPCName)] = true
 	}
 	for key := range e.nextIndex {
 		if !active[key] {
@@ -771,6 +823,7 @@ func (e *Engine) snapshot(now time.Time) RespawnState {
 	if curZone == "" {
 		curZone = e.logZoneShort
 	}
+	curInst := e.copyForLocked(curZone)
 
 	timers := make([]RespawnTimer, 0, len(e.timers))
 	for _, t := range e.timers {
@@ -780,6 +833,7 @@ func (e *Engine) snapshot(now time.Time) RespawnState {
 		}
 		entry := *t
 		entry.RemainingSeconds = remaining
+		entry.OtherCopy = t.Zone == curZone && !sameCopy(t.Instance, curInst)
 		timers = append(timers, entry)
 	}
 
@@ -791,8 +845,8 @@ func (e *Engine) snapshot(now time.Time) RespawnState {
 		if timers[i].Pinned != timers[j].Pinned {
 			return timers[i].Pinned
 		}
-		iCur := timers[i].Zone == curZone
-		jCur := timers[j].Zone == curZone
+		iCur := timers[i].Zone == curZone && !timers[i].OtherCopy
+		jCur := timers[j].Zone == curZone && !timers[j].OtherCopy
 		if iCur != jCur {
 			return iCur
 		}
@@ -803,9 +857,10 @@ func (e *Engine) snapshot(now time.Time) RespawnState {
 	})
 
 	return RespawnState{
-		Timers:       timers,
-		CurrentZone:  curZone,
-		LastUpdated:  now,
-		InstanceMode: e.instanceMode,
+		Timers:          timers,
+		CurrentZone:     curZone,
+		CurrentInstance: curInst,
+		LastUpdated:     now,
+		InstanceMode:    e.instanceMode,
 	}
 }

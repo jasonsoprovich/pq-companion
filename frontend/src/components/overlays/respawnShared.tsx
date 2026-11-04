@@ -120,11 +120,13 @@ export function RespawnRow({ timer, currentZone, variant, showControls = true }:
   const color = barColor(timer.remaining_seconds, timer.duration_seconds)
   const popped = timer.remaining_seconds <= 0
   const otherZone = !!currentZone && timer.zone !== currentZone
+  const otherCopy = !otherZone && !!timer.other_copy
+  const dim = otherZone || otherCopy
   const label = String(timer.label_index).padStart(2, '0')
 
   const nameColor = win
-    ? otherZone ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,1)'
-    : otherZone ? 'var(--color-muted)' : 'var(--color-foreground)'
+    ? dim ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,1)'
+    : dim ? 'var(--color-muted)' : 'var(--color-foreground)'
   const mutedColor = win ? 'rgba(255,255,255,0.6)' : 'var(--color-muted)'
   const border = win ? '1px solid rgba(255,255,255,0.1)' : '1px solid var(--color-border)'
   const textShadow = win ? '0 1px 2px rgba(0,0,0,0.9)' : undefined
@@ -163,6 +165,14 @@ export function RespawnRow({ timer, currentZone, variant, showControls = true }:
           {otherZone && (
             <span style={{ fontSize: 10, color: mutedColor, flexShrink: 0, textShadow }}>
               [{timer.zone}]
+            </span>
+          )}
+          {otherCopy && (
+            <span
+              title={`Killed in another copy of this zone (server ${timer.instance}); its spawns are separate from yours`}
+              style={{ fontSize: 10, color: mutedColor, flexShrink: 0, textShadow }}
+            >
+              [other copy]
             </span>
           )}
           {timer.ambiguous && timer.min_seconds && timer.max_seconds ? (

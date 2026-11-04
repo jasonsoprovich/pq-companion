@@ -37,12 +37,21 @@ export interface RespawnTimer {
    * respawn dots.
    */
   spawn_id?: number
+  /**
+   * Zone copy the kill happened in: the zone server's "host:port" from the
+   * client's dbg.txt. Absent when the copy wasn't known.
+   */
+  instance?: string
+  /** True when this is the current zone but another copy of it. */
+  other_copy?: boolean
 }
 
 export interface RespawnState {
   timers: RespawnTimer[]
   /** Player's current zone short_name, so the UI can emphasise local rows. */
   current_zone: string
+  /** Zone copy the player is in ("host:port"), when dbg.txt names one. */
+  current_instance?: string
   last_updated: string
   /**
    * Manual override: when true, newly started timers use the raw

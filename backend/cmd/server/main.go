@@ -889,6 +889,14 @@ func main() {
 	respawnEngine.SetPinHandoffSource(func() bool { return cfgMgr.Get().Preferences.RespawnPinHandoff })
 	go respawnEngine.Start(context.Background())
 
+	// dbg.txt names the zone server of each zone-in, which tells copies of a
+	// zone apart; respawn timers are kept per copy.
+	zoneCopyReader := logparser.NewZoneCopyReader(cfgMgr, func(c logparser.ZoneCopy) {
+		slog.Info("respawn: zone copy", "zone", c.Zone, "server", c.Token)
+		respawnEngine.SetZoneCopy(c.Zone, c.Token)
+	})
+	go zoneCopyReader.Start(context.Background())
+
 	// Invalidate the engine's modifier cache whenever the Quarmy export is
 	// refreshed (new inventory or AAs). Without this, equipping/unequipping a
 	// focus item wouldn't take effect until the app restarts.

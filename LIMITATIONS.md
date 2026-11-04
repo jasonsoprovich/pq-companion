@@ -478,9 +478,17 @@ a future data source fix this?" column against the new capabilities.
 - **Root cause:** The log's "You have entered <Zone>." line carries only the
   zone name, not the instance type or instance ID. Zeal's `Player.zone` is a
   zone ID, not an instance descriptor.
-- **Sources checked:** Log (zone name only), Zeal (`Player.zone` = zone ID).
-- **Could a future data source fix this?** **No** unless Zeal exposes the
-  instance ID/type. Re-check on each Zeal release.
+- **Sources checked:** Log (zone name only), Zeal (`Player.zone` = zone ID),
+  `dbg.txt`.
+- **Partly resolved:** the client's `dbg.txt` names the zone server
+  (`host:port`) on each zone-in, which tells two running copies of a zone
+  apart. Respawn timers are kept per copy: a kill in another copy is tagged
+  "[other copy]", sorts after yours, and doesn't colour the map's respawn
+  dots. The port still says nothing about the instance's *type*, and the
+  server reuses ports, so a zone that shut down and restarted on the same
+  port looks like the same copy.
+- **Could a future data source fix this?** **No** for the type, unless Zeal
+  exposes the instance ID/type. Re-check on each Zeal release.
 
 ### 4.2 Respawn timers are inaccurate inside instances
 
