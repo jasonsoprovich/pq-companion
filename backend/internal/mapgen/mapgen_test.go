@@ -305,3 +305,54 @@ func TestSilhouette_IsBandedByHeight(t *testing.T) {
 		})
 	}
 }
+
+// TestLoadMesh3D checks the 3D view's mesh against real zones: every
+// material's texture is in the archive and decodes, and with the winding
+// reversed, ground faces up in the view's axes (x, -y, z). Only outdoor
+// zones can tell: an enclosed one has about as much ceiling as floor.
+func TestLoadMesh3D(t *testing.T) {
+	requireClient(t)
+	for _, tc := range []struct {
+		zone    string
+		outdoor bool
+	}{{"gfaydark", true}, {"akheva", false}, {"qeynos2", true}} {
+		zone := tc.zone
+		t.Run(zone, func(t *testing.T) {
+			m, err := mapgen.LoadMesh3D(clientDir, zone)
+			if err != nil {
+				t.Fatal(err)
+			}
+			tex, err := mapgen.LoadTextures(clientDir, zone)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, mat := range m.Materials {
+				if mat.Texture == "" {
+					continue
+				}
+				if _, err := mapgen.DecodeTexture(tex[mat.Texture], 256, mat.Kind == mapgen.MatMasked); err != nil {
+					t.Errorf("%s: %v", mat.Texture, err)
+				}
+			}
+			if !tc.outdoor {
+				return
+			}
+			var up, down float64
+			p := func(i uint32) (float64, float64) { return float64(m.Pos[3*i]), -float64(m.Pos[3*i+1]) }
+			for i := 0; i+2 < len(m.Idx); i += 3 {
+				ax, ay := p(m.Idx[i])
+				bx, by := p(m.Idx[i+1])
+				cx, cy := p(m.Idx[i+2])
+				nz := (bx-ax)*(cy-ay) - (by-ay)*(cx-ax)
+				if nz > 0 {
+					up += nz
+				} else {
+					down -= nz
+				}
+			}
+			if up < 2*down {
+				t.Errorf("upward area %.0f vs downward %.0f: winding looks reversed", up, down)
+			}
+		})
+	}
+}

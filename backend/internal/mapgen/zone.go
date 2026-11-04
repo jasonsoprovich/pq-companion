@@ -5,7 +5,6 @@ import (
 	"math"
 	"path/filepath"
 	"sort"
-	"strings"
 )
 
 // weldTolerance is the grid size, in world units, used to merge coincident
@@ -32,33 +31,9 @@ type Zone struct {
 
 // LoadZone reads <clientDir>/<shortName>.s3d and returns its welded geometry.
 func LoadZone(clientDir, shortName string) (*Zone, error) {
-	path := filepath.Join(clientDir, shortName+".s3d")
-	// Only the .wld entries are used; the textures are skipped.
-	arc, err := OpenArchiveFiles(path, func(name string) bool {
-		return strings.HasSuffix(strings.ToLower(name), ".wld")
-	})
+	w, err := loadZoneWLD(clientDir, shortName)
 	if err != nil {
 		return nil, err
-	}
-	raw, ok := arc[shortName+".wld"]
-	if !ok {
-		// A few archives name the main WLD differently; fall back to the only
-		// .wld that isn't one of the known auxiliary files.
-		for name, b := range arc {
-			l := strings.ToLower(name)
-			if strings.HasSuffix(l, ".wld") && l != "objects.wld" && l != "lights.wld" {
-				raw, ok = b, true
-				break
-			}
-		}
-	}
-	if !ok {
-		return nil, fmt.Errorf("%s: no zone .wld inside archive", shortName)
-	}
-
-	w, err := ParseWLD(raw)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", shortName, err)
 	}
 	z := &Zone{ShortName: shortName}
 	weld := newWelder(weldTolerance)

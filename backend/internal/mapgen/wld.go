@@ -41,16 +41,22 @@ type WLD struct {
 // Vec3 is a point in map space (see ToMapSpace for the axis convention).
 type Vec3 struct{ X, Y, Z float64 }
 
-// Triangle indexes three vertices in the owning mesh's vertex slice.
+// Triangle indexes three vertices in the owning mesh's vertex slice. Mat
+// indexes the mesh's material list (-1 when the mesh gives none).
 type Triangle struct {
 	Flags   uint16
 	A, B, C int
+	Mat     int
 }
 
-// Mesh is one 0x36 fragment's geometry.
+// Mesh is one 0x36 fragment's geometry. UVs holds a u, v pair per vertex
+// (zeros where the fragment has fewer texture coords than vertices), and
+// MaterialList is the 0-based index of its 0x31 fragment, or -1.
 type Mesh struct {
-	Vertices  []Vec3
-	Triangles []Triangle
+	Vertices     []Vec3
+	Triangles    []Triangle
+	UVs          []float32
+	MaterialList int
 }
 
 // ParseWLD decodes a .wld payload into fragments.
@@ -132,6 +138,7 @@ func parseMesh(b []byte, version uint32) (Mesh, error) {
 	if len(b) < headerBytes+20 {
 		return Mesh{}, fmt.Errorf("mesh payload too short (%d bytes)", len(b))
 	}
+	matList := int(int32(binary.LittleEndian.Uint32(b[4:]))) - 1
 	cx := float64(math.Float32frombits(binary.LittleEndian.Uint32(b[20:])))
 	cy := float64(math.Float32frombits(binary.LittleEndian.Uint32(b[24:])))
 	cz := float64(math.Float32frombits(binary.LittleEndian.Uint32(b[28:])))
@@ -143,6 +150,8 @@ func parseMesh(b []byte, version uint32) (Mesh, error) {
 	normalCount := u16(p + 4)
 	colorCount := u16(p + 6)
 	polyCount := u16(p + 8)
+	pieceCount := u16(p + 10)
+	polyTexCount := u16(p + 12)
 	scale := u16(p + 18)
 	p += 20
 
@@ -163,10 +172,25 @@ func parseMesh(b []byte, version uint32) (Mesh, error) {
 		p += 6
 	}
 
-	// Skip texture coords, normals and vertex colors — we only need geometry.
+	// Texture coords: int16 pairs over 256 in the old format, float32 pairs
+	// in the new. Normals and vertex colors are skipped.
 	texWidth := 4
 	if version == wldVerNew {
 		texWidth = 8
+	}
+	if texCoordCount < 0 || p+texCoordCount*texWidth > len(b) {
+		return Mesh{}, fmt.Errorf("texture coords past end of fragment")
+	}
+	uvs := make([]float32, 2*vertexCount)
+	for i := 0; i < texCoordCount && i < vertexCount; i++ {
+		q := p + i*texWidth
+		if version == wldVerNew {
+			uvs[2*i] = math.Float32frombits(binary.LittleEndian.Uint32(b[q:]))
+			uvs[2*i+1] = math.Float32frombits(binary.LittleEndian.Uint32(b[q+4:]))
+		} else {
+			uvs[2*i] = float32(int16(binary.LittleEndian.Uint16(b[q:]))) / 256
+			uvs[2*i+1] = float32(int16(binary.LittleEndian.Uint16(b[q+2:]))) / 256
+		}
 	}
 	p += texCoordCount*texWidth + normalCount*3 + colorCount*4
 	if p < 0 || p > len(b) {
@@ -176,21 +200,44 @@ func parseMesh(b []byte, version uint32) (Mesh, error) {
 	if p+polyCount*8 > len(b) {
 		return Mesh{}, fmt.Errorf("polygon block past end of fragment")
 	}
+	polys := p
+	p += polyCount * 8
+
+	// Polygon materials: runs of (polygon count, material index) covering the
+	// polygons in order, after the vertex pieces. Missing or short runs leave
+	// the remaining polygons without a material.
+	mats := make([]int, polyCount)
+	for i := range mats {
+		mats[i] = -1
+	}
+	p += max(pieceCount, 0) * 4 // vertex pieces
+	next := 0
+	for i := 0; i < polyTexCount && p+4 <= len(b); i++ {
+		n := int(binary.LittleEndian.Uint16(b[p:]))
+		m := int(binary.LittleEndian.Uint16(b[p+2:]))
+		p += 4
+		for j := 0; j < n && next < polyCount; j++ {
+			mats[next] = m
+			next++
+		}
+	}
+
 	tris := make([]Triangle, 0, polyCount)
 	for i := 0; i < polyCount; i++ {
+		q := polys + i*8
 		t := Triangle{
-			Flags: binary.LittleEndian.Uint16(b[p:]),
-			A:     int(binary.LittleEndian.Uint16(b[p+2:])),
-			B:     int(binary.LittleEndian.Uint16(b[p+4:])),
-			C:     int(binary.LittleEndian.Uint16(b[p+6:])),
+			Flags: binary.LittleEndian.Uint16(b[q:]),
+			A:     int(binary.LittleEndian.Uint16(b[q+2:])),
+			B:     int(binary.LittleEndian.Uint16(b[q+4:])),
+			C:     int(binary.LittleEndian.Uint16(b[q+6:])),
+			Mat:   mats[i],
 		}
-		p += 8
 		if t.A >= vertexCount || t.B >= vertexCount || t.C >= vertexCount {
 			continue // corrupt index; drop the face rather than the mesh
 		}
 		tris = append(tris, t)
 	}
-	return Mesh{Vertices: verts, Triangles: tris}, nil
+	return Mesh{Vertices: verts, Triangles: tris, UVs: uvs, MaterialList: matList}, nil
 }
 
 // Placement is a placed object instance from objects.wld, in map space. Used to

@@ -525,16 +525,30 @@ export function getMapZone(zone: string): Promise<MapZoneDetail> {
   return get<MapZoneDetail>(`/api/maps/zone/${encodeURIComponent(zone)}`)
 }
 
-// ZoneMesh3D is a zone's solid geometry from the user's own client files:
-// map-space x/y/z per vertex and triangle indices.
+// ZoneMesh3D is a zone's visible geometry from the user's own client files:
+// map-space x/y/z and texture u/v per vertex, and triangle indices in runs
+// that each use one material.
 export interface ZoneMesh3D {
   positions: Float32Array
+  uvs: Float32Array
   indices: Uint32Array
+  groups: { start: number; count: number; material: number }[]
+  materials: ZoneMaterial3D[]
 }
 
-// getZoneMesh3D fetches the 3D mesh (mapgen.EncodeMesh3D: "PQM1", vertex
-// count, index count, then float32 positions and uint32 indices). Resolves
-// null when the client has no s3d for the zone.
+// ZoneMaterial3D mirrors mapgen.Material3D. kind: 0 solid, 1 masked
+// (colour-keyed cutouts), 2 translucent (opacity applies), 3 additive glow.
+// texture is a file name for getZoneTextureUrl, or '' for none.
+export interface ZoneMaterial3D {
+  kind: 0 | 1 | 2 | 3
+  opacity: number
+  texture: string
+}
+
+// getZoneMesh3D fetches the 3D mesh (mapgen.Mesh3D.Encode: "PQM2"; vertex,
+// index, group and material counts; float32 positions and uvs, uint32
+// indices and groups; then the materials). Resolves null when the client has
+// no s3d for the zone.
 export async function getZoneMesh3D(zone: string): Promise<ZoneMesh3D | null> {
   const baseUrl = await getBackendBaseUrl()
   const res = await fetch(`${baseUrl}/api/maps/zone/${encodeURIComponent(zone)}/mesh`)
@@ -546,13 +560,44 @@ export async function getZoneMesh3D(zone: string): Promise<ZoneMesh3D | null> {
   const buf = await res.arrayBuffer()
   const view = new DataView(buf)
   const magic = String.fromCharCode(...new Uint8Array(buf, 0, 4))
-  if (magic !== 'PQM1') throw new Error(`mesh ${zone}: bad format`)
+  if (magic !== 'PQM2') throw new Error(`mesh ${zone}: bad format`)
   const verts = view.getUint32(4, true)
   const count = view.getUint32(8, true)
-  return {
-    positions: new Float32Array(buf, 12, verts * 3),
-    indices: new Uint32Array(buf, 12 + verts * 12, count),
+  const groupCount = view.getUint32(12, true)
+  const matCount = view.getUint32(16, true)
+  let p = 20
+  const positions = new Float32Array(buf, p, verts * 3)
+  p += verts * 12
+  const uvs = new Float32Array(buf, p, verts * 2)
+  p += verts * 8
+  const indices = new Uint32Array(buf, p, count)
+  p += count * 4
+  const g = new Uint32Array(buf, p, groupCount * 3)
+  p += groupCount * 12
+  const groups = []
+  for (let i = 0; i < groupCount; i++) {
+    groups.push({ start: g[i * 3], count: g[i * 3 + 1], material: g[i * 3 + 2] })
   }
+  const bytes = new Uint8Array(buf)
+  const materials: ZoneMaterial3D[] = []
+  for (let i = 0; i < matCount; i++) {
+    const len = view.getUint16(p + 2, true)
+    materials.push({
+      kind: bytes[p] as ZoneMaterial3D['kind'],
+      opacity: bytes[p + 1] / 255,
+      texture: String.fromCharCode(...bytes.subarray(p + 4, p + 4 + len)),
+    })
+    p += 4 + len
+  }
+  return { positions, uvs, indices, groups, materials }
+}
+
+// getZoneTextureUrl is where one of a zone's client textures is served as a
+// PNG. masked keeps the colour key as transparency, for cutout materials.
+export async function getZoneTextureUrl(zone: string, name: string, masked: boolean): Promise<string> {
+  const baseUrl = await getBackendBaseUrl()
+  const q = masked ? '?mask=1' : ''
+  return `${baseUrl}/api/maps/zone/${encodeURIComponent(zone)}/texture/${encodeURIComponent(name)}${q}`
 }
 
 // getMapGeometry fetches packed int16 segments and wraps them without copying.

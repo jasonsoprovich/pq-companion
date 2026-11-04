@@ -1,15 +1,19 @@
 import React, { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-import { RotateCcw } from 'lucide-react'
-import { getZoneMesh3D } from '../../services/api'
+import { RotateCcw, SlidersHorizontal } from 'lucide-react'
+import { getZoneMesh3D, getZoneTextureUrl } from '../../services/api'
+import type { ZoneMesh3D } from '../../services/api'
+import { useMap3DPrefs } from '../../hooks/useMap3DPrefs'
+import type { Map3DPrefs, Map3DStyle } from '../../hooks/useMap3DPrefs'
 import type { RaiderMarker, ReplayTarget } from './ZoneMap'
 
 // ZoneMap3D draws a zone in 3D from the user's own installed client files
-// (<eq_path>/<zone>.s3d, read by the backend): solid geometry shaded by
-// height, untextured, with markers (raiders, or you and your group) and pins
-// on top. Loaded lazily, so three.js only downloads when someone opens the
-// 3D view.
+// (<eq_path>/<zone>.s3d, read by the backend): the zone's geometry with its
+// own textures, or coloured by height or plainly, with markers (raiders, or
+// you and your group) and pins on top. Floors, walls and ceilings are drawn
+// as separate layers so walls can be faded and ceilings hidden. Loaded
+// lazily, so three.js only downloads when someone opens the 3D view.
 //
 // World axes: map space x, -y, z, with z up. Map space y grows downward on
 // the 2D map, so negating it keeps north at the top of the default view and
@@ -38,8 +42,13 @@ export interface ZoneMap3DProps {
   onUnavailable?: (reason: string) => void
 }
 
-const LOW = new THREE.Color('#1e3a5f')
-const HIGH = new THREE.Color('#e0a84c')
+// HEIGHT_RAMP colours the height style, low to high: deep blue through
+// teal and green to sand, so a tall zone reads as more than one colour.
+const HEIGHT_RAMP = ['#1d3557', '#2a6f97', '#3a9d8f', '#8fbf6a', '#e9d8a6'].map((c) => new THREE.Color(c))
+
+// Faces steeper than this (|normal z|) count as floors or ceilings; the rest
+// are walls. Matches the backend's walkable-floor threshold.
+const FLAT = 0.55
 
 // Names show once a marker is drawn at least LABEL_PX pixels across, and a
 // pin PIN_LABEL_PX: a whole raid's names from far away is a smear.
@@ -56,13 +65,32 @@ function heightColors(pos: Float32Array): Float32Array {
   const span = hi > lo ? hi - lo : 1
   const out = new Float32Array(pos.length)
   const c = new THREE.Color()
+  const last = HEIGHT_RAMP.length - 1
   for (let i = 0; i < pos.length; i += 3) {
-    c.lerpColors(LOW, HIGH, (pos[i + 2] - lo) / span)
+    const t = ((pos[i + 2] - lo) / span) * last
+    const k = Math.min(last - 1, Math.floor(t))
+    c.lerpColors(HEIGHT_RAMP[k], HEIGHT_RAMP[k + 1], t - k)
     out[i] = c.r
     out[i + 1] = c.g
     out[i + 2] = c.b
   }
   return out
+}
+
+// ZoneLayers is the zone's geometry split by which way each face points.
+// The three meshes share one set of vertex attributes; each has a draw group
+// per zone material, so materials can be swapped without rebuilding them.
+interface ZoneLayers {
+  zone: string
+  data: ZoneMesh3D
+  floor: THREE.Mesh
+  wall: THREE.Mesh
+  ceiling: THREE.Mesh
+  // textures by file name (and whether masked), loaded the first time the
+  // textured style is shown.
+  textures: Map<string, THREE.Texture>
+  // materials currently assigned, freed when the look changes.
+  materials: THREE.Material[]
 }
 
 interface Scene3D {
@@ -73,6 +101,7 @@ interface Scene3D {
   markers: THREE.Group
   pins: THREE.Group
   targetLine: THREE.Line
+  layers: ZoneLayers | null
   markerSize: number
   // home is the starting camera, for Reset view.
   home: { position: THREE.Vector3; target: THREE.Vector3 } | null
@@ -90,6 +119,10 @@ export default function ZoneMap3D({ zone, markers, target, pins, onUnavailable }
   pinsRef.current = pins
   const [status, setStatus] = useState<'loading' | 'ready' | string>('loading')
   const lastFocus = useRef<THREE.Vector3 | null>(null)
+  const [prefs, setPrefs] = useMap3DPrefs()
+  const prefsRef = useRef(prefs)
+  prefsRef.current = prefs
+  const [showOptions, setShowOptions] = useState(false)
 
   // Build the scene once per zone.
   useEffect(() => {
@@ -135,7 +168,7 @@ export default function ZoneMap3D({ zone, markers, target, pins, onUnavailable }
     let frame = 0
     const s: Scene3D = {
       renderer, scene: sc, camera, controls, markers: markerGroup, pins: pinGroup, targetLine,
-      markerSize: 4, home: null,
+      layers: null, markerSize: 4, home: null,
       render: () => {
         if (frame) return
         frame = requestAnimationFrame(() => {
@@ -161,9 +194,19 @@ export default function ZoneMap3D({ zone, markers, target, pins, onUnavailable }
         ro.disconnect()
         controls.dispose()
         // Marker and pin geometry and materials are shared module-wide; only
-        // the zone's own mesh and the target line are freed.
+        // the zone's own meshes, materials and textures and the target line
+        // are freed.
         sc.remove(markerGroup)
         sc.remove(pinGroup)
+        if (s.layers) {
+          s.layers.materials.forEach((m) => m.dispose())
+          s.layers.textures.forEach((t) => t.dispose())
+          s.layers.floor.geometry.dispose()
+          s.layers.wall.geometry.dispose()
+          s.layers.ceiling.geometry.dispose()
+          sc.remove(s.layers.floor, s.layers.wall, s.layers.ceiling)
+          s.layers = null
+        }
         sc.traverse((o) => {
           const m = o as THREE.Mesh
           m.geometry?.dispose()
@@ -189,21 +232,13 @@ export default function ZoneMap3D({ zone, markers, target, pins, onUnavailable }
           onUnavailable?.('no-mesh')
           return
         }
-        // World y is map y negated (see the header comment).
-        const pos = new Float32Array(mesh.positions)
-        for (let i = 1; i < pos.length; i += 3) pos[i] = -pos[i]
-        const geo = new THREE.BufferGeometry()
-        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
-        geo.setAttribute('color', new THREE.BufferAttribute(heightColors(pos), 3))
-        geo.setIndex(new THREE.BufferAttribute(mesh.indices, 1))
-        geo.computeVertexNormals()
-        geo.computeBoundingBox()
-        const mat = new THREE.MeshStandardMaterial({
-          vertexColors: true, flatShading: true, roughness: 1, metalness: 0, side: THREE.DoubleSide,
-        })
-        sc.add(new THREE.Mesh(geo, mat))
+        const layers = buildLayers(zone, mesh)
+        s.layers = layers
+        sc.add(layers.floor, layers.wall, layers.ceiling)
+        applyLook(s, prefsRef.current)
 
-        const box = geo.boundingBox!
+        const box = new THREE.Box3()
+          .setFromBufferAttribute(layers.floor.geometry.getAttribute('position') as THREE.BufferAttribute)
         const center = box.getCenter(new THREE.Vector3())
         const extent = box.getSize(new THREE.Vector3())
         const radius = Math.max(extent.x, extent.y, 1)
@@ -274,6 +309,13 @@ export default function ZoneMap3D({ zone, markers, target, pins, onUnavailable }
     s.render()
   }, [pins, status])
 
+  useEffect(() => {
+    const s = scene.current
+    if (!s || status !== 'ready') return
+    applyLook(s, prefs)
+    s.render()
+  }, [prefs, status])
+
   return (
     <div className="relative h-full w-full overflow-hidden rounded" style={{ backgroundColor: '#0b0d12' }}>
       <div ref={host} className="absolute inset-0" />
@@ -285,20 +327,35 @@ export default function ZoneMap3D({ zone, markers, target, pins, onUnavailable }
       )}
       {status === 'ready' && (
         <>
-          <button
-            className="absolute right-2 top-2 flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px]"
-            style={{ backgroundColor: 'rgba(11,13,18,0.8)', borderColor: 'var(--color-border)', color: 'var(--color-muted-foreground)' }}
-            title="Back to the starting view"
-            onClick={() => {
-              const s = scene.current
-              if (!s) return
-              lastFocus.current = null
-              resetView(s)
-              s.render()
-            }}
-          >
-            <RotateCcw size={10} /> Reset view
-          </button>
+          <div className="absolute right-2 top-2 flex items-center gap-1">
+            <button
+              className="flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px]"
+              style={{
+                backgroundColor: showOptions ? 'var(--color-surface-2)' : 'rgba(11,13,18,0.8)',
+                borderColor: 'var(--color-border)',
+                color: 'var(--color-muted-foreground)',
+              }}
+              title="Textures, wall transparency and ceilings"
+              onClick={() => setShowOptions((v) => !v)}
+            >
+              <SlidersHorizontal size={10} /> View
+            </button>
+            <button
+              className="flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px]"
+              style={{ backgroundColor: 'rgba(11,13,18,0.8)', borderColor: 'var(--color-border)', color: 'var(--color-muted-foreground)' }}
+              title="Back to the starting view"
+              onClick={() => {
+                const s = scene.current
+                if (!s) return
+                lastFocus.current = null
+                resetView(s)
+                s.render()
+              }}
+            >
+              <RotateCcw size={10} /> Reset view
+            </button>
+          </div>
+          {showOptions && <ViewOptions prefs={prefs} onChange={setPrefs} />}
           <div className="pointer-events-none absolute bottom-2 left-2 text-[10px]" style={{ color: 'rgba(255,255,255,0.45)' }}>
             Drag to orbit · right-drag to pan · scroll to zoom
           </div>
@@ -306,6 +363,242 @@ export default function ZoneMap3D({ zone, markers, target, pins, onUnavailable }
       )}
     </div>
   )
+}
+
+// ViewOptions is the 3D view's look: style, wall transparency, and what to
+// hide so the inside of a zone can be seen from outside.
+function ViewOptions({ prefs, onChange }: {
+  prefs: Map3DPrefs
+  onChange: (patch: Partial<Map3DPrefs>) => void
+}): React.ReactElement {
+  const styles: [Map3DStyle, string, string][] = [
+    ['textured', 'Textured', 'The zone’s own textures, from your EverQuest files'],
+    ['height', 'Height', 'Coloured from low (blue) to high (sand)'],
+    ['plain', 'Plain', 'Light floors, dark walls'],
+  ]
+  return (
+    <div
+      className="absolute right-2 top-8 w-52 space-y-2.5 rounded border p-2.5 text-[11px]"
+      style={{ backgroundColor: 'rgba(11,13,18,0.92)', borderColor: 'var(--color-border)', color: 'var(--color-foreground)' }}
+    >
+      <div>
+        <div className="mb-1" style={{ color: 'var(--color-muted)' }}>Style</div>
+        <div className="flex overflow-hidden rounded border" style={{ borderColor: 'var(--color-border)' }}>
+          {styles.map(([v, label, title]) => (
+            <button
+              key={v}
+              className="flex-1 px-1 py-0.5"
+              title={title}
+              style={{
+                backgroundColor: prefs.style === v ? 'var(--color-primary)' : 'transparent',
+                color: prefs.style === v ? 'var(--color-background)' : 'var(--color-muted-foreground)',
+              }}
+              onClick={() => onChange({ style: v })}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <label className="block">
+        <div className="mb-1 flex justify-between" style={{ color: 'var(--color-muted)' }}>
+          <span>Wall opacity</span>
+          <span>{Math.round(prefs.wallOpacity * 100)}%</span>
+        </div>
+        <input
+          type="range"
+          min={10}
+          max={100}
+          step={5}
+          value={Math.round(prefs.wallOpacity * 100)}
+          onChange={(e) => onChange({ wallOpacity: Number(e.target.value) / 100 })}
+          className="w-full"
+        />
+      </label>
+      <label className="flex items-start gap-1.5" title="Hide the back of every wall, so from outside you look in instead of at a solid box">
+        <input
+          type="checkbox"
+          className="mt-0.5"
+          checked={prefs.seeThroughOuter}
+          onChange={(e) => onChange({ seeThroughOuter: e.target.checked })}
+        />
+        <span>See in through outer walls</span>
+      </label>
+      <label className="flex items-start gap-1.5">
+        <input
+          type="checkbox"
+          className="mt-0.5"
+          checked={prefs.hideCeilings}
+          onChange={(e) => onChange({ hideCeilings: e.target.checked })}
+        />
+        <span>Hide ceilings</span>
+      </label>
+    </div>
+  )
+}
+
+// buildLayers turns the zone mesh into floor, wall and ceiling meshes. World
+// y is map y negated (see the header comment).
+function buildLayers(zone: string, data: ZoneMesh3D): ZoneLayers {
+  const pos = new Float32Array(data.positions)
+  for (let i = 1; i < pos.length; i += 3) pos[i] = -pos[i]
+  const position = new THREE.BufferAttribute(pos, 3)
+  const uv = new THREE.BufferAttribute(data.uvs, 2)
+  const color = new THREE.BufferAttribute(heightColors(pos), 3)
+
+  // Split each material's triangles three ways by facing, keeping a draw
+  // group per material in each layer.
+  type Part = { idx: number[]; groups: { start: number; count: number; material: number }[] }
+  const parts: Part[] = [0, 1, 2].map(() => ({ idx: [], groups: [] }))
+  const ix = data.indices
+  for (const g of data.groups) {
+    const starts = parts.map((p) => p.idx.length)
+    for (let i = g.start; i < g.start + g.count; i += 3) {
+      const a = ix[i] * 3
+      const b = ix[i + 1] * 3
+      const c = ix[i + 2] * 3
+      const ux = pos[b] - pos[a], uy = pos[b + 1] - pos[a + 1], uz = pos[b + 2] - pos[a + 2]
+      const vx = pos[c] - pos[a], vy = pos[c + 1] - pos[a + 1], vz = pos[c + 2] - pos[a + 2]
+      const nx = uy * vz - uz * vy
+      const ny = uz * vx - ux * vz
+      const nz = ux * vy - uy * vx
+      const len = Math.hypot(nx, ny, nz) || 1
+      const up = nz / len
+      const part = parts[up >= FLAT ? 0 : up <= -FLAT ? 2 : 1]
+      part.idx.push(ix[i], ix[i + 1], ix[i + 2])
+    }
+    parts.forEach((p, k) => {
+      const n = p.idx.length - starts[k]
+      if (n > 0) p.groups.push({ start: starts[k], count: n, material: g.material })
+    })
+  }
+  const [floor, wall, ceiling] = parts.map((p) => {
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', position)
+    geo.setAttribute('uv', uv)
+    geo.setAttribute('color', color)
+    geo.setIndex(new THREE.BufferAttribute(new Uint32Array(p.idx), 1))
+    for (const g of p.groups) geo.addGroup(g.start, g.count, g.material)
+    geo.computeVertexNormals()
+    return new THREE.Mesh(geo, [])
+  })
+  return { zone, data, floor, wall, ceiling, textures: new Map(), materials: [] }
+}
+
+// texture returns a zone material's texture, starting its load the first
+// time; s.render runs as each one arrives.
+function texture(s: Scene3D, L: ZoneLayers, i: number): THREE.Texture | null {
+  const m = L.data.materials[i]
+  if (!m.texture) return null
+  const masked = m.kind === 1
+  const key = masked ? `${m.texture}|mask` : m.texture
+  let t = L.textures.get(key)
+  if (!t) {
+    const tex = new THREE.Texture()
+    // Client UVs run top-down (DirectX), and repeat across large faces.
+    tex.flipY = false
+    tex.wrapS = THREE.RepeatWrapping
+    tex.wrapT = THREE.RepeatWrapping
+    tex.colorSpace = THREE.SRGBColorSpace
+    tex.anisotropy = s.renderer.capabilities.getMaxAnisotropy()
+    L.textures.set(key, tex)
+    // Fetched rather than loaded as an <img>: the page's CSP allows the
+    // backend for connections but not for images. An ImageBitmap is never
+    // flipped on upload, which suits the top-down UVs.
+    getZoneTextureUrl(L.zone, m.texture, masked)
+      .then((url) => fetch(url))
+      .then((res) => (res.ok ? res.blob() : Promise.reject(new Error(res.statusText))))
+      .then((blob) => createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' }))
+      .then((bitmap) => {
+        // The zone may have been closed while this loaded.
+        if (s.layers !== L) {
+          bitmap.close()
+          return
+        }
+        tex.image = bitmap
+        tex.needsUpdate = true
+        s.render()
+      })
+      .catch(() => {
+        // One the backend can't serve is drawn plain grey rather than black.
+        if (s.layers !== L) return
+        tex.image = new ImageData(new Uint8ClampedArray([138, 143, 152, 255]), 1, 1)
+        tex.needsUpdate = true
+        s.render()
+      })
+    t = tex
+  }
+  return t
+}
+
+// applyLook builds the zone's materials for the current style and options.
+// Material indices match the zone's own; each layer gets its own array so
+// walls and ceilings can be faded while floors stay solid.
+function applyLook(s: Scene3D, prefs: Map3DPrefs): void {
+  const L = s.layers
+  if (!L) return
+  L.materials.forEach((m) => m.dispose())
+  L.materials = []
+  const side = prefs.seeThroughOuter ? THREE.FrontSide : THREE.DoubleSide
+  const make = (i: number, faded: boolean): THREE.Material => {
+    const z = L.data.materials[i]
+    const opacity = faded ? prefs.wallOpacity : 1
+    const see = opacity < 1
+    let m: THREE.Material
+    if (prefs.style === 'textured') {
+      const map = texture(s, L, i)
+      if (z.kind === 3) {
+        m = new THREE.MeshBasicMaterial({
+          map, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+        })
+      } else {
+        m = new THREE.MeshLambertMaterial({
+          map,
+          color: map ? 0xffffff : 0x8a8f98,
+          // Client textures are made for the game's own lighting and look
+          // murky under the map's; a little self-light lifts them.
+          emissive: map ? 0xffffff : 0x000000,
+          emissiveMap: map,
+          emissiveIntensity: 0.35,
+          side: z.kind === 1 ? THREE.DoubleSide : side,
+          alphaTest: z.kind === 1 ? 0.5 : 0,
+          transparent: z.kind === 2 || see,
+          opacity: (z.kind === 2 ? z.opacity : 1) * opacity,
+          depthWrite: z.kind !== 2 && !see,
+        })
+      }
+    } else if (z.kind === 1 || z.kind === 3) {
+      // Cutouts (trees, fences) and glows are texture-shaped; without the
+      // texture they'd be solid cards, so they're left out.
+      m = new THREE.MeshBasicMaterial({ visible: false })
+    } else if (z.kind === 2) {
+      m = new THREE.MeshLambertMaterial({
+        color: 0x3b82c4, transparent: true, opacity: 0.45 * opacity, depthWrite: false, side: THREE.DoubleSide,
+      })
+    } else {
+      const height = prefs.style === 'height'
+      m = new THREE.MeshLambertMaterial({
+        vertexColors: height,
+        // Walls a shade darker than floors, so they read apart.
+        color: height ? (faded ? 0x9aa0a8 : 0xffffff) : faded ? 0x6b7280 : 0xb3ac9c,
+        flatShading: true,
+        side,
+        transparent: see,
+        opacity,
+        depthWrite: !see,
+      })
+    }
+    L.materials.push(m)
+    return m
+  }
+  const n = L.data.materials.length
+  L.floor.material = Array.from({ length: n }, (_, i) => make(i, false))
+  L.wall.material = Array.from({ length: n }, (_, i) => make(i, true))
+  L.ceiling.material = Array.from({ length: n }, (_, i) => make(i, true))
+  L.ceiling.visible = !prefs.hideCeilings
+  // Faded walls draw after solid floors.
+  L.wall.renderOrder = 1
+  L.ceiling.renderOrder = 1
 }
 
 function resetView(s: Scene3D): void {

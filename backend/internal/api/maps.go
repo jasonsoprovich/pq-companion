@@ -26,6 +26,8 @@ type mapsHandler struct {
 	cfg *config.Manager
 	// meshes caches 3D zone meshes read from the client (see mesh3D).
 	meshes meshCache
+	// textures holds the last 3D zone's client textures (see texture3D).
+	textures textureCache
 }
 
 // status reports whether map data is present, so the UI can hide map features
