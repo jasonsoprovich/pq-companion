@@ -3582,10 +3582,15 @@ func (e *Engine) rescaleFormulaDuration(spell *db.Spell, durationSecs float64, t
 }
 
 // isFormulaDuration reports whether durationSecs equals spell's formula
-// duration at any level up to the cap.
+// duration at any level up to the cap. For a spell that fades one tick late,
+// the value without that tick also counts: pack timers saved before the
+// extra tick existed then pick it up.
 func isFormulaDuration(spell *db.Spell, durationSecs float64) bool {
+	late := fadesOneTickLate(spell)
 	for lvl := 1; lvl <= defaultCasterLevel; lvl++ {
-		if float64(SpellDurationTicks(spell, lvl))*eqTickSeconds == durationSecs {
+		ticks := SpellDurationTicks(spell, lvl)
+		if float64(ticks)*eqTickSeconds == durationSecs ||
+			(late && ticks > 1 && float64(ticks-1)*eqTickSeconds == durationSecs) {
 			return true
 		}
 	}

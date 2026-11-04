@@ -90,10 +90,10 @@ func TestMigrateBroaden_UpdatesStaleDebuffPattern(t *testing.T) {
 
 func TestMigrateBroaden_UpdatesBardSongDuration(t *testing.T) {
 	s := openTestStore(t)
-	// Warsong of Zek: old install had 54s, built-in is now 18s.
+	// Warsong of Zek: old install had 54s, built-in is now 24s.
 	want := builtinTrigger(t, "Bard", "Warsong of Zek")
-	if want.TimerDurationSecs != 18 {
-		t.Fatalf("test setup: expected built-in Warsong of Zek = 18s, got %v", want.TimerDurationSecs)
+	if want.TimerDurationSecs != 24 {
+		t.Fatalf("test setup: expected built-in Warsong of Zek = 24s, got %v", want.TimerDurationSecs)
 	}
 	insertInstalledTrigger(t, s, "Bard", "Warsong of Zek", want.Pattern, 54)
 
@@ -105,8 +105,8 @@ func TestMigrateBroaden_UpdatesBardSongDuration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("find: %v", err)
 	}
-	if got.TimerDurationSecs != 18 {
-		t.Errorf("duration not migrated: got %v, want 18", got.TimerDurationSecs)
+	if got.TimerDurationSecs != 24 {
+		t.Errorf("duration not migrated: got %v, want 24", got.TimerDurationSecs)
 	}
 }
 

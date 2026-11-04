@@ -59,6 +59,22 @@ func TestRescaleFormulaDuration(t *testing.T) {
 	}
 }
 
+// A pack song timer saved before the extra song-window tick (18 s) is
+// recognised as formula-derived and picks the tick up.
+func TestRescaleSongWindowLegacyValue(t *testing.T) {
+	const warsongOfZek = 3374
+	e, database := levelEngine(t, 13, 60)
+	spell, err := database.GetSpell(warsongOfZek)
+	if err != nil || spell == nil {
+		t.Fatalf("spell %d: %v", warsongOfZek, err)
+	}
+	for _, in := range []float64{18, 24} {
+		if got := e.rescaleFormulaDuration(spell, in, "", time.Now()); got != 24 {
+			t.Errorf("rescale(%g) = %g, want 24", in, got)
+		}
+	}
+}
+
 func TestOtherCasterLevel(t *testing.T) {
 	const (
 		enchanter   = 13

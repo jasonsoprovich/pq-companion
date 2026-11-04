@@ -938,21 +938,23 @@ func (s *Store) MigrateBroadenDebuffPatternsAndBardDurations() error {
 		}
 	}
 
-	// Bard song duration corrections (54s → 18s base). These can't be derived
-	// from the current definition, so the affected songs are listed explicitly.
-	for _, name := range []string{
-		"Cantata of Replenishment",
-		"Warsong of Zek",
-		"Niv's Melody of Preservation",
-		"Psalm of Veeshan",
-		"Elemental Rhythms",
-		"Guardian Rhythms",
-		"Kelin's Lugubrious Lament",
-		"Largo's Absonant Binding",
+	// Bard song duration corrections (54s → the pack's base duration, plus
+	// the song-window tick where it applies). The old value can't be derived
+	// from the current definition, so the affected songs are listed
+	// explicitly.
+	for name, secs := range map[string]float64{
+		"Cantata of Replenishment":     24,
+		"Warsong of Zek":               24,
+		"Niv's Melody of Preservation": 24,
+		"Psalm of Veeshan":             24,
+		"Elemental Rhythms":            24,
+		"Guardian Rhythms":             24,
+		"Kelin's Lugubrious Lament":    24,
+		"Largo's Absonant Binding":     18,
 	} {
 		c := get("Bard", name)
 		c.oldDuration = 54
-		c.newDuration = 18
+		c.newDuration = secs
 	}
 
 	for _, c := range byKey {
