@@ -1807,7 +1807,7 @@ const spellColumns = `
   COALESCE(s.goodEffect, 0),
   COALESCE(s.ResistDiff, 0), COALESCE(s.no_partial_resist, 0),
   COALESCE(s.resist_per_level, 0), COALESCE(s.resist_cap, 0),
-  COALESCE(s.AEDuration, 0)`
+  COALESCE(s.AEDuration, 0), COALESCE(s.short_buff_box, 0)`
 
 func scanSpell(row interface {
 	Scan(...any) error
@@ -1848,7 +1848,7 @@ func scanSpell(row interface {
 		&sp.GoodEffect,
 		&sp.ResistDiff, &sp.NoPartialResist,
 		&sp.ResistPerLevel, &sp.ResistCap,
-		&sp.AEDuration,
+		&sp.AEDuration, &sp.ShortBuffBox,
 	)
 	if err != nil {
 		return nil, err

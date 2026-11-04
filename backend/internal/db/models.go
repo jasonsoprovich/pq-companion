@@ -276,6 +276,8 @@ type Spell struct {
 	// Duration
 	BuffDuration        int `json:"buff_duration"`
 	BuffDurationFormula int `json:"buff_duration_formula"`
+	// ShortBuffBox marks spells that sit in the short buff (song) window.
+	ShortBuffBox int `json:"short_buff_box"`
 
 	Mana       int `json:"mana"`
 	Range      int `json:"range"`

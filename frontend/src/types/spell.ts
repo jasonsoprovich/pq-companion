@@ -17,6 +17,8 @@ export interface Spell {
   // Duration
   buff_duration: number
   buff_duration_formula: number
+  // Sits in the short buff (song) window.
+  short_buff_box: number
 
   mana: number
   range: number

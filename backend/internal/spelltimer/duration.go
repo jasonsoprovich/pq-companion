@@ -23,15 +23,45 @@ import "github.com/jasonsoprovich/pq-companion/backend/internal/db"
 const bardSongUseBaseDuration = true
 
 // SpellDurationTicks returns the buff duration in EQ server ticks for a
-// landed spell, applying the bard-song base-duration clamp when enabled.
+// landed spell, applying the bard-song base-duration clamp when enabled and
+// the extra tick short-buff-box spells get (see fadesOneTickLate).
 // Use this in preference to the lower-level CalcDurationTicks anywhere a
 // full *db.Spell is available — only the parser-test fixtures call the
 // raw formula form directly.
 func SpellDurationTicks(spell *db.Spell, level int) int {
+	ticks := CalcDurationTicks(spell.BuffDurationFormula, spell.BuffDuration, level)
 	if bardSongUseBaseDuration && isBardSong(spell) {
-		return spell.BuffDuration
+		ticks = spell.BuffDuration
 	}
-	return CalcDurationTicks(spell.BuffDurationFormula, spell.BuffDuration, level)
+	if ticks > 0 && fadesOneTickLate(spell) {
+		ticks++
+	}
+	return ticks
+}
+
+// Effect ids that keep a short-buff-box spell on the normal fade, with
+// seCharm (engine.go).
+const (
+	seBlind = 20
+	seFear  = 23
+	seMez   = 31
+)
+
+// fadesOneTickLate reports whether the server keeps spell one tick past its
+// duration. EQMacEmu's BuffProcess fades a buff when its tics reach 0, except
+// short-buff-box spells (mostly bard songs), which fade at tics < 0, one tick
+// later, unless they fear, charm, mez or blind.
+func fadesOneTickLate(spell *db.Spell) bool {
+	if spell.ShortBuffBox == 0 {
+		return false
+	}
+	for _, id := range spell.EffectIDs {
+		switch id {
+		case seBlind, seCharm, seFear, seMez:
+			return false
+		}
+	}
+	return true
 }
 
 // isBardSong reports whether spell is a bard song — a spell only the bard

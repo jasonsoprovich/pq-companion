@@ -46,12 +46,45 @@ func TestSpellDurationTicks_BardSongUsesBase(t *testing.T) {
 	if got := SpellDurationTicks(bard, level); got != 3 {
 		t.Errorf("bard song SpellDurationTicks = %d ticks, want 3 (base clamp)", got)
 	}
+	// In the song window it stays one tick longer (see fadesOneTickLate).
+	bard.ShortBuffBox = 1
+	if got := SpellDurationTicks(bard, level); got != 4 {
+		t.Errorf("short-buff-box song SpellDurationTicks = %d ticks, want 4", got)
+	}
 
 	// Non-bard spell with the same formula+base must still run the full
 	// formula — the clamp is narrowly scoped to bard-only spells.
 	nonBard := nonBardSpell(5, 3)
 	if got := SpellDurationTicks(nonBard, level); got != 2 {
 		t.Errorf("non-bard spell SpellDurationTicks = %d ticks, want 2 (formula 5 = min(2,base))", got)
+	}
+}
+
+func TestSpellDurationTicks_ShortBuffBoxExtraTick(t *testing.T) {
+	tests := []struct {
+		name     string
+		box      int
+		effect   int
+		formula  int
+		base     int
+		wantTick int
+	}{
+		{"normal buff", 0, 79, 3, 10, 10},
+		{"short buff box", 1, 100, 4, 4, 5},
+		{"short buff box -1", -1, 100, 4, 4, 5},
+		{"short buff box mez", 1, 31, 3, 3, 3},
+		{"short buff box charm", 1, 22, 3, 3, 3},
+		{"instant", 1, 100, 0, 0, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sp := nonBardSpell(tt.formula, tt.base)
+			sp.ShortBuffBox = tt.box
+			sp.EffectIDs[0] = tt.effect
+			if got := SpellDurationTicks(sp, 60); got != tt.wantTick {
+				t.Errorf("SpellDurationTicks = %d, want %d", got, tt.wantTick)
+			}
+		})
 	}
 }
 
