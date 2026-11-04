@@ -12,7 +12,8 @@ import (
 // A zone's placed objects (trees, buildings, lamps, furniture) aren't part of
 // its own geometry. objects.wld inside <zone>.s3d places them by actor name;
 // the models are in <zone>_obj.s3d (and, for some Velious zones,
-// <zone>_2_obj.s3d): a 0x14 actor names a 0x2D reference to a 0x36 mesh.
+// <zone>_2_obj.s3d): a 0x14 actor names a 0x2D reference to a 0x36 mesh, or
+// a skeleton for animated objects (skeleton.go).
 
 const (
 	fragActor   = 0x14
@@ -135,31 +136,22 @@ func placeTransform(p Placement) func(Vec3) Vec3 {
 	}
 }
 
-// actorMeshes maps each static actor's name ("TREE1_ACTORDEF", uppercased)
-// to its meshes. Animated actors, which point at a skeleton instead, are
-// left out.
+// actorMeshes maps each actor's name ("TREE1_ACTORDEF", uppercased) to its
+// meshes: a static actor's own, or an animated one's posed at its first
+// frame (see skeletonMeshes).
 func (w *WLD) actorMeshes() map[string][]Mesh {
 	out := map[string][]Mesh{}
 	for _, f := range w.Fragments {
 		if f.kind != fragActor {
 			continue
 		}
-		refs := actorComponents(f.payload)
 		var meshes []Mesh
-		for _, r := range refs {
-			i, ok := w.ref(r, fragMeshRef)
-			if !ok || len(w.Fragments[i].payload) < 4 {
-				continue
+		for _, r := range actorComponents(f.payload) {
+			if m, ok := w.meshRef(r); ok {
+				meshes = append(meshes, m)
+			} else {
+				meshes = append(meshes, w.skeletonMeshes(r)...)
 			}
-			j, ok := w.ref(int32(binary.LittleEndian.Uint32(w.Fragments[i].payload)), fragMesh)
-			if !ok {
-				continue
-			}
-			m, err := parseMesh(w.Fragments[j].payload, w.Version)
-			if err != nil {
-				continue
-			}
-			meshes = append(meshes, m)
 		}
 		if len(meshes) > 0 {
 			out[strings.ToUpper(w.str(f.nameRef))] = meshes

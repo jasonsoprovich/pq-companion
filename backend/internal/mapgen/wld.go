@@ -52,13 +52,18 @@ type Triangle struct {
 
 // Mesh is one 0x36 fragment's geometry. UVs holds a u, v pair per vertex
 // (zeros where the fragment has fewer texture coords than vertices), and
-// MaterialList is the 0-based index of its 0x31 fragment, or -1.
+// MaterialList is the 0-based index of its 0x31 fragment, or -1. Pieces,
+// in a skeletal model's mesh, assign runs of vertices to bones in order.
 type Mesh struct {
 	Vertices     []Vec3
 	Triangles    []Triangle
 	UVs          []float32
 	MaterialList int
+	Pieces       []VertexPiece
 }
+
+// VertexPiece is a run of Count vertices that follow bone Bone.
+type VertexPiece struct{ Count, Bone int }
 
 // ParseWLD decodes a .wld payload into fragments.
 func ParseWLD(data []byte) (*WLD, error) {
@@ -229,7 +234,14 @@ func parseMesh(b []byte, version uint32) (Mesh, error) {
 	for i := range mats {
 		mats[i] = -1
 	}
-	p += max(pieceCount, 0) * 4 // vertex pieces
+	var pieces []VertexPiece
+	for i := 0; i < pieceCount && p+4 <= len(b); i++ {
+		pieces = append(pieces, VertexPiece{
+			Count: int(binary.LittleEndian.Uint16(b[p:])),
+			Bone:  int(binary.LittleEndian.Uint16(b[p+2:])),
+		})
+		p += 4
+	}
 	next := 0
 	for i := 0; i < polyTexCount && p+4 <= len(b); i++ {
 		n := int(binary.LittleEndian.Uint16(b[p:]))
@@ -256,7 +268,7 @@ func parseMesh(b []byte, version uint32) (Mesh, error) {
 		}
 		tris = append(tris, t)
 	}
-	return Mesh{Vertices: verts, Triangles: tris, UVs: uvs, MaterialList: matList}, nil
+	return Mesh{Vertices: verts, Triangles: tris, UVs: uvs, MaterialList: matList, Pieces: pieces}, nil
 }
 
 // Placement is a placed object instance from objects.wld. Pos is in map
