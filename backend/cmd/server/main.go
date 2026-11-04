@@ -1845,6 +1845,7 @@ func main() {
 		var castingName, targetName, targetPetOwner string
 		targetHP := -1
 		var buffSlots []string
+		var pipeBuffs []spelltimer.PipeBuff
 		for _, l := range labels {
 			switch l.Type {
 			case zealpipe.LabelTargetName:
@@ -1892,6 +1893,8 @@ func main() {
 				if (id >= int(zealpipe.LabelBuff0) && id <= int(zealpipe.LabelBuff14)) ||
 					(id >= int(zealpipe.LabelBuff15) && id <= int(zealpipe.LabelBuff20)) {
 					buffSlots = append(buffSlots, l.Value)
+					ticks, _ := l.BuffTicks()
+					pipeBuffs = append(pipeBuffs, spelltimer.PipeBuff{Name: l.Value, Ticks: ticks})
 				}
 			}
 		}
@@ -1904,7 +1907,7 @@ func main() {
 			combatTracker.SetPipeTargetPetOwner(targetName, targetPetOwner)
 		}
 		timerEngine.SetPipeCasting(castingName)
-		timerEngine.SetPipeBuffSlots(buffSlots)
+		timerEngine.SetPipeBuffSlots(env.Character, pipeBuffs)
 		// Corpse-target death signal: drops detrimental timers when a boss
 		// dies while still selected, even if the slain-line is out of log
 		// range (raid casters far from the target). See HandlePipeTarget.
@@ -1939,7 +1942,7 @@ func main() {
 		hub.Broadcast(ws.Event{Type: "raid.roster", Data: map[string]any{}})
 		hub.Broadcast(ws.Event{Type: "player:position", Data: nil})
 		timerEngine.SetPipeCasting("")
-		timerEngine.SetPipeBuffSlots(nil)
+		timerEngine.SetPipeBuffSlots("", nil)
 		timerEngine.ResetPipePetID()
 		timerEngine.SetPipeTargetID(nil)
 		timerEngine.ResetPipeTargetTracking()

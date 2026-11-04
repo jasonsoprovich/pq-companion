@@ -777,30 +777,28 @@ These are inherent to log-file parsing and affect multiple features:
   the public dump, or a one-off export from the Quarm team, would let the
   timer engine apply the same overrides.
 
-### 11.2 Buffs received from other players use the *caster's* AAs/focuses
+### 11.2 Buffs received from other players use the *caster's* AAs/focuses — RESOLVED with Zeal
 
-- **Limitation:** When another player buffs the active character (e.g. a
-  cleric casting Aegolism on you), the real duration depends on the caster's
-  Spell Casting Reinforcement ranks and worn duration focus — none of which
-  are knowable from the recipient's side. The timer engine applies the active
-  character's own modifiers, which is only correct for self-cast/self-clicked
-  buffs.
+- **Limitation (without Zeal):** When another player buffs the active
+  character (e.g. a cleric casting Aegolism on you), the real duration depends
+  on the caster's Spell Casting Reinforcement ranks and worn duration focus,
+  none of which are knowable from the recipient's side. The formula timer
+  applies the active character's own modifiers, which is only correct for
+  self-cast/self-clicked buffs.
 - **Root cause:** EQMacEmu computes duration on the caster
   (`CalcBuffDuration` uses `caster->GetAA(...)`, `ApplyDurationFocus` walks
   the caster's worn slots); the log line on the recipient's side carries no
   caster identity or AA/gear state.
-- **Sources checked:** Log (land messages don't name the caster); DB (no
-  per-character data); Zeal (the label message's buff slots, labels 45–59
-  and song slots 135–140, carry the slot's spell name **and a `meta.ticks`
-  remaining-tick count**).
-- **Could a future data source fix this?** **Yes — the data already exists.**
-  The pipe's per-slot remaining ticks make your own buff timers exact
-  regardless of who cast them. PQ Companion does not read `meta.ticks` yet
-  (`zealpipe.Label.Meta` is decoded but unused). To do: confirm on a live
-  Windows capture that current Zeal fills it (fresh lands and song-window
-  slots may arrive without ticks), then let it override the formula timer.
-  This only covers *your* buffs; other players' buff slots are still not
-  exposed (§21.1).
+- **Resolved:** the pipe's long-buff slots (labels 45–59) carry the client's
+  own remaining tick count as `meta.ticks` (Zeal `named_pipe.cpp`, every
+  release). `spelltimer/pipe_buffs.go` keeps each of the active character's
+  buff timers inside the window that count allows, and ends a timer once the
+  pipe has confirmed it and the buff leaves the window.
+- **Still limited:** without Zeal (or when the pipe is attached to a
+  different boxed character) the formula timer stands. Song-window slots
+  (135–140) carry no ticks. Within a tick the fade moment is estimated to
+  ±3 s until the server tick phase is used. Other players' buff windows are
+  not exposed at all (§21.1).
 
 ### 11.3 Discipline reuse (cooldown) timers — RESOLVED
 

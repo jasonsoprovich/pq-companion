@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -637,11 +636,19 @@ type Engine struct {
 
 	// pipeBuffSlots is the most recent self-buff slot snapshot from the pipe
 	// (Buff0..14, plus 15..20 from game.dll). Stored as a set keyed by spell
-	// name. Used for divergence logging against the engine's active self-buff
-	// timers; behaviour (i.e. whether to prune timers the pipe disagrees
-	// with) is intentionally deferred until we have a sense of how often the
-	// two sources disagree in real play.
+	// name. Used for divergence logging; the timer corrections themselves
+	// key off the ticked slots (see pipe_buffs.go).
 	pipeBuffSlots map[string]bool
+
+	// pipeConfirmed marks timers (by key) whose spell the pipe has shown in a
+	// ticked buff slot at least once, proving the timer's name matches what
+	// the client calls the buff. Only confirmed timers are ever ended by the
+	// slot disappearing; see reconcilePipeBuffsLocked.
+	pipeConfirmed map[string]bool
+	// pipeMissingSince records when a confirmed timer's spell was first seen
+	// absent from a non-empty slot snapshot, so a single dropped frame can't
+	// end it.
+	pipeMissingSince map[string]time.Time
 
 	// lastDivergenceFromPipe / lastDivergenceFromTimers hold a sorted,
 	// joined form of the divergence sets we most recently emitted to the
@@ -1273,91 +1280,6 @@ func (e *Engine) ResetPipeTargetTracking() {
 	e.pendingKills = nil
 	e.lastAliveClearedID = 0
 	e.mu.Unlock()
-}
-
-// SetPipeBuffSlots records the current self-buff slot snapshot from the pipe
-// (Buff0..14 and 15..20 labels). Each slot's value is the spell name in that
-// slot, or empty if the slot is unoccupied. The engine compares this set
-// against its active self-buff timers and logs divergences at info level —
-// data feed for tightening the log parser. No timers are pruned in this
-// pass; that's a deliberate behaviour change to defer until we know how
-// frequently the two sources disagree under real play.
-func (e *Engine) SetPipeBuffSlots(slots []string) {
-	set := make(map[string]bool, len(slots))
-	for _, s := range slots {
-		s = strings.TrimSpace(s)
-		if s != "" {
-			set[s] = true
-		}
-	}
-	active := e.activePlayerName()
-	e.mu.Lock()
-	e.pipeBuffSlots = set
-	// Compare engine self-buff timers vs the pipe set. We only consider
-	// timers that *should* appear in the player's buff window — Category=Buff
-	// targeted at the active char or "You". Detrimentals on enemies are out
-	// of scope.
-	var missingFromPipe []string
-	for _, t := range e.timers {
-		if t.Category != CategoryBuff {
-			continue
-		}
-		if t.TargetName != "You" && t.TargetName != active {
-			continue
-		}
-		if !set[t.SpellName] {
-			missingFromPipe = append(missingFromPipe, t.SpellName)
-		}
-	}
-	var missingFromTimers []string
-	for name := range set {
-		found := false
-		for _, t := range e.timers {
-			if t.Category == CategoryBuff &&
-				(t.TargetName == "You" || t.TargetName == active) &&
-				t.SpellName == name {
-				found = true
-				break
-			}
-		}
-		if !found {
-			missingFromTimers = append(missingFromTimers, name)
-		}
-	}
-	// Fold each divergence list into a stable, sorted key so we can dedupe
-	// against the last set we logged. The pipe sends a fresh snapshot
-	// several times per second and the spell list typically arrives in a
-	// different order each pulse — comparing the joined-sorted form lets
-	// us treat "same set, different order" as identical and avoid
-	// re-logging the same divergence on every pulse.
-	pipeKey := divergenceKey(missingFromPipe)
-	timersKey := divergenceKey(missingFromTimers)
-	logPipe := pipeKey != e.lastDivergenceFromPipe
-	logTimers := timersKey != e.lastDivergenceFromTimers
-	e.lastDivergenceFromPipe = pipeKey
-	e.lastDivergenceFromTimers = timersKey
-	e.mu.Unlock()
-	if logPipe && len(missingFromPipe) > 0 {
-		slog.Info("zealpipe-divergence: timers think buff is active, pipe does not",
-			"spells", missingFromPipe)
-	}
-	if logTimers && len(missingFromTimers) > 0 {
-		slog.Info("zealpipe-divergence: pipe has buff slot, timers don't",
-			"spells", missingFromTimers)
-	}
-}
-
-// divergenceKey returns a stable identifier for a set of spell names so
-// SetPipeBuffSlots can detect when a divergence repeats verbatim across
-// successive pipe pulses.
-func divergenceKey(names []string) string {
-	if len(names) == 0 {
-		return ""
-	}
-	sorted := make([]string, len(names))
-	copy(sorted, names)
-	sort.Strings(sorted)
-	return strings.Join(sorted, "\x00")
 }
 
 // StartExternal adds a timer not driven by a log cast event. Used by the

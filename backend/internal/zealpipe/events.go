@@ -34,6 +34,23 @@ type Label struct {
 	Meta  json.RawMessage `json:"meta,omitempty"`
 }
 
+// BuffTicks returns the remaining 6-second ticks Zeal attaches to a buff-slot
+// label (labels 45-59) as meta.ticks, read from the client's own buff struct.
+// ok is false when the label carries no tick count: the short-buff/song
+// slots (135-140) and every non-buff label send an empty meta object.
+func (l Label) BuffTicks() (ticks int, ok bool) {
+	if len(l.Meta) == 0 {
+		return 0, false
+	}
+	var m struct {
+		Ticks *int `json:"ticks"`
+	}
+	if err := json.Unmarshal(l.Meta, &m); err != nil || m.Ticks == nil {
+		return 0, false
+	}
+	return *m.Ticks, true
+}
+
 // targetSpawnIDSuffix matches the " (<spawnid>)" that Zeal appends to the
 // target-name label when the user has enabled /labels showtargetspawnid.
 var targetSpawnIDSuffix = regexp.MustCompile(`\s*\(\d+\)$`)

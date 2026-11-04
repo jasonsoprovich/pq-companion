@@ -489,3 +489,30 @@ func TestDecodeItemDisplay(t *testing.T) {
 		}
 	}
 }
+
+func TestLabelBuffTicks(t *testing.T) {
+	// Shape Zeal writes: long-buff slots carry meta.ticks, the song-window
+	// slots and ordinary labels an empty meta object.
+	line := []byte(`{"type":1,"data":"[{\"type\":45,\"value\":\"Aegolism\",\"meta\":{\"ticks\":118}},{\"type\":135,\"value\":\"Selo's Accelerando\",\"meta\":{}},{\"type\":28,\"value\":\"a gnoll\",\"meta\":{}},{\"type\":46,\"value\":\"Clarity\"}]","character":"Osui"}`)
+	env, err := DecodeEnvelope(line)
+	if err != nil {
+		t.Fatalf("decode envelope: %v", err)
+	}
+	labels, err := DecodeLabels(env.Data)
+	if err != nil {
+		t.Fatalf("decode labels: %v", err)
+	}
+	want := []struct {
+		ticks int
+		ok    bool
+	}{{118, true}, {0, false}, {0, false}, {0, false}}
+	if len(labels) != len(want) {
+		t.Fatalf("got %d labels, want %d", len(labels), len(want))
+	}
+	for i, w := range want {
+		if n, ok := labels[i].BuffTicks(); n != w.ticks || ok != w.ok {
+			t.Errorf("label %d (%s): BuffTicks = %d,%v want %d,%v",
+				i, labels[i].Value, n, ok, w.ticks, w.ok)
+		}
+	}
+}
