@@ -6,7 +6,10 @@ import { usePlayerPosition } from '../../hooks/usePlayerPosition'
 import { useGroupPositions } from '../../hooks/useGroupPositions'
 import { useMapStyle } from '../../hooks/useMapStyle'
 import { useZoneMap } from '../../hooks/useZoneMap'
-import { ZoneMap, type AggroRing, type MapHighlight } from './ZoneMap'
+import { ZoneMap, type AggroRing, type MapHighlight, type SpawnDot } from './ZoneMap'
+import { useWebSocket } from '../../hooks/useWebSocket'
+import { WSEvent } from '../../lib/wsEvents'
+import type { RespawnState } from '../../types/respawn'
 import { useActiveCharacterLevel } from '../../hooks/useActiveCharacterLevel'
 import { CON_HEX, levelCon } from '../../lib/conColor'
 import { ErrorBoundary } from '../ErrorBoundary'
@@ -21,6 +24,7 @@ import {
   deleteMapAnnotation,
   getMapAnnotationExport,
   getZoneNPCLocations,
+  getRespawnState,
   getZoneSpawnPoints,
   listMapAnnotations,
   updateMapAnnotation,
@@ -208,6 +212,39 @@ function spawnRing(p: ZoneSpawnPoint, playerLevel: number | null): AggroRing {
   }
 }
 
+// Respawn dot colours: on cooldown, up within RESPAWN_SOON_SECS, popped, and
+// no kill seen this session.
+const DOT_COOLDOWN = '#ef4444'
+const DOT_SOON = '#f59e0b'
+const DOT_UP = '#22c55e'
+const DOT_UNKNOWN = '#64748b'
+const RESPAWN_SOON_SECS = 120
+
+function fmtRemaining(secs: number): string {
+  const s = Math.ceil(secs)
+  if (s >= 3600) return `${Math.floor(s / 3600)}h${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}`
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}
+
+function DotLegend(): React.ReactElement {
+  const rows: [string, string][] = [
+    [DOT_COOLDOWN, 'On cooldown'],
+    [DOT_SOON, 'Up within 2 min'],
+    [DOT_UP, 'Popped'],
+    [DOT_UNKNOWN, 'No kill seen'],
+  ]
+  return (
+    <div className="mt-1 space-y-0.5 text-[9px]" style={{ color: 'var(--color-muted)' }}>
+      {rows.map(([c, label]) => (
+        <div key={label} className="flex items-center gap-1">
+          <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ backgroundColor: c }} />
+          {label}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export function ZoneMapPanel({
   zoneShortName,
   height = 'fill',
@@ -321,10 +358,14 @@ export function ZoneMapPanel({
   // Aggro rings: every spawn point's aggro radius, con-coloured against the
   // active character. Off by default — a busy zone is hundreds of circles.
   const [aggroOn, setAggroOn] = useCachedState('maps.aggroRings', false)
+  // Respawn dots: every spawn point, coloured by the respawn timer of the
+  // kill placed on it.
+  const [dotsOn, setDotsOn] = useCachedState('maps.respawnDots', false)
   const playerLevel = useActiveCharacterLevel()
   const [spawnPoints, setSpawnPoints] = useState<ZoneSpawnPoint[]>([])
+  const wantSpawns = aggroOn || dotsOn
   useEffect(() => {
-    if (!aggroOn || !zoneShortName) {
+    if (!wantSpawns || !zoneShortName) {
       setSpawnPoints([])
       return
     }
@@ -333,7 +374,32 @@ export function ZoneMapPanel({
       .then((r) => { if (!cancelled) setSpawnPoints(r) })
       .catch(() => { if (!cancelled) setSpawnPoints([]) })
     return () => { cancelled = true }
-  }, [aggroOn, zoneShortName])
+  }, [wantSpawns, zoneShortName])
+  const [respawns, setRespawns] = useState<RespawnState | null>(null)
+  const wsReady = useWebSocket((msg) => {
+    if (dotsOn && msg.type === WSEvent.OverlayRespawns) setRespawns(msg.data as RespawnState)
+  })
+  useEffect(() => {
+    if (!dotsOn || wsReady !== 'open') return
+    getRespawnState().then(setRespawns).catch(() => {})
+  }, [dotsOn, wsReady])
+  const spawnDots = useMemo((): SpawnDot[] => {
+    const bySpawn = new Map<number, number>()
+    for (const t of respawns?.timers ?? []) {
+      if (t.zone !== zoneShortName || !t.spawn_id) continue
+      const prev = bySpawn.get(t.spawn_id)
+      if (prev === undefined || t.remaining_seconds < prev) bySpawn.set(t.spawn_id, t.remaining_seconds)
+    }
+    return spawnPoints.map((p) => {
+      const left = bySpawn.get(p.spawn_id)
+      if (left === undefined) return { x: p.x, y: p.y, z: p.z, color: DOT_UNKNOWN, known: false }
+      const color = left <= 0 ? DOT_UP : left <= RESPAWN_SOON_SECS ? DOT_SOON : DOT_COOLDOWN
+      return {
+        x: p.x, y: p.y, z: p.z, color, known: true,
+        label: left > 0 ? fmtRemaining(left) : 'up',
+      }
+    })
+  }, [spawnPoints, respawns, zoneShortName])
   const aggroRings = useMemo(
     () => spawnPoints.map((p) => spawnRing(p, playerLevel)),
     [spawnPoints, playerLevel],
@@ -831,6 +897,27 @@ export function ZoneMapPanel({
                 No character level yet, so rings aren't con-coloured.
               </p>
             )}
+            <button
+              onClick={() => setDotsOn((v) => !v)}
+              title={
+                'Every spawn point, coloured by its respawn timer. A kill is ' +
+                "placed on the nearest free spawn point for that mob, judged " +
+                'from its position when you had it targeted (Zeal) or yours. ' +
+                'Without Zeal, only mobs with a single spawn point can be placed.'
+              }
+              className="mt-1 flex w-full items-center justify-between rounded border px-1.5 py-0.5 text-[10px] font-medium"
+              style={{
+                backgroundColor: dotsOn ? 'var(--color-surface-2)' : 'transparent',
+                borderColor: dotsOn ? 'var(--color-primary)' : 'var(--color-border)',
+                color: dotsOn ? 'var(--color-primary)' : 'var(--color-muted)',
+              }}
+            >
+              <span>Respawn dots</span>
+              {dotsOn && spawnDots.length > 0 && (
+                <span className="opacity-60 tabular-nums">{spawnDots.length}</span>
+              )}
+            </button>
+            {dotsOn && <DotLegend />}
           </div>
 
           {/* Set apart deliberately: everything above toggles markers that
@@ -899,6 +986,7 @@ export function ZoneMapPanel({
             poiIgnoreZFade={poiIgnoreZFade}
             highlights={searchGroup ? searchGroup.spots : inspect ? inspect.spots : []}
             aggroRings={aggroOn ? aggroRings : undefined}
+            spawnDots={dotsOn ? spawnDots : undefined}
             onPOIClick={(p) => {
               setSelectedNPCs([])
               setSelectedSpots([])

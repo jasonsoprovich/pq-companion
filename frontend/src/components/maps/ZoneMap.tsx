@@ -33,6 +33,18 @@ export interface AggroRing {
   seeInvis?: boolean
 }
 
+// SpawnDot is one spawn point coloured by its respawn state. label, when
+// set, is drawn beside it once zoomed in (the time left).
+export interface SpawnDot {
+  x: number
+  y: number
+  z: number
+  color: string
+  label?: string
+  // known marks a dot with a respawn timer; unknown ones draw smaller.
+  known: boolean
+}
+
 // ZoneMap draws a zone's geometry and POIs on a canvas with pan/zoom and a
 // depth control.
 //
@@ -74,6 +86,8 @@ export interface ZoneMapProps {
   highlights?: MapHighlight[]
   // aggroRings are drawn over the geometry and under every pin.
   aggroRings?: AggroRing[]
+  // spawnDots are drawn over the aggro rings and under every pin.
+  spawnDots?: SpawnDot[]
   // playerPos is the live position from ZealPipes, when connected. Carries its
   // own zone, because a position from a zone other than the one on screen must
   // not be drawn — it would put the arrow at plausible-looking coordinates on
@@ -307,6 +321,7 @@ export function ZoneMap({
   poiIgnoreZFade = false,
   highlights,
   aggroRings,
+  spawnDots,
   playerPos,
   groupMembers,
   followDepth = true,
@@ -670,6 +685,35 @@ export function ZoneMap({
       ctx.restore()
     }
 
+    // ── respawn dots ──
+    if (spawnDots && spawnDots.length > 0) {
+      ctx.save()
+      ctx.font = '10px ui-monospace, monospace'
+      for (const d of spawnDots) {
+        const [px, py] = toScreen(d.x, d.y)
+        if (px < -20 || py < -20 || px > size.w + 20 || py > size.h + 20) continue
+        const dimmed = depth ? d.z < depth.lo || d.z > depth.hi : false
+        ctx.globalAlpha = dimmed ? 0.25 : d.known ? 1 : 0.7
+        ctx.beginPath()
+        ctx.arc(px, py, d.known ? 4 : 2.5, 0, Math.PI * 2)
+        ctx.fillStyle = d.color
+        ctx.fill()
+        if (d.known) {
+          ctx.lineWidth = 1.5
+          ctx.strokeStyle = 'rgba(0,0,0,0.8)'
+          ctx.stroke()
+        }
+        if (d.label && view.zoom > 1.5 && !dimmed) {
+          ctx.lineWidth = 3
+          ctx.strokeStyle = 'rgba(0,0,0,0.75)'
+          ctx.strokeText(d.label, px + 6, py - 4)
+          ctx.fillStyle = d.color
+          ctx.fillText(d.label, px + 6, py - 4)
+        }
+      }
+      ctx.restore()
+    }
+
     // ── POIs ──
     //
     // Labels are decluttered: one is skipped if its box overlaps a label
@@ -853,7 +897,7 @@ export function ZoneMap({
       ctx.fill()
       ctx.restore()
     }
-  }, [geometry, shown, zone, size, toScreen, view.zoom, depth, highlights, aggroRings, playerPos, groupMembers, showLabels, detail, showDetail, outline, external, mode, zScale, paths])
+  }, [geometry, shown, zone, size, toScreen, view.zoom, depth, highlights, aggroRings, spawnDots, playerPos, groupMembers, showLabels, detail, showDetail, outline, external, mode, zScale, paths])
 
   // Wheel zoom is attached natively with passive:false. React registers wheel
   // as a passive listener, so preventDefault() there is ignored — it never

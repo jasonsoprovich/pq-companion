@@ -31,6 +31,12 @@ export interface RespawnTimer {
   pinned: boolean
   /** Optional short user label on a pinned timer (cleared on unpin). */
   pin_label?: string
+  /**
+   * spawn2 point the kill was placed on (best guess from the mob's or your
+   * position), or absent when it couldn't be placed. Drives the map's
+   * respawn dots.
+   */
+  spawn_id?: number
 }
 
 export interface RespawnState {

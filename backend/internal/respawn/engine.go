@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"sort"
 	"strings"
 	"sync"
@@ -74,6 +75,13 @@ type Engine struct {
 	// hasPipePos stays false for the whole session without Zeal connected.
 	pipeX, pipeY float64
 	hasPipePos   bool
+
+	// The current target's name and position from the Zeal pipe (GameX/
+	// GameY), with when it was last seen. Places a kill of that target on
+	// its spawn point; see placeSpawnLocked.
+	targetName       string
+	targetX, targetY float64
+	targetAt         time.Time
 
 	// instanceMode is a manual, session-only override (see SetInstanceMode).
 	instanceMode bool
@@ -183,6 +191,72 @@ func (e *Engine) SetPipePlayerPos(x, y float64) {
 	e.pipeX, e.pipeY = x, y
 	e.hasPipePos = true
 	e.mu.Unlock()
+}
+
+// SetPipeTargetLoc records the current target's position from the Zeal
+// pipe. Pass GameX/GameY. Only called while Zeal reports a location (the
+// target is within 250 units).
+func (e *Engine) SetPipeTargetLoc(name string, x, y float64) {
+	e.SetPipeTargetLocAt(name, x, y, time.Now())
+}
+
+// SetPipeTargetLocAt is SetPipeTargetLoc with an explicit time, for tests.
+func (e *Engine) SetPipeTargetLocAt(name string, x, y float64, at time.Time) {
+	e.mu.Lock()
+	e.targetName, e.targetX, e.targetY, e.targetAt = name, x, y, at
+	e.mu.Unlock()
+}
+
+// targetLocFresh is how long a target position stays usable for placing a
+// kill. A corpse keeps its location, but the last live reading before the
+// kill line is what matters, and the line can trail it by a second or two.
+const targetLocFresh = 10 * time.Second
+
+// placeSpawnLocked picks the spawn point a kill of name most likely came
+// from: of the candidate points (infos) without a running timer, the one
+// nearest the mob's target position, or the player's position when the
+// target position isn't known. A single free candidate needs no position.
+// Returns 0 when there is nothing to go on. Caller must hold e.mu.
+func (e *Engine) placeSpawnLocked(zone, name string, infos []db.RespawnInfo, diedAt time.Time) int {
+	taken := map[int]bool{}
+	for _, t := range e.timers {
+		if t.Zone == zone && t.SpawnID != 0 && diedAt.Before(t.RespawnAt) {
+			taken[t.SpawnID] = true
+		}
+	}
+	var free []db.RespawnInfo
+	seen := map[int]bool{}
+	for _, ri := range infos {
+		if ri.SpawnID == 0 || taken[ri.SpawnID] || seen[ri.SpawnID] {
+			continue
+		}
+		seen[ri.SpawnID] = true
+		free = append(free, ri)
+	}
+	switch {
+	case len(free) == 0:
+		return 0
+	case len(free) == 1:
+		return free[0].SpawnID
+	}
+	var x, y float64
+	switch {
+	case strings.EqualFold(e.targetName, name) && diedAt.Sub(e.targetAt) <= targetLocFresh &&
+		e.targetAt.Sub(diedAt) <= targetLocFresh:
+		x, y = e.targetX, e.targetY
+	case e.hasPipePos:
+		x, y = e.pipeX, e.pipeY
+	default:
+		return 0
+	}
+	best, bestDist := 0, math.MaxFloat64
+	for _, ri := range free {
+		dx, dy := ri.X-x, ri.Y-y
+		if d := dx*dx + dy*dy; d < bestDist {
+			best, bestDist = ri.SpawnID, d
+		}
+	}
+	return best
 }
 
 // setLogZone resolves the "You have entered <long>." text to a short_name and
@@ -310,6 +384,7 @@ func (e *Engine) onKill(displayName string, diedAt time.Time) {
 	if hasPos {
 		newTimer.killX, newTimer.killY, newTimer.hasKillPos = posX, posY, true
 	}
+	newTimer.SpawnID = e.placeSpawnLocked(zoneShort, displayName, infos, diedAt)
 	handoffFrom := ""
 	var match *RespawnTimer
 	if e.pinHandoffOn() {

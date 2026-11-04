@@ -1468,7 +1468,8 @@ func (db *DB) GetNPCSpawns(npcID int) (*NPCSpawns, error) {
 // set into a single estimate plus an ambiguity flag.
 func (db *DB) GetRespawnTimesInZone(name, zoneShort string) ([]RespawnInfo, error) {
 	rows, err := db.Query(`
-		SELECT n.id, s2.respawntime, s2.variance, n.level, s2.raid_target_spawnpoint
+		SELECT n.id, s2.respawntime, s2.variance, n.level, s2.raid_target_spawnpoint,
+		       s2.id, s2.x, s2.y
 		FROM npc_types n
 		JOIN spawnentry se ON se.npcID = n.id
 		JOIN spawn2 s2 ON s2.spawngroupID = se.spawngroupID
@@ -1482,7 +1483,8 @@ func (db *DB) GetRespawnTimesInZone(name, zoneShort string) ([]RespawnInfo, erro
 	for rows.Next() {
 		var ri RespawnInfo
 		var raid int
-		if err := rows.Scan(&ri.NPCID, &ri.RespawnTime, &ri.Variance, &ri.Level, &raid); err != nil {
+		if err := rows.Scan(&ri.NPCID, &ri.RespawnTime, &ri.Variance, &ri.Level, &raid,
+			&ri.SpawnID, &ri.X, &ri.Y); err != nil {
 			return nil, fmt.Errorf("scan respawn info: %w", err)
 		}
 		ri.RaidTarget = raid != 0

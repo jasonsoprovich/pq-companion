@@ -1750,6 +1750,11 @@ func main() {
 			// feed the overlay's live level/class and distance readout.
 			dist, distOK := p.DistanceToTarget()
 			npcTracker.SetPipeTargetSnapshot(p.TargetID, p.TargetDescriptors(), dist, distOK)
+			// The live target's position places its kill on a spawn point
+			// for the map's respawn dots.
+			if td := p.TargetDescriptors(); td != nil && td.LocKnown && td.Type == zealpipe.TargetTypeNPC {
+				respawnEngine.SetPipeTargetLoc(zealpipe.CleanTargetName(td.Name), td.GameX, td.GameY)
+			}
 			// After the NPC tracker so a pet the player just targeted (or
 			// charmed) has its resolution cached under target_id == pet_id.
 			petTracker.SetPipePetID(p.PetID)

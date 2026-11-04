@@ -554,6 +554,10 @@ type RespawnInfo struct {
 	// RaidTarget is spawn2.raid_target_spawnpoint: the server never applies the
 	// fast-respawn reduction to these in the open world.
 	RaidTarget bool
+	// SpawnID, X and Y are the spawn2 point (server coordinates, the same
+	// convention as Zeal's GameX/GameY).
+	SpawnID int
+	X, Y    float64
 }
 
 // NPCSpellEntry is one castable spell on an NPC's spell list. Spells_new

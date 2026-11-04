@@ -47,6 +47,13 @@ type RespawnTimer struct {
 	MinSeconds int  `json:"min_seconds,omitempty"`
 	MaxSeconds int  `json:"max_seconds,omitempty"`
 
+	// SpawnID is the spawn2 point this kill was placed on (0 = unplaced), so
+	// the map can colour that spawn by its respawn state. It's a best guess:
+	// the candidate point nearest the dead mob's last known position (its
+	// target location when it was your target, otherwise yours), skipping
+	// points that already have a timer. See Engine.placeSpawnLocked.
+	SpawnID int `json:"spawn_id,omitempty"`
+
 	// Pinned marks a timer the player has flagged as their camp/farm target
 	// (see Engine.TogglePin). Pinned timers sort first, are never auto-pruned
 	// after they pop, and hand the pin off to a later kill at the same spot
