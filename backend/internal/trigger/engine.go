@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -101,6 +102,10 @@ type Engine struct {
 	// no target. Wired to overlay.NPCTracker via SetTargetProvider; nil when
 	// target integration is disabled (tests). Feeds the {target} action token.
 	currentTarget func() string
+	// targetAbilities returns the special ability codes of the NPC named
+	// name when it is the current target (nil otherwise). Wired via
+	// SetTargetAbilityProvider; feeds target_hp_below's ability filter.
+	targetAbilities func(name string) []int
 	// activeClassLevel returns the active character's class index and level
 	// (ok=false when unknown). Wired via SetClassLevelProvider; feeds the
 	// level-scaled discipline reuse in startCooldownTimer.
@@ -261,6 +266,13 @@ func (e *Engine) SetTargetProvider(fn func() string) {
 // of the trigger's flat CooldownSecs. Nil keeps the flat value.
 func (e *Engine) SetClassLevelProvider(fn func() (class, level int, ok bool)) {
 	e.activeClassLevel = fn
+}
+
+// SetTargetAbilityProvider wires the current target's NPC special abilities
+// for target_hp_below's SpecialAbility filter. Without it, triggers using
+// that filter never fire.
+func (e *Engine) SetTargetAbilityProvider(fn func(name string) []int) {
+	e.targetAbilities = fn
 }
 
 // SetWebhookResolver wires a Preferences.DiscordWebhooks lookup into the
@@ -490,6 +502,7 @@ func (e *Engine) HandlePipeTarget(name string, hp int, character string, ts time
 	if e.activeChar != nil {
 		active = e.activeChar()
 	}
+	var abilities []int // looked up on first use
 	for _, t := range pipeCs {
 		if !triggerAppliesTo(t, active) {
 			continue
@@ -514,11 +527,35 @@ func (e *Engine) HandlePipeTarget(name string, hp int, character string, ts time
 			if prev == 0 {
 				prev = 101
 			}
-			if prev > cond.HPThreshold && hp <= cond.HPThreshold {
-				e.firePipe(t, fmt.Sprintf("target hp %d%%", hp), ts)
+			if prev <= cond.HPThreshold || hp > cond.HPThreshold {
+				continue
 			}
+			if cond.TargetName != "" && !strings.EqualFold(cond.TargetName, name) {
+				continue
+			}
+			if cond.SpecialAbility > 0 {
+				if abilities == nil {
+					abilities = e.lookupTargetAbilities(name)
+				}
+				if !slices.Contains(abilities, cond.SpecialAbility) {
+					continue
+				}
+			}
+			e.firePipe(t, fmt.Sprintf("target hp %d%%", hp), ts)
 		}
 	}
+}
+
+// lookupTargetAbilities returns the current target's special ability codes,
+// or an empty non-nil slice when unknown so the caller looks it up once.
+func (e *Engine) lookupTargetAbilities(name string) []int {
+	if e.targetAbilities == nil || name == "" {
+		return []int{}
+	}
+	if codes := e.targetAbilities(name); codes != nil {
+		return codes
+	}
+	return []int{}
 }
 
 // HandlePipeBuffSlots evaluates buff_landed + buff_faded triggers against

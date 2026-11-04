@@ -102,8 +102,16 @@ export interface PipeCondition {
   kind: PipeConditionKind
   /** target_hp_below: fires when target HP crosses below this percentage (0-100). */
   hp_threshold?: number
-  /** target_name: fires when the player's target becomes this name (exact match). */
+  /**
+   * target_name: fires when the player's target becomes this name (exact
+   * match). target_hp_below: optional filter, case-insensitive.
+   */
   target_name?: string
+  /**
+   * target_hp_below: optional NPC special ability code the target must
+   * have (e.g. 2 = Enrage). 0 / absent = any mob.
+   */
+  special_ability?: number
   /**
    * buff_landed / buff_faded: spell name to watch in the player's buff slots.
    * buff_stripped / debuff_stripped: optional; empty matches any spell.

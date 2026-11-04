@@ -1041,6 +1041,29 @@ func main() {
 	// discord_webhook actions store only a Preferences.DiscordWebhooks id —
 	// resolve it to the actual URL at fire time via the live config, so
 	// editing/deleting a saved webhook in Settings takes effect immediately.
+	// target_hp_below's special-ability filter ("Enrage soon"): the NPC
+	// overlay has already resolved the current target's npc_types row. With
+	// several candidate rows, an ability any of them has counts, so a warning
+	// isn't missed on a mob we couldn't narrow down.
+	triggerEngine.SetTargetAbilityProvider(func(name string) []int {
+		st := npcTracker.GetState()
+		if !st.HasTarget || !strings.EqualFold(st.TargetName, name) {
+			return nil
+		}
+		codes := []int{}
+		add := func(abs []db.SpecialAbility) {
+			for _, a := range abs {
+				if a.Value != 0 {
+					codes = append(codes, a.Code)
+				}
+			}
+		}
+		add(st.SpecialAbilities)
+		for _, v := range st.Variants {
+			add(v.SpecialAbilities)
+		}
+		return codes
+	})
 	triggerEngine.SetWebhookResolver(func(id string) (string, bool) {
 		for _, wh := range cfgMgr.Get().Preferences.DiscordWebhooks {
 			if wh.ID == id {

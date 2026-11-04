@@ -193,7 +193,9 @@ type PipeConditionKind string
 const (
 	// PipeKindTargetHPBelow fires when the target's HP percentage transitions
 	// from above HPThreshold to at-or-below. Refires only after HP rises back
-	// above threshold and drops again — no spam at every pipe tick.
+	// above threshold and drops again — no spam at every pipe tick. Optional
+	// filters: TargetName (case-insensitive) and SpecialAbility (the target's
+	// NPC row must have that special ability code, e.g. 2 = Enrage).
 	PipeKindTargetHPBelow PipeConditionKind = "target_hp_below"
 	// PipeKindTargetName fires when the player's target name becomes the
 	// configured TargetName (case-sensitive). Dedupes on consecutive identical
@@ -228,8 +230,12 @@ type PipeCondition struct {
 	Kind        PipeConditionKind `json:"kind"`
 	HPThreshold int               `json:"hp_threshold,omitempty"` // PipeKindTargetHPBelow: 0–100
 	SpellName   string            `json:"spell_name,omitempty"`   // PipeKindBuffLanded / PipeKindBuffFaded / *Stripped (optional)
-	TargetName  string            `json:"target_name,omitempty"`  // PipeKindTargetName
+	TargetName  string            `json:"target_name,omitempty"`  // PipeKindTargetName; optional filter for PipeKindTargetHPBelow
 	Text        string            `json:"text,omitempty"`         // PipeKindPipeCommand
+	// SpecialAbility is an optional PipeKindTargetHPBelow filter: an NPC
+	// special ability code (see db.SpecialAbility) the target must have.
+	// 0 = no filter.
+	SpecialAbility int `json:"special_ability,omitempty"`
 }
 
 // Trigger is a user-defined matcher with associated actions. Today it matches

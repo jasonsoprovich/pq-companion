@@ -3154,10 +3154,28 @@ func RaidAlertsPack() TriggerPack {
 			},
 		},
 	}
+	triggers = append(triggers, Trigger{
+		// NPCs with the Enrage special ability (code 2) enrage at 10% HP,
+		// riposting every melee hit from the front. 12% gives tanks and
+		// melee a moment to get behind it. Needs Zeal for the target's HP.
+		Name:     "Enrage Soon",
+		Enabled:  true,
+		Source:   SourcePipe,
+		PackName: "Raid Alerts",
+		PipeCondition: &PipeCondition{
+			Kind:           PipeKindTargetHPBelow,
+			HPThreshold:    12,
+			SpecialAbility: 2,
+		},
+		Actions: []Action{
+			{Type: ActionOverlayText, Text: "ENRAGE SOON — {target}", DurationSecs: 5, Color: "#ff4444"},
+			{Type: ActionTextToSpeech, Text: "Enrage soon", Volume: 1.0},
+		},
+	})
 	triggers = append(triggers, raidSignatureSpellAlerts()...)
 	return TriggerPack{
 		PackName:    "Raid Alerts",
-		Description: "Divine Intervention procs, mobs casting gate, assist calls, and signature-spell recast warnings for Ring War raid targets.",
+		Description: "Divine Intervention procs, mobs casting gate, assist calls, an enrage-soon warning at 12% on mobs that enrage (needs Zeal), and signature-spell recast warnings for Ring War raid targets.",
 		Triggers:    triggers,
 	}
 }

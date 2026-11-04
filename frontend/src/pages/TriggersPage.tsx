@@ -95,6 +95,7 @@ import { useWebSocket } from '../hooks/useWebSocket'
 import { useActivePlayerName } from '../hooks/useActivePlayerName'
 import { WSEvent } from '../lib/wsEvents'
 import { compileTriggerRegex } from '../lib/triggerRegex'
+import { specialAbilityName } from '../lib/enumsCache'
 import type {
   Trigger,
   TriggerFired,
@@ -113,6 +114,10 @@ import type {
   PackUpdateSummary,
   TestLineResult,
 } from '../types/trigger'
+
+// NPC special ability codes (Project Quarm's EQMacEmu numbering) offered as
+// the target-HP trigger's ability filter.
+const SPECIAL_ABILITY_CODES = Array.from({ length: 54 }, (_, i) => i + 1)
 
 const CLASS_NAMES = [
   'Warrior', 'Cleric', 'Paladin', 'Ranger', 'Shadow Knight',
@@ -584,6 +589,9 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, timerG
   const [pipeTargetName, setPipeTargetName] = useState<string>(initial?.pipe_condition?.target_name ?? '')
   const [pipeSpellName, setPipeSpellName] = useState<string>(initial?.pipe_condition?.spell_name ?? '')
   const [pipeCommandText, setPipeCommandText] = useState<string>(initial?.pipe_condition?.text ?? '')
+  const [pipeSpecialAbility, setPipeSpecialAbility] = useState<number>(
+    initial?.pipe_condition?.special_ability ?? 0,
+  )
   const [pipeError, setPipeError] = useState<string | null>(null)
   const [actions, setActions] = useState<Action[]>(
     initial?.actions ?? [{ type: 'overlay_text', text: prefill?.name ?? '', duration_secs: 5, color: '', sound_path: '', volume: 0, voice: '' }],
@@ -849,7 +857,10 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, timerG
     switch (pipeKind) {
       case 'target_hp_below': {
         const t = Math.max(1, Math.min(99, Math.round(pipeHPThreshold)))
-        return { kind: 'target_hp_below', hp_threshold: t }
+        const cond: PipeCondition = { kind: 'target_hp_below', hp_threshold: t }
+        if (pipeTargetName.trim()) cond.target_name = pipeTargetName.trim()
+        if (pipeSpecialAbility > 0) cond.special_ability = pipeSpecialAbility
+        return cond
       }
       case 'target_name':
         if (!pipeTargetName.trim()) return null
@@ -1312,6 +1323,32 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, timerG
               >
                 {pipeHPThreshold}% HP
               </span>
+            </div>
+          )}
+          {pipeKind === 'target_hp_below' && (
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="Only this mob (optional)"
+                value={pipeTargetName}
+                onChange={(e) => setPipeTargetName(e.target.value)}
+                className="min-w-0 flex-1 rounded px-3 py-1.5 text-sm outline-none"
+                style={inputStyle}
+                disabled={submitting}
+              />
+              <select
+                value={pipeSpecialAbility}
+                onChange={(e) => setPipeSpecialAbility(Number(e.target.value))}
+                title="Only fire when the target's NPC data has this special ability"
+                className="min-w-0 flex-1 rounded px-3 py-1.5 text-sm outline-none"
+                style={inputStyle}
+                disabled={submitting}
+              >
+                <option value={0}>Any mob</option>
+                {SPECIAL_ABILITY_CODES.map((c) => (
+                  <option key={c} value={c}>Has {specialAbilityName(c)}</option>
+                ))}
+              </select>
             </div>
           )}
           {pipeKind === 'target_name' && (

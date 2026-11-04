@@ -713,6 +713,64 @@ func TestPipe_TargetHPBelowFiresOnceOnTransition(t *testing.T) {
 	}
 }
 
+func TestPipe_TargetHPBelowFilters(t *testing.T) {
+	s, e := openTestEngine(t)
+	insertPipeTrigger(t, s, e, "named", PipeCondition{
+		Kind: PipeKindTargetHPBelow, HPThreshold: 12, TargetName: "lord bob",
+	})
+	insertPipeTrigger(t, s, e, "enrage", PipeCondition{
+		Kind: PipeKindTargetHPBelow, HPThreshold: 12, SpecialAbility: 2,
+	})
+	abilities := map[string][]int{"Lord Bob": {1, 2}, "a gnoll": {1}}
+	e.SetTargetAbilityProvider(func(name string) []int { return abilities[name] })
+
+	fired := func(target string) []string {
+		e.HandlePipeReset()
+		before := len(e.GetHistory())
+		now := time.Now()
+		e.HandlePipeTarget(target, 50, "", now)
+		e.HandlePipeTarget(target, 11, "", now.Add(time.Second))
+		var names []string
+		for _, h := range e.GetHistory()[before:] {
+			names = append(names, h.TriggerName)
+		}
+		return names
+	}
+	if got := fired("Lord Bob"); len(got) != 2 {
+		t.Errorf("Lord Bob fired %v, want named + enrage", got)
+	}
+	if got := fired("a gnoll"); len(got) != 0 {
+		t.Errorf("a gnoll fired %v, want none", got)
+	}
+	if got := fired("an orc"); len(got) != 0 {
+		t.Errorf("unknown abilities fired %v", got)
+	}
+}
+
+func TestRaidAlertsEnrageSoon(t *testing.T) {
+	var tr *Trigger
+	for _, p := range AllPacks() {
+		for i := range p.Triggers {
+			if p.PackName == "Raid Alerts" && p.Triggers[i].Name == "Enrage Soon" {
+				tr = &p.Triggers[i]
+			}
+		}
+	}
+	if tr == nil || tr.Source != SourcePipe || tr.PipeCondition == nil ||
+		tr.PipeCondition.SpecialAbility != 2 || tr.PipeCondition.HPThreshold != 12 {
+		t.Fatalf("Enrage Soon = %+v", tr)
+	}
+	s, e := openTestEngine(t)
+	insertPipeTrigger(t, s, e, "Enrage Soon", *tr.PipeCondition)
+	e.SetTargetAbilityProvider(func(string) []int { return []int{2} })
+	now := time.Now()
+	e.HandlePipeTarget("Lord Bob", 20, "", now)
+	e.HandlePipeTarget("Lord Bob", 12, "", now.Add(time.Second))
+	if got := len(e.GetHistory()); got != 1 {
+		t.Fatalf("fires = %d, want 1", got)
+	}
+}
+
 func TestPipe_TargetNameFiresOnceOnMatch(t *testing.T) {
 	s, e := openTestEngine(t)
 	insertPipeTrigger(t, s, e, "spotted", PipeCondition{
