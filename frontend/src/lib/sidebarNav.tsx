@@ -3,7 +3,7 @@ import {
   Sword, Sparkles, Skull, Map, Hammer, Activity, Layers, ScrollText, Zap,
   Users, Dice5, UserSearch, MessageSquare, Package, TrendingUp, BookOpen,
   Library, KeyRound, Hourglass, Star, Wand2, ListChecks, Percent, Store, PawPrint,
-  Flag, Swords, ShieldBan, Keyboard, Route, Scale, Navigation, ShieldCheck,
+  Flag, Swords, ShieldBan, Keyboard, Route, Scale, Navigation, ShieldCheck, Film,
   Crosshair,
 } from 'lucide-react'
 import type { Preferences } from '../types/config'
@@ -91,6 +91,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { to: '/log-feed', label: 'Log Feed', icon: <Activity size={16} /> },
       { to: '/live-map', label: 'Live Map', icon: <Navigation size={16} /> },
+      { to: '/raid-replay', label: 'Raid Replay', icon: <Film size={16} /> },
       { to: '/overlays', label: 'Overlays', icon: <Layers size={16} /> },
       { to: '/combat', label: 'Combat Log', icon: <ScrollText size={16} /> },
       { to: '/triggers', label: 'Triggers', icon: <Zap size={16} /> },

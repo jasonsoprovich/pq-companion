@@ -45,6 +45,21 @@ export interface SpawnDot {
   known: boolean
 }
 
+// RaiderMarker is one raider in a raid replay frame, in map space.
+export interface RaiderMarker {
+  x: number
+  y: number
+  z: number
+  // heading is EQ's 0-512 counter-clockwise value, 0 = north.
+  heading: number
+  color: string
+  label: string
+  // dead draws a cross instead of an arrow.
+  dead?: boolean
+  // focus rings the marker and always labels it.
+  focus?: boolean
+}
+
 // ZoneMap draws a zone's geometry and POIs on a canvas with pan/zoom and a
 // depth control.
 //
@@ -88,6 +103,8 @@ export interface ZoneMapProps {
   aggroRings?: AggroRing[]
   // spawnDots are drawn over the aggro rings and under every pin.
   spawnDots?: SpawnDot[]
+  // raiders are raid replay markers, drawn over the group members.
+  raiders?: RaiderMarker[]
   // playerPos is the live position from ZealPipes, when connected. Carries its
   // own zone, because a position from a zone other than the one on screen must
   // not be drawn — it would put the arrow at plausible-looking coordinates on
@@ -322,6 +339,7 @@ export function ZoneMap({
   highlights,
   aggroRings,
   spawnDots,
+  raiders,
   playerPos,
   groupMembers,
   followDepth = true,
@@ -875,6 +893,60 @@ export function ZoneMap({
       }
     }
 
+    // ── raid replay ──
+    for (const r of raiders ?? []) {
+      const [rx, ry] = toScreen(r.x, r.y)
+      ctx.save()
+      ctx.translate(rx, ry)
+      if (r.dead) {
+        ctx.beginPath()
+        ctx.moveTo(-4, -4); ctx.lineTo(4, 4)
+        ctx.moveTo(4, -4); ctx.lineTo(-4, 4)
+        ctx.lineWidth = 4
+        ctx.strokeStyle = 'rgba(0,0,0,0.7)'
+        ctx.stroke()
+        ctx.lineWidth = 2
+        ctx.strokeStyle = r.color
+        ctx.stroke()
+      } else {
+        ctx.rotate(-((r.heading ?? 0) / 512) * Math.PI * 2)
+        ctx.beginPath()
+        ctx.moveTo(0, -6)
+        ctx.lineTo(4, 5)
+        ctx.lineTo(0, 2.5)
+        ctx.lineTo(-4, 5)
+        ctx.closePath()
+        ctx.lineWidth = 2.5
+        ctx.strokeStyle = 'rgba(0,0,0,0.7)'
+        ctx.stroke()
+        ctx.fillStyle = r.color
+        ctx.fill()
+      }
+      ctx.restore()
+      if (r.focus) {
+        ctx.beginPath()
+        ctx.arc(rx, ry, 10, 0, Math.PI * 2)
+        ctx.lineWidth = 3.5
+        ctx.strokeStyle = 'rgba(0,0,0,0.7)'
+        ctx.stroke()
+        ctx.lineWidth = 1.5
+        ctx.strokeStyle = HIGHLIGHT_COLOR
+        ctx.stroke()
+      }
+      // A raid's worth of names is unreadable until zoomed in.
+      if ((showLabels && view.zoom > 2.5) || r.focus) {
+        ctx.save()
+        ctx.font = r.focus ? '600 11px system-ui, sans-serif' : '9px system-ui, sans-serif'
+        ctx.textAlign = 'center'
+        ctx.lineWidth = 3
+        ctx.strokeStyle = 'rgba(0,0,0,0.75)'
+        ctx.strokeText(r.label, rx, ry - (r.focus ? 13 : 9))
+        ctx.fillStyle = r.dead ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.9)'
+        ctx.fillText(r.label, rx, ry - (r.focus ? 13 : 9))
+        ctx.restore()
+      }
+    }
+
     // ── player ──
     if (playerPos && playerPos.zone === zone.zone) {
       const [px, py] = toScreen(playerPos.x, playerPos.y)
@@ -897,7 +969,7 @@ export function ZoneMap({
       ctx.fill()
       ctx.restore()
     }
-  }, [geometry, shown, zone, size, toScreen, view.zoom, depth, highlights, aggroRings, spawnDots, playerPos, groupMembers, showLabels, detail, showDetail, outline, external, mode, zScale, paths])
+  }, [geometry, shown, zone, size, toScreen, view.zoom, depth, highlights, aggroRings, spawnDots, raiders, playerPos, groupMembers, showLabels, detail, showDetail, outline, external, mode, zScale, paths])
 
   // Wheel zoom is attached natively with passive:false. React registers wheel
   // as a passive listener, so preventDefault() there is ignored — it never

@@ -6,7 +6,7 @@ import { usePlayerPosition } from '../../hooks/usePlayerPosition'
 import { useGroupPositions } from '../../hooks/useGroupPositions'
 import { useMapStyle } from '../../hooks/useMapStyle'
 import { useZoneMap } from '../../hooks/useZoneMap'
-import { ZoneMap, type AggroRing, type MapHighlight, type SpawnDot } from './ZoneMap'
+import { ZoneMap, type AggroRing, type MapHighlight, type RaiderMarker, type SpawnDot } from './ZoneMap'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { WSEvent } from '../../lib/wsEvents'
 import type { RespawnState } from '../../types/respawn'
@@ -173,6 +173,10 @@ export interface ZoneMapPanelProps {
   // follow preference — the right default differs by surface, and sharing one
   // key would make turning it on for the live map hijack the Zones tab too.
   live?: boolean
+  // replay hides the live player, group and follow-me, for a surface that
+  // draws a recording instead. raiders are its markers.
+  replay?: boolean
+  raiders?: RaiderMarker[]
 }
 
 // Rings drawn when the active character's level is unknown.
@@ -251,6 +255,8 @@ export function ZoneMapPanel({
   showZoneButton = true,
   onJumpToZone,
   live = false,
+  replay = false,
+  raiders,
 }: ZoneMapPanelProps): React.ReactElement {
   const navigate = useNavigate()
   // Detailed is the default. Outline is the cleaner drawing and the same style
@@ -661,7 +667,7 @@ export function ZoneMapPanel({
         {/* Both of these appear only with a live position, so they are absent
             entirely rather than disabled when Zeal is not running — a greyed
             control invites a question we cannot answer from here. */}
-        {playerPos && playerPos.zone === zone.zone && (
+        {!replay && playerPos && playerPos.zone === zone.zone && (
           <button
             onClick={() => setFollowPlayer((v) => !v)}
             title="Keep the view centred on you as you move"
@@ -973,9 +979,10 @@ export function ZoneMapPanel({
             external={external}
             mode={mode}
             colorByHeight={heightColor}
-            playerPos={playerPos}
-            groupMembers={showGroup ? groupMembers : []}
-            followPlayer={followPlayer}
+            playerPos={replay ? null : playerPos}
+            groupMembers={showGroup && !replay ? groupMembers : []}
+            followPlayer={followPlayer && !replay}
+            raiders={raiders}
             // Panning is a deliberate act; treat it as "I want to look
             // somewhere else" and stop following. The Follow me toggle above is
             // right there to turn it back on.

@@ -704,6 +704,9 @@ export interface Config {
   // negative value (-1) keeps chat forever. 0 is coerced to the default
   // server-side.
   chat_retention_days: number
+  // Raid replay recording. retention_days: 0 is coerced to the default
+  // (30) server-side; negative keeps recordings forever.
+  raid_replay: { disabled: boolean; retention_days: number }
   // Settings > Logs Archive & Trim window and large-log warning threshold.
   log_trim: LogTrimSettings
   // App version the user last saw the "what's new" popup for. Empty means

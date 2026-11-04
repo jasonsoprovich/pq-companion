@@ -1999,6 +1999,21 @@ export function clearDeaths(): Promise<void> {
   return del('/api/combat/deaths')
 }
 
+type RaidSession = import('../types/raidReplay').RaidSession
+type RaidRecording = import('../types/raidReplay').RaidRecording
+
+export function listRaidSessions(): Promise<RaidSession[]> {
+  return get<RaidSession[]>('/api/raidreplay/sessions')
+}
+
+export function getRaidRecording(id: number): Promise<RaidRecording> {
+  return get<RaidRecording>(`/api/raidreplay/sessions/${id}`)
+}
+
+export function deleteRaidSession(id: number): Promise<void> {
+  return del(`/api/raidreplay/sessions/${id}`)
+}
+
 export function getTimerState(): Promise<TimerState> {
   return get<TimerState>('/api/overlay/timers')
 }
