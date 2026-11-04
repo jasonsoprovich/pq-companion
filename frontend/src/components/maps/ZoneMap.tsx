@@ -60,6 +60,18 @@ export interface RaiderMarker {
   focus?: boolean
 }
 
+// ReplayTarget is the observer's target in a raid replay, in map space: a
+// line from the observer to it. onRaider means the target is a raider whose
+// own marker is drawn already; otherwise the target gets a ring and a name.
+export interface ReplayTarget {
+  from: { x: number; y: number; z: number }
+  to: { x: number; y: number; z: number }
+  label: string
+  onRaider: boolean
+}
+
+const REPLAY_TARGET_COLOR = '#f87171'
+
 // ZoneMap draws a zone's geometry and POIs on a canvas with pan/zoom and a
 // depth control.
 //
@@ -105,6 +117,8 @@ export interface ZoneMapProps {
   spawnDots?: SpawnDot[]
   // raiders are raid replay markers, drawn over the group members.
   raiders?: RaiderMarker[]
+  // replayTarget is drawn over the raiders.
+  replayTarget?: ReplayTarget | null
   // playerPos is the live position from ZealPipes, when connected. Carries its
   // own zone, because a position from a zone other than the one on screen must
   // not be drawn — it would put the arrow at plausible-looking coordinates on
@@ -340,6 +354,7 @@ export function ZoneMap({
   aggroRings,
   spawnDots,
   raiders,
+  replayTarget,
   playerPos,
   groupMembers,
   followDepth = true,
@@ -947,6 +962,37 @@ export function ZoneMap({
       }
     }
 
+    // The target line goes over the raiders: under them, a crowd's names
+    // hide it.
+    if (replayTarget) {
+      const [fx, fy] = toScreen(replayTarget.from.x, replayTarget.from.y)
+      const [tx, ty] = toScreen(replayTarget.to.x, replayTarget.to.y)
+      ctx.save()
+      ctx.setLineDash([5, 4])
+      ctx.lineWidth = 1.5
+      ctx.strokeStyle = REPLAY_TARGET_COLOR
+      ctx.globalAlpha = 0.85
+      ctx.beginPath()
+      ctx.moveTo(fx, fy)
+      ctx.lineTo(tx, ty)
+      ctx.stroke()
+      ctx.setLineDash([])
+      if (!replayTarget.onRaider) {
+        ctx.beginPath()
+        ctx.arc(tx, ty, 5, 0, Math.PI * 2)
+        ctx.lineWidth = 2
+        ctx.stroke()
+        ctx.font = '600 10px system-ui, sans-serif'
+        ctx.textAlign = 'center'
+        ctx.lineWidth = 3
+        ctx.strokeStyle = 'rgba(0,0,0,0.75)'
+        ctx.strokeText(replayTarget.label, tx, ty - 9)
+        ctx.fillStyle = REPLAY_TARGET_COLOR
+        ctx.fillText(replayTarget.label, tx, ty - 9)
+      }
+      ctx.restore()
+    }
+
     // ── player ──
     if (playerPos && playerPos.zone === zone.zone) {
       const [px, py] = toScreen(playerPos.x, playerPos.y)
@@ -969,7 +1015,7 @@ export function ZoneMap({
       ctx.fill()
       ctx.restore()
     }
-  }, [geometry, shown, zone, size, toScreen, view.zoom, depth, highlights, aggroRings, spawnDots, raiders, playerPos, groupMembers, showLabels, detail, showDetail, outline, external, mode, zScale, paths])
+  }, [geometry, shown, zone, size, toScreen, view.zoom, depth, highlights, aggroRings, spawnDots, raiders, replayTarget, playerPos, groupMembers, showLabels, detail, showDetail, outline, external, mode, zScale, paths])
 
   // Wheel zoom is attached natively with passive:false. React registers wheel
   // as a passive listener, so preventDefault() there is ignored — it never

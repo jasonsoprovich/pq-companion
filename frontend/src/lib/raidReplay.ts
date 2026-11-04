@@ -3,7 +3,7 @@
 // positions in between are interpolated so playback glides instead of
 // jumping a body-length every sample.
 
-import type { RaidEvent, RaidFrame } from '../types/raidReplay'
+import type { RaidEvent, RaidFrame, RaidFrameTarget } from '../types/raidReplay'
 
 // RETENTION_CHOICES are the "keep recordings for" options in days; -1 (keep
 // forever) is offered alongside.
@@ -83,6 +83,26 @@ export function lastSeenAt(frames: RaidFrame[], t: number, index: number): Raide
     }
   }
   return null
+}
+
+// targetAt returns the observer's target in the frame at or before t.
+export function targetAt(frames: RaidFrame[], t: number): RaidFrameTarget | null {
+  const i = frameIndexAt(frames, t)
+  return i >= 0 ? frames[i].tg ?? null : null
+}
+
+// groupsAt lays out the raiders present at t by group number, for the
+// groups panel: groups in order, then ungrouped (0) last.
+export function groupsAt(present: RaiderAt[]): { group: number; indexes: number[] }[] {
+  const by = new Map<number, number[]>()
+  for (const r of present) {
+    const g = by.get(r.group) ?? []
+    g.push(r.index)
+    by.set(r.group, g)
+  }
+  return [...by.entries()]
+    .sort(([a], [b]) => (a || 99) - (b || 99))
+    .map(([group, indexes]) => ({ group, indexes }))
 }
 
 // recentDeaths returns the death events in the DEAD_SHOW_MS before t.

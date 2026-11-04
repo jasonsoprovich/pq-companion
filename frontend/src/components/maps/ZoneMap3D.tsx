@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { getZoneMesh3D } from '../../services/api'
-import type { RaiderMarker } from './ZoneMap'
+import type { RaiderMarker, ReplayTarget } from './ZoneMap'
 
 // ZoneMap3D draws a zone in 3D from the user's own installed client files
 // (<eq_path>/<zone>.s3d, read by the backend): solid geometry shaded by
@@ -16,6 +16,8 @@ import type { RaiderMarker } from './ZoneMap'
 export interface ZoneMap3DProps {
   zone: string
   raiders: RaiderMarker[]
+  // target draws a line from the observer to their target.
+  target?: ReplayTarget | null
   // onUnavailable fires when 3D can't be shown (no WebGL, no s3d), so the
   // caller can fall back to 2D.
   onUnavailable?: (reason: string) => void
@@ -49,12 +51,13 @@ interface Scene3D {
   camera: THREE.PerspectiveCamera
   controls: OrbitControls
   markers: THREE.Group
+  targetLine: THREE.Line
   markerSize: number
   render: () => void
   dispose: () => void
 }
 
-export default function ZoneMap3D({ zone, raiders, onUnavailable }: ZoneMap3DProps): React.ReactElement {
+export default function ZoneMap3D({ zone, raiders, target, onUnavailable }: ZoneMap3DProps): React.ReactElement {
   const host = useRef<HTMLDivElement>(null)
   const scene = useRef<Scene3D | null>(null)
   const raidersRef = useRef(raiders)
@@ -92,6 +95,13 @@ export default function ZoneMap3D({ zone, raiders, onUnavailable }: ZoneMap3DPro
     const markers = new THREE.Group()
     markers.renderOrder = 10
     sc.add(markers)
+    const targetLine = new THREE.Line(
+      new THREE.BufferGeometry(),
+      new THREE.LineDashedMaterial({ color: 0xf87171, dashSize: 6, gapSize: 4, depthTest: false, transparent: true }),
+    )
+    targetLine.renderOrder = 9
+    targetLine.visible = false
+    sc.add(targetLine)
 
     let frame = 0
     const render = (): void => {
@@ -118,7 +128,7 @@ export default function ZoneMap3D({ zone, raiders, onUnavailable }: ZoneMap3DPro
     ro.observe(el)
 
     const s: Scene3D = {
-      renderer, scene: sc, camera, controls, markers, markerSize: 4, render,
+      renderer, scene: sc, camera, controls, markers, targetLine, markerSize: 4, render,
       dispose: () => {
         cancelAnimationFrame(frame)
         ro.disconnect()
@@ -201,6 +211,7 @@ export default function ZoneMap3D({ zone, raiders, onUnavailable }: ZoneMap3DPro
     const s = scene.current
     if (!s || status !== 'ready') return
     updateMarkers(s, raiders)
+    updateTargetLine(s, target ?? null)
     const f = raiders.find((r) => r.focus)
     if (f) {
       const at = new THREE.Vector3(f.x, -f.y, f.z)
@@ -219,7 +230,7 @@ export default function ZoneMap3D({ zone, raiders, onUnavailable }: ZoneMap3DPro
       lastFocus.current = null
     }
     s.render()
-  }, [raiders, status])
+  }, [raiders, target, status])
 
   return (
     <div className="relative h-full w-full overflow-hidden rounded" style={{ backgroundColor: '#0b0d12' }}>
@@ -268,6 +279,22 @@ function matFor(color: string): THREE.MeshBasicMaterial {
     markerMat.set(color, m)
   }
   return m
+}
+
+function updateTargetLine(s: Scene3D, t: ReplayTarget | null): void {
+  const line = s.targetLine
+  line.visible = t != null
+  if (!t) return
+  // Raised like the markers: positions are at the feet.
+  const up = s.markerSize
+  line.geometry.setFromPoints([
+    new THREE.Vector3(t.from.x, -t.from.y, t.from.z + up),
+    new THREE.Vector3(t.to.x, -t.to.y, t.to.z + up),
+  ])
+  line.computeLineDistances()
+  const mat = line.material as THREE.LineDashedMaterial
+  mat.dashSize = up * 1.5
+  mat.gapSize = up
 }
 
 function updateMarkers(s: Scene3D, raiders: RaiderMarker[]): void {

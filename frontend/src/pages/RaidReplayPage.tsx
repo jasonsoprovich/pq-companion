@@ -1,7 +1,7 @@
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Film, Pause, Play, Skull, Swords, Trash2 } from 'lucide-react'
+import { Crosshair, Film, HeartPulse, Pause, Play, Skull, Swords, Trash2 } from 'lucide-react'
 import { ZoneMapPanel } from '../components/maps/ZoneMapPanel'
-import type { RaiderMarker } from '../components/maps/ZoneMap'
+import type { RaiderMarker, ReplayTarget } from '../components/maps/ZoneMap'
 import { useCachedState } from '../hooks/useCachedState'
 import { useDPSClassColors } from '../hooks/useDPSClassColors'
 import {
@@ -11,13 +11,14 @@ import {
   listRaidSessions,
   saveConfigChanges,
 } from '../services/api'
-import { RETENTION_CHOICES, lastSeenAt, raidersAt, recentDeaths } from '../lib/raidReplay'
+import { RETENTION_CHOICES, groupsAt, lastSeenAt, raidersAt, recentDeaths, targetAt } from '../lib/raidReplay'
 import type { Config, DPSClassColors } from '../types/config'
-import type { RaidRecording, RaidSession } from '../types/raidReplay'
+import type { RaidEvent, RaidRecording, RaidSession } from '../types/raidReplay'
 
 // RaidReplayPage plays back raids recorded from Zeal's raid frames (backend
 // package raidtrack) on the zone map: a session list, the map with every
-// raider at the playhead, and a scrubber with the night's kills and deaths.
+// raider at the playhead (and a line to the recorder's target), a scrubber
+// with the night's kills, deaths and CH chain calls, and the raid's groups.
 
 // three.js is large; it loads only when the 3D view is opened.
 const ZoneMap3D = lazy(() => import('../components/maps/ZoneMap3D'))
@@ -84,6 +85,28 @@ function RecordingSettings(): React.ReactElement {
   )
 }
 
+function RaiderRow({ name, color, focused, onFocus, right, compact }: {
+  name: string
+  color: string
+  focused: boolean
+  onFocus: () => void
+  right: string
+  compact?: boolean
+}): React.ReactElement {
+  return (
+    <button
+      className={`flex w-full items-center gap-2 py-0.5 text-left text-xs ${compact ? 'px-2' : 'px-3'}`}
+      style={{ backgroundColor: focused ? 'var(--color-surface-2)' : 'transparent' }}
+      onClick={onFocus}
+      title={focused ? 'Stop highlighting' : 'Highlight on the map'}
+    >
+      <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+      <span className="min-w-0 flex-1 truncate">{name}</span>
+      <span className="tabular-nums" style={{ color: 'var(--color-muted)' }}>{right}</span>
+    </button>
+  )
+}
+
 function SessionRow({ s, selected, onSelect, onDelete }: {
   s: RaidSession
   selected: boolean
@@ -126,6 +149,14 @@ function SessionRow({ s, selected, onSelect, onDelete }: {
   )
 }
 
+const CH_COLOR = '#60a5fa'
+
+function eventColor(kind: RaidEvent['kind']): string {
+  if (kind === 'death') return '#ef4444'
+  if (kind === 'ch' || kind === 'ch_land') return CH_COLOR
+  return '#c9a84c'
+}
+
 function Scrubber({ rec, t, onSeek }: {
   rec: RaidRecording
   t: number
@@ -134,18 +165,26 @@ function Scrubber({ rec, t, onSeek }: {
   const start = rec.frames[0]?.t ?? 0
   const end = rec.frames[rec.frames.length - 1]?.t ?? start
   const span = Math.max(1, end - start)
+  // CH calls come every few seconds all night, so they get their own faint
+  // lane above the kills and deaths instead of burying them. Lands aren't
+  // drawn: each sits right after its call.
   return (
-    <div className="relative h-6">
-      {rec.events.map((e, i) => (
-        <div
-          key={i}
-          className="pointer-events-none absolute top-0 h-2 w-px"
-          style={{
-            left: `${((e.t - start) / span) * 100}%`,
-            backgroundColor: e.kind === 'death' ? '#ef4444' : '#c9a84c',
-          }}
-        />
-      ))}
+    <div className="relative h-7">
+      {rec.events.map((e, i) =>
+        e.kind === 'ch_land' ? null : (
+          <div
+            key={i}
+            className="pointer-events-none absolute w-px"
+            style={{
+              left: `${((e.t - start) / span) * 100}%`,
+              top: e.kind === 'ch' ? 0 : 3,
+              height: e.kind === 'ch' ? 2 : 7,
+              opacity: e.kind === 'ch' ? 0.35 : 1,
+              backgroundColor: eventColor(e.kind),
+            }}
+          />
+        ),
+      )}
       <input
         type="range"
         className="absolute inset-x-0 bottom-0 w-full"
@@ -170,6 +209,8 @@ export default function RaidReplayPage(): React.ReactElement {
   const [speed, setSpeed] = useCachedState('raidReplay.speed', 16)
   const [focus, setFocus] = useState<number | null>(null)
   const [view3D, setView3D] = useCachedState('raidReplay.view3D', false)
+  const [side, setSide] = useCachedState<'list' | 'groups'>('raidReplay.side', 'list')
+  const [showCH, setShowCH] = useCachedState('raidReplay.showCH', true)
   // Why 3D fell back to 2D for this session, if it did.
   const [no3D, setNo3D] = useState<string | null>(null)
   useEffect(() => setNo3D(null), [selectedId])
@@ -272,6 +313,28 @@ export default function RaidReplayPage(): React.ReactElement {
     return out
   }, [rec, t, present, byIndex, indexByName, palette, focus])
 
+  // The recorder's target: a line from them to it, ending on the raider when
+  // they targeted one (a heal target), else at the mob's own position when
+  // Zeal reported it.
+  const target = useMemo(() => (rec ? targetAt(rec.frames, t) : null), [rec, t])
+  const replayTarget = useMemo((): ReplayTarget | null => {
+    if (!rec || !target) return null
+    const meIdx = indexByName.get(rec.session.character.toLowerCase())
+    const me = present.find((r) => r.index === meIdx)
+    if (!me) return null
+    const from = { x: -me.x, y: -me.y, z: me.z }
+    const tIdx = indexByName.get(target.n.toLowerCase())
+    const onRaider = present.find((r) => r.index === tIdx)
+    if (onRaider) {
+      if (onRaider.index === me.index) return null
+      return { from, to: { x: -onRaider.x, y: -onRaider.y, z: onRaider.z }, label: target.n, onRaider: true }
+    }
+    if (!target.l) return null
+    return { from, to: { x: -target.l[0], y: -target.l[1], z: target.l[2] }, label: target.n, onRaider: false }
+  }, [rec, target, present, indexByName])
+
+  const groups = useMemo(() => groupsAt(present), [present])
+
   const roster = useMemo(() => {
     const rows = present.map((r) => ({ ...r, mem: byIndex.get(r.index) }))
     rows.sort((a, b) => (a.group || 99) - (b.group || 99) || (a.mem?.name ?? '').localeCompare(b.mem?.name ?? ''))
@@ -280,8 +343,11 @@ export default function RaidReplayPage(): React.ReactElement {
 
   const nearEvents = useMemo(() => {
     if (!rec) return []
-    return rec.events.filter((e) => e.t <= t).slice(-12).reverse()
-  }, [rec, t])
+    return rec.events
+      .filter((e) => e.t <= t && (showCH || (e.kind !== 'ch' && e.kind !== 'ch_land')))
+      .slice(-12)
+      .reverse()
+  }, [rec, t, showCH])
 
   const remove = (id: number): void => {
     deleteRaidSession(id)
@@ -334,6 +400,11 @@ export default function RaidReplayPage(): React.ReactElement {
               <span className="text-xs" style={{ color: 'var(--color-muted)' }}>
                 {sessionDate(rec.session)} · {rec.session.character}
               </span>
+              {target && (
+                <span className="flex items-center gap-1 text-xs" style={{ color: '#f87171' }} title={`${rec.session.character}'s target`}>
+                  <Crosshair size={11} /> {target.n}
+                </span>
+              )}
               <div className="ml-auto flex overflow-hidden rounded border text-[11px]" style={{ borderColor: 'var(--color-border)' }}>
                 {([false, true] as const).map((v) => (
                   <button
@@ -363,6 +434,7 @@ export default function RaidReplayPage(): React.ReactElement {
                     key={rec.session.id}
                     zone={rec.session.zone}
                     raiders={raiders}
+                    target={replayTarget}
                     onUnavailable={(why) =>
                       setNo3D(
                         why === 'webgl'
@@ -381,6 +453,7 @@ export default function RaidReplayPage(): React.ReactElement {
                   showZoneButton={false}
                   replay
                   raiders={raiders}
+                  replayTarget={replayTarget}
                 />
               )}
             </div>
@@ -427,28 +500,76 @@ export default function RaidReplayPage(): React.ReactElement {
 
       {rec && (
         <div className="flex w-56 shrink-0 flex-col border-l" style={{ borderColor: 'var(--color-border)' }}>
-          <div className="border-b px-3 py-2 text-xs font-semibold" style={{ borderColor: 'var(--color-border)' }}>
+          <div className="flex items-center border-b px-3 py-2 text-xs font-semibold" style={{ borderColor: 'var(--color-border)' }}>
             In zone ({roster.length})
+            <div className="ml-auto flex overflow-hidden rounded border text-[10px] font-normal" style={{ borderColor: 'var(--color-border)' }}>
+              {(['list', 'groups'] as const).map((v) => (
+                <button
+                  key={v}
+                  className="px-1.5 py-0.5"
+                  style={{
+                    backgroundColor: side === v ? 'var(--color-surface-2)' : 'transparent',
+                    color: side === v ? 'var(--color-primary)' : 'var(--color-muted)',
+                  }}
+                  onClick={() => setSide(v)}
+                >
+                  {v === 'list' ? 'List' : 'Groups'}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto py-1">
-            {roster.map((r) => (
-              <button
-                key={r.index}
-                className="flex w-full items-center gap-2 px-3 py-0.5 text-left text-xs"
-                style={{ backgroundColor: focus === r.index ? 'var(--color-surface-2)' : 'transparent' }}
-                onClick={() => setFocus(focus === r.index ? null : r.index)}
-                title={focus === r.index ? 'Stop highlighting' : 'Highlight on the map'}
-              >
-                <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: classColor(palette, r.mem?.class ?? 0) }} />
-                <span className="min-w-0 flex-1 truncate">{r.mem?.name ?? '?'}</span>
-                <span className="tabular-nums" style={{ color: 'var(--color-muted)' }}>
-                  {r.group > 0 ? `G${r.group}` : ''}
-                </span>
-              </button>
-            ))}
+            {side === 'list'
+              ? roster.map((r) => (
+                  <RaiderRow
+                    key={r.index}
+                    name={r.mem?.name ?? '?'}
+                    color={classColor(palette, r.mem?.class ?? 0)}
+                    focused={focus === r.index}
+                    onFocus={() => setFocus(focus === r.index ? null : r.index)}
+                    right={r.group > 0 ? `G${r.group}` : ''}
+                  />
+                ))
+              : groups.map(({ group, indexes }) => (
+                  <div
+                    key={group}
+                    className="mx-2 my-1.5 overflow-hidden rounded-md"
+                    style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)' }}
+                  >
+                    <div
+                      className="flex items-center justify-between px-2 py-1"
+                      style={{ borderBottom: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface-2)' }}
+                    >
+                      <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-primary)' }}>
+                        {group > 0 ? `Group ${group}` : 'Ungrouped'}
+                      </span>
+                      <span className="text-[10px] tabular-nums" style={{ color: 'var(--color-muted-foreground)' }}>
+                        {group > 0 ? `${indexes.length}/6` : indexes.length}
+                      </span>
+                    </div>
+                    {indexes
+                      .map((i) => byIndex.get(i))
+                      .sort((a, b) => (a?.name ?? '').localeCompare(b?.name ?? ''))
+                      .map((mem) => mem && (
+                        <RaiderRow
+                          key={mem.index}
+                          name={mem.name}
+                          color={classColor(palette, mem.class)}
+                          focused={focus === mem.index}
+                          onFocus={() => setFocus(focus === mem.index ? null : mem.index)}
+                          right={mem.level > 0 ? String(mem.level) : ''}
+                          compact
+                        />
+                      ))}
+                  </div>
+                ))}
           </div>
-          <div className="border-y px-3 py-2 text-xs font-semibold" style={{ borderColor: 'var(--color-border)' }}>
+          <div className="flex items-center border-y px-3 py-2 text-xs font-semibold" style={{ borderColor: 'var(--color-border)' }}>
             Events
+            <label className="ml-auto flex items-center gap-1 text-[10px] font-normal" style={{ color: 'var(--color-muted)' }}>
+              <input type="checkbox" checked={showCH} onChange={(e) => setShowCH(e.target.checked)} />
+              CH calls
+            </label>
           </div>
           <div className="max-h-56 overflow-y-auto py-1">
             {nearEvents.length === 0 ? (
@@ -462,11 +583,13 @@ export default function RaidReplayPage(): React.ReactElement {
                   title="Jump here"
                 >
                   {e.kind === 'death'
-                    ? <Skull size={11} className="mt-0.5 shrink-0" style={{ color: '#ef4444' }} />
-                    : <Swords size={11} className="mt-0.5 shrink-0" style={{ color: '#c9a84c' }} />}
+                    ? <Skull size={11} className="mt-0.5 shrink-0" style={{ color: eventColor(e.kind) }} />
+                    : e.kind === 'kill'
+                      ? <Swords size={11} className="mt-0.5 shrink-0" style={{ color: eventColor(e.kind) }} />
+                      : <HeartPulse size={11} className="mt-0.5 shrink-0" style={{ color: eventColor(e.kind) }} />}
                   <span className="min-w-0 flex-1">
-                    {e.name}
-                    {e.other && <span style={{ color: 'var(--color-muted)' }}> by {e.other}</span>}
+                    {e.kind === 'ch' ? `CH ${e.name}` : e.kind === 'ch_land' ? `CH landed on ${e.name}` : e.name}
+                    {e.other && <span style={{ color: 'var(--color-muted)' }}> {e.kind === 'ch' ? 'from' : 'by'} {e.other}</span>}
                   </span>
                   <span className="tabular-nums" style={{ color: 'var(--color-muted)' }}>{fmtClock(e.t).slice(0, 5)}</span>
                 </button>

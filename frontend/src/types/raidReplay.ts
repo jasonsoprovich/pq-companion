@@ -30,11 +30,26 @@ export interface RaidMemberInfo {
 export interface RaidFrame {
   t: number
   m: number[][]
+  /** The observer's target, when they had one. */
+  tg?: RaidFrameTarget
 }
 
+/**
+ * The observer's Zeal target in a frame. `l` is [x, y, z] like frame rows,
+ * present only when Zeal reported its position (within 250 units).
+ */
+export interface RaidFrameTarget {
+  n: string
+  l?: number[]
+}
+
+/**
+ * A timeline mark. kill: an NPC died. death: a raider died. ch: a CH chain
+ * call on `name` by `other`. ch_land: a Complete Heal landed on `name`.
+ */
 export interface RaidEvent {
   t: number
-  kind: 'kill' | 'death'
+  kind: 'kill' | 'death' | 'ch' | 'ch_land'
   name: string
   other?: string
 }

@@ -6,7 +6,7 @@ import { usePlayerPosition } from '../../hooks/usePlayerPosition'
 import { useGroupPositions } from '../../hooks/useGroupPositions'
 import { useMapStyle } from '../../hooks/useMapStyle'
 import { useZoneMap } from '../../hooks/useZoneMap'
-import { ZoneMap, type AggroRing, type MapHighlight, type RaiderMarker, type SpawnDot } from './ZoneMap'
+import { ZoneMap, type AggroRing, type MapHighlight, type RaiderMarker, type ReplayTarget, type SpawnDot } from './ZoneMap'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { WSEvent } from '../../lib/wsEvents'
 import type { RespawnState } from '../../types/respawn'
@@ -177,6 +177,7 @@ export interface ZoneMapPanelProps {
   // draws a recording instead. raiders are its markers.
   replay?: boolean
   raiders?: RaiderMarker[]
+  replayTarget?: ReplayTarget | null
 }
 
 // Rings drawn when the active character's level is unknown.
@@ -257,6 +258,7 @@ export function ZoneMapPanel({
   live = false,
   replay = false,
   raiders,
+  replayTarget,
 }: ZoneMapPanelProps): React.ReactElement {
   const navigate = useNavigate()
   // Detailed is the default. Outline is the cleaner drawing and the same style
@@ -983,6 +985,7 @@ export function ZoneMapPanel({
             groupMembers={showGroup && !replay ? groupMembers : []}
             followPlayer={followPlayer && !replay}
             raiders={raiders}
+            replayTarget={replayTarget}
             // Panning is a deliberate act; treat it as "I want to look
             // somewhere else" and stop following. The Follow me toggle above is
             // right there to turn it back on.
