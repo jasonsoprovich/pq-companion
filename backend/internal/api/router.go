@@ -230,6 +230,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/zones", mapsH.list)
 			r.Get("/zone/{zone}", mapsH.zone)
 			r.Get("/zone/{zone}/geometry", mapsH.geometry)
+			r.Get("/zone/{zone}/mesh", mapsH.mesh3D)
 			// User-authored markers (phase 4c). Live in user.db, not maps.db.
 			r.Get("/annotations/export", mapsH.exportAnnotations)
 			r.Get("/zone/{zone}/annotations", mapsH.listAnnotations)

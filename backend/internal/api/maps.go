@@ -24,6 +24,8 @@ type mapsHandler struct {
 	annotations *maps.AnnotationStore
 	// cfg supplies the EQ install path for the in-game map export.
 	cfg *config.Manager
+	// meshes caches 3D zone meshes read from the client (see mesh3D).
+	meshes meshCache
 }
 
 // status reports whether map data is present, so the UI can hide map features

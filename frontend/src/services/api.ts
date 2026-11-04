@@ -525,6 +525,36 @@ export function getMapZone(zone: string): Promise<MapZoneDetail> {
   return get<MapZoneDetail>(`/api/maps/zone/${encodeURIComponent(zone)}`)
 }
 
+// ZoneMesh3D is a zone's solid geometry from the user's own client files:
+// map-space x/y/z per vertex and triangle indices.
+export interface ZoneMesh3D {
+  positions: Float32Array
+  indices: Uint32Array
+}
+
+// getZoneMesh3D fetches the 3D mesh (mapgen.EncodeMesh3D: "PQM1", vertex
+// count, index count, then float32 positions and uint32 indices). Resolves
+// null when the client has no s3d for the zone.
+export async function getZoneMesh3D(zone: string): Promise<ZoneMesh3D | null> {
+  const baseUrl = await getBackendBaseUrl()
+  const res = await fetch(`${baseUrl}/api/maps/zone/${encodeURIComponent(zone)}/mesh`)
+  if (res.status === 404) return null
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(body?.error ?? `mesh ${zone}: ${res.statusText}`)
+  }
+  const buf = await res.arrayBuffer()
+  const view = new DataView(buf)
+  const magic = String.fromCharCode(...new Uint8Array(buf, 0, 4))
+  if (magic !== 'PQM1') throw new Error(`mesh ${zone}: bad format`)
+  const verts = view.getUint32(4, true)
+  const count = view.getUint32(8, true)
+  return {
+    positions: new Float32Array(buf, 12, verts * 3),
+    indices: new Uint32Array(buf, 12 + verts * 12, count),
+  }
+}
+
 // getMapGeometry fetches packed int16 segments and wraps them without copying.
 // The endpoint is immutable and cache-forever, so repeat zone switches are free.
 export async function getMapGeometry(zone: string, layer = 0): Promise<MapGeometry> {

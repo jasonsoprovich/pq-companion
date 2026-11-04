@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Film, Pause, Play, Skull, Swords, Trash2 } from 'lucide-react'
 import { ZoneMapPanel } from '../components/maps/ZoneMapPanel'
 import type { RaiderMarker } from '../components/maps/ZoneMap'
@@ -18,6 +18,9 @@ import type { RaidRecording, RaidSession } from '../types/raidReplay'
 // RaidReplayPage plays back raids recorded from Zeal's raid frames (backend
 // package raidtrack) on the zone map: a session list, the map with every
 // raider at the playhead, and a scrubber with the night's kills and deaths.
+
+// three.js is large; it loads only when the 3D view is opened.
+const ZoneMap3D = lazy(() => import('../components/maps/ZoneMap3D'))
 
 const SPEEDS = [1, 4, 16, 60]
 const RETENTION_CHOICES = [7, 14, 30, 60, 90]
@@ -167,6 +170,10 @@ export default function RaidReplayPage(): React.ReactElement {
   const [playing, setPlaying] = useState(false)
   const [speed, setSpeed] = useCachedState('raidReplay.speed', 16)
   const [focus, setFocus] = useState<number | null>(null)
+  const [view3D, setView3D] = useCachedState('raidReplay.view3D', false)
+  // Why 3D fell back to 2D for this session, if it did.
+  const [no3D, setNo3D] = useState<string | null>(null)
+  useEffect(() => setNo3D(null), [selectedId])
 
   const refresh = useCallback(() => {
     listRaidSessions().then(setSessions).catch(() => setSessions([]))
@@ -328,15 +335,55 @@ export default function RaidReplayPage(): React.ReactElement {
               <span className="text-xs" style={{ color: 'var(--color-muted)' }}>
                 {sessionDate(rec.session)} · {rec.session.character}
               </span>
+              <div className="ml-auto flex overflow-hidden rounded border text-[11px]" style={{ borderColor: 'var(--color-border)' }}>
+                {([false, true] as const).map((v) => (
+                  <button
+                    key={String(v)}
+                    className="px-2 py-0.5"
+                    style={{
+                      backgroundColor: view3D === v ? 'var(--color-surface-2)' : 'transparent',
+                      color: view3D === v ? 'var(--color-primary)' : 'var(--color-muted)',
+                    }}
+                    onClick={() => {
+                      setNo3D(null)
+                      setView3D(v)
+                    }}
+                  >
+                    {v ? '3D' : '2D'}
+                  </button>
+                ))}
+              </div>
             </div>
+            {view3D && no3D && (
+              <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>{no3D} Showing the 2D map.</p>
+            )}
             <div className="min-h-0 flex-1">
-              <ZoneMapPanel
-                key={rec.session.id}
-                zoneShortName={rec.session.zone}
-                showZoneButton={false}
-                replay
-                raiders={raiders}
-              />
+              {view3D && !no3D ? (
+                <Suspense fallback={<div className="p-4 text-sm" style={{ color: 'var(--color-muted)' }}>Loading 3D…</div>}>
+                  <ZoneMap3D
+                    key={rec.session.id}
+                    zone={rec.session.zone}
+                    raiders={raiders}
+                    onUnavailable={(why) =>
+                      setNo3D(
+                        why === 'webgl'
+                          ? '3D needs WebGL, which isn’t available here.'
+                          : why === 'no-mesh'
+                            ? `No ${rec.session.zone}.s3d in your EverQuest folder.`
+                            : 'The 3D zone couldn’t be loaded.',
+                      )
+                    }
+                  />
+                </Suspense>
+              ) : (
+                <ZoneMapPanel
+                  key={rec.session.id}
+                  zoneShortName={rec.session.zone}
+                  showZoneButton={false}
+                  replay
+                  raiders={raiders}
+                />
+              )}
             </div>
             <div className="flex items-center gap-3">
               <button
