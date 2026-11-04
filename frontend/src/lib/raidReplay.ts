@@ -105,6 +105,34 @@ export function groupsAt(present: RaiderAt[]): { group: number; indexes: number[
     .map(([group, indexes]) => ({ group, indexes }))
 }
 
+// KILL_LOOKBACK is how many frames before a kill are searched for the dead
+// mob's position (it was the recorder's target with a known position).
+const KILL_LOOKBACK = 20
+
+// recentKills returns the kills in the DEAD_SHOW_MS before t that can be
+// placed: the dead mob was the recorder's target shortly before, with its
+// position known. Positions are as recorded (GameX/GameY).
+export function recentKills(
+  frames: RaidFrame[],
+  events: RaidEvent[],
+  t: number,
+): { name: string; x: number; y: number; z: number }[] {
+  const out: { name: string; x: number; y: number; z: number }[] = []
+  for (const e of events) {
+    if (e.kind !== 'kill' || e.t > t || t - e.t > DEAD_SHOW_MS) continue
+    const name = e.name.toLowerCase()
+    const i = frameIndexAt(frames, e.t)
+    for (let j = i; j >= 0 && j > i - KILL_LOOKBACK; j--) {
+      const tg = frames[j].tg
+      if (tg?.l && tg.n.toLowerCase() === name) {
+        out.push({ name: e.name, x: tg.l[0], y: tg.l[1], z: tg.l[2] })
+        break
+      }
+    }
+  }
+  return out
+}
+
 // recentDeaths returns the death events in the DEAD_SHOW_MS before t.
 export function recentDeaths(events: RaidEvent[], t: number): RaidEvent[] {
   return events.filter((e) => e.kind === 'death' && e.t <= t && t - e.t <= DEAD_SHOW_MS)

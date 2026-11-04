@@ -195,7 +195,7 @@ export interface ZoneMapProps {
   depthSlot?: HTMLElement | null
 }
 
-const CATEGORY_STYLE: Record<MapPOICategory, { color: string; short: string }> = {
+export const CATEGORY_STYLE: Record<MapPOICategory, { color: string; short: string }> = {
   vendor: { color: '#c9a84c', short: 'V' },
   raid_target: { color: '#ef4444', short: 'R' },
   trap: { color: '#f59e0b', short: '!' },

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, Check, Copy, Plus, X } from 'lucide-react'
 import { useCachedState } from '../../hooks/useCachedState'
@@ -6,7 +6,16 @@ import { usePlayerPosition } from '../../hooks/usePlayerPosition'
 import { useGroupPositions } from '../../hooks/useGroupPositions'
 import { useMapStyle } from '../../hooks/useMapStyle'
 import { useZoneMap } from '../../hooks/useZoneMap'
-import { ZoneMap, type AggroRing, type MapHighlight, type RaiderMarker, type ReplayTarget, type SpawnDot } from './ZoneMap'
+import { CATEGORY_STYLE, ZoneMap, type AggroRing, type MapHighlight, type RaiderMarker, type ReplayTarget, type SpawnDot } from './ZoneMap'
+import type { Pin3D } from './ZoneMap3D'
+
+// three.js is large; it loads only when the 3D view is opened.
+const ZoneMap3D = lazy(() => import('./ZoneMap3D'))
+
+// Live marker colours in 3D, matching the 2D map's player arrow and
+// groupmates.
+const PLAYER_3D = '#f8fafc'
+const GROUP_3D = '#7dd3fc'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { WSEvent } from '../../lib/wsEvents'
 import type { RespawnState } from '../../types/respawn'
@@ -558,6 +567,41 @@ export function ZoneMapPanel({
   // Wait for the saved style before drawing. Without this the panel mounts in
   // the built-in default, then switches when the preference lands — a visible
   // flicker plus a wasted geometry fetch for a layer nobody asked for.
+  // 3D view, from the client's own zone file. Kept per surface like follow-me.
+  // Not offered in a replay, which has its own switch.
+  const [view3D, setView3D] = useCachedState(live ? 'liveMap.view3D' : 'maps.view3D', false)
+  // Why 3D fell back to 2D for this zone, if it did.
+  const [no3D, setNo3D] = useState<string | null>(null)
+  useEffect(() => setNo3D(null), [zoneShortName])
+  const show3D = view3D && !replay && !no3D
+
+  // You and your group as 3D markers; the camera follows you with Follow me.
+  const markers3D = useMemo((): RaiderMarker[] => {
+    if (!show3D || !playerPos || !zone || playerPos.zone !== zone.zone) return []
+    const out: RaiderMarker[] = [{
+      x: playerPos.x, y: playerPos.y, z: playerPos.z, heading: playerPos.heading,
+      color: PLAYER_3D, label: 'You', focus: followPlayer,
+    }]
+    if (showGroup) {
+      for (const g of groupMembers) {
+        out.push({ x: g.x, y: g.y, z: g.z, heading: g.heading, color: GROUP_3D, label: g.name })
+      }
+    }
+    return out
+  }, [show3D, playerPos, zone, groupMembers, showGroup, followPlayer])
+
+  // The visible pin layers and your markers, plus whatever search or a click
+  // picked out, as 3D pins.
+  const pins3D = useMemo((): Pin3D[] => {
+    if (!show3D) return []
+    const out: Pin3D[] = allPois
+      .filter((p) => visible.has(p.category))
+      .map((p) => ({ x: p.x, y: p.y, z: p.z, color: CATEGORY_STYLE[p.category]?.color ?? '#94a3b8', label: p.label }))
+    const picked = searchGroup ? searchGroup.spots : inspect ? inspect.spots : []
+    for (const h of picked) out.push({ x: h.x, y: h.y, z: h.z ?? 0, color: '#ff4fd8', label: h.label ?? '' })
+    return out
+  }, [show3D, allPois, visible, searchGroup, inspect])
+
   if (!zone || !ready) {
     return (
       <p className="py-4 text-sm" style={{ color: 'var(--color-muted)' }}>
@@ -634,6 +678,31 @@ export function ZoneMapPanel({
             )
           })}
         </div>
+
+        {!replay && (
+          <div className="flex overflow-hidden rounded border" style={{ borderColor: 'var(--color-border)' }}>
+            {([false, true] as const).map((v) => (
+              <button
+                key={String(v)}
+                onClick={() => {
+                  setNo3D(null)
+                  setView3D(v)
+                }}
+                title={v ? 'Solid 3D view from your own EverQuest zone files' : 'Flat map'}
+                className="px-2 py-0.5 text-[10px] font-medium"
+                style={{
+                  backgroundColor: view3D === v ? 'var(--color-primary)' : 'transparent',
+                  color: view3D === v ? 'var(--color-background)' : 'var(--color-muted)',
+                }}
+              >
+                {v ? '3D' : '2D'}
+              </button>
+            ))}
+          </div>
+        )}
+        {view3D && no3D && (
+          <span className="text-[10px]" style={{ color: 'var(--color-muted)' }}>{no3D} Showing the 2D map.</span>
+        )}
 
         {/* Also about how the map is drawn, so it belongs up here with the
             style switch rather than among the pin layers. */}
@@ -972,6 +1041,25 @@ export function ZoneMapPanel({
             instead of forcing the rail and inspector off the edge. */}
         <div className={`min-w-0 flex-1${fill ? ' min-h-0' : ''}`}>
         <ErrorBoundary label="Zone map">
+          {show3D && zoneShortName ? (
+            <Suspense fallback={<div className="p-4 text-sm" style={{ color: 'var(--color-muted)' }}>Loading 3D…</div>}>
+              <ZoneMap3D
+                key={zoneShortName}
+                zone={zoneShortName}
+                markers={markers3D}
+                pins={pins3D}
+                onUnavailable={(why) =>
+                  setNo3D(
+                    why === 'webgl'
+                      ? '3D needs WebGL, which isn’t available here.'
+                      : why === 'no-mesh'
+                        ? `No ${zoneShortName}.s3d in your EverQuest folder.`
+                        : 'The 3D zone couldn’t be loaded.',
+                  )
+                }
+              />
+            </Suspense>
+          ) : (
           <ZoneMap
             zone={zone}
             geometry={geometry}
@@ -1009,6 +1097,7 @@ export function ZoneMapPanel({
             height={height}
             depthSlot={depthHost}
           />
+          )}
         </ErrorBoundary>
         </div>
       </div>

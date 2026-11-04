@@ -11,7 +11,7 @@ import {
   listRaidSessions,
   saveConfigChanges,
 } from '../services/api'
-import { RETENTION_CHOICES, groupsAt, lastSeenAt, raidersAt, recentDeaths, targetAt } from '../lib/raidReplay'
+import { RETENTION_CHOICES, groupsAt, lastSeenAt, raidersAt, recentDeaths, recentKills, targetAt } from '../lib/raidReplay'
 import type { Config, DPSClassColors } from '../types/config'
 import type { RaidEvent, RaidRecording, RaidSession } from '../types/raidReplay'
 
@@ -335,6 +335,17 @@ export default function RaidReplayPage(): React.ReactElement {
 
   const groups = useMemo(() => groupsAt(present), [present])
 
+  // Kills placed where the mob was, for the 3D view.
+  const killPins = useMemo(
+    () =>
+      rec
+        ? recentKills(rec.frames, rec.events, t).map((k) => ({
+            x: -k.x, y: -k.y, z: k.z, color: '#c9a84c', label: `✕ ${k.name}`,
+          }))
+        : [],
+    [rec, t],
+  )
+
   const roster = useMemo(() => {
     const rows = present.map((r) => ({ ...r, mem: byIndex.get(r.index) }))
     rows.sort((a, b) => (a.group || 99) - (b.group || 99) || (a.mem?.name ?? '').localeCompare(b.mem?.name ?? ''))
@@ -433,8 +444,9 @@ export default function RaidReplayPage(): React.ReactElement {
                   <ZoneMap3D
                     key={rec.session.id}
                     zone={rec.session.zone}
-                    raiders={raiders}
+                    markers={raiders}
                     target={replayTarget}
+                    pins={killPins}
                     onUnavailable={(why) =>
                       setNo3D(
                         why === 'webgl'
