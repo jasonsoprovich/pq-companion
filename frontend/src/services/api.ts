@@ -51,7 +51,7 @@ import type {
   PoPResolved, PoPFlagDatasetResponse, PoPSummaryResponse, PoPExport, SeerPreviewResponse, SeerScanResponse,
   PopFlagsPreviewResponse, PopFlagsScanResponse,
 } from '../types/popflag'
-import type { Backup, BackupsResponse } from '../types/backup'
+import type { Backup, BackupFile, BackupsResponse, TrackedFile } from '../types/backup'
 import type { LogTailerStatus, LogFileInfo } from '../types/logEvent'
 import type {
   RaidThreatState,
@@ -1428,16 +1428,43 @@ export function listBackups(): Promise<BackupsResponse> {
   return get<BackupsResponse>('/api/backups')
 }
 
-export function createBackup(name: string, notes: string): Promise<Backup> {
-  return post<Backup>('/api/backups', { name, notes })
+export function createBackup(name: string, notes: string, includeLogs = false): Promise<Backup> {
+  return post<Backup>('/api/backups', { name, notes, include_logs: includeLogs })
+}
+
+export function listBackupFiles(id: string): Promise<{ files: BackupFile[] }> {
+  return get<{ files: BackupFile[] }>(`/api/backups/${encodeURIComponent(id)}/files`)
+}
+
+/** Every tracked EQ settings file with its saved versions. */
+export function getFileHistory(): Promise<{ files: TrackedFile[] }> {
+  return get<{ files: TrackedFile[] }>('/api/backups/history')
+}
+
+/** Save any changed settings files now. */
+export function captureFileHistory(): Promise<{ saved: number }> {
+  return post<{ saved: number }>('/api/backups/history/capture')
+}
+
+export function getFileVersion(id: number): Promise<{ file_name: string; content: string }> {
+  return get<{ file_name: string; content: string }>(`/api/backups/history/${id}`)
+}
+
+/** Write a saved version back to the EQ folder (the current file is saved first). */
+export function restoreFileVersion(id: number): Promise<void> {
+  return post<void>(`/api/backups/history/${id}/restore`)
 }
 
 export function deleteBackup(id: string): Promise<void> {
   return del(`/api/backups/${encodeURIComponent(id)}`)
 }
 
-export function restoreBackup(id: string): Promise<void> {
-  return post<void>(`/api/backups/${encodeURIComponent(id)}/restore`)
+/** Restore a snapshot: every file, or only `files` when given. */
+export function restoreBackup(id: string, files?: string[]): Promise<void> {
+  return post<void>(
+    `/api/backups/${encodeURIComponent(id)}/restore`,
+    files ? { files } : undefined,
+  )
 }
 
 export function lockBackup(id: string): Promise<void> {

@@ -464,6 +464,10 @@ export interface BackupSettings {
   auto_backup: boolean
   schedule: 'off' | 'hourly' | 'daily'
   max_backups: number
+  // Per-file version history is on unless this is set.
+  file_history_off?: boolean
+  // Versions kept per file; 0 or absent = 30.
+  file_history_keep?: number
 }
 
 export interface CombatSettings {

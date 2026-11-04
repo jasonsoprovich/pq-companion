@@ -19,12 +19,16 @@ import {
   Upload,
   FolderOpen,
   AlertTriangle,
+  FileText,
+  History,
+  Laptop,
 } from 'lucide-react'
 import {
   listBackups,
   createBackup,
   deleteBackup,
   restoreBackup,
+  listBackupFiles,
   lockBackup,
   unlockBackup,
   pruneBackups,
@@ -39,7 +43,8 @@ import {
 } from '../services/api'
 import { useEscapeToClose } from '../hooks/useEscapeToClose'
 import { collectClientState } from '../services/clientState'
-import type { Backup } from '../types/backup'
+import type { Backup, BackupFile } from '../types/backup'
+import FileHistoryPanel, { FILE_KIND_LABELS } from '../components/settings/FileHistoryPanel'
 import type { Config, BackupSettings } from '../types/config'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -72,6 +77,7 @@ interface CreateFormProps {
 function CreateForm({ onCreated, onCancel }: CreateFormProps): React.ReactElement {
   const [name, setName] = useState('')
   const [notes, setNotes] = useState('')
+  const [includeLogs, setIncludeLogs] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const nameRef = useRef<HTMLInputElement>(null)
@@ -83,7 +89,7 @@ function CreateForm({ onCreated, onCancel }: CreateFormProps): React.ReactElemen
     if (!name.trim()) return
     setSubmitting(true)
     setError(null)
-    createBackup(name.trim(), notes.trim())
+    createBackup(name.trim(), notes.trim(), includeLogs)
       .then((b) => onCreated(b))
       .catch((err: Error) => {
         setError(err.message)
@@ -101,14 +107,14 @@ function CreateForm({ onCreated, onCancel }: CreateFormProps): React.ReactElemen
       }}
     >
       <p className="text-xs font-semibold" style={{ color: 'var(--color-foreground)' }}>
-        New Backup
+        New snapshot
       </p>
 
       <div className="space-y-2">
         <input
           ref={nameRef}
           type="text"
-          placeholder="Backup name (required)"
+          placeholder="Snapshot name (required)"
           value={name}
           onChange={(e) => setName(e.target.value)}
           className="w-full rounded px-3 py-1.5 text-sm outline-none"
@@ -132,6 +138,22 @@ function CreateForm({ onCreated, onCancel }: CreateFormProps): React.ReactElemen
           }}
           disabled={submitting}
         />
+        <label className="flex items-start gap-2 text-xs cursor-pointer" style={{ color: 'var(--color-foreground)' }}>
+          <input
+            type="checkbox"
+            checked={includeLogs}
+            onChange={(e) => setIncludeLogs(e.target.checked)}
+            disabled={submitting}
+            className="w-4 h-4 mt-px accent-primary"
+          />
+          <span>
+            Include log files
+            <span className="block text-[11px]" style={{ color: 'var(--color-muted)' }}>
+              Copies every <code className="font-mono">eqlog_*.txt</code> too. Logs can be large,
+              so trim them in Settings → Logs first if they are.
+            </span>
+          </span>
+        </label>
       </div>
 
       {error && (
@@ -170,7 +192,7 @@ function CreateForm({ onCreated, onCancel }: CreateFormProps): React.ReactElemen
           ) : (
             <Archive size={11} />
           )}
-          {submitting ? 'Creating…' : 'Create Backup'}
+          {submitting ? 'Creating…' : 'Create snapshot'}
         </button>
       </div>
     </form>
@@ -218,6 +240,21 @@ function BackupCard({ backup, onDeleted, onRestored, onLockToggled }: BackupCard
   const [action, setAction] = useState<CardAction>('none')
   const [error, setError] = useState<string | null>(null)
   const [lockBusy, setLockBusy] = useState(false)
+  const [files, setFiles] = useState<BackupFile[] | null>(null)
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+
+  // Restoring asks which files: everything but the logs is ticked, since a
+  // restored log would replace the one EverQuest is writing.
+  const openRestore = () => {
+    setAction('confirm-restore')
+    setError(null)
+    listBackupFiles(backup.id)
+      .then((r) => {
+        setFiles(r.files)
+        setPicked(new Set(r.files.filter((f) => f.kind !== 'log').map((f) => f.name)))
+      })
+      .catch((err: Error) => setError(err.message))
+  }
 
   const handleDelete = () => {
     setAction('deleting')
@@ -233,7 +270,7 @@ function BackupCard({ backup, onDeleted, onRestored, onLockToggled }: BackupCard
   const handleRestore = () => {
     setAction('restoring')
     setError(null)
-    restoreBackup(backup.id)
+    restoreBackup(backup.id, [...picked])
       .then(() => {
         setAction('restored')
         onRestored(backup.id)
@@ -272,7 +309,7 @@ function BackupCard({ backup, onDeleted, onRestored, onLockToggled }: BackupCard
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium truncate" style={{ color: 'var(--color-foreground)' }}>
             {backup.trigger_reason && backup.trigger_reason !== 'manual'
-              ? 'Automatic backup'
+              ? 'Automatic snapshot'
               : backup.name}
           </p>
           {backup.notes && (
@@ -299,8 +336,8 @@ function BackupCard({ backup, onDeleted, onRestored, onLockToggled }: BackupCard
               {lockBusy ? <RefreshCw size={11} className="animate-spin" /> : backup.locked ? <Lock size={11} /> : <LockOpen size={11} />}
             </button>
             <button
-              title="Restore this backup"
-              onClick={() => setAction('confirm-restore')}
+              title="Restore files from this snapshot"
+              onClick={openRestore}
               className="flex items-center gap-1 text-xs px-2 py-1 rounded"
               style={{
                 backgroundColor: 'var(--color-surface-2)',
@@ -379,7 +416,7 @@ function BackupCard({ backup, onDeleted, onRestored, onLockToggled }: BackupCard
         >
           <AlertCircle size={13} style={{ color: 'var(--color-danger)' }} />
           <span className="flex-1 text-xs" style={{ color: 'var(--color-foreground)' }}>
-            Delete this backup permanently?
+            Delete this snapshot permanently?
           </span>
           <button
             onClick={handleDelete}
@@ -404,37 +441,51 @@ function BackupCard({ backup, onDeleted, onRestored, onLockToggled }: BackupCard
         </div>
       )}
 
-      {/* Inline confirmation — restore */}
+      {/* Inline confirmation — restore, with the files to restore */}
       {action === 'confirm-restore' && (
         <div
-          className="mt-3 ml-7 flex items-center gap-2 rounded px-3 py-2"
+          className="mt-3 ml-7 rounded px-3 py-2 space-y-2"
           style={{
             backgroundColor: 'var(--color-surface-2)',
             border: '1px solid var(--color-border)',
           }}
         >
-          <RotateCcw size={13} style={{ color: 'var(--color-primary)' }} />
-          <span className="flex-1 text-xs" style={{ color: 'var(--color-foreground)' }}>
-            Overwrite current EQ config files with this backup?
-          </span>
-          <button
-            onClick={handleRestore}
-            className="text-xs px-2 py-0.5 rounded font-medium"
-            style={{
-              backgroundColor: 'var(--color-primary)',
-              color: 'var(--color-background)',
-              border: '1px solid transparent',
-            }}
-          >
-            Restore
-          </button>
-          <button
-            onClick={() => setAction('none')}
-            className="text-xs px-1.5 py-0.5 rounded"
-            style={{ color: 'var(--color-muted-foreground)' }}
-          >
-            <X size={13} />
-          </button>
+          <div className="flex items-center gap-2">
+            <RotateCcw size={13} style={{ color: 'var(--color-primary)' }} />
+            <span className="flex-1 text-xs" style={{ color: 'var(--color-foreground)' }}>
+              Restore these files to your EQ folder? Camp first: EverQuest rewrites its
+              files when you log out.
+            </span>
+            <button
+              onClick={() => setAction('none')}
+              className="text-xs px-1.5 py-0.5 rounded"
+              style={{ color: 'var(--color-muted-foreground)' }}
+            >
+              <X size={13} />
+            </button>
+          </div>
+          {files === null ? (
+            <RefreshCw size={12} className="animate-spin" style={{ color: 'var(--color-muted)' }} />
+          ) : (
+            <RestoreFilePicker files={files} picked={picked} onChange={setPicked} />
+          )}
+          <div className="flex items-center gap-2">
+            <span className="flex-1 text-[11px]" style={{ color: 'var(--color-muted)' }}>
+              The files being replaced are saved to Character files history first.
+            </span>
+            <button
+              onClick={handleRestore}
+              disabled={picked.size === 0}
+              className="text-xs px-2 py-0.5 rounded font-medium disabled:opacity-50"
+              style={{
+                backgroundColor: 'var(--color-primary)',
+                color: 'var(--color-background)',
+                border: '1px solid transparent',
+              }}
+            >
+              Restore {picked.size} file{picked.size === 1 ? '' : 's'}
+            </button>
+          </div>
         </div>
       )}
 
@@ -444,6 +495,74 @@ function BackupCard({ backup, onDeleted, onRestored, onLockToggled }: BackupCard
           {error}
         </p>
       )}
+    </div>
+  )
+}
+
+// ── Restore file picker ────────────────────────────────────────────────────────
+
+// fileLabel describes a snapshot file: "Osui · Spellsets", "Log file", ...
+function fileLabel(f: BackupFile): string {
+  const kind =
+    f.kind === 'log' ? 'Log file' : f.kind ? FILE_KIND_LABELS[f.kind].label : 'Other settings file'
+  return f.character ? `${f.character} · ${kind}` : kind
+}
+
+function RestoreFilePicker({
+  files,
+  picked,
+  onChange,
+}: {
+  files: BackupFile[]
+  picked: Set<string>
+  onChange: (next: Set<string>) => void
+}): React.ReactElement {
+  const toggle = (name: string) => {
+    const next = new Set(picked)
+    if (next.has(name)) next.delete(name)
+    else next.add(name)
+    onChange(next)
+  }
+  // Characters A–Z, then shared files, then unrecognised ones (hand-made
+  // copies and the like).
+  const rank = (f: BackupFile) => (f.character ? 0 : f.kind ? 1 : 2)
+  const sorted = [...files].sort(
+    (a, b) =>
+      rank(a) - rank(b) ||
+      a.character.localeCompare(b.character) ||
+      a.name.localeCompare(b.name),
+  )
+  return (
+    <div>
+      <div className="flex gap-2 mb-1 text-[11px]">
+        <button className="underline" style={{ color: 'var(--color-primary)' }}
+          onClick={() => onChange(new Set(files.filter((f) => f.kind !== 'log').map((f) => f.name)))}>
+          All settings files
+        </button>
+        <button className="underline" style={{ color: 'var(--color-primary)' }}
+          onClick={() => onChange(new Set())}>
+          None
+        </button>
+      </div>
+      <div className="max-h-56 overflow-y-auto space-y-0.5">
+        {sorted.map((f) => (
+          <label key={f.name} className="flex items-center gap-2 text-[11px] cursor-pointer">
+            <input
+              type="checkbox"
+              checked={picked.has(f.name)}
+              onChange={() => toggle(f.name)}
+              className="accent-primary"
+            />
+            <span className="w-60 shrink-0 truncate" style={{ color: 'var(--color-foreground)' }}>
+              {fileLabel(f)}
+            </span>
+            <code className="font-mono truncate" style={{ color: 'var(--color-muted)' }}>{f.name}</code>
+            <span className="ml-auto shrink-0" style={{ color: 'var(--color-muted)' }}>
+              {formatBytes(f.size_bytes)}
+            </span>
+          </label>
+        ))}
+      </div>
     </div>
   )
 }
@@ -522,7 +641,7 @@ function SettingsPanel({ onClose, onPruned }: SettingsPanelProps): React.ReactEl
     >
       <div className="flex items-center justify-between">
         <p className="text-xs font-semibold" style={{ color: 'var(--color-foreground)' }}>
-          Backup Settings
+          Snapshot settings
         </p>
         <button onClick={onClose} style={{ color: 'var(--color-muted-foreground)' }}>
           <X size={13} />
@@ -532,7 +651,7 @@ function SettingsPanel({ onClose, onPruned }: SettingsPanelProps): React.ReactEl
       {/* Auto-backup toggle */}
       <label className="flex items-center justify-between gap-3 cursor-pointer">
         <span className="text-xs" style={{ color: 'var(--color-foreground)' }}>
-          Auto-backup on file change
+          Snapshot when a file changes
         </span>
         <input
           type="checkbox"
@@ -564,7 +683,7 @@ function SettingsPanel({ onClose, onPruned }: SettingsPanelProps): React.ReactEl
       {/* Max backups */}
       <div className="flex items-center justify-between gap-3">
         <span className="text-xs" style={{ color: 'var(--color-foreground)' }}>
-          Max backups <span style={{ color: 'var(--color-muted)' }}>(0 = unlimited)</span>
+          Snapshots to keep <span style={{ color: 'var(--color-muted)' }}>(0 = unlimited; locked ones are never deleted)</span>
         </span>
         <input
           type="number"
@@ -649,7 +768,7 @@ function AppTransferPanel(): React.ReactElement {
       const clientState = await collectClientState()
       const res = await exportAppBackup(dest, clientState)
       const soundNote = res.manifest.stats.sound_count > 0 ? `, ${res.manifest.stats.sound_count} custom sound(s)` : ''
-      setStatusMessage(`Exported to ${res.bundle_path} (${formatBytes(res.manifest.stats.total_size_bytes)}, ${res.manifest.stats.backup_count} EQ-config backup(s)${soundNote} included).`)
+      setStatusMessage(`Exported to ${res.bundle_path} (${formatBytes(res.manifest.stats.total_size_bytes)}, ${res.manifest.stats.backup_count} snapshot(s)${soundNote} included).`)
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : String(err))
     } finally {
@@ -726,7 +845,7 @@ function AppTransferPanel(): React.ReactElement {
         </span>
       </div>
       <p className="text-[11px] mb-3" style={{ color: 'var(--color-muted-foreground)' }}>
-        Export bundles your entire PQ Companion setup — characters, triggers, combat history, AAs, tasks, key tracker, every Settings-tab preference, overlay dashboard layout, popped-out window positions/sizes, custom trigger sounds, plus every EQ config backup below — into a single <code className="font-mono">.pqcb</code> file. Import that file on a different device after installing the app to restore everything in place, including which overlays are shown/hidden and where they sit. Different from the EQ config backups list below, which only protects your in-game <code className="font-mono">.ini</code> files.
+        Export puts your whole PQ Companion setup in one <code className="font-mono">.pqcb</code> file: characters, triggers, blocked buffs, combat history, AAs, tasks, key tracker, every setting, the overlay layout and window positions, custom trigger sounds, plus every snapshot and character-file version. Import it on the other computer after installing the app to get everything back as it was. It doesn't include your EverQuest folder itself; copy that separately, or restore your characters' files from the snapshots and history it carries.
       </p>
 
       {/* Export */}
@@ -768,7 +887,7 @@ function AppTransferPanel(): React.ReactElement {
             Bundle exported {importPreview.manifest.exported_at} by app version {importPreview.manifest.app_version}.
           </p>
           <p>
-            Contains {importPreview.manifest.stats.backup_count} EQ-config backup(s)
+            Contains {importPreview.manifest.stats.backup_count} snapshot(s)
             {importPreview.manifest.stats.sound_count > 0 ? `, ${importPreview.manifest.stats.sound_count} custom sound(s)` : ''}
             {importPreview.manifest.stats.config_included ? ', settings' : ''}
             {importPreview.manifest.stats.client_state_included ? ', overlay/window layout' : ''}
@@ -1015,13 +1134,145 @@ function ResetConfirmModal({
 
 // ── Main page ──────────────────────────────────────────────────────────────────
 
+type BackupTab = 'files' | 'snapshots' | 'transfer' | 'reset'
+const TAB_KEY = 'backups.tab'
+
+const TABS: Array<{ id: BackupTab; label: string; icon: React.ReactNode; blurb: string }> = [
+  {
+    id: 'files',
+    label: 'Character files',
+    icon: <History size={14} />,
+    blurb: 'Spellsets, bandolier, hotkeys and macros, UI layout. A version is saved automatically whenever one changes; restore any file to an earlier one.',
+  },
+  {
+    id: 'snapshots',
+    label: 'Snapshots',
+    icon: <Archive size={14} />,
+    blurb: 'A copy of every EQ settings file at one moment, and your logs if you choose. Make one before big changes; restore all or some files.',
+  },
+  {
+    id: 'transfer',
+    label: 'Move to another PC',
+    icon: <Laptop size={14} />,
+    blurb: 'Everything in PQ Companion, including blocked buffs, triggers, settings and all of the backups here, in one file.',
+  },
+  {
+    id: 'reset',
+    label: 'Reset',
+    icon: <AlertTriangle size={14} />,
+    blurb: 'Start over: clear app data, or everything including settings.',
+  },
+]
+
+function readTab(): BackupTab {
+  try {
+    const t = localStorage.getItem(TAB_KEY)
+    if (t && TABS.some((x) => x.id === t)) return t as BackupTab
+  } catch {
+    // Fall through to the default.
+  }
+  return 'files'
+}
+
 export default function BackupManagerPage(): React.ReactElement {
+  const [tab, setTabState] = useState<BackupTab>(readTab)
+  const navigate = useNavigate()
+  const setTab = (t: BackupTab) => {
+    setTabState(t)
+    try {
+      localStorage.setItem(TAB_KEY, t)
+    } catch {
+      // Remembering the tab is a convenience only.
+    }
+  }
+
+  return (
+    <div className="flex h-full flex-col">
+      {/* Header */}
+      <div
+        className="flex items-center gap-3 border-b px-4 py-3 shrink-0"
+        style={{ borderColor: 'var(--color-border)' }}
+      >
+        <HardDrive size={18} style={{ color: 'var(--color-primary)' }} />
+        <span className="text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
+          Backup &amp; Restore
+        </span>
+        <button
+          onClick={() => window.electron?.shell?.openBackupsFolder().catch(() => null)}
+          title="Open the snapshots folder in your file manager"
+          className="ml-auto flex items-center gap-1.5 text-xs px-2 py-1 rounded"
+          style={{
+            backgroundColor: 'var(--color-surface-2)',
+            color: 'var(--color-muted-foreground)',
+            border: '1px solid var(--color-border)',
+          }}
+        >
+          <FolderOpen size={11} />
+          Open folder
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {/* What's protected: one tile per tab */}
+        <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
+          {TABS.map((t) => {
+            const on = t.id === tab
+            return (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className="rounded-lg p-3 text-left"
+                style={{
+                  backgroundColor: on ? 'var(--color-surface-2)' : 'var(--color-surface)',
+                  border: `1px solid ${on ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                }}
+              >
+                <span
+                  className="flex items-center gap-1.5 text-xs font-semibold"
+                  style={{ color: on ? 'var(--color-primary)' : 'var(--color-foreground)' }}
+                >
+                  {t.icon}
+                  {t.label}
+                </span>
+                <span className="mt-1 block text-[11px] leading-snug" style={{ color: 'var(--color-muted-foreground)' }}>
+                  {t.blurb}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+
+        <p className="flex items-start gap-1.5 text-[11px]" style={{ color: 'var(--color-muted)' }}>
+          <FileText size={12} className="shrink-0 mt-0.5" />
+          <span>
+            Log files: archive and trim them in{' '}
+            <button
+              className="underline"
+              style={{ color: 'var(--color-primary)' }}
+              onClick={() => navigate('/settings?tab=logs')}
+            >
+              Settings → Logs
+            </button>
+            . Archives stay next to the log, and Log Backfill reads them. To keep a copy of the
+            logs themselves, make a snapshot with “Include log files”.
+          </span>
+        </p>
+
+        {tab === 'files' && <FileHistoryPanel />}
+        {tab === 'snapshots' && <SnapshotsPanel />}
+        {tab === 'transfer' && <AppTransferPanel />}
+        {tab === 'reset' && <ResetPanel />}
+      </div>
+    </div>
+  )
+}
+
+function SnapshotsPanel(): React.ReactElement {
   const [backups, setBackups] = useState<Backup[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  const navigate = useNavigate()
 
   const load = useCallback(() => {
     setLoading(true)
@@ -1047,189 +1298,99 @@ export default function BackupManagerPage(): React.ReactElement {
     setBackups((prev) => prev.map((b) => b.id === id ? { ...b, locked } : b))
   }
 
-  // ── Loading ────────────────────────────────────────────────────────────────
-
-  if (loading) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <RefreshCw size={20} className="animate-spin" style={{ color: 'var(--color-muted)' }} />
-      </div>
-    )
+  const toolBtn = {
+    backgroundColor: 'var(--color-surface-2)',
+    color: 'var(--color-muted-foreground)',
+    border: '1px solid var(--color-border)',
   }
-
-  if (error) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 p-8">
-        <AlertCircle size={32} style={{ color: 'var(--color-danger)' }} />
-        <p className="text-sm text-center" style={{ color: 'var(--color-muted-foreground)' }}>
-          {error}
-        </p>
-        <button
-          onClick={load}
-          className="text-xs px-3 py-1.5 rounded"
-          style={{
-            backgroundColor: 'var(--color-surface-2)',
-            color: 'var(--color-foreground)',
-            border: '1px solid var(--color-border)',
-          }}
-        >
-          Retry
-        </button>
-      </div>
-    )
-  }
-
-  // ── Main render ────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex h-full flex-col">
-      {/* Header */}
-      <div
-        className="flex items-center gap-3 border-b px-4 py-3 shrink-0"
-        style={{ borderColor: 'var(--color-border)' }}
-      >
-        <HardDrive size={18} style={{ color: 'var(--color-primary)' }} />
-        <span className="text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
-          EQ Config Backups
-        </span>
-        <div className="ml-auto flex items-center gap-2">
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <p className="flex-1 text-[11px]" style={{ color: 'var(--color-muted-foreground)' }}>
+          Lock a snapshot to keep it from automatic cleanup. PQ Companion also takes one
+          before it changes an EQ file for you.
+        </p>
+        <button onClick={load} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded" style={toolBtn}>
+          <RefreshCw size={11} />
+          Refresh
+        </button>
+        <button
+          onClick={() => { setShowSettings((v) => !v); setShowCreate(false) }}
+          title="Automatic snapshots and how many to keep"
+          className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
+          style={showSettings
+            ? { backgroundColor: 'var(--color-primary)', color: 'var(--color-background)', border: '1px solid transparent' }
+            : toolBtn}
+        >
+          <Settings size={11} />
+          Schedule
+        </button>
+        <button
+          onClick={() => { setShowCreate((v) => !v); setShowSettings(false) }}
+          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded font-medium"
+          style={{
+            backgroundColor: showCreate ? 'var(--color-surface-2)' : 'var(--color-primary)',
+            color: showCreate ? 'var(--color-muted-foreground)' : 'var(--color-background)',
+            border: `1px solid ${showCreate ? 'var(--color-border)' : 'transparent'}`,
+          }}
+        >
+          <Plus size={11} />
+          New snapshot
+        </button>
+      </div>
+
+      {showSettings && (
+        <SettingsPanel
+          onClose={() => setShowSettings(false)}
+          onPruned={load}
+        />
+      )}
+
+      {showCreate && (
+        <CreateForm
+          onCreated={handleCreated}
+          onCancel={() => setShowCreate(false)}
+        />
+      )}
+
+      {loading && (
+        <RefreshCw size={16} className="animate-spin mx-auto" style={{ color: 'var(--color-muted)' }} />
+      )}
+
+      {error && (
+        <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--color-danger)' }}>
+          <AlertCircle size={13} />
+          {error}
+        </div>
+      )}
+
+      {!loading && !error && backups.length === 0 && !showCreate && (
+        <div className="flex flex-col items-center gap-3 py-8">
+          <Archive size={28} style={{ color: 'var(--color-muted)' }} />
+          <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+            No snapshots yet.
+          </p>
           <button
-            onClick={() => window.electron?.shell?.openBackupsFolder().catch(() => null)}
-            title="Open the backups folder in your file manager"
-            className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
-            style={{
-              backgroundColor: 'var(--color-surface-2)',
-              color: 'var(--color-muted-foreground)',
-              border: '1px solid var(--color-border)',
-            }}
-          >
-            <FolderOpen size={11} />
-            Open folder
-          </button>
-          <button
-            onClick={load}
-            className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
-            style={{
-              backgroundColor: 'var(--color-surface-2)',
-              color: 'var(--color-muted-foreground)',
-              border: '1px solid var(--color-border)',
-            }}
-          >
-            <RefreshCw size={11} />
-            Refresh
-          </button>
-          <button
-            onClick={() => { setShowSettings((v) => !v); setShowCreate(false) }}
-            className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
-            style={{
-              backgroundColor: showSettings ? 'var(--color-primary)' : 'var(--color-surface-2)',
-              color: showSettings ? 'var(--color-background)' : 'var(--color-muted-foreground)',
-              border: `1px solid ${showSettings ? 'transparent' : 'var(--color-border)'}`,
-            }}
-          >
-            <Settings size={11} />
-          </button>
-          <button
-            onClick={() => { setShowCreate((v) => !v); setShowSettings(false) }}
-            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded font-medium"
-            style={{
-              backgroundColor: showCreate ? 'var(--color-surface-2)' : 'var(--color-primary)',
-              color: showCreate ? 'var(--color-muted-foreground)' : 'var(--color-background)',
-              border: `1px solid ${showCreate ? 'var(--color-border)' : 'transparent'}`,
-            }}
+            onClick={() => setShowCreate(true)}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded"
+            style={{ ...toolBtn, color: 'var(--color-foreground)' }}
           >
             <Plus size={11} />
-            New Backup
+            Make your first snapshot
           </button>
         </div>
-      </div>
+      )}
 
-      {/* Info banner */}
-      <div
-        className="flex items-start gap-2 border-b px-4 py-2 shrink-0"
-        style={{
-          borderColor: 'var(--color-border)',
-          backgroundColor: 'var(--color-surface)',
-        }}
-      >
-        <Archive size={12} className="shrink-0 mt-0.5" style={{ color: 'var(--color-muted)' }} />
-        <p className="text-[11px]" style={{ color: 'var(--color-muted-foreground)' }}>
-          Protects your EverQuest <code className="font-mono">*.ini</code> configuration files (UI layout, hotkeys, social macros, etc.). Lock a backup to keep it from automatic cleanup. Unrelated to the Logs tab — that one archives the EQ log file.
-        </p>
-      </div>
-
-      {/* Scrollable content */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
-
-        {/* App backup & restore — always visible at the top because it's a
-            distinct top-level capability (moves the entire app to another
-            device), not a knob within the EQ-config-backup workflow below. */}
-        <AppTransferPanel />
-
-        {/* Reset — destructive "start over" controls, kept just under the
-            transfer panel so backup/restore and reset live together. */}
-        <ResetPanel />
-
-        {/* Settings panel (inline) */}
-        {showSettings && (
-          <SettingsPanel
-            onClose={() => setShowSettings(false)}
-            onPruned={load}
-          />
-        )}
-
-        {/* Create form (inline) */}
-        {showCreate && (
-          <CreateForm
-            onCreated={handleCreated}
-            onCancel={() => setShowCreate(false)}
-          />
-        )}
-
-        {/* Empty state */}
-        {backups.length === 0 && !showCreate && !showSettings && (
-          <div className="flex h-full flex-col items-center justify-center gap-3">
-            <Archive size={32} style={{ color: 'var(--color-muted)' }} />
-            <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
-              No backups yet.
-            </p>
-            <button
-              onClick={() => setShowCreate(true)}
-              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded"
-              style={{
-                backgroundColor: 'var(--color-surface-2)',
-                color: 'var(--color-foreground)',
-                border: '1px solid var(--color-border)',
-              }}
-            >
-              <Plus size={11} />
-              Create your first backup
-            </button>
-            <p className="text-[11px] text-center max-w-xs" style={{ color: 'var(--color-muted)' }}>
-              Make sure your EQ path is set in{' '}
-              <button
-                className="underline"
-                style={{ color: 'var(--color-primary)' }}
-                onClick={() => navigate('/settings')}
-              >
-                Settings
-              </button>{' '}
-              before creating a backup.
-            </p>
-          </div>
-        )}
-
-        {/* Backup list */}
-        {backups.map((b) => (
-          <BackupCard
-            key={b.id}
-            backup={b}
-            onDeleted={handleDeleted}
-            onRestored={() => {/* success shown inline in card */}}
-            onLockToggled={handleLockToggled}
-          />
-        ))}
-      </div>
+      {backups.map((b) => (
+        <BackupCard
+          key={b.id}
+          backup={b}
+          onDeleted={handleDeleted}
+          onRestored={() => {/* success shown inline in card */}}
+          onLockToggled={handleLockToggled}
+        />
+      ))}
     </div>
   )
 }

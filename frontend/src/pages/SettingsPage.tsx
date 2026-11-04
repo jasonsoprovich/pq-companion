@@ -363,13 +363,14 @@ export default function SettingsPage(): React.ReactElement {
     }
     return 'general'
   })
-  // The sidebar's large-log dot links to ?tab=logs. The initializer above only
-  // runs on mount, so also honour the param when navigating here while the
-  // page is already open (keyed on location.key so repeat clicks re-apply).
+  // The sidebar's large-log dot links to ?tab=logs, and Logs and Backup &
+  // Restore link to each other. The initializer above only runs on mount, so
+  // also honour the param when navigating here while the page is already
+  // open (keyed on location.key so repeat clicks re-apply).
   const location = useLocation()
   useEffect(() => {
     const t = searchParams.get('tab')
-    if (t === 'logs') setTab('logs')
+    if (t === 'logs' || t === 'backups') setTab(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.key])
   useEffect(() => {
@@ -826,7 +827,7 @@ export default function SettingsPage(): React.ReactElement {
     { id: 'dpscolors', label: 'DPS Meters', icon: <Palette size={13} /> },
     { id: 'discord', label: 'Discord', icon: <Headphones size={13} /> },
     { id: 'logs', label: 'Logs', icon: <FileText size={13} /> },
-    { id: 'backups', label: 'EQ Config Backups', icon: <HardDrive size={13} /> },
+    { id: 'backups', label: 'Backup & Restore', icon: <HardDrive size={13} /> },
     { id: 'maps', label: 'Maps', icon: <MapIcon size={13} /> },
     { id: 'advanced', label: 'Advanced', icon: <Wifi size={13} /> },
     { id: 'about', label: 'About', icon: <Info size={13} /> },
@@ -3720,7 +3721,11 @@ export default function SettingsPage(): React.ReactElement {
             )}
           </h2>
           <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-            Archives the current EverQuest log file to a <code className="font-mono">.bak.zip</code> next to it, then trims the live log using the settings below. Unrelated to the EQ Config Backups tab — that one protects your <code className="font-mono">.ini</code> files.
+            Archives the current EverQuest log file to a <code className="font-mono">.bak.zip</code> next to it, then trims the live log using the settings below. Archives stay in your EQ folder and Log Backfill still reads them. To keep a separate copy of your logs, make a snapshot with “Include log files” in{' '}
+            <button className="underline" style={{ color: 'var(--color-primary)' }} onClick={() => setTab('backups')}>
+              Backup &amp; Restore
+            </button>
+            ; your <code className="font-mono">.ini</code> settings files are backed up there too.
           </p>
 
           {/* Trim settings */}
