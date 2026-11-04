@@ -131,6 +131,9 @@ export interface TargetState {
   live_level?: number
   live_class?: number
   target_type?: number
+  // target_id is the current target's spawn id from the Zeal pipe (v1.4.6+);
+  // absent without Zeal or with no target.
+  target_id?: number
   last_updated: string
 }
 

@@ -561,6 +561,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Delete("/raidthreat/{name}", raidThreatH.dismissMob)
 			r.Get("/timers", timerH.state)
 			r.Post("/timers/clear", timerH.clear)
+			r.Post("/timers/clear-target", timerH.clearTarget)
 			r.Post("/timers/custom", timerH.startCustom)
 			r.Delete("/timers/{id}", timerH.remove)
 			r.Get("/respawns", respawnH.state)

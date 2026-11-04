@@ -8,13 +8,14 @@
  * 'overlay' uses the translucent-white palette every popout overlay uses.
  */
 import React, { useState } from 'react'
-import { Star, X, UserX } from 'lucide-react'
+import { Eraser, Star, X, UserX } from 'lucide-react'
 import { SpellIcon } from '../Icon'
 import TimerRowControls from './TimerRowControls'
-import { removeTimer } from '../../services/api'
+import { clearTargetTimers, removeTimer } from '../../services/api'
 import { fmtRemaining } from '../../lib/timeFormat'
 import {
   TARGET_CURRENT,
+  TARGET_DEBUFFS_PRESET,
   TARGET_SELF,
   knownSpellNames,
   normalizeTarget,
@@ -216,6 +217,24 @@ function FilterBar({
             Show missing
           </label>
         )}
+        <button
+          type="button"
+          onClick={() => update(TARGET_DEBUFFS_PRESET)}
+          title="Show every detrimental on your current target, regardless of time left"
+          style={{
+            marginLeft: 'auto',
+            fontSize: 10,
+            padding: '1px 6px',
+            borderRadius: 3,
+            border: `1px solid ${pal.border}`,
+            background: 'none',
+            color: pal.fg,
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          Target debuffs
+        </button>
       </div>
       {config.onlySelected && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
@@ -274,12 +293,15 @@ function TimerRow({
   label,
   appearance,
   showRemove,
+  unproven,
   pal,
 }: {
   timer: ActiveTimer
   label: string
   appearance: TimerAppearance
   showRemove: boolean
+  // Matched by name only; may be on another same-named spawn.
+  unproven: boolean
   pal: Palette
 }): React.ReactElement {
   const expired = timer.expired === true
@@ -300,12 +322,14 @@ function TimerRow({
   return (
     <div
       className="timer-row"
+      title={unproven ? 'Not tied to this exact spawn; may be on another mob with the same name' : undefined}
       style={{
         position: 'relative',
         padding: `${appearance.rowPadding}px 8px`,
         borderBottom: `1px solid ${pal.border}`,
         overflow: 'hidden',
         flexShrink: 0,
+        opacity: unproven ? 0.6 : 1,
       }}
     >
       <div
@@ -330,6 +354,7 @@ function TimerRow({
             }}
           >
             {label}
+            {unproven && ' ?'}
           </span>
         </div>
         <span
@@ -383,6 +408,9 @@ function GroupHeader({
       ? `${roster.length - group.missing.length} / ${roster.length}`
       : `${n} ${noun}${n === 1 ? '' : 's'}`
   const starred = config.selectedSpells.some((s) => s.toLowerCase() === group.title.toLowerCase())
+  const clearable =
+    interactive && !bySpell && config.type === 'detrimental' && config.target === TARGET_CURRENT &&
+    group.rows.length > 0
   return (
     <div
       style={{
@@ -400,6 +428,15 @@ function GroupHeader({
         {bySpell ? group.title : `${config.type === 'beneficial' ? 'Buffs' : 'Debuffs'} on ${group.title}`}
       </span>
       <span style={{ fontSize: 10, color: pal.muted, flexShrink: 0 }}>{count}</span>
+      {clearable && (
+        <button
+          onClick={() => clearTargetTimers(group.title, group.targetId).catch(() => {})}
+          title={`Clear the debuffs on ${group.title} (after a leash or evade reset, which the log doesn't show)`}
+          style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: pal.muted, lineHeight: 0 }}
+        >
+          <Eraser size={11} />
+        </button>
+      )}
       {bySpell && interactive && (
         <button
           onClick={() =>
@@ -520,6 +557,7 @@ export default function FilteredTimerView({
                   label={rowLabel(t)}
                   appearance={appearance}
                   showRemove={rowsInteractive}
+                  unproven={g.unproven.has(t.id)}
                   pal={pal}
                 />
               ))}

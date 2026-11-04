@@ -9,7 +9,7 @@ import {
 } from './useDisplayThresholds'
 import { useFilteredTimerConfig } from './useFilteredTimerConfig'
 import { usePartyRoster } from './usePartyRoster'
-import { useCurrentTargetName } from './useCurrentTargetName'
+import { useCurrentTarget } from './useCurrentTargetName'
 import { getTimerState } from '../services/api'
 import { WSEvent } from '../lib/wsEvents'
 import { applyTimerFilter, type FilteredTimerConfig, type TimerGroup } from '../lib/timerFilter'
@@ -44,7 +44,7 @@ export function useFilteredTimers(): {
   const thresholds = useDisplayThresholds()
   const { config, update, collapsed, toggleCollapsed } = useFilteredTimerConfig()
   const party = usePartyRoster(activePlayer)
-  const currentTarget = useCurrentTargetName()
+  const currentTarget = useCurrentTarget()
 
   useEffect(() => {
     getTimerState().then(setState).catch(() => {})
@@ -81,7 +81,8 @@ export function useFilteredTimers(): {
   const groups = useMemo(
     () => applyTimerFilter(timers ?? [], config, {
         activePlayer,
-        currentTarget,
+        currentTarget: currentTarget.name,
+        currentTargetId: currentTarget.id,
         roster,
         holders: scoped ?? [],
       }),

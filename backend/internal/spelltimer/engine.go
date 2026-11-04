@@ -312,11 +312,13 @@ const pipeDeathWindow = 3 * time.Second
 //     (lastCastTarget — the name snapshot recentSelfCastMatches also
 //     consults), it agrees with the mob this instance actually landed on.
 //
-// It does nothing — targetName passes through unchanged, same as before
-// this existed — for a slow cast by someone else in the raid (no cast-
-// start line for another player's cast reaches this client), an NPC-cast
-// slow (no cast-start line at all), a group/AE spell, or once the window
-// lapses. Those cases keep colliding on name exactly as before: the
+// Outside that rule, a detrimental on a named mob the player has targeted
+// is still tagged with the target's id (namedTargetTokenLocked). Otherwise
+// targetName passes through unchanged for a slow cast by someone else in
+// the raid (no cast-start line for another player's cast reaches this
+// client), an NPC-cast slow (no cast-start line at all), a group/AE spell,
+// or once the window lapses. Those cases keep colliding on name as before
+// for generic "a/an/the …" mobs: the
 // underlying limitation is that EQ's log carries no spawn id on the
 // landed-effect line itself, documented in LIMITATIONS.md §1.3.
 //
@@ -337,22 +339,48 @@ func (e *Engine) keyTargetTokenLocked(spell *db.Spell, targetName string, at tim
 	if spell.GoodEffect != 0 {
 		return targetName
 	}
-	if e.lastCastTargetID == 0 || e.lastCastSpell == "" {
-		return targetName
-	}
-	if !strings.EqualFold(e.lastCastSpell, spell.Name) {
-		return targetName
+	if e.lastCastTargetID == 0 || e.lastCastSpell == "" ||
+		!strings.EqualFold(e.lastCastSpell, spell.Name) {
+		return e.namedTargetTokenLocked(targetName)
 	}
 	if d := at.Sub(e.lastCastAt); d < 0 || d > castSelfSlowWindow {
-		return targetName
+		return e.namedTargetTokenLocked(targetName)
 	}
 	if !isSingleTargetSpellType(spell.TargetType) {
-		return targetName
+		return e.namedTargetTokenLocked(targetName)
 	}
 	if e.lastCastTarget != "" && normalizeNPCName(e.lastCastTarget) != normalizeNPCName(targetName) {
-		return targetName
+		return e.namedTargetTokenLocked(targetName)
 	}
 	return targetName + targetIDKeySep + strconv.Itoa(e.lastCastTargetID)
+}
+
+// namedTargetTokenLocked tags a detrimental that isn't the player's own
+// recent cast (another player's, or one keyTargetTokenLocked couldn't tie to
+// a cast) with the player's current target's spawn id, but only when the
+// target is a named mob of the same name and the pipe's name and id have
+// settled. A named mob has one live spawn at a time, so the id is safe.
+// Generic "a/an/the …" mobs are never tagged this way: the observer's
+// target is just one of several same-named spawns, and a wrong id is worse
+// than none. Caller must hold e.mu.
+func (e *Engine) namedTargetTokenLocked(targetName string) string {
+	if isGenericNPCName(targetName) ||
+		normalizeNPCName(e.lastPipeTarget) != normalizeNPCName(targetName) {
+		return targetName
+	}
+	id := e.settledPipeTargetIDLocked(time.Now())
+	if id == 0 {
+		return targetName
+	}
+	return targetName + targetIDKeySep + strconv.Itoa(id)
+}
+
+// isGenericNPCName reports whether name is a generic spawn name ("a gnoll",
+// "an orc pawn", "the ghost of …") rather than a named mob.
+func isGenericNPCName(name string) bool {
+	n := strings.ToLower(strings.TrimSpace(name))
+	return n == "" || strings.HasPrefix(n, "a ") || strings.HasPrefix(n, "an ") ||
+		strings.HasPrefix(n, "the ")
 }
 
 // parseKeyTargetID extracts the disambiguating spawn-id suffix a timer's
@@ -1669,6 +1697,38 @@ func (e *Engine) ClearCategory(group string) {
 	}
 }
 
+// ClearTarget removes the detrimental timers on one mob, for when its
+// debuffs vanished without a log line (a leash or evade reset clears them
+// silently). It matches what the Filtered Timers current-target view shows:
+// timers pinned to targetID, plus same-named timers pinned to no spawn. A
+// targetID of 0 (no Zeal id) clears every same-named detrimental. Returns
+// how many timers were removed.
+func (e *Engine) ClearTarget(name string, targetID int) int {
+	norm := normalizeNPCName(name)
+	if norm == "" {
+		return 0
+	}
+	e.mu.Lock()
+	removed := 0
+	for key, t := range e.timers {
+		if !isDetrimentalCategory(t.Category) || normalizeNPCName(t.TargetName) != norm {
+			continue
+		}
+		if id := parseKeyTargetID(key); targetID != 0 && id != 0 && id != targetID {
+			continue
+		}
+		delete(e.timers, key)
+		removed++
+	}
+	snap := e.snapshot(time.Now())
+	e.mu.Unlock()
+
+	if removed > 0 {
+		e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
+	}
+	return removed
+}
+
 func categoryMatchesGroup(cat Category, group string) bool {
 	switch group {
 	case "", "all":
@@ -2731,7 +2791,8 @@ func (e *Engine) removeOnKill(target string, viaCorpseTarget bool, trustPipeTarg
 
 // removeFadedDetrimental handles "Your X spell has worn off." for a
 // detrimental the active character cast on a mob. EQ names no target, so:
-// spawn-id-tagged instances (always the player's own casts — see
+// spawn-id-tagged instances (the player's own casts, or any caster's on a
+// named mob, where the player's own cast shares the key — see
 // keyTargetTokenLocked) are preferred over untagged ones, which may belong
 // to another caster under the "anyone" scope; among those, the
 // soonest-expiring instance is dropped — exact for a natural expiry, a
@@ -3458,9 +3519,10 @@ func (e *Engine) broadcast() {
 func (e *Engine) snapshot(now time.Time) TimerState {
 	timers := make([]ActiveTimer, 0, len(e.timers))
 	keep := e.keepExpired()
-	for _, t := range e.timers {
+	for key, t := range e.timers {
 		remaining := t.ExpiresAt.Sub(now).Seconds()
 		entry := *t
+		entry.TargetID = parseKeyTargetID(key)
 		if remaining < 0 {
 			if keep {
 				// Overdue: report the (negative) seconds-since-expiry so the

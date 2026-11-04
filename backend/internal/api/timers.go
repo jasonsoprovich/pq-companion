@@ -39,6 +39,26 @@ func (h *timerHandler) clear(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// clearTarget handles POST /api/overlay/timers/clear-target — removes the
+// detrimental timers on one mob (see spelltimer.Engine.ClearTarget).
+// Body: {"name": "Lord Bob", "target_id": 1234}; target_id is optional.
+func (h *timerHandler) clearTarget(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name     string `json:"name"`
+		TargetID int    `json:"target_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Name == "" {
+		writeError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"removed": h.engine.ClearTarget(req.Name, req.TargetID)})
+}
+
 // startCustom handles POST /api/overlay/timers/custom — starts a manual
 // countdown timer on the Custom Timers overlay without needing a trigger.
 // Body: {"name": "Break over", "duration_secs": 300, "alerts": [...]}.

@@ -24,6 +24,12 @@ export interface ActiveTimer {
    * timers that don't carry a target.
    */
   target_name: string
+  /**
+   * Spawn id the timer is pinned to: your own single-target casts, and any
+   * detrimental on a named mob you had targeted. Absent = tied to the name
+   * only, which can't tell same-named spawns apart.
+   */
+  target_id?: number
   category: TimerCategory
   /**
    * The character that was active when this timer was created (whichever

@@ -65,6 +65,10 @@ type ActiveTimer struct {
 	// key is consistent regardless of which character's log we read).
 	// Empty for trigger-driven timers that don't carry a target.
 	TargetName string `json:"target_name"`
+	// TargetID is the spawn id this timer is pinned to, 0 when it isn't
+	// (see keyTargetTokenLocked). Derived from the key on each snapshot. A
+	// non-zero id is proven: the timer belongs to that exact spawn.
+	TargetID int `json:"target_id,omitempty"`
 
 	Category Category `json:"category"`
 

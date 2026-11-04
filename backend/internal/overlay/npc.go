@@ -111,6 +111,10 @@ type TargetState struct {
 	LiveLevel  *int `json:"live_level,omitempty"`
 	LiveClass  *int `json:"live_class,omitempty"`
 	TargetType *int `json:"target_type,omitempty"`
+	// TargetID is the current target's spawn id from the Zeal pipe (v1.4.6+).
+	// Nil without Zeal, on older Zeal, or with no target. The Filtered Timers
+	// "current target" view uses it to tell same-named mobs apart.
+	TargetID *int `json:"target_id,omitempty"`
 	// LastUpdated is the wall-clock time the state last changed.
 	LastUpdated time.Time `json:"last_updated"`
 }
@@ -421,7 +425,16 @@ func (t *NPCTracker) SetPipeTargetSnapshot(id *int, desc *zealpipe.TargetDescrip
 	}
 	zoneShort := t.pipeZoneShort
 	pos := playerPos{known: t.pipePlayerKnown, x: t.pipePlayerX, y: t.pipePlayerY}
+	idStale := !eqIntPtr(t.st.TargetID, id)
+	if idStale {
+		t.st.TargetID = copyInt(id)
+		t.st.LastUpdated = time.Now()
+	}
+	idSnap := t.st
 	t.mu.Unlock()
+	if idStale {
+		t.broadcast(idSnap)
+	}
 
 	matched := descFor(desc, name)
 	t.applyLive(name, matched)
@@ -733,10 +746,11 @@ func (t *NPCTracker) ResetPipeFields() {
 	t.dist = TargetDistance{}
 	t.distSentOnce = false
 	stateStale := t.st.HPPercent != -1 || t.st.PetOwner != "" || t.st.LiveLevel != nil ||
-		t.st.LiveClass != nil || t.st.TargetType != nil
+		t.st.LiveClass != nil || t.st.TargetType != nil || t.st.TargetID != nil
 	t.st.HPPercent = -1
 	t.st.PetOwner = ""
 	t.st.LiveLevel, t.st.LiveClass, t.st.TargetType = nil, nil, nil
+	t.st.TargetID = nil
 	if stateStale {
 		t.st.LastUpdated = time.Now()
 	}

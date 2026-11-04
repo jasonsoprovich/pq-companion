@@ -1980,6 +1980,18 @@ export function clearTimers(category: 'buff' | 'detrimental' | 'custom' | 'ch_ch
   return post<void>(`/api/overlay/timers/clear?category=${category}`)
 }
 
+/**
+ * Remove the detrimental timers on one mob: those pinned to targetId plus
+ * same-named ones pinned to no spawn (all same-named ones without an id).
+ * For leash/evade resets, which clear a mob's debuffs without a log line.
+ */
+export function clearTargetTimers(name: string, targetId?: number): Promise<{ removed: number }> {
+  return post<{ removed: number }>('/api/overlay/timers/clear-target', {
+    name,
+    target_id: targetId ?? 0,
+  })
+}
+
 export function removeTimer(id: string): Promise<void> {
   return del(`/api/overlay/timers/${encodeURIComponent(id)}`)
 }

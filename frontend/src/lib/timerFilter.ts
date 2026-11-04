@@ -55,6 +55,10 @@ export interface FilterContext {
   activePlayer: string
   // Name of the Zeal-pipe current target, '' when none / unknown.
   currentTarget: string
+  // Its spawn id, when Zeal reports one. With it, the current-target view
+  // drops timers pinned to a different same-named spawn and marks the ones
+  // pinned to no spawn as unproven.
+  currentTargetId?: number
   // Live group/raid roster (including the active player) for the missing
   // list; empty when no roster is available.
   roster: string[]
@@ -74,6 +78,23 @@ export interface TimerGroup {
   // Roster members without this spell (beneficial spell view + showMissing
   // only; empty otherwise).
   missing: string[]
+  // Ids of rows matched by name only, not by spawn id (current-target view
+  // with a known target id). They may belong to another same-named spawn.
+  unproven: Set<string>
+  // Spawn id of the mob the group is for (current-target view only).
+  targetId?: number
+}
+
+// One-click setup for "what's on my target": every detrimental on the
+// current target, regardless of time left.
+export const TARGET_DEBUFFS_PRESET: Partial<FilteredTimerConfig> = {
+  type: 'detrimental',
+  viewBy: 'target',
+  target: TARGET_CURRENT,
+  onlySelected: false,
+  underOneMin: false,
+  showMissing: false,
+  respectThresholds: false,
 }
 
 export function matchesType(t: ActiveTimer, type: FilterType): boolean {
@@ -125,6 +146,8 @@ export function applyTimerFilter(
 ): TimerGroup[] {
   const target = resolveTarget(cfg, ctx)
   if (target === null) return []
+  const byId =
+    cfg.viewBy === 'target' && cfg.target === TARGET_CURRENT ? ctx.currentTargetId : undefined
 
   const pool = baseFilter(timers, cfg)
   const groups = new Map<string, TimerGroup>()
@@ -133,13 +156,24 @@ export function applyTimerFilter(
     const key = cfg.viewBy === 'spell' ? t.spell_name : who
     if (!key) continue
     if (target && !sameName(key, target)) continue
+    // Same name, different spawn: another mob's debuffs.
+    if (byId !== undefined && t.target_id && t.target_id !== byId) continue
     const gk = key.toLowerCase()
     let g = groups.get(gk)
     if (!g) {
-      g = { key: gk, title: key, icon: cfg.viewBy === 'spell' ? t.icon : undefined, rows: [], missing: [] }
+      g = {
+        key: gk,
+        title: key,
+        icon: cfg.viewBy === 'spell' ? t.icon : undefined,
+        rows: [],
+        missing: [],
+        unproven: new Set(),
+        targetId: byId,
+      }
       groups.set(gk, g)
     }
     g.rows.push(t)
+    if (byId !== undefined && !t.target_id) g.unproven.add(t.id)
   }
 
   // A specific selected spell with nobody holding it still gets a (rowless)
@@ -150,7 +184,9 @@ export function applyTimerFilter(
     const want = target ? [target] : cfg.onlySelected ? cfg.selectedSpells : []
     for (const s of want) {
       const gk = s.toLowerCase()
-      if (!groups.has(gk)) groups.set(gk, { key: gk, title: s, rows: [], missing: [] })
+      if (!groups.has(gk)) {
+        groups.set(gk, { key: gk, title: s, rows: [], missing: [], unproven: new Set() })
+      }
     }
   }
 
