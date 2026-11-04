@@ -13,10 +13,15 @@ export interface Map3DPrefs {
   // building or dungeon you look in through its walls instead of at them.
   seeThroughOuter: boolean
   hideCeilings: boolean
+  // showObjects draws the zone's placed objects: trees, buildings, lamps,
+  // furniture.
+  showObjects: boolean
 }
 
 const KEY = 'map3d.prefs'
-const DEFAULTS: Map3DPrefs = { style: 'textured', wallOpacity: 1, seeThroughOuter: true, hideCeilings: false }
+const DEFAULTS: Map3DPrefs = {
+  style: 'textured', wallOpacity: 1, seeThroughOuter: true, hideCeilings: false, showObjects: true,
+}
 const STYLES: readonly Map3DStyle[] = ['textured', 'height', 'plain']
 
 function load(): Map3DPrefs {
@@ -29,6 +34,7 @@ function load(): Map3DPrefs {
       wallOpacity: typeof p.wallOpacity === 'number' ? Math.min(1, Math.max(0.1, p.wallOpacity)) : DEFAULTS.wallOpacity,
       seeThroughOuter: typeof p.seeThroughOuter === 'boolean' ? p.seeThroughOuter : DEFAULTS.seeThroughOuter,
       hideCeilings: typeof p.hideCeilings === 'boolean' ? p.hideCeilings : DEFAULTS.hideCeilings,
+      showObjects: typeof p.showObjects === 'boolean' ? p.showObjects : DEFAULTS.showObjects,
     }
   } catch {
     return DEFAULTS

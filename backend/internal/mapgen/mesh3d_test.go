@@ -12,7 +12,7 @@ func TestMesh3DEncode(t *testing.T) {
 		UV:        []float32{0, 0, 1, 0, 0, 1},
 		Idx:       []uint32{0, 2, 1},
 		Groups:    []Group3D{{Start: 0, Count: 3, Material: 1}},
-		Materials: []Material3D{{Kind: MatSolid, Opacity: 1}, {Texture: "water.bmp", Kind: MatBlend, Opacity: 0.5}},
+		Materials: []Material3D{{Kind: MatSolid, Opacity: 1}, {Texture: "water.bmp", Kind: MatBlend, Opacity: 0.5, Object: true}},
 	}
 	b := m.Encode()
 	if string(b[:4]) != "PQM2" {
@@ -35,15 +35,16 @@ func TestMesh3DEncode(t *testing.T) {
 		t.Fatalf("group material = %d", le.Uint32(b[grp+8:]))
 	}
 	mat := grp + 12
-	if b[mat] != MatSolid || le.Uint16(b[mat+2:]) != 0 {
-		t.Fatalf("untextured material = % x", b[mat:mat+4])
+	if b[mat] != MatSolid || b[mat+2] != 0 || le.Uint16(b[mat+4:]) != 0 {
+		t.Fatalf("untextured material = % x", b[mat:mat+6])
 	}
-	mat += 4
-	if b[mat] != MatBlend || b[mat+1] != 128 || string(b[mat+4:mat+4+int(le.Uint16(b[mat+2:]))]) != "water.bmp" {
-		t.Fatalf("water material = % x", b[mat:])
+	mat += 6
+	if b[mat] != MatBlend || b[mat+1] != 128 || b[mat+2] != 1 ||
+		string(b[mat+6:mat+6+int(le.Uint16(b[mat+4:]))]) != "water.bmp" {
+		t.Fatalf("water object material = % x", b[mat:])
 	}
-	if mat+4+9 != len(b) {
-		t.Fatalf("length %d, want %d", len(b), mat+13)
+	if mat+6+9 != len(b) {
+		t.Fatalf("length %d, want %d", len(b), mat+15)
 	}
 }
 

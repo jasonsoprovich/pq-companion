@@ -2,9 +2,11 @@ package mapgen
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
+	"io/fs"
 	"path/filepath"
 	"strings"
 )
@@ -14,19 +16,29 @@ import (
 // are real 8-bit paletted bitmaps. The 3D view is a map, not the game, so
 // textures are decoded at a small size to keep a zone's worth in GPU memory.
 
-// LoadTextures reads the texture entries of <clientDir>/<shortName>.s3d,
-// keyed by lowercased file name.
+// LoadTextures reads the texture entries of <clientDir>/<shortName>.s3d and
+// its _obj archives (for placed objects), keyed by lowercased file name. A
+// name in both keeps the zone's own.
 func LoadTextures(clientDir, shortName string) (map[string][]byte, error) {
-	arc, err := OpenArchiveFiles(filepath.Join(clientDir, shortName+".s3d"), func(name string) bool {
+	keep := func(name string) bool {
 		l := strings.ToLower(name)
 		return strings.HasSuffix(l, ".bmp") || strings.HasSuffix(l, ".dds")
-	})
-	if err != nil {
-		return nil, err
 	}
-	out := make(map[string][]byte, len(arc))
-	for name, b := range arc {
-		out[strings.ToLower(name)] = b
+	out := map[string][]byte{}
+	for i, name := range append([]string{shortName + ".s3d"}, objArchives(shortName)...) {
+		arc, err := OpenArchiveFiles(filepath.Join(clientDir, name), keep)
+		if err != nil {
+			// Only the zone's own archive is required.
+			if i > 0 && errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
+			return nil, err
+		}
+		for n, b := range arc {
+			if _, ok := out[strings.ToLower(n)]; !ok {
+				out[strings.ToLower(n)] = b
+			}
+		}
 	}
 	return out, nil
 }

@@ -28,6 +28,7 @@ var stringHashKey = [8]byte{0x95, 0x3A, 0xC5, 0x2A, 0x95, 0x7A, 0x95, 0x6A}
 
 type fragment struct {
 	kind    uint32
+	nameRef int32 // negated string-table offset of the fragment's name
 	payload []byte
 }
 
@@ -92,10 +93,28 @@ func ParseWLD(data []byte) (*WLD, error) {
 		if size < 4 || p+8+int(size) > len(data) {
 			return nil, fmt.Errorf("fragment %d size %d past end of file", i, size)
 		}
-		frags = append(frags, fragment{kind: kind, payload: data[p+12 : p+8+int(size)]})
+		frags = append(frags, fragment{
+			kind:    kind,
+			nameRef: int32(binary.LittleEndian.Uint32(data[p+8:])),
+			payload: data[p+12 : p+8+int(size)],
+		})
 		p += 8 + int(size)
 	}
 	return &WLD{Version: version, Strings: strings, Fragments: frags}, nil
+}
+
+// str reads a NUL-terminated name from the string table by its negated
+// offset (the form fragments store), or "" when out of range.
+func (w *WLD) str(ref int32) string {
+	off := -int(ref)
+	if off < 0 || off >= len(w.Strings) {
+		return ""
+	}
+	end := off
+	for end < len(w.Strings) && w.Strings[end] != 0 {
+		end++
+	}
+	return string(w.Strings[off:end])
 }
 
 // ToMapSpace converts raw WLD mesh coordinates into map space.
@@ -240,21 +259,50 @@ func parseMesh(b []byte, version uint32) (Mesh, error) {
 	return Mesh{Vertices: verts, Triangles: tris, UVs: uvs, MaterialList: matList}, nil
 }
 
-// Placement is a placed object instance from objects.wld, in map space. Used to
-// verify the coordinate transform against the doors and spawn2 tables.
-type Placement struct{ Pos Vec3 }
+// Placement is a placed object instance from objects.wld. Pos is in map
+// space (verified against the doors and spawn2 tables); Raw is the same
+// point in raw WLD coordinates. Actor names the object's 0x14 definition in
+// the zone's _obj archive ("TREE1_ACTORDEF"). Yaw and Tilt are rotations in
+// 1/512ths of a turn: yaw about the vertical axis, set on nearly every
+// object, and tilt, which a few use. Scale is uniform.
+type Placement struct {
+	Pos       Vec3
+	Raw       Vec3
+	Actor     string
+	Yaw, Tilt float64
+	Scale     float64
+}
 
-// Placements extracts every 0x15 object-location fragment.
+// Placements extracts every 0x15 object-location fragment: the actor name
+// reference, flags, a fragment reference, position, three rotation values
+// (the third is never used), three scale values (only the second is used),
+// then a vertex-colour reference.
 func (w *WLD) Placements() []Placement {
 	var out []Placement
 	for _, f := range w.Fragments {
 		if f.kind != fragObjectLocation || len(f.payload) < 24 {
 			continue
 		}
-		x := float64(math.Float32frombits(binary.LittleEndian.Uint32(f.payload[12:])))
-		y := float64(math.Float32frombits(binary.LittleEndian.Uint32(f.payload[16:])))
-		z := float64(math.Float32frombits(binary.LittleEndian.Uint32(f.payload[20:])))
-		out = append(out, Placement{Pos: ToMapSpace(x, y, z)})
+		b := f.payload
+		f32 := func(off int) float64 {
+			if off+4 > len(b) {
+				return 0
+			}
+			return float64(math.Float32frombits(binary.LittleEndian.Uint32(b[off:])))
+		}
+		x, y, z := f32(12), f32(16), f32(20)
+		p := Placement{
+			Pos:   ToMapSpace(x, y, z),
+			Raw:   Vec3{x, y, z},
+			Actor: w.str(int32(binary.LittleEndian.Uint32(b))),
+			Yaw:   f32(24),
+			Tilt:  f32(28),
+			Scale: f32(40),
+		}
+		if p.Scale == 0 {
+			p.Scale = 1
+		}
+		out = append(out, p)
 	}
 	return out
 }

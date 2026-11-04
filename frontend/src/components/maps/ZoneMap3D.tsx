@@ -77,15 +77,24 @@ function heightColors(pos: Float32Array): Float32Array {
   return out
 }
 
-// ZoneLayers is the zone's geometry split by which way each face points.
-// The three meshes share one set of vertex attributes; each has a draw group
-// per zone material, so materials can be swapped without rebuilding them.
-interface ZoneLayers {
-  zone: string
-  data: ZoneMesh3D
+// Layers is one set of geometry split by which way each face points.
+interface Layers {
   floor: THREE.Mesh
   wall: THREE.Mesh
   ceiling: THREE.Mesh
+}
+
+// ZoneLayers is the zone's own geometry and its placed objects (trees,
+// buildings, furniture), each split into layers. All six meshes share one
+// set of vertex attributes; each has a draw group per zone material, so
+// materials can be swapped without rebuilding them.
+interface ZoneLayers {
+  zone: string
+  data: ZoneMesh3D
+  own: Layers
+  objects: Layers
+  // group holds all six meshes.
+  group: THREE.Group
   // textures by file name (and whether masked), loaded the first time the
   // textured style is shown.
   textures: Map<string, THREE.Texture>
@@ -201,10 +210,8 @@ export default function ZoneMap3D({ zone, markers, target, pins, onUnavailable }
         if (s.layers) {
           s.layers.materials.forEach((m) => m.dispose())
           s.layers.textures.forEach((t) => t.dispose())
-          s.layers.floor.geometry.dispose()
-          s.layers.wall.geometry.dispose()
-          s.layers.ceiling.geometry.dispose()
-          sc.remove(s.layers.floor, s.layers.wall, s.layers.ceiling)
+          for (const m of layerMeshes(s.layers)) m.geometry.dispose()
+          sc.remove(s.layers.group)
           s.layers = null
         }
         sc.traverse((o) => {
@@ -234,11 +241,11 @@ export default function ZoneMap3D({ zone, markers, target, pins, onUnavailable }
         }
         const layers = buildLayers(zone, mesh)
         s.layers = layers
-        sc.add(layers.floor, layers.wall, layers.ceiling)
+        sc.add(layers.group)
         applyLook(s, prefsRef.current)
 
         const box = new THREE.Box3()
-          .setFromBufferAttribute(layers.floor.geometry.getAttribute('position') as THREE.BufferAttribute)
+          .setFromBufferAttribute(layers.own.floor.geometry.getAttribute('position') as THREE.BufferAttribute)
         const center = box.getCenter(new THREE.Vector3())
         const extent = box.getSize(new THREE.Vector3())
         const radius = Math.max(extent.x, extent.y, 1)
@@ -428,6 +435,15 @@ function ViewOptions({ prefs, onChange }: {
         <input
           type="checkbox"
           className="mt-0.5"
+          checked={prefs.showObjects}
+          onChange={(e) => onChange({ showObjects: e.target.checked })}
+        />
+        <span>Trees &amp; objects</span>
+      </label>
+      <label className="flex items-start gap-1.5">
+        <input
+          type="checkbox"
+          className="mt-0.5"
           checked={prefs.hideCeilings}
           onChange={(e) => onChange({ hideCeilings: e.target.checked })}
         />
@@ -437,8 +453,9 @@ function ViewOptions({ prefs, onChange }: {
   )
 }
 
-// buildLayers turns the zone mesh into floor, wall and ceiling meshes. World
-// y is map y negated (see the header comment).
+// buildLayers turns the zone mesh into floor, wall and ceiling meshes, for
+// the zone's own geometry and for its objects. World y is map y negated
+// (see the header comment).
 function buildLayers(zone: string, data: ZoneMesh3D): ZoneLayers {
   const pos = new Float32Array(data.positions)
   for (let i = 1; i < pos.length; i += 3) pos[i] = -pos[i]
@@ -447,11 +464,13 @@ function buildLayers(zone: string, data: ZoneMesh3D): ZoneLayers {
   const color = new THREE.BufferAttribute(heightColors(pos), 3)
 
   // Split each material's triangles three ways by facing, keeping a draw
-  // group per material in each layer.
+  // group per material in each layer: parts 0-2 are the zone's floors,
+  // walls and ceilings, 3-5 its objects'.
   type Part = { idx: number[]; groups: { start: number; count: number; material: number }[] }
-  const parts: Part[] = [0, 1, 2].map(() => ({ idx: [], groups: [] }))
+  const parts: Part[] = [0, 1, 2, 3, 4, 5].map(() => ({ idx: [], groups: [] }))
   const ix = data.indices
   for (const g of data.groups) {
+    const base = data.materials[g.material].object ? 3 : 0
     const starts = parts.map((p) => p.idx.length)
     for (let i = g.start; i < g.start + g.count; i += 3) {
       const a = ix[i] * 3
@@ -464,7 +483,7 @@ function buildLayers(zone: string, data: ZoneMesh3D): ZoneLayers {
       const nz = ux * vy - uy * vx
       const len = Math.hypot(nx, ny, nz) || 1
       const up = nz / len
-      const part = parts[up >= FLAT ? 0 : up <= -FLAT ? 2 : 1]
+      const part = parts[base + (up >= FLAT ? 0 : up <= -FLAT ? 2 : 1)]
       part.idx.push(ix[i], ix[i + 1], ix[i + 2])
     }
     parts.forEach((p, k) => {
@@ -472,7 +491,7 @@ function buildLayers(zone: string, data: ZoneMesh3D): ZoneLayers {
       if (n > 0) p.groups.push({ start: starts[k], count: n, material: g.material })
     })
   }
-  const [floor, wall, ceiling] = parts.map((p) => {
+  const meshes = parts.map((p) => {
     const geo = new THREE.BufferGeometry()
     geo.setAttribute('position', position)
     geo.setAttribute('uv', uv)
@@ -482,7 +501,21 @@ function buildLayers(zone: string, data: ZoneMesh3D): ZoneLayers {
     geo.computeVertexNormals()
     return new THREE.Mesh(geo, [])
   })
-  return { zone, data, floor, wall, ceiling, textures: new Map(), materials: [] }
+  const group = new THREE.Group()
+  group.add(...meshes)
+  return {
+    zone,
+    data,
+    own: { floor: meshes[0], wall: meshes[1], ceiling: meshes[2] },
+    objects: { floor: meshes[3], wall: meshes[4], ceiling: meshes[5] },
+    group,
+    textures: new Map(),
+    materials: [],
+  }
+}
+
+function layerMeshes(L: ZoneLayers): THREE.Mesh[] {
+  return [L.own.floor, L.own.wall, L.own.ceiling, L.objects.floor, L.objects.wall, L.objects.ceiling]
 }
 
 // texture returns a zone material's texture, starting its load the first
@@ -591,14 +624,23 @@ function applyLook(s: Scene3D, prefs: Map3DPrefs): void {
     L.materials.push(m)
     return m
   }
+  // Floors share one array and walls and ceilings another, across the zone
+  // and its objects; each layer only draws the groups it has.
   const n = L.data.materials.length
-  L.floor.material = Array.from({ length: n }, (_, i) => make(i, false))
-  L.wall.material = Array.from({ length: n }, (_, i) => make(i, true))
-  L.ceiling.material = Array.from({ length: n }, (_, i) => make(i, true))
-  L.ceiling.visible = !prefs.hideCeilings
-  // Faded walls draw after solid floors.
-  L.wall.renderOrder = 1
-  L.ceiling.renderOrder = 1
+  const solid = Array.from({ length: n }, (_, i) => make(i, false))
+  const faded = Array.from({ length: n }, (_, i) => make(i, true))
+  for (const layers of [L.own, L.objects]) {
+    layers.floor.material = solid
+    layers.wall.material = faded
+    layers.ceiling.material = faded
+    layers.ceiling.visible = !prefs.hideCeilings
+    // Faded walls draw after solid floors.
+    layers.wall.renderOrder = 1
+    layers.ceiling.renderOrder = 1
+  }
+  L.objects.floor.visible = prefs.showObjects
+  L.objects.wall.visible = prefs.showObjects
+  L.objects.ceiling.visible = prefs.showObjects && !prefs.hideCeilings
 }
 
 function resetView(s: Scene3D): void {

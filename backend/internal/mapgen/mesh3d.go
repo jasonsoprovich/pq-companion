@@ -3,6 +3,7 @@ package mapgen
 import (
 	"encoding/binary"
 	"fmt"
+	"log/slog"
 	"math"
 	"path/filepath"
 	"strings"
@@ -28,12 +29,14 @@ const (
 )
 
 // Material3D is one material of a 3D mesh. Texture is the bitmap's file name
-// in the zone archive ("" for none; animated textures use their first
-// frame), and Opacity applies to MatBlend.
+// in the zone or _obj archive ("" for none; animated textures use their
+// first frame), Opacity applies to MatBlend, and Object marks a placed
+// object's material rather than the zone's own.
 type Material3D struct {
 	Texture string
 	Kind    uint8
 	Opacity float32
+	Object  bool
 }
 
 // Group3D is a run of indices drawn with one material.
@@ -54,76 +57,119 @@ type Mesh3D struct {
 	Materials []Material3D
 }
 
-// LoadMesh3D reads <clientDir>/<shortName>.s3d and returns its 3D mesh.
-// Unlike LoadZone, vertices aren't welded: neighbouring fragments that meet
-// at a point usually give it different texture coords.
+// LoadMesh3D reads <clientDir>/<shortName>.s3d and returns its 3D mesh,
+// with the zone's placed objects (trees, buildings, furniture) from its
+// _obj archives when the client has them. Unlike LoadZone, vertices aren't
+// welded: neighbouring fragments that meet at a point usually give it
+// different texture coords.
 func LoadMesh3D(clientDir, shortName string) (*Mesh3D, error) {
 	w, err := loadZoneWLD(clientDir, shortName)
 	if err != nil {
 		return nil, err
 	}
-	return w.Mesh3D(), nil
+	b := newMeshBuilder()
+	for _, m := range w.Meshes() {
+		b.add(w, m, nil, false)
+	}
+	if err := b.addObjects(clientDir, shortName); err != nil {
+		// Objects are extra detail; the zone still draws without them.
+		slog.Warn("mapgen: zone objects skipped", "zone", shortName, "err", err)
+	}
+	return b.build(), nil
 }
 
-// Mesh3D builds the 3D mesh from the WLD's geometry fragments.
+// Mesh3D builds the 3D mesh from the WLD's own geometry fragments.
 func (w *WLD) Mesh3D() *Mesh3D {
-	out := &Mesh3D{}
-	// Materials are deduplicated by fragment: matID maps a 0x30 fragment
-	// index to its place in out.Materials, or -1 when it's invisible.
-	matID := map[int]int{}
-	untextured := -1
-	byMat := [][]uint32{}
-	material := func(frag int) int {
-		if id, ok := matID[frag]; ok {
-			return id
-		}
-		id := -1
-		if m, ok := w.material(frag); ok {
-			id = len(out.Materials)
-			out.Materials = append(out.Materials, m)
-			byMat = append(byMat, nil)
-		}
-		matID[frag] = id
+	b := newMeshBuilder()
+	for _, m := range w.Meshes() {
+		b.add(w, m, nil, false)
+	}
+	return b.build()
+}
+
+// matKey identifies a material: a 0x30 fragment of one WLD, or a WLD's
+// stand-in for faces without one (frag -1).
+type matKey struct {
+	w    *WLD
+	frag int
+}
+
+// meshBuilder collects geometry from one or more WLDs into a Mesh3D,
+// deduplicating materials and grouping triangles by material.
+type meshBuilder struct {
+	out   *Mesh3D
+	byMat [][]uint32
+	// matID maps a material to its place in out.Materials, or -1 when it's
+	// invisible.
+	matID map[matKey]int
+}
+
+func newMeshBuilder() *meshBuilder {
+	return &meshBuilder{out: &Mesh3D{}, matID: map[matKey]int{}}
+}
+
+func (b *meshBuilder) material(w *WLD, frag int, object bool) int {
+	k := matKey{w, frag}
+	if id, ok := b.matID[k]; ok {
 		return id
 	}
-	for _, m := range w.Meshes() {
-		list := w.materialList(m.MaterialList)
-		remap := make([]int32, len(m.Vertices))
-		for i := range remap {
-			remap[i] = -1
-		}
-		use := func(v int) uint32 {
-			if remap[v] < 0 {
-				remap[v] = int32(len(out.Pos) / 3)
-				p := m.Vertices[v]
-				out.Pos = append(out.Pos, float32(p.X), float32(p.Y), float32(p.Z))
-				out.UV = append(out.UV, m.UVs[2*v], m.UVs[2*v+1])
-			}
-			return uint32(remap[v])
-		}
-		for _, t := range m.Triangles {
-			id := -1
-			if t.Mat >= 0 && t.Mat < len(list) {
-				id = material(list[t.Mat])
-				if id < 0 {
-					continue
-				}
-			} else {
-				// No material to go by: drawn plain, as before textures.
-				if untextured < 0 {
-					untextured = len(out.Materials)
-					out.Materials = append(out.Materials, Material3D{Kind: MatSolid, Opacity: 1})
-					byMat = append(byMat, nil)
-				}
-				id = untextured
-			}
-			// Reversed: after the map-space swap and the 3D view's y flip,
-			// the client's front faces wind clockwise (floors face down
-			// otherwise), and three.js takes counter-clockwise as the front.
-			byMat[id] = append(byMat[id], use(t.A), use(t.C), use(t.B))
-		}
+	id := -1
+	m, ok := Material3D{Kind: MatSolid, Opacity: 1}, true
+	if frag >= 0 {
+		m, ok = w.material(frag)
 	}
-	for id, idx := range byMat {
+	if ok {
+		m.Object = object
+		id = len(b.out.Materials)
+		b.out.Materials = append(b.out.Materials, m)
+		b.byMat = append(b.byMat, nil)
+	}
+	b.matID[k] = id
+	return id
+}
+
+// add appends one mesh fragment. xform, when set, places a map-space vertex
+// (an object's model space) into the zone.
+func (b *meshBuilder) add(w *WLD, m Mesh, xform func(Vec3) Vec3, object bool) {
+	list := w.materialList(m.MaterialList)
+	remap := make([]int32, len(m.Vertices))
+	for i := range remap {
+		remap[i] = -1
+	}
+	out := b.out
+	use := func(v int) uint32 {
+		if remap[v] < 0 {
+			remap[v] = int32(len(out.Pos) / 3)
+			p := m.Vertices[v]
+			if xform != nil {
+				p = xform(p)
+			}
+			out.Pos = append(out.Pos, float32(p.X), float32(p.Y), float32(p.Z))
+			out.UV = append(out.UV, m.UVs[2*v], m.UVs[2*v+1])
+		}
+		return uint32(remap[v])
+	}
+	for _, t := range m.Triangles {
+		// Faces without a material to go by are drawn plain, as before
+		// textures.
+		frag := -1
+		if t.Mat >= 0 && t.Mat < len(list) {
+			frag = list[t.Mat]
+		}
+		id := b.material(w, frag, object)
+		if id < 0 {
+			continue
+		}
+		// Reversed: after the map-space swap and the 3D view's y flip,
+		// the client's front faces wind clockwise (floors face down
+		// otherwise), and three.js takes counter-clockwise as the front.
+		b.byMat[id] = append(b.byMat[id], use(t.A), use(t.C), use(t.B))
+	}
+}
+
+func (b *meshBuilder) build() *Mesh3D {
+	out := b.out
+	for id, idx := range b.byMat {
 		if len(idx) == 0 {
 			continue
 		}
@@ -289,13 +335,13 @@ func loadZoneWLD(clientDir, shortName string) (*WLD, error) {
 // Encode packs the mesh little-endian: the magic; vertex, index, group and
 // material counts as uint32; float32 positions, float32 texture coords,
 // uint32 indices, then each group's start, count and material as uint32.
-// Materials follow as a kind byte, an opacity byte (0-255), and a uint16
-// length and texture name. Every block before the materials is 4-byte
+// Materials follow as a kind byte, an opacity byte (0-255), a flags byte
+// (1: object), a zero byte, and a uint16 length and texture name. Every block before the materials is 4-byte
 // aligned, so the reader can view them without copying.
 func (m *Mesh3D) Encode() []byte {
 	size := 20 + 4*len(m.Pos) + 4*len(m.UV) + 4*len(m.Idx) + 12*len(m.Groups)
 	for _, mat := range m.Materials {
-		size += 4 + len(mat.Texture)
+		size += 6 + len(mat.Texture)
 	}
 	out := make([]byte, size)
 	copy(out, mesh3DMagic[:])
@@ -326,9 +372,12 @@ func (m *Mesh3D) Encode() []byte {
 	for _, mat := range m.Materials {
 		out[p] = mat.Kind
 		out[p+1] = uint8(math.Round(float64(mat.Opacity) * 255))
-		le.PutUint16(out[p+2:], uint16(len(mat.Texture)))
-		copy(out[p+4:], mat.Texture)
-		p += 4 + len(mat.Texture)
+		if mat.Object {
+			out[p+2] = 1
+		}
+		le.PutUint16(out[p+4:], uint16(len(mat.Texture)))
+		copy(out[p+6:], mat.Texture)
+		p += 6 + len(mat.Texture)
 	}
 	return out
 }

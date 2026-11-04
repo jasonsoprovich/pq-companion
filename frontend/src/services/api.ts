@@ -538,16 +538,19 @@ export interface ZoneMesh3D {
 
 // ZoneMaterial3D mirrors mapgen.Material3D. kind: 0 solid, 1 masked
 // (colour-keyed cutouts), 2 translucent (opacity applies), 3 additive glow.
-// texture is a file name for getZoneTextureUrl, or '' for none.
+// texture is a file name for getZoneTextureUrl, or '' for none. object marks
+// a placed object's material (trees, buildings, furniture).
 export interface ZoneMaterial3D {
   kind: 0 | 1 | 2 | 3
   opacity: number
   texture: string
+  object: boolean
 }
 
 // getZoneMesh3D fetches the 3D mesh (mapgen.Mesh3D.Encode: "PQM2"; vertex,
 // index, group and material counts; float32 positions and uvs, uint32
-// indices and groups; then the materials). Resolves null when the client has
+// indices and groups; then the materials, each kind, opacity, flags, a
+// spare byte, and a uint16-length texture name). Resolves null when the client has
 // no s3d for the zone.
 export async function getZoneMesh3D(zone: string): Promise<ZoneMesh3D | null> {
   const baseUrl = await getBackendBaseUrl()
@@ -581,13 +584,14 @@ export async function getZoneMesh3D(zone: string): Promise<ZoneMesh3D | null> {
   const bytes = new Uint8Array(buf)
   const materials: ZoneMaterial3D[] = []
   for (let i = 0; i < matCount; i++) {
-    const len = view.getUint16(p + 2, true)
+    const len = view.getUint16(p + 4, true)
     materials.push({
       kind: bytes[p] as ZoneMaterial3D['kind'],
       opacity: bytes[p + 1] / 255,
-      texture: String.fromCharCode(...bytes.subarray(p + 4, p + 4 + len)),
+      object: (bytes[p + 2] & 1) !== 0,
+      texture: String.fromCharCode(...bytes.subarray(p + 6, p + 6 + len)),
     })
-    p += 4 + len
+    p += 6 + len
   }
   return { positions, uvs, indices, groups, materials }
 }

@@ -334,6 +334,21 @@ func TestLoadMesh3D(t *testing.T) {
 					t.Errorf("%s: %v", mat.Texture, err)
 				}
 			}
+			objects := 0
+			for _, mat := range m.Materials {
+				if mat.Object {
+					objects++
+				}
+			}
+			if objects == 0 {
+				t.Errorf("no object materials: placed objects missing")
+			}
+			// Objects parked under the world (z = -32768) are left out.
+			for i := 2; i < len(m.Pos); i += 3 {
+				if m.Pos[i] < -10000 {
+					t.Fatalf("vertex at z = %v: a parked object was placed", m.Pos[i])
+				}
+			}
 			if !tc.outdoor {
 				return
 			}
