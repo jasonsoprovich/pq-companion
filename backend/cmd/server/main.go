@@ -891,10 +891,22 @@ func main() {
 	go respawnEngine.Start(context.Background())
 
 	// dbg.txt names the zone server of each zone-in, which tells copies of a
-	// zone apart; respawn timers are kept per copy.
+	// zone apart; respawn timers and zone kill counters are kept per copy.
+	// The kill counters are built later, so they're reached through
+	// zoneCopyKills once set.
+	var zoneCopyKills atomic.Pointer[killtracker.Engine]
+	zoneCopyLong := func(short string) string {
+		if z, err := database.GetZoneByShortName(short); err == nil && z != nil {
+			return z.LongName
+		}
+		return ""
+	}
 	zoneCopyReader := logparser.NewZoneCopyReader(cfgMgr, func(c logparser.ZoneCopy) {
 		slog.Info("respawn: zone copy", "zone", c.Zone, "server", c.Token)
 		respawnEngine.SetZoneCopy(c.Zone, c.Token)
+		if k := zoneCopyKills.Load(); k != nil {
+			k.SetZoneCopy(zoneCopyLong(c.Zone), c.Token)
+		}
 	})
 	go zoneCopyReader.Start(context.Background())
 
@@ -1722,6 +1734,10 @@ func main() {
 	}
 
 	killCounters := killtracker.NewEngine(killStore, hub)
+	zoneCopyKills.Store(killCounters)
+	if c := zoneCopyReader.Current(); c.Token != "" {
+		killCounters.SetZoneCopy(zoneCopyLong(c.Zone), c.Token)
+	}
 
 	pipeSupervisor := zealpipe.NewSupervisor(func(env zealpipe.Envelope) {
 		// Proposed Zeal item display message. Its type number is 7 on a build

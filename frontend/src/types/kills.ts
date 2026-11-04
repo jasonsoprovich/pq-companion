@@ -71,6 +71,9 @@ export interface KillCounter {
   count: number
   clock_started_at: number // unix seconds; 0 = not running
   updated_at: number
+  // zone_copy is the zone server a zone counter's count was made in;
+  // entering another copy of the zone starts it over.
+  zone_copy?: string
 }
 
 export interface KillCountersState {

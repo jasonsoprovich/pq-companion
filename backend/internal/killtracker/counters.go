@@ -74,6 +74,7 @@ type CounterDef struct {
 	// Zone, when set, only counts while the log's current zone (long name)
 	// matches. An unknown current zone (app started mid-session, before any
 	// zone-in) still counts, so a restart mid-raid doesn't freeze the count.
+	// The count also belongs to one copy of the zone (Counter.ZoneCopy).
 	Zone string `json:"zone,omitempty"`
 
 	Goal       int         `json:"goal,omitempty"`
@@ -96,6 +97,10 @@ type Counter struct {
 	Count          int        `json:"count"`
 	ClockStartedAt int64      `json:"clock_started_at"` // unix seconds; 0 = not running
 	UpdatedAt      int64      `json:"updated_at"`
+	// ZoneCopy is the zone server ("host:port", from dbg.txt) the count of a
+	// zone counter was made in. Entering a different copy of that zone
+	// starts the count over. Empty until the copy is known.
+	ZoneCopy string `json:"zone_copy,omitempty"`
 }
 
 // Kill sources reported in CountersState.KillSource.
@@ -153,6 +158,10 @@ type Engine struct {
 	counters []*Counter
 	comp     map[string]*compiled
 	zone     string
+	// copyZone / copyToken are the zone (long name) and zone server the
+	// player is in, from dbg.txt (see SetZoneCopy).
+	copyZone  string
+	copyToken string
 
 	// pipeDeaths is set by the first Zeal death event (HandlePipeDeath) and
 	// cleared on pipe disconnect (HandlePipeReset). While set, kills are
@@ -383,6 +392,45 @@ func (e *Engine) HandlePipeReset() {
 		slog.Info("killtracker: counting kills from log lines")
 		e.broadcast()
 	}
+}
+
+// SetZoneCopy takes the zone copy the player just entered: zone is the long
+// name, token the zone server. A zone counter for that zone whose count was
+// made in a different copy starts over; one with no copy yet adopts this one
+// and keeps its count.
+func (e *Engine) SetZoneCopy(zone, token string) {
+	e.mu.Lock()
+	e.copyZone, e.copyToken = zone, token
+	changed := false
+	if zone != "" && token != "" {
+		now := e.now().Unix()
+		for _, c := range e.counters {
+			if c.Def.Zone == "" || !strings.EqualFold(c.Def.Zone, zone) || c.ZoneCopy == token {
+				continue
+			}
+			if c.ZoneCopy != "" {
+				c.Count = 0
+				c.ClockStartedAt = 0
+			}
+			c.ZoneCopy = token
+			c.UpdatedAt = now
+			e.persistLocked(c)
+			changed = true
+		}
+	}
+	e.mu.Unlock()
+	if changed {
+		e.broadcast()
+	}
+}
+
+// copyForLocked returns the current zone copy when zone is the zone the
+// player is in. Caller must hold e.mu.
+func (e *Engine) copyForLocked(zone string) string {
+	if zone == "" || !strings.EqualFold(zone, e.copyZone) {
+		return ""
+	}
+	return e.copyToken
 }
 
 // countKill adds one kill of target (lowercase display name) to every
@@ -645,6 +693,7 @@ func (e *Engine) Create(def CounterDef) (Counter, error) {
 	def.ID = newID()
 	c := &Counter{Def: def, UpdatedAt: time.Now().Unix()}
 	e.mu.Lock()
+	c.ZoneCopy = e.copyForLocked(def.Zone)
 	e.counters = append(e.counters, c)
 	e.comp[def.ID] = comp
 	e.persistLocked(c)
@@ -668,6 +717,9 @@ func (e *Engine) Update(def CounterDef) (Counter, error) {
 	}
 	if def.Preset == "" {
 		def.Preset = c.Def.Preset
+	}
+	if !strings.EqualFold(def.Zone, c.Def.Zone) {
+		c.ZoneCopy = e.copyForLocked(def.Zone)
 	}
 	c.Def = def
 	if def.Clock == nil {

@@ -188,7 +188,7 @@ export default function KillCounterEditor({
           <Field label="…or count log lines matching (regex, optional)" hint='Each matching line adds one, e.g. ^You gain (party |raid )?experience'>
             <input value={pattern} onChange={(e) => setPattern(e.target.value)} className={ta} style={inputStyle} />
           </Field>
-          <Field label="Only count in zone (optional)" hint='Zone long name, e.g. "The Crypt of Decay". Leave blank to count everywhere.'>
+          <Field label="Only count in zone (optional)" hint='Zone long name, e.g. "The Crypt of Decay". Leave blank to count everywhere. Entering a different copy of the zone starts the count over.'>
             <input value={zone} onChange={(e) => setZone(e.target.value)} className="w-full text-xs rounded px-2 py-1 outline-none" style={inputStyle} />
           </Field>
 

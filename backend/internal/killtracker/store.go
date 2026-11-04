@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -91,6 +92,11 @@ func (s *Store) migrate() error {
 		if _, err := s.db.Exec(q); err != nil {
 			return err
 		}
+	}
+	// Added later: the zone copy a zone counter's count belongs to.
+	if _, err := s.db.Exec(`ALTER TABLE kill_counters ADD COLUMN zone_copy TEXT NOT NULL DEFAULT ''`); err != nil &&
+		!strings.Contains(err.Error(), "duplicate column name") {
+		return err
 	}
 	return nil
 }
@@ -271,7 +277,7 @@ func (s *Store) Clear(character string) (int, error) {
 // LoadCounters returns every stored counter in display order.
 func (s *Store) LoadCounters() ([]*Counter, error) {
 	rows, err := s.db.Query(`
-		SELECT def, count, clock_started_at, updated_at
+		SELECT def, count, clock_started_at, updated_at, zone_copy
 		FROM kill_counters ORDER BY sort_order, id
 	`)
 	if err != nil {
@@ -280,10 +286,10 @@ func (s *Store) LoadCounters() ([]*Counter, error) {
 	defer rows.Close()
 	out := []*Counter{}
 	for rows.Next() {
-		var def string
+		var def, zoneCopy string
 		var count int
 		var clockStarted, updated int64
-		if err := rows.Scan(&def, &count, &clockStarted, &updated); err != nil {
+		if err := rows.Scan(&def, &count, &clockStarted, &updated, &zoneCopy); err != nil {
 			return nil, err
 		}
 		var c Counter
@@ -294,6 +300,7 @@ func (s *Store) LoadCounters() ([]*Counter, error) {
 		c.Count = count
 		c.ClockStartedAt = clockStarted
 		c.UpdatedAt = updated
+		c.ZoneCopy = zoneCopy
 		out = append(out, &c)
 	}
 	return out, rows.Err()
@@ -306,15 +313,16 @@ func (s *Store) SaveCounter(c *Counter, order int) error {
 		return err
 	}
 	_, err = s.db.Exec(`
-		INSERT INTO kill_counters (id, sort_order, def, count, clock_started_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?)
+		INSERT INTO kill_counters (id, sort_order, def, count, clock_started_at, updated_at, zone_copy)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			sort_order = excluded.sort_order,
 			def = excluded.def,
 			count = excluded.count,
 			clock_started_at = excluded.clock_started_at,
-			updated_at = excluded.updated_at
-	`, c.Def.ID, order, string(def), c.Count, c.ClockStartedAt, c.UpdatedAt)
+			updated_at = excluded.updated_at,
+			zone_copy = excluded.zone_copy
+	`, c.Def.ID, order, string(def), c.Count, c.ClockStartedAt, c.UpdatedAt, c.ZoneCopy)
 	return err
 }
 

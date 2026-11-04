@@ -287,6 +287,57 @@ func TestBertoxPresetFlow(t *testing.T) {
 	}
 }
 
+func TestCounterZoneCopies(t *testing.T) {
+	s := openTestStore(t)
+	e := NewEngine(s, &fakeHub{})
+	const cod = "The Crypt of Decay"
+	zoned := newTestCounter(t, e, CounterDef{
+		Name: "Knights", Enabled: true, Mobs: []string{"knight of decay"}, Zone: cod,
+	})
+	global := newTestCounter(t, e, CounterDef{
+		Name: "All knights", Enabled: true, Mobs: []string{"knight of decay"},
+	})
+	kill := func() { e.Handle(killEv(t0, "Knight of Decay", "x")) }
+
+	// Counted before the copy is known; the first copy adopts the count.
+	kill()
+	e.SetZoneCopy(cod, "1.2.3.4:7001")
+	kill()
+	if got := countOf(e, zoned.Def.ID); got.Count != 2 || got.ZoneCopy != "1.2.3.4:7001" {
+		t.Fatalf("first copy = %+v", got)
+	}
+
+	// Away and back to the same copy: kept.
+	e.SetZoneCopy("The Plane of Knowledge", "1.2.3.4:7002")
+	e.SetZoneCopy(cod, "1.2.3.4:7001")
+	if got := countOf(e, zoned.Def.ID).Count; got != 2 {
+		t.Fatalf("same copy count = %d, want 2", got)
+	}
+
+	// A different copy starts over; the zone-less counter doesn't.
+	e.SetZoneCopy(cod, "1.2.3.4:7003")
+	kill()
+	if got := countOf(e, zoned.Def.ID); got.Count != 1 || got.ZoneCopy != "1.2.3.4:7003" {
+		t.Fatalf("new copy = %+v", got)
+	}
+	if got := countOf(e, global.Def.ID).Count; got != 3 {
+		t.Fatalf("global count = %d, want 3", got)
+	}
+
+	// The copy survives a restart.
+	if got := countOf(NewEngine(s, nil), zoned.Def.ID).ZoneCopy; got != "1.2.3.4:7003" {
+		t.Fatalf("reloaded copy = %q", got)
+	}
+
+	// Created while in the zone: takes the current copy.
+	late := newTestCounter(t, e, CounterDef{
+		Name: "Late", Enabled: true, Mobs: []string{"knight of decay"}, Zone: cod,
+	})
+	if late.ZoneCopy != "1.2.3.4:7003" {
+		t.Fatalf("new counter copy = %q", late.ZoneCopy)
+	}
+}
+
 func TestCountersPersist(t *testing.T) {
 	s := openTestStore(t)
 	e := NewEngine(s, nil)
