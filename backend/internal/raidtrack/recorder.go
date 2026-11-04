@@ -50,6 +50,7 @@ type Recorder struct {
 	store    *Store
 	settings func() config.RaidReplaySettings
 	now      func() time.Time
+	logChar  func() string
 
 	mu        sync.Mutex
 	roster    []Member
@@ -74,6 +75,15 @@ type session struct {
 // tick so changes apply without a restart.
 func NewRecorder(store *Store, settings func() config.RaidReplaySettings) *Recorder {
 	return &Recorder{store: store, settings: settings, now: time.Now}
+}
+
+// SetLogCharacter names whose log feeds Handle. When boxing, Zeal's pipe can
+// belong to one client while the active log is another's, so "You" in a log
+// line is the log's character, not the pipe's.
+func (r *Recorder) SetLogCharacter(fn func() string) {
+	r.mu.Lock()
+	r.logChar = fn
+	r.mu.Unlock()
 }
 
 // SetRaid takes the latest Zeal raid roster. Called for every raid frame.
@@ -109,18 +119,24 @@ func (r *Recorder) Handle(ev logparser.LogEvent) {
 	if s == nil {
 		return
 	}
+	me := s.character
+	if r.logChar != nil {
+		if n := r.logChar(); n != "" {
+			me = n
+		}
+	}
 	switch {
 	case out.Kind == EventDeath:
-		out.Name = s.character
-	case out.Name == "You" || strings.EqualFold(out.Name, s.character):
-		out.Kind, out.Name = EventDeath, s.character
+		out.Name = me
+	case out.Name == "You" || strings.EqualFold(out.Name, me):
+		out.Kind, out.Name = EventDeath, me
 	default:
 		if _, ok := s.index[strings.ToLower(out.Name)]; ok {
 			out.Kind = EventDeath
 		}
 	}
 	if out.Other == "You" {
-		out.Other = s.character
+		out.Other = me
 	}
 	if err := r.store.addEvent(s.id, out); err != nil {
 		slog.Warn("raidtrack: event write failed", "err", err)

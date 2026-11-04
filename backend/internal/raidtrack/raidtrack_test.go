@@ -107,6 +107,30 @@ func TestRecorderSessionAndPlayback(t *testing.T) {
 	}
 }
 
+// Boxing: the pipe is Osui's client but the active log is Larcen's, so the
+// log's "You" is Larcen.
+func TestRecorderLogCharacter(t *testing.T) {
+	h := newHarness(t)
+	h.rec.SetLogCharacter(func() string { return "Larcen" })
+	h.run("templeveeshan", 3*time.Minute)
+	h.rec.Handle(logparser.LogEvent{Timestamp: h.now, Data: logparser.DeathData{SlainBy: "Lord Yelinak"}})
+	h.rec.Handle(logparser.LogEvent{Timestamp: h.now, Data: logparser.KillData{Killer: "You", Target: "Lord Vyemm"}})
+	h.now = h.now.Add(sessionGap + 2*time.Second)
+	h.rec.tick()
+
+	ss := h.sessions()
+	if len(ss) != 1 {
+		t.Fatalf("sessions = %d, want 1", len(ss))
+	}
+	rec, _, err := h.store.GetRecording(ss[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec.Events[0].Name != "Larcen" || rec.Events[1].Other != "Larcen" {
+		t.Fatalf("events = %+v", rec.Events)
+	}
+}
+
 func TestRecorderZoneChangeAndShortSessions(t *testing.T) {
 	h := newHarness(t)
 	h.run("templeveeshan", 30*time.Second) // too short to keep

@@ -1696,6 +1696,7 @@ func main() {
 		raidRecorder = raidtrack.NewRecorder(raidTrackStore, func() config.RaidReplaySettings {
 			return cfgMgr.Get().RaidReplay
 		})
+		raidRecorder.SetLogCharacter(activeChar)
 		go raidRecorder.Start(context.Background())
 		go func() {
 			prune := func() {
