@@ -33,7 +33,10 @@ type Zone struct {
 // LoadZone reads <clientDir>/<shortName>.s3d and returns its welded geometry.
 func LoadZone(clientDir, shortName string) (*Zone, error) {
 	path := filepath.Join(clientDir, shortName+".s3d")
-	arc, err := OpenArchive(path)
+	// Only the .wld entries are used; the textures are skipped.
+	arc, err := OpenArchiveFiles(path, func(name string) bool {
+		return strings.HasSuffix(strings.ToLower(name), ".wld")
+	})
 	if err != nil {
 		return nil, err
 	}

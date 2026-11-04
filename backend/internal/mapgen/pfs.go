@@ -38,10 +38,23 @@ func OpenArchive(path string) (Archive, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
-	return parsePFS(data)
+	return parsePFS(data, nil)
 }
 
-func parsePFS(data []byte) (Archive, error) {
+// OpenArchiveFiles reads a .s3d file and inflates only the entries keep
+// accepts. A zone archive is mostly textures, so the app's 3D view, which
+// needs just the zone .wld, skips inflating the rest.
+func OpenArchiveFiles(path string, keep func(name string) bool) (Archive, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	return parsePFS(data, keep)
+}
+
+// parsePFS parses a PFS archive, inflating the entries keep accepts (all of
+// them when keep is nil).
+func parsePFS(data []byte, keep func(name string) bool) (Archive, error) {
 	if len(data) < 12 {
 		return nil, fmt.Errorf("too short to be a PFS archive (%d bytes)", len(data))
 	}
@@ -78,9 +91,17 @@ func parsePFS(data []byte) (Archive, error) {
 	// either constant breaks on the other, so find it structurally instead: it
 	// is the one entry that inflates into a name list holding exactly
 	// len(entries)-1 names.
+	// The table is normally the last entry in the file, so candidates are
+	// tried from the end: otherwise finding it inflates most textures first.
 	var names []string
 	nameIdx := -1
-	for i, e := range entries {
+	byOffset := make([]int, len(entries))
+	for i := range byOffset {
+		byOffset[i] = i
+	}
+	sort.Slice(byOffset, func(a, b int) bool { return entries[byOffset[a]].offset > entries[byOffset[b]].offset })
+	for _, i := range byOffset {
+		e := entries[i]
 		raw, err := inflateEntry(data, e)
 		if err != nil {
 			continue
@@ -110,6 +131,9 @@ func parsePFS(data []byte) (Archive, error) {
 
 	out := make(Archive, len(payload))
 	for i, e := range payload {
+		if keep != nil && !keep(names[i]) {
+			continue
+		}
 		raw, err := inflateEntry(data, e)
 		if err != nil {
 			return nil, fmt.Errorf("inflate %s: %w", names[i], err)
