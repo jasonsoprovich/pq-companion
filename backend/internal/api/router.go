@@ -583,6 +583,8 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 				r.Get("/{id}", combatH.historyGet)
 				r.Delete("/{id}", combatH.historyDelete)
 			})
+			r.Get("/deaths", combatH.deathsList)
+			r.Delete("/deaths", combatH.deathsClear)
 		})
 		r.Route("/rolls", func(r chi.Router) {
 			r.Get("/", rollsH.state)

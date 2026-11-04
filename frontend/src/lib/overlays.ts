@@ -31,6 +31,7 @@ export type OverlayName =
   | 'killCounter'
   | 'itemInfo'
   | 'pet'
+  | 'deathRecap'
 
 /**
  * How an overlay behaves while locked.
@@ -111,6 +112,7 @@ export const OVERLAY_DEFS: { name: OverlayName; label: string }[] = [
   { name: 'killCounter', label: 'Kill Counters' },
   { name: 'itemInfo', label: 'Item Info' },
   { name: 'pet', label: 'Pet' },
+  { name: 'deathRecap', label: 'Death Recap' },
 ]
 
 // Matches a StreamKit voice-overlay URL, e.g.

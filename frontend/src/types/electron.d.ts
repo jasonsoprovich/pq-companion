@@ -55,6 +55,9 @@ export interface ElectronAPI {
     openPet: () => Promise<void>
     closePet: () => Promise<void>
     togglePet: () => Promise<void>
+    openDeathRecap: () => Promise<void>
+    closeDeathRecap: () => Promise<void>
+    toggleDeathRecap: () => Promise<void>
     openItemInfo: () => Promise<void>
     // Opens without taking focus; a no-op when already open.
     showItemInfo: () => Promise<void>

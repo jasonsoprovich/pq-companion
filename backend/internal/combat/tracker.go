@@ -312,6 +312,14 @@ type Tracker struct {
 	currentZone string
 	deaths      []DeathRecord
 
+	// recapBuf holds the last deathRecapWindow of events aimed at the
+	// player, and lastCHAt the last CH that landed on them, for the recap
+	// attached to each death. deathSink, when set, receives each death for
+	// persistence.
+	recapBuf  []recapEntry
+	lastCHAt  time.Time
+	deathSink func(DeathRecord)
+
 	// petOwners maps a pet entity name to its controlling player. Populated by
 	// EventPetOwner ("Kebartik says 'My leader is Kildrey.'") and persists for
 	// the session — charm rebinds overwrite the entry, and a charm break
@@ -413,6 +421,14 @@ type dsCandidate struct {
 func (t *Tracker) SetHistoryStore(s *HistoryStore) {
 	t.mu.Lock()
 	t.historyStore = s
+	t.mu.Unlock()
+}
+
+// SetDeathSink wires a callback that receives every death, recap included,
+// after it is recorded. Called outside the tracker lock.
+func (t *Tracker) SetDeathSink(fn func(DeathRecord)) {
+	t.mu.Lock()
+	t.deathSink = fn
 	t.mu.Unlock()
 }
 
@@ -618,6 +634,11 @@ func (t *Tracker) Handle(ev logparser.LogEvent) {
 	}
 
 	switch ev.Type {
+	case logparser.EventCombatHit, logparser.EventCombatMiss, logparser.EventHeal, logparser.EventSpellLanded:
+		t.noteRecapEvent(ev)
+	}
+
+	switch ev.Type {
 	case logparser.EventDamageShield:
 		data, ok := ev.Data.(logparser.DamageShieldData)
 		if !ok {
@@ -721,12 +742,19 @@ func (t *Tracker) Handle(ev logparser.LogEvent) {
 			slainBy = data.SlainBy
 		}
 		t.mu.Lock()
-		t.deaths = append(t.deaths, DeathRecord{
+		rec := DeathRecord{
 			Timestamp: ev.Timestamp,
 			Zone:      t.currentZone,
 			SlainBy:   slainBy,
-		})
+			Character: t.playerName(),
+			Recap:     t.buildDeathRecapLocked(ev.Timestamp, slainBy),
+		}
+		t.deaths = append(t.deaths, rec)
+		sink := t.deathSink
 		t.mu.Unlock()
+		if sink != nil {
+			sink(rec)
+		}
 		// Death is recorded but no longer force-ends fights: you can die, get
 		// rezzed, and continue the same encounter, so the parse must survive the
 		// death. If the fight is genuinely over (a wipe), its inactivity timer
@@ -833,6 +861,8 @@ func (t *Tracker) Reset() {
 	t.sessionFightTime = 0
 	t.sessionHeal = 0
 	t.deaths = []DeathRecord{}
+	t.recapBuf = nil
+	t.lastCHAt = time.Time{}
 	t.pendingCrits = make(map[string][]int)
 	snap := t.flushLocked(time.Now())
 	t.mu.Unlock()

@@ -4566,6 +4566,7 @@ const OVERLAY_POPOUT_TOGGLE: Record<OverlayName, () => void> = {
   killCounter:  () => { window.electron?.overlay?.toggleKillCounter() },
   itemInfo:     () => { window.electron?.overlay?.toggleItemInfo() },
   pet:          () => { window.electron?.overlay?.togglePet() },
+  deathRecap:   () => { window.electron?.overlay?.toggleDeathRecap() },
 }
 
 // The HPS overlay can't be implemented correctly until EQ logs expose real

@@ -143,6 +143,51 @@ func (h *combatHandler) historyClear(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]int64{"removed": n})
 }
 
+// deathsList handles GET /api/combat/deaths.
+// Query params (all optional): start, end (RFC3339), character, limit
+// (default 200, max 1000). Returns saved deaths newest first, recaps
+// included.
+func (h *combatHandler) deathsList(w http.ResponseWriter, r *http.Request) {
+	if h.historyStore == nil {
+		writeError(w, http.StatusServiceUnavailable, "combat history disabled")
+		return
+	}
+	ff, err := parseFightFilter(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	limit := 0
+	if v := r.URL.Query().Get("limit"); v != "" {
+		limit, _ = strconv.Atoi(v)
+	}
+	deaths, err := h.historyStore.ListDeaths(combat.DeathFilter{
+		StartTime:     ff.StartTime,
+		EndTime:       ff.EndTime,
+		CharacterName: ff.CharacterName,
+		Limit:         limit,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"deaths": deaths})
+}
+
+// deathsClear handles DELETE /api/combat/deaths.
+func (h *combatHandler) deathsClear(w http.ResponseWriter, r *http.Request) {
+	if h.historyStore == nil {
+		writeError(w, http.StatusServiceUnavailable, "combat history disabled")
+		return
+	}
+	n, err := h.historyStore.DeleteAllDeaths()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int64{"removed": n})
+}
+
 // parseFightFilter pulls a FightFilter out of query parameters. Returns an
 // error only when a provided value is malformed; missing fields are zero
 // values, which the store treats as "no filter".

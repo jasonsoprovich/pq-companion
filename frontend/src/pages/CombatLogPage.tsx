@@ -19,7 +19,7 @@ import {
   Sigma,
 } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
-import { getCombatState, getLogStatus, resetCombatState } from '../services/api'
+import { getCombatState, getLogStatus, listDeaths, resetCombatState } from '../services/api'
 import type { CombatState, DeathRecord, EntityStats, FightState, FightSummary } from '../types/combat'
 import type { LogTailerStatus } from '../types/logEvent'
 import { rollupCombatants, useCombinePetWithOwner, petBadge, isYouRow, type RolledUpEntity } from '../lib/dpsRollup'
@@ -29,6 +29,7 @@ import { aggregateRecentFights } from '../lib/rollingWindow'
 import { FightViewToggle } from '../components/FightViewToggle'
 import { groupBySession, fmtSessionGap } from '../lib/sessionGrouping'
 import { WSEvent } from '../lib/wsEvents'
+import DeathRecapView from '../components/overlays/DeathRecapView'
 
 // dpsModeIcon picks an icon for the current DPS mode that matches the
 // metric's intuition: a single User for Personal, group Activity for Raid,
@@ -471,9 +472,94 @@ function TableHeader(): React.ReactElement {
 
 // ── Death log section ──────────────────────────────────────────────────────────
 
-function DeathLogSection({ deaths }: { deaths: DeathRecord[] }): React.ReactElement {
+// nightKey buckets a death into a play night. The night runs 6am to 6am so a
+// raid that goes past midnight stays in one group.
+function nightKey(iso: string): string {
+  const d = new Date(Date.parse(iso) - 6 * 3600_000)
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+}
+
+function nightLabel(iso: string): string {
+  const d = new Date(Date.parse(iso) - 6 * 3600_000)
+  return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
+}
+
+// DEATH_HISTORY_DAYS is how far back the saved death list reaches.
+const DEATH_HISTORY_DAYS = 30
+
+function DeathRow({ death }: { death: DeathRecord }): React.ReactElement {
+  const [open, setOpen] = useState(false)
+  const killer = death.slain_by || death.recap?.killer
+  return (
+    <div style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          width: '100%',
+          display: 'grid',
+          gridTemplateColumns: '12px 70px 1fr 1fr 1fr',
+          gap: '0 12px',
+          padding: '3px 0',
+          fontSize: 11,
+          background: 'none',
+          border: 'none',
+          cursor: 'pointer',
+          textAlign: 'left',
+        }}
+      >
+        <span style={{ color: 'var(--color-muted)', display: 'flex', alignItems: 'center' }}>
+          {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+        </span>
+        <span style={{ color: 'var(--color-muted)', fontVariantNumeric: 'tabular-nums' }}>
+          {fmtTime(death.timestamp)}
+        </span>
+        <span style={{ color: 'var(--color-foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {death.character || '—'}
+        </span>
+        <span style={{ color: 'var(--color-foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {death.zone || '—'}
+        </span>
+        <span style={{ color: '#ef4444', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {killer ? `by ${killer}` : 'unknown cause'}
+        </span>
+      </button>
+      {open && (
+        <div style={{ padding: '2px 0 8px 24px' }}>
+          <DeathRecapView death={death} theme="panel" />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function DeathLogSection({ sessionDeaths }: { sessionDeaths: DeathRecord[] }): React.ReactElement | null {
   const [expanded, setExpanded] = useState(false)
-  const count = deaths.length
+  // Saved deaths, newest first. null until loaded, or when history is off,
+  // in which case the section falls back to this session's deaths.
+  const [saved, setSaved] = useState<DeathRecord[] | null>(null)
+  const sessionCount = sessionDeaths.length
+
+  useEffect(() => {
+    const start = new Date(Date.now() - DEATH_HISTORY_DAYS * 86400_000).toISOString()
+    listDeaths({ start, limit: 500 })
+      .then((r) => setSaved(r.deaths))
+      .catch(() => setSaved(null))
+  }, [sessionCount])
+
+  const deaths = saved ?? [...sessionDeaths].reverse()
+  const nights = useMemo(() => {
+    const out: { key: string; label: string; deaths: DeathRecord[] }[] = []
+    for (const d of deaths) {
+      const key = nightKey(d.timestamp)
+      if (out.length === 0 || out[out.length - 1].key !== key) {
+        out.push({ key, label: nightLabel(d.timestamp), deaths: [] })
+      }
+      out[out.length - 1].deaths.push(d)
+    }
+    return out
+  }, [deaths])
+
+  if (deaths.length === 0) return null
 
   return (
     <div
@@ -503,36 +589,37 @@ function DeathLogSection({ deaths }: { deaths: DeathRecord[] }): React.ReactElem
           <Skull size={12} />
         </span>
         <span style={{ color: '#ef4444', fontWeight: 600 }}>
-          {count} death{count !== 1 ? 's' : ''} this session
+          {sessionCount} death{sessionCount !== 1 ? 's' : ''} this session
         </span>
+        {saved && (
+          <span style={{ color: 'var(--color-muted)' }}>
+            · recaps for the last {DEATH_HISTORY_DAYS} days
+          </span>
+        )}
         <span style={{ color: 'var(--color-muted)', marginLeft: 'auto', display: 'flex', alignItems: 'center' }}>
           {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         </span>
       </button>
 
       {expanded && (
-        <div style={{ maxHeight: 160, overflowY: 'auto', padding: '0 14px 8px' }}>
-          {[...deaths].reverse().map((d, i) => (
-            <div
-              key={i}
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '70px 1fr 1fr',
-                gap: '0 12px',
-                padding: '3px 0',
-                fontSize: 11,
-                borderBottom: '1px solid rgba(255,255,255,0.03)',
-              }}
-            >
-              <span style={{ color: 'var(--color-muted)', fontVariantNumeric: 'tabular-nums' }}>
-                {fmtTime(d.timestamp)}
-              </span>
-              <span style={{ color: 'var(--color-foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {d.zone || '—'}
-              </span>
-              <span style={{ color: '#ef4444', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {d.slain_by ? `by ${d.slain_by}` : 'unknown cause'}
-              </span>
+        <div style={{ maxHeight: 320, overflowY: 'auto', padding: '0 14px 8px' }}>
+          {nights.map((n) => (
+            <div key={n.key}>
+              <div
+                style={{
+                  fontSize: 10,
+                  fontWeight: 600,
+                  color: 'var(--color-muted)',
+                  textTransform: 'uppercase',
+                  letterSpacing: 0.4,
+                  padding: '6px 0 2px',
+                }}
+              >
+                {n.label} · {n.deaths.length} death{n.deaths.length !== 1 ? 's' : ''}
+              </div>
+              {n.deaths.map((d, i) => (
+                <DeathRow key={`${d.timestamp}-${i}`} death={d} />
+              ))}
             </div>
           ))}
         </div>
@@ -1101,13 +1188,13 @@ export default function CombatLogPage(): React.ReactElement {
                 : 'Fight history will appear here as you engage enemies'}
             </p>
           </div>
-          {deaths.length > 0 && <DeathLogSection deaths={deaths} />}
+          <DeathLogSection sessionDeaths={deaths} />
         </>
       ) : combinedView ? (
         <>
           <CombinedView fights={visibleFights} combine={combine} mode={dpsMode} />
           <SessionFooter combat={combat} />
-          {deaths.length > 0 && <DeathLogSection deaths={deaths} />}
+          <DeathLogSection sessionDeaths={deaths} />
         </>
       ) : (
         <>
@@ -1142,7 +1229,7 @@ export default function CombatLogPage(): React.ReactElement {
           </div>
 
           <SessionFooter combat={combat} />
-          {deaths.length > 0 && <DeathLogSection deaths={deaths} />}
+          <DeathLogSection sessionDeaths={deaths} />
         </>
       )}
     </div>

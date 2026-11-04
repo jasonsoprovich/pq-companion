@@ -92,10 +92,43 @@ export interface FightSummary {
   you_hps: number
 }
 
+export type RecapEventKind = 'hit' | 'miss' | 'heal' | 'ch'
+
+// RecapEvent mirrors combat.RecapEvent — one incoming event in a death recap.
+export interface RecapEvent {
+  offset: number // seconds before the death (<= 0)
+  kind: RecapEventKind
+  source?: string
+  ability?: string
+  amount?: number
+}
+
+// DeathRecap mirrors combat.DeathRecap — the window before one death.
+export interface DeathRecap {
+  window_seconds: number
+  damage_taken: number
+  hits: number
+  misses: number
+  biggest_hit: number
+  healing_taken: number
+  heals: number
+  chs: number
+  since_last_ch?: number // seconds; absent when no CH landed this session
+  killer?: string
+  events: RecapEvent[]
+}
+
 export interface DeathRecord {
   timestamp: string
   zone: string
   slain_by: string
+  character?: string
+  recap?: DeathRecap
+}
+
+// StoredDeath is a death as saved in user.db (GET /api/combat/deaths).
+export interface StoredDeath extends DeathRecord {
+  id: number
 }
 
 export interface CombatState {

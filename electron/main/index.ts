@@ -357,7 +357,7 @@ function audioMimeType(ext: string): string {
 
 // ── Overlay bounds persistence ────────────────────────────────────────────────
 
-type OverlayName = 'dps' | 'hps' | 'buffTimer' | 'detrimTimer' | 'customTimer' | 'trigger' | 'npc' | 'threat' | 'rollTracker' | 'respawnTimer' | 'chChain' | 'chMetronome' | 'discordVoice' | 'liveMap' | 'zoneLockouts' | 'raidReadiness' | 'filteredTimer' | 'killCounter' | 'itemInfo' | 'pet'
+type OverlayName = 'dps' | 'hps' | 'buffTimer' | 'detrimTimer' | 'customTimer' | 'trigger' | 'npc' | 'threat' | 'rollTracker' | 'respawnTimer' | 'chChain' | 'chMetronome' | 'discordVoice' | 'liveMap' | 'zoneLockouts' | 'raidReadiness' | 'filteredTimer' | 'killCounter' | 'itemInfo' | 'pet' | 'deathRecap'
 type Bounds = { x: number; y: number; width: number; height: number }
 
 // A window's identity for bounds/lock persistence and the generic per-window
@@ -401,6 +401,7 @@ const OVERLAY_DEFAULTS: Record<Exclude<OverlayName, 'trigger'>, Bounds> = {
   killCounter: { x: 0, y: 0, width: 280, height: 220 },
   itemInfo: { x: 0, y: 0, width: 380, height: 460 },
   pet: { x: 0, y: 0, width: 300, height: 420 },
+  deathRecap: { x: 0, y: 0, width: 340, height: 360 },
 }
 
 function boundsFilePath(): string {
@@ -914,6 +915,7 @@ let buffTimerWindow: BrowserWindow | null = null
 let filteredTimerWindow: BrowserWindow | null = null
 let killCounterWindow: BrowserWindow | null = null
 let petWindow: BrowserWindow | null = null
+let deathRecapWindow: BrowserWindow | null = null
 let itemInfoWindow: BrowserWindow | null = null
 let chChainWindow: BrowserWindow | null = null
 let chMetronomeWindow: BrowserWindow | null = null
@@ -1795,6 +1797,59 @@ function createPetOverlay(): void {
 
   petWindow.on('closed', () => {
     petWindow = null
+  })
+}
+
+function createDeathRecapOverlay(): void {
+  if (deathRecapWindow && !deathRecapWindow.isDestroyed()) {
+    deathRecapWindow.focus()
+    return
+  }
+
+  const { x, y, width, height } = getRestoredBounds('deathRecap', OVERLAY_DEFAULTS.deathRecap)
+  deathRecapWindow = new BrowserWindow({
+    x,
+    y,
+    width,
+    height,
+    minWidth: 240,
+    minHeight: 120,
+    transparent: true,
+    backgroundColor: '#00000000',
+    frame: false,
+    resizable: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    hasShadow: false,
+    show: false, // show after ready-to-show to avoid blank-frame flash
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    },
+  })
+
+  deathRecapWindow.once('ready-to-show', () => {
+    deathRecapWindow?.show()
+  })
+
+  deathRecapWindow.setAlwaysOnTop(true, 'screen-saver')
+  deathRecapWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  windowToOverlayName.set(deathRecapWindow, 'deathRecap')
+  applyInitialOverlayInput(deathRecapWindow, 'deathRecap')
+  trackOverlayBounds('deathRecap', deathRecapWindow)
+
+  if (isDev) {
+    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
+    deathRecapWindow.loadURL(`${rendererUrl}/#/death-recap-window`)
+  } else {
+    deathRecapWindow.loadFile(join(__dirname, '../renderer/index.html'), {
+      hash: '/death-recap-window',
+    })
+  }
+
+  deathRecapWindow.on('closed', () => {
+    deathRecapWindow = null
   })
 }
 
@@ -3025,6 +3080,24 @@ ipcMain.handle('overlay:pet:toggle', () => {
   }
 })
 
+ipcMain.handle('overlay:deathrecap:open', () => {
+  createDeathRecapOverlay()
+})
+
+ipcMain.handle('overlay:deathrecap:close', () => {
+  if (deathRecapWindow && !deathRecapWindow.isDestroyed()) {
+    deathRecapWindow.close()
+  }
+})
+
+ipcMain.handle('overlay:deathrecap:toggle', () => {
+  if (deathRecapWindow && !deathRecapWindow.isDestroyed()) {
+    deathRecapWindow.close()
+  } else {
+    createDeathRecapOverlay()
+  }
+})
+
 ipcMain.handle('overlay:chchain:open', () => {
   createCHChainOverlay()
 })
@@ -3482,6 +3555,7 @@ function userPopoutWindows(): BrowserWindow[] {
     killCounterWindow,
     itemInfoWindow,
     petWindow,
+    deathRecapWindow,
   ].filter((w): w is BrowserWindow => !!w && !w.isDestroyed())
   return [...fixed, ...customTimerGroupWindows.values()].filter((w) => !w.isDestroyed())
 }
@@ -3529,6 +3603,7 @@ ipcMain.handle('overlay:popouts:open-all', (_event, panels?: PopoutRequestEntry[
   if (wants('kills') && (!killCounterWindow || killCounterWindow.isDestroyed())) createKillCounterOverlay()
   if (wants('itemInfo') && (!itemInfoWindow || itemInfoWindow.isDestroyed())) createItemInfoOverlay()
   if (wants('pet') && (!petWindow || petWindow.isDestroyed())) createPetOverlay()
+  if (wants('deathRecap') && (!deathRecapWindow || deathRecapWindow.isDestroyed())) createDeathRecapOverlay()
   for (const g of groupWants) {
     const win = customTimerGroupWindows.get(g.id)
     if (!win || win.isDestroyed()) createCustomTimerGroupOverlay(g.id, g.name)
@@ -3628,6 +3703,7 @@ function overlayWindowByName(name: WindowKey): BrowserWindow | null {
     case 'killCounter': return killCounterWindow
     case 'itemInfo': return itemInfoWindow
     case 'pet': return petWindow
+    case 'deathRecap': return deathRecapWindow
     default: return null
   }
 }
@@ -3655,6 +3731,7 @@ function createOverlayByName(name: OverlayName): void {
     case 'killCounter': createKillCounterOverlay(); break
     case 'itemInfo': createItemInfoOverlay(); break
     case 'pet': createPetOverlay(); break
+    case 'deathRecap': createDeathRecapOverlay(); break
     default: break
   }
 }

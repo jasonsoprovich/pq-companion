@@ -16,6 +16,7 @@ import type { OverlayName } from '../lib/overlays'
 import BuffTimerPanel from '../components/overlays/BuffTimerPanel'
 import FilteredTimerPanel from '../components/overlays/FilteredTimerPanel'
 import KillCounterPanel from '../components/overlays/KillCounterPanel'
+import DeathRecapPanel from '../components/overlays/DeathRecapPanel'
 import ItemInfoPanel from '../components/overlays/ItemInfoPanel'
 import PetPanel from '../components/overlays/PetPanel'
 import DetrimTimerPanel from '../components/overlays/DetrimTimerPanel'
@@ -93,6 +94,7 @@ const PANEL_POPOUT: Record<DashboardPanelKey, { name: OverlayName; toggle: () =>
   kills:       { name: 'killCounter',  toggle: () => { window.electron?.overlay?.toggleKillCounter() } },
   itemInfo:    { name: 'itemInfo',     toggle: () => { window.electron?.overlay?.toggleItemInfo() } },
   pet:         { name: 'pet',          toggle: () => { window.electron?.overlay?.togglePet() } },
+  deathRecap:  { name: 'deathRecap',   toggle: () => { window.electron?.overlay?.toggleDeathRecap() } },
 }
 
 // Compact square icon button for the manager's per-overlay rows.
@@ -875,6 +877,17 @@ export default function OverlaysDashboard(): React.ReactElement {
             defaultHeight={layout.pet.height}
             snapGridSize={SNAP_GRID}
             onLayoutChange={handleLayoutChange('pet')}
+          />
+        )}
+        {layout.deathRecap.visible && (
+          <DeathRecapPanel
+            key={`deathRecap-${layoutVersion}`}
+            defaultX={layout.deathRecap.x}
+            defaultY={layout.deathRecap.y}
+            defaultWidth={layout.deathRecap.width}
+            defaultHeight={layout.deathRecap.height}
+            snapGridSize={SNAP_GRID}
+            onLayoutChange={handleLayoutChange('deathRecap')}
           />
         )}
         {layout.detrim.visible && (

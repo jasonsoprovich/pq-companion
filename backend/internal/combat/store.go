@@ -113,7 +113,7 @@ func (s *HistoryStore) migrate() error {
 			return err
 		}
 	}
-	return nil
+	return s.migrateDeaths()
 }
 
 // SaveFight writes one archived fight to user.db. Returns the assigned row
@@ -266,15 +266,24 @@ func (s *HistoryStore) DeleteAll() (int64, error) {
 	return res.RowsAffected()
 }
 
-// PruneOlderThan deletes every fight whose start_time is strictly before
-// cutoff. Returns the number of rows removed. Used by the retention
+// PruneOlderThan deletes every fight whose start_time, and every death whose
+// time, is strictly before cutoff. Returns the number of rows removed. Used by the retention
 // goroutine and called once on startup so the DB doesn't grow unboundedly.
 func (s *HistoryStore) PruneOlderThan(cutoff time.Time) (int64, error) {
 	res, err := s.db.Exec(`DELETE FROM combat_fights WHERE start_time < ?`, cutoff.UnixNano())
 	if err != nil {
 		return 0, err
 	}
-	return res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	res, err = s.db.Exec(`DELETE FROM combat_deaths WHERE died_at < ?`, cutoff.UnixNano())
+	if err != nil {
+		return n, err
+	}
+	d, err := res.RowsAffected()
+	return n + d, err
 }
 
 // HistoryFacets is the set of distinct values currently in the combat

@@ -180,9 +180,11 @@ type AttackerDamage struct {
 
 // DeathRecord captures a single player death event.
 type DeathRecord struct {
-	Timestamp time.Time `json:"timestamp"`
-	Zone      string    `json:"zone"`
-	SlainBy   string    `json:"slain_by"` // empty when "You died." (no named killer)
+	Timestamp time.Time   `json:"timestamp"`
+	Zone      string      `json:"zone"`
+	SlainBy   string      `json:"slain_by"` // empty when "You died." (no named killer)
+	Character string      `json:"character,omitempty"`
+	Recap     *DeathRecap `json:"recap,omitempty"`
 }
 
 // CombatState is the full state payload sent over WebSocket and returned by

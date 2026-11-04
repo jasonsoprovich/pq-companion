@@ -2069,6 +2069,15 @@ func main() {
 		}
 		guard.run(name, fn)
 	}
+	if historyStore != nil {
+		combatTracker.SetDeathSink(func(d combat.DeathRecord) {
+			durable("deathHistory", func() {
+				if _, err := historyStore.SaveDeath(d); err != nil {
+					slog.Warn("save death to history", "err", err)
+				}
+			})
+		})
+	}
 	dispatchEvent := func(ev logparser.LogEvent) {
 		hub.Broadcast(ws.Event{Type: string(ev.Type), Data: ev})
 		guard.run("npcTracker", func() { npcTracker.Handle(ev) })

@@ -59,7 +59,7 @@ import type {
   TargetState,
   ThreatState,
 } from '../types/overlay'
-import type { CombatState, HistoryFacets, HistoryFilter, HistoryListResponse, StoredFight } from '../types/combat'
+import type { CombatState, HistoryFacets, HistoryFilter, HistoryListResponse, StoredDeath, StoredFight } from '../types/combat'
 import type { TimerState } from '../types/timer'
 import type { RespawnState } from '../types/respawn'
 import type { Trigger, TriggerFired, TriggerPack, TriggerCategory, CategoryPlacement, TimerGroup, Action, TimerType, TimerAlertThreshold, TriggerSource, PipeCondition, ExtraPattern, ImportPreview, PackUpdateSummary, PackDiff, PackUpdateMode, PackUpdateResult, ActionTemplate, BulkResult, EmoteChange, TriggerEmoteSuggestion, PatternLocation, TestRequest, TestReport, TestStatus } from '../types/trigger'
@@ -1970,6 +1970,21 @@ export async function clearCombatHistory(): Promise<{ removed: number }> {
   const r = await fetch(`${baseUrl}/api/combat/history`, { method: 'DELETE' })
   if (!r.ok) throw new Error(`clear history: ${r.status}`)
   return r.json() as Promise<{ removed: number }>
+}
+
+export function listDeaths(
+  filter: { start?: string; character?: string; limit?: number } = {},
+): Promise<{ deaths: StoredDeath[] }> {
+  const params = new URLSearchParams()
+  if (filter.start) params.set('start', filter.start)
+  if (filter.character) params.set('character', filter.character)
+  if (filter.limit !== undefined) params.set('limit', String(filter.limit))
+  const qs = params.toString()
+  return get<{ deaths: StoredDeath[] }>(`/api/combat/deaths${qs ? `?${qs}` : ''}`)
+}
+
+export function clearDeaths(): Promise<void> {
+  return del('/api/combat/deaths')
 }
 
 export function getTimerState(): Promise<TimerState> {
