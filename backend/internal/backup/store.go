@@ -2,6 +2,7 @@ package backup
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -59,20 +60,21 @@ func (s *Store) migrate() error {
 	for _, col := range []string{
 		`ALTER TABLE backups ADD COLUMN locked         INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE backups ADD COLUMN trigger_reason TEXT    NOT NULL DEFAULT 'manual'`,
+		`ALTER TABLE backups ADD COLUMN content_hash   TEXT    NOT NULL DEFAULT ''`,
 	} {
 		if _, err := s.db.Exec(col); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
 			return fmt.Errorf("add column: %w", err)
 		}
 	}
-	return nil
+	return s.migrateHistory()
 }
 
 // Insert persists a new backup record.
 func (s *Store) Insert(b *Backup) error {
 	_, err := s.db.Exec(
-		`INSERT INTO backups (id, name, notes, created_at, size_bytes, file_count, locked, trigger_reason)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		b.ID, b.Name, b.Notes, b.CreatedAt.Unix(), b.SizeBytes, b.FileCount, b.Locked, b.TriggerReason,
+		`INSERT INTO backups (id, name, notes, created_at, size_bytes, file_count, locked, trigger_reason, content_hash)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		b.ID, b.Name, b.Notes, b.CreatedAt.Unix(), b.SizeBytes, b.FileCount, b.Locked, b.TriggerReason, b.ContentHash,
 	)
 	if err != nil {
 		return fmt.Errorf("insert backup: %w", err)
@@ -113,6 +115,17 @@ func (s *Store) Get(id string) (*Backup, error) {
 		return nil, fmt.Errorf("get backup %s: %w", id, err)
 	}
 	return b, nil
+}
+
+// LatestHash returns the content hash of the newest backup ("" when there
+// are none, or it predates hashing).
+func (s *Store) LatestHash() (string, error) {
+	var h string
+	err := s.db.QueryRow(`SELECT content_hash FROM backups ORDER BY created_at DESC LIMIT 1`).Scan(&h)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return h, err
 }
 
 // Count returns the total number of backups.

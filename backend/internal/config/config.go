@@ -146,6 +146,14 @@ type BackupSettings struct {
 	// MaxBackups is the maximum number of backups to retain (0 = unlimited).
 	// When exceeded, the oldest unlocked backups are deleted automatically.
 	MaxBackups int `yaml:"max_backups" json:"max_backups"`
+
+	// FileHistoryOff turns off per-file version history (spellsets,
+	// bandolier, hotkeys and macros, UI layout...). History is on by default,
+	// hence the inverted flag.
+	FileHistoryOff bool `yaml:"file_history_off,omitempty" json:"file_history_off"`
+
+	// FileHistoryKeep is how many versions each file keeps (0 = 30).
+	FileHistoryKeep int `yaml:"file_history_keep,omitempty" json:"file_history_keep"`
 }
 
 // SpellTimerSettings configures the spell timer engine.

@@ -28,4 +28,7 @@ type Backup struct {
 	FileCount     int       `json:"file_count"`
 	Locked        bool      `json:"locked"`
 	TriggerReason string    `json:"trigger_reason"`
+	// ContentHash fingerprints the snapshot's .ini files (logs excluded), so
+	// automatic snapshots can skip an unchanged folder.
+	ContentHash string `json:"-"`
 }

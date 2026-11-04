@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"errors"
@@ -12,6 +13,10 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
@@ -42,6 +47,11 @@ type Manager struct {
 	store     *Store
 	cfgMgr    *config.Manager
 	backupDir string
+
+	// historyMu serialises file-history capture passes; historySeen holds
+	// each file's mod time and size at its last pass, to skip unchanged ones.
+	historyMu   sync.Mutex
+	historySeen map[string]statKey
 }
 
 // NewManager opens (or creates) the user.db under ~/.pq-companion/ and
@@ -72,7 +82,12 @@ func NewManagerAt(cfgMgr *config.Manager, baseDir, backupDir string) (*Manager, 
 		return nil, err
 	}
 
-	return &Manager{store: store, cfgMgr: cfgMgr, backupDir: backupDir}, nil
+	return &Manager{
+		store:       store,
+		cfgMgr:      cfgMgr,
+		backupDir:   backupDir,
+		historySeen: map[string]statKey{},
+	}, nil
 }
 
 // Close releases the underlying database connection.
@@ -91,11 +106,18 @@ func (m *Manager) Get(id string) (*Backup, error) {
 // Create zips all *.ini files found in the configured EQ directory and records
 // the backup in user.db.  name and notes are free-form strings from the caller.
 func (m *Manager) Create(name, notes string) (*Backup, error) {
-	return m.create(name, notes, TriggerManual)
+	return m.create(name, notes, TriggerManual, false)
+}
+
+// CreateWithLogs is Create that also copies the EverQuest log files
+// (eqlog_*_pq.proj.txt). Only manual snapshots take logs: they're large and
+// change constantly, so automatic ones would fill the disk.
+func (m *Manager) CreateWithLogs(name, notes string) (*Backup, error) {
+	return m.create(name, notes, TriggerManual, true)
 }
 
 // create is the internal implementation; triggerReason is one of the Trigger* constants.
-func (m *Manager) create(name, notes, triggerReason string) (*Backup, error) {
+func (m *Manager) create(name, notes, triggerReason string, includeLogs bool) (*Backup, error) {
 	eqPath := m.cfgMgr.Get().EQPath
 	if eqPath == "" {
 		return nil, errors.New("eq_path is not configured")
@@ -107,6 +129,26 @@ func (m *Manager) create(name, notes, triggerReason string) (*Backup, error) {
 	}
 	if len(files) == 0 {
 		return nil, fmt.Errorf("no *.ini files found in %s", eqPath)
+	}
+
+	// Automatic snapshots skip a folder that hasn't changed since the last
+	// snapshot, so the retention limit isn't spent on identical copies.
+	hash, err := hashFiles(files)
+	if err != nil {
+		return nil, fmt.Errorf("hash ini files: %w", err)
+	}
+	if triggerReason == TriggerAuto || triggerReason == TriggerScheduled {
+		if last, err := m.store.LatestHash(); err == nil && last == hash {
+			slog.Debug("backup skipped: no changes since the last one", "trigger", triggerReason)
+			return nil, nil
+		}
+	}
+	if includeLogs {
+		logs, err := filepath.Glob(filepath.Join(eqPath, "eqlog_*_pq.proj.txt"))
+		if err != nil {
+			return nil, fmt.Errorf("glob log files: %w", err)
+		}
+		files = append(files, logs...)
 	}
 
 	backupDir := m.backupDir
@@ -137,6 +179,7 @@ func (m *Manager) create(name, notes, triggerReason string) (*Backup, error) {
 		SizeBytes:     sizeBytes,
 		FileCount:     len(files),
 		TriggerReason: triggerReason,
+		ContentHash:   hash,
 	}
 	if err := m.store.Insert(b); err != nil {
 		_ = os.Remove(zipPath)
@@ -244,7 +287,7 @@ func (m *Manager) StartWatcher(ctx context.Context) {
 			}
 			if changed {
 				name := "Auto-backup " + time.Now().UTC().Format("2006-01-02 15:04")
-				if _, err := m.create(name, "", TriggerAuto); err != nil {
+				if _, err := m.create(name, "", TriggerAuto, false); err != nil {
 					slog.Warn("auto-backup failed", "err", err)
 				}
 			}
@@ -279,7 +322,7 @@ func (m *Manager) StartScheduler(ctx context.Context) {
 			if lastRun.IsZero() || now.Sub(lastRun) >= interval {
 				lastRun = now
 				name := "Scheduled " + now.UTC().Format("2006-01-02 15:04")
-				if _, err := m.create(name, "", TriggerScheduled); err != nil {
+				if _, err := m.create(name, "", TriggerScheduled, false); err != nil {
 					slog.Warn("scheduled backup failed", "err", err)
 				}
 			}
@@ -308,9 +351,55 @@ func (m *Manager) Delete(id string) error {
 	return nil
 }
 
+// BackupFile is one file inside a snapshot.
+type BackupFile struct {
+	Name      string    `json:"name"`
+	SizeBytes int64     `json:"size_bytes"`
+	Modified  time.Time `json:"modified"`
+	// Kind and Character classify settings files (see ClassifyFile); Kind is
+	// "log" for log files and "" for anything else.
+	Kind      string `json:"kind"`
+	Character string `json:"character"`
+}
+
+var reLogName = regexp.MustCompile(`(?i)^eqlog_([a-z]+)_pq\.proj\.txt$`)
+
+// Files lists the files in a snapshot.
+func (m *Manager) Files(id string) ([]BackupFile, error) {
+	if _, err := m.store.Get(id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("backup %s: %w", id, ErrNotFound)
+		}
+		return nil, err
+	}
+	r, err := zip.OpenReader(filepath.Join(m.backupDir, id+".zip"))
+	if err != nil {
+		return nil, fmt.Errorf("open backup: %w", err)
+	}
+	defer r.Close()
+	out := make([]BackupFile, 0, len(r.File))
+	for _, f := range r.File {
+		bf := BackupFile{Name: f.Name, SizeBytes: int64(f.UncompressedSize64), Modified: f.Modified.UTC()}
+		if kind, char, ok := ClassifyFile(f.Name); ok {
+			bf.Kind, bf.Character = kind, char
+		} else if mm := reLogName.FindStringSubmatch(f.Name); mm != nil {
+			bf.Kind, bf.Character = "log", capitalize(mm[1])
+		}
+		out = append(out, bf)
+	}
+	return out, nil
+}
+
 // Restore extracts the backup's zip archive into the configured EQ directory,
 // overwriting any existing files with the same names.
 func (m *Manager) Restore(id string) error {
+	return m.RestoreFiles(id, nil)
+}
+
+// RestoreFiles extracts the named files from a backup into the EQ directory
+// (every file when names is empty). Tracked settings files are saved to file
+// history first, so the restore can be undone file by file.
+func (m *Manager) RestoreFiles(id string, names []string) error {
 	eqPath := m.cfgMgr.Get().EQPath
 	if eqPath == "" {
 		return errors.New("eq_path is not configured")
@@ -323,12 +412,23 @@ func (m *Manager) Restore(id string) error {
 		return err
 	}
 
+	if _, err := m.CaptureFiles(true); err != nil {
+		slog.Warn("restore: saving current files to history failed", "err", err)
+	}
+
+	var only map[string]bool
+	if len(names) > 0 {
+		only = make(map[string]bool, len(names))
+		for _, n := range names {
+			only[n] = true
+		}
+	}
 	zipPath := filepath.Join(m.backupDir, id+".zip")
-	if err := extractZip(zipPath, eqPath); err != nil {
+	if err := extractZip(zipPath, eqPath, only); err != nil {
 		return fmt.Errorf("restore zip: %w", err)
 	}
 
-	slog.Info("backup restored", "id", id, "eq_path", eqPath)
+	slog.Info("backup restored", "id", id, "eq_path", eqPath, "files", len(names))
 	return nil
 }
 
@@ -395,8 +495,29 @@ func addFileToZip(w *zip.Writer, src string) error {
 	return err
 }
 
-// extractZip extracts all entries from src into destDir.
-func extractZip(src, destDir string) error {
+// hashFiles is a sha256 over the files' names and contents, in name order.
+func hashFiles(paths []string) (string, error) {
+	sorted := append([]string(nil), paths...)
+	sort.Strings(sorted)
+	h := sha256.New()
+	for _, p := range sorted {
+		f, err := os.Open(p)
+		if err != nil {
+			return "", err
+		}
+		io.WriteString(h, strings.ToLower(filepath.Base(p))+"\x00")
+		_, err = io.Copy(h, f)
+		f.Close()
+		if err != nil {
+			return "", err
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// extractZip extracts the entries of src into destDir: all of them when only
+// is nil, otherwise the named ones.
+func extractZip(src, destDir string, only map[string]bool) error {
 	r, err := zip.OpenReader(src)
 	if err != nil {
 		return err
@@ -407,6 +528,9 @@ func extractZip(src, destDir string) error {
 		// Security: reject any path with a separator to prevent path traversal.
 		if filepath.Base(f.Name) != f.Name {
 			return fmt.Errorf("invalid entry name %q in zip", f.Name)
+		}
+		if only != nil && !only[f.Name] {
+			continue
 		}
 
 		dest := filepath.Join(destDir, f.Name)
