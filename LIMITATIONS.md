@@ -484,7 +484,8 @@ a future data source fix this?" column against the new capabilities.
   (`host:port`) on each zone-in, which tells two running copies of a zone
   apart. Respawn timers are kept per copy: a kill in another copy is tagged
   "[other copy]", sorts after yours, and doesn't colour the map's respawn
-  dots. The port still says nothing about the instance's *type*, and the
+  dots. Kill counters tied to a zone start over when you enter a
+  different copy of it. The port still says nothing about the instance's *type*, and the
   server reuses ports, so a zone that shut down and restarted on the same
   port looks like the same copy.
   Boxed clients that run from the same EverQuest folder also share one
