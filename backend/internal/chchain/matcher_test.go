@@ -120,6 +120,20 @@ func TestMatcher_RealRaidFormat(t *testing.T) {
 	}
 }
 
+func TestMatcher_CallObserver(t *testing.T) {
+	s := &fakeSink{}
+	m := newMatcher(s, true, config.DefaultCHChainPattern, 6)
+	var got []string
+	m.SetCallObserver(func(_ time.Time, caster, target string) {
+		got = append(got, caster+">"+target)
+	})
+	m.HandleLine(time.Unix(1, 0), "Luna tells the raid,  '- - 001 - CH Krayziefoo'")
+	m.HandleLine(time.Unix(2, 0), "Luna tells the raid,  'hello'")
+	if len(got) != 1 || got[0] != "Luna>Krayziefoo" {
+		t.Fatalf("observed %v", got)
+	}
+}
+
 // TestMatcher_CasterMana covers extracting the caster's self-reported
 // remaining mana from a callout's trailing note. It must arrive via
 // SetCasterMana (a side-channel update keyed to the just-started timer),

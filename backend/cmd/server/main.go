@@ -1817,6 +1817,10 @@ func main() {
 			if td := p.TargetDescriptors(); td != nil && td.LocKnown && td.Type == zealpipe.TargetTypeNPC {
 				respawnEngine.SetPipeTargetLoc(zealpipe.CleanTargetName(td.Name), td.GameX, td.GameY)
 			}
+			// Raid replay draws a line from the observer to their target.
+			if td := p.TargetDescriptors(); raidRecorder != nil && td != nil && td.LocKnown {
+				raidRecorder.SetTargetLoc(zealpipe.CleanTargetName(td.Name), td.GameX, td.GameY, td.Z)
+			}
 			// After the NPC tracker so a pet the player just targeted (or
 			// charmed) has its resolution cached under target_id == pet_id.
 			petTracker.SetPipePetID(p.PetID)
@@ -2055,6 +2059,9 @@ func main() {
 		// dies while still selected, even if the slain-line is out of log
 		// range (raid casters far from the target). See HandlePipeTarget.
 		timerEngine.HandlePipeTarget(targetName)
+		if raidRecorder != nil {
+			raidRecorder.SetTargetName(targetName)
+		}
 		triggerEngine.HandlePipeTarget(targetName, targetHP, env.Character, time.Now())
 		triggerEngine.HandlePipeBuffSlots(buffSlots, env.Character, time.Now())
 	})
@@ -2162,6 +2169,14 @@ func main() {
 			return
 		}
 		guard.run(name, fn)
+	}
+	if raidRecorder != nil {
+		// CH chain calls become marks on the raid replay timeline.
+		chChainMatcher.SetCallObserver(func(ts time.Time, caster, target string) {
+			if !replaying.Load() {
+				raidRecorder.HandleCHCall(ts, caster, target)
+			}
+		})
 	}
 	if historyStore != nil {
 		combatTracker.SetDeathSink(func(d combat.DeathRecord) {
@@ -2289,6 +2304,9 @@ func main() {
 		guard.run("chMetronomeSelfCastWatcher", func() { chMetronomeSelfCastWatcher.HandleLine(ts, msg) })
 		guard.run("rollTracker", func() { rollTracker.HandleLine(ts, msg) })
 		durable("killCounters", func() { killCounters.HandleLine(ts, msg) })
+		if raidRecorder != nil {
+			durable("raidRecorderLines", func() { raidRecorder.HandleLine(ts, msg) })
+		}
 		if keyringConsumer != nil {
 			durable("keyringConsumer", func() { keyringConsumer.HandleLine(ts, msg) })
 		}

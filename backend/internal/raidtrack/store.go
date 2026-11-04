@@ -48,15 +48,27 @@ type MemberInfo struct {
 type Frame struct {
 	T int64   `json:"t"` // unix ms
 	M [][]int `json:"m"`
+	// Tg is the observer's target, when they had one.
+	Tg *FrameTarget `json:"tg,omitempty"`
+}
+
+// FrameTarget is the observer's Zeal target in a frame. L is [x, y, z] in
+// the same convention as frame rows, present only when Zeal reported the
+// target's position (within 250 units).
+type FrameTarget struct {
+	N string `json:"n"`
+	L []int  `json:"l,omitempty"`
 }
 
 // Event kinds.
 const (
-	EventKill  = "kill"  // an NPC died
-	EventDeath = "death" // a raider died
+	EventKill   = "kill"    // an NPC died
+	EventDeath  = "death"   // a raider died
+	EventCH     = "ch"      // a CH chain call: Name the target, Other the caster
+	EventCHLand = "ch_land" // a Complete Heal landed on Name
 )
 
-// Event is a kill or death during a session.
+// Event is a kill, death or CH chain mark during a session.
 type Event struct {
 	T     int64  `json:"t"` // unix ms
 	Kind  string `json:"kind"`

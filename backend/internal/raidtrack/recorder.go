@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"math"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -30,6 +31,16 @@ const (
 	// minFrames is the shortest session worth keeping (one minute). A
 	// shorter one, such as passing through a raid zone, is dropped.
 	minFrames = 20
+
+	// targetFresh is how long the last target name and position stand in
+	// for the live ones. Zeal sends both several times a second.
+	targetFresh = 2 * time.Second
+)
+
+// Complete Heal's landing lines (spells_new cast_on_you / cast_on_other).
+var (
+	reCHLandOther = regexp.MustCompile(`^([A-Z][a-zA-Z]{2,14}) is completely healed\.$`)
+	reCHLandSelf  = regexp.MustCompile(`^You are completely healed\.$`)
 )
 
 // Member is one raider from a Zeal raid frame. HasLoc is false for raiders
@@ -58,6 +69,13 @@ type Recorder struct {
 	character string
 	zone      string
 	sess      *session
+
+	// The observer's Zeal target: its name from the target label, and its
+	// position from the player snapshot when Zeal reports one.
+	targetName   string
+	targetNameAt time.Time
+	targetLoc    [3]float64
+	targetLocAt  time.Time
 }
 
 type session struct {
@@ -96,6 +114,78 @@ func (r *Recorder) SetRaid(character, zone string, members []Member) {
 	r.mu.Unlock()
 }
 
+// SetTargetName takes the observer's target name from Zeal's target label;
+// "" means no target.
+func (r *Recorder) SetTargetName(name string) {
+	r.mu.Lock()
+	if !strings.EqualFold(name, r.targetName) {
+		r.targetLocAt = time.Time{}
+	}
+	r.targetName = name
+	r.targetNameAt = r.now()
+	r.mu.Unlock()
+}
+
+// SetTargetLoc takes the observer's target position (GameX, GameY, Z) from
+// Zeal's target descriptors. name is the descriptors' target name, which is
+// checked against the label's so a position isn't pinned on the wrong mob
+// during a retarget; "" skips the check.
+func (r *Recorder) SetTargetLoc(name string, x, y, z float64) {
+	r.mu.Lock()
+	if name == "" || strings.EqualFold(name, r.targetName) {
+		r.targetLoc = [3]float64{x, y, z}
+		r.targetLocAt = r.now()
+	}
+	r.mu.Unlock()
+}
+
+// HandleCHCall records a CH chain call (from the chain matcher) as a mark
+// on the timeline.
+func (r *Recorder) HandleCHCall(ts time.Time, caster, target string) {
+	r.addEvent(Event{T: ts.UnixMilli(), Kind: EventCH, Name: target, Other: caster})
+}
+
+// HandleLine records Complete Heal landings from raw log lines.
+func (r *Recorder) HandleLine(ts time.Time, msg string) {
+	if m := reCHLandOther.FindStringSubmatch(msg); m != nil {
+		r.addEvent(Event{T: ts.UnixMilli(), Kind: EventCHLand, Name: m[1]})
+	} else if reCHLandSelf.MatchString(msg) {
+		r.addEvent(Event{T: ts.UnixMilli(), Kind: EventCHLand, Name: "You"})
+	}
+}
+
+// addEvent writes ev to the running session, naming "You" after the log's
+// character.
+func (r *Recorder) addEvent(ev Event) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	s := r.sess
+	if s == nil {
+		return
+	}
+	me := r.logCharLocked(s)
+	if ev.Name == "You" {
+		ev.Name = me
+	}
+	if ev.Other == "You" {
+		ev.Other = me
+	}
+	if err := r.store.addEvent(s.id, ev); err != nil {
+		slog.Warn("raidtrack: event write failed", "err", err)
+	}
+}
+
+// logCharLocked is the character "You" means in a log line. Caller holds
+// r.mu.
+func (r *Recorder) logCharLocked(s *session) string {
+	if r.logChar != nil {
+		if n := r.logChar(); n != "" {
+			return n
+		}
+	}
+	return s.character
+}
+
 // Handle records kills and deaths from the log into the running session.
 func (r *Recorder) Handle(ev logparser.LogEvent) {
 	var out Event
@@ -119,12 +209,7 @@ func (r *Recorder) Handle(ev logparser.LogEvent) {
 	if s == nil {
 		return
 	}
-	me := s.character
-	if r.logChar != nil {
-		if n := r.logChar(); n != "" {
-			me = n
-		}
-	}
+	me := r.logCharLocked(s)
 	switch {
 	case out.Kind == EventDeath:
 		out.Name = me
@@ -229,6 +314,12 @@ func (r *Recorder) recordLocked(now time.Time) {
 			round(m.X), round(m.Y), round(m.Z), round(m.Heading),
 			m.Group, m.HPPct,
 		})
+	}
+	if r.targetName != "" && now.Sub(r.targetNameAt) <= targetFresh {
+		f.Tg = &FrameTarget{N: r.targetName}
+		if !r.targetLocAt.IsZero() && now.Sub(r.targetLocAt) <= targetFresh {
+			f.Tg.L = []int{round(r.targetLoc[0]), round(r.targetLoc[1]), round(r.targetLoc[2])}
+		}
 	}
 	if len(s.chunk) > 0 && f.T-s.chunk[0].T >= chunkSpan.Milliseconds() {
 		r.flushLocked()

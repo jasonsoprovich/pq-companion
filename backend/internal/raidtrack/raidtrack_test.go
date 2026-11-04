@@ -131,6 +131,67 @@ func TestRecorderLogCharacter(t *testing.T) {
 	}
 }
 
+func TestRecorderTargetAndCHMarks(t *testing.T) {
+	h := newHarness(t)
+	h.rec.SetLogCharacter(func() string { return "Osui" })
+	// One minute with no target, then a target with a position, then one
+	// without (out of range).
+	h.run("templeveeshan", time.Minute)
+	for end := h.now.Add(time.Minute); h.now.Before(end); h.now = h.now.Add(time.Second) {
+		h.rec.SetTargetName("Lord Vyemm")
+		h.rec.SetTargetLoc("Lord Vyemm", 100, -200, 5)
+		h.rec.SetRaid("Osui", "templeveeshan", raid(0))
+		h.rec.tick()
+	}
+	// A position for some other mob is ignored.
+	for end := h.now.Add(time.Minute); h.now.Before(end); h.now = h.now.Add(time.Second) {
+		h.rec.SetTargetName("Larcen")
+		h.rec.SetTargetLoc("a drake", 1, 2, 3)
+		h.rec.SetRaid("Osui", "templeveeshan", raid(0))
+		h.rec.tick()
+	}
+	h.rec.HandleCHCall(h.now, "Clerica", "Larcen")
+	h.rec.HandleLine(h.now, "Larcen is completely healed.")
+	h.rec.HandleLine(h.now, "You are completely healed.")
+	h.rec.HandleLine(h.now, "Larcen is healed.")
+	h.now = h.now.Add(sessionGap + 2*time.Second)
+	h.rec.tick()
+
+	ss := h.sessions()
+	if len(ss) != 1 {
+		t.Fatalf("sessions = %d", len(ss))
+	}
+	rec, _, err := h.store.GetRecording(ss[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var none, withLoc, nameOnly int
+	for _, f := range rec.Frames {
+		switch {
+		case f.Tg == nil:
+			none++
+		case f.Tg.N == "Lord Vyemm" && len(f.Tg.L) == 3 && f.Tg.L[1] == -200:
+			withLoc++
+		case f.Tg.N == "Larcen" && f.Tg.L == nil:
+			nameOnly++
+		default:
+			t.Fatalf("frame target = %+v", f.Tg)
+		}
+	}
+	if none != 20 || withLoc != 20 || nameOnly != 20 {
+		t.Fatalf("frames none/loc/name = %d/%d/%d", none, withLoc, nameOnly)
+	}
+	if len(rec.Events) != 3 ||
+		rec.Events[0] != (Event{T: rec.Events[0].T, Kind: EventCH, Name: "Larcen", Other: "Clerica"}) ||
+		rec.Events[1].Kind != EventCHLand || rec.Events[1].Name != "Larcen" ||
+		rec.Events[2].Name != "Osui" {
+		t.Fatalf("events = %+v", rec.Events)
+	}
+	if ss[0].Kills != 0 || ss[0].Deaths != 0 {
+		t.Fatalf("CH marks counted as kills/deaths: %+v", ss[0])
+	}
+}
+
 func TestRecorderZoneChangeAndShortSessions(t *testing.T) {
 	h := newHarness(t)
 	h.run("templeveeshan", 30*time.Second) // too short to keep

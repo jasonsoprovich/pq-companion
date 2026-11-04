@@ -88,6 +88,18 @@ type Matcher struct {
 	callsMu      sync.Mutex
 	recentCalls  map[string]recentCall
 	pendingCasts map[string]time.Time
+
+	// onCall, when set, is told of every chain call with a target (see
+	// SetCallObserver).
+	onCall func(ts time.Time, caster, target string)
+}
+
+// SetCallObserver registers fn to be told of every chain call with a target,
+// after its timer starts: the raid replay recorder marks them on the
+// timeline. caster is "" when the pattern doesn't capture one. Set before
+// lines arrive.
+func (m *Matcher) SetCallObserver(fn func(ts time.Time, caster, target string)) {
+	m.onCall = fn
 }
 
 // recentCall records one chain callout's timer identity (label + target — the
@@ -300,6 +312,9 @@ func (m *Matcher) matchAndStart(ts time.Time, msg, pattern string, cache *cached
 	}
 	if earlyCast {
 		m.sink.ConfirmCast(label, target)
+	}
+	if m.onCall != nil {
+		m.onCall(ts, caster, target)
 	}
 	return true
 }
