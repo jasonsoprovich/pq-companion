@@ -863,6 +863,11 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, timerG
       case 'pipe_command':
         if (!pipeCommandText.trim()) return null
         return { kind: 'pipe_command', text: pipeCommandText.trim() }
+      case 'buff_stripped':
+      case 'debuff_stripped': {
+        const spell = pipeSpellName.trim()
+        return spell ? { kind: pipeKind, spell_name: spell } : { kind: pipeKind }
+      }
     }
   }
 
@@ -1286,6 +1291,8 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, timerG
             <option value="buff_landed">Buff lands on me</option>
             <option value="buff_faded">Buff fades from me</option>
             <option value="pipe_command">In-game /pipe text</option>
+            <option value="buff_stripped">My buff is stripped</option>
+            <option value="debuff_stripped">My debuff is dispelled off a mob</option>
           </select>
 
           {pipeKind === 'target_hp_below' && (
@@ -1328,6 +1335,33 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, timerG
               style={inputStyle}
               disabled={submitting}
             />
+          )}
+          {(pipeKind === 'buff_stripped' || pipeKind === 'debuff_stripped') && (
+            <div className="space-y-1">
+              <input
+                type="text"
+                placeholder="Spell name (optional, blank = any)"
+                value={pipeSpellName}
+                onChange={(e) => setPipeSpellName(e.target.value)}
+                className="w-full rounded px-3 py-1.5 text-sm outline-none"
+                style={inputStyle}
+                disabled={submitting}
+              />
+              <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+                {pipeKind === 'buff_stripped'
+                  ? 'Fires when one of your buffs leaves the buff window with '
+                    + 'more than 12 s left and nothing replaced it. Clicking '
+                    + 'a buff off also counts.'
+                  : 'Fires when one of your detrimentals wears off with more '
+                    + 'than 12 s left and a dispel lands on that mob, or two '
+                    + 'of them fade at once. Works without Zeal.'}
+                {' '}Use <code>{'{spell}'}</code>
+                {pipeKind === 'debuff_stripped' && (
+                  <> and <code>{'{target}'}</code> (the mob)</>
+                )}
+                {' '}in the action text.
+              </p>
+            </div>
           )}
           {pipeKind === 'pipe_command' && (
             <div className="space-y-1">

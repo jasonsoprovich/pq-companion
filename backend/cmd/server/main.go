@@ -1043,6 +1043,11 @@ func main() {
 		return "", false
 	})
 	triggerEngine.Reload()
+	// Dispel callouts: the timer engine spots own buffs/debuffs ending
+	// early and the buff_stripped / debuff_stripped triggers voice them.
+	timerEngine.SetStripHandler(func(ev spelltimer.StripEvent) {
+		triggerEngine.HandleStrip(string(ev.Kind), ev.Spell, ev.Target, ev.At)
+	})
 
 	// Wishlist watcher: alerts when an item on any character's wishlist
 	// appears in the active character's log. Not a trigger — see

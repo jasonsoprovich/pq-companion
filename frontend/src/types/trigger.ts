@@ -91,6 +91,8 @@ export type PipeConditionKind =
   | 'buff_landed'
   | 'buff_faded'
   | 'pipe_command'
+  | 'buff_stripped'
+  | 'debuff_stripped'
 
 /**
  * Typed match definition for Source='pipe' triggers. Only the fields
@@ -102,7 +104,10 @@ export interface PipeCondition {
   hp_threshold?: number
   /** target_name: fires when the player's target becomes this name (exact match). */
   target_name?: string
-  /** buff_landed / buff_faded: spell name to watch in the player's buff slots. */
+  /**
+   * buff_landed / buff_faded: spell name to watch in the player's buff slots.
+   * buff_stripped / debuff_stripped: optional; empty matches any spell.
+   */
   spell_name?: string
   /** pipe_command: matches `/pipe <text>` typed in-game (exact match). */
   text?: string

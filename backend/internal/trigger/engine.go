@@ -602,6 +602,46 @@ func (e *Engine) HandlePipeCommand(text, character string, ts time.Time) {
 	}
 }
 
+// HandleStrip evaluates buff_stripped / debuff_stripped triggers against a
+// strip reported by the timer engine. kind is "buff" or "debuff"; target is
+// the mob a debuff was stripped from. Action text can use {spell}, and for
+// debuffs {target} names the mob rather than the current target.
+func (e *Engine) HandleStrip(kind, spell, target string, ts time.Time) {
+	want := PipeKindBuffStripped
+	if kind == "debuff" {
+		want = PipeKindDebuffStripped
+	}
+	e.mu.RLock()
+	pipeCs := e.pipeCompiled
+	e.mu.RUnlock()
+	if len(pipeCs) == 0 {
+		return
+	}
+	active := ""
+	if e.activeChar != nil {
+		active = e.activeChar()
+	}
+	extra := map[string]string{"spell": spell}
+	line := fmt.Sprintf("%s stripped: %s", kind, spell)
+	if want == PipeKindDebuffStripped && target != "" {
+		extra["target"], extra["t"] = target, target
+		line = fmt.Sprintf("%s stripped: %s off %s", kind, spell, target)
+	}
+	for _, t := range pipeCs {
+		if !triggerAppliesTo(t, active) {
+			continue
+		}
+		cond := t.PipeCondition
+		if cond == nil || cond.Kind != want {
+			continue
+		}
+		if cond.SpellName != "" && !strings.EqualFold(cond.SpellName, spell) {
+			continue
+		}
+		e.firePipeWith(t, line, ts, extra)
+	}
+}
+
 // HandlePipeReset clears edge-detection state. Called when the supervisor
 // disconnects so the next session doesn't see spurious "transition" matches
 // against stale values from a previous Zeal run.
@@ -618,10 +658,19 @@ func (e *Engine) HandlePipeReset() {
 // type. matchedLine is a synthetic human-readable description of the
 // trigger condition for the history pane.
 func (e *Engine) firePipe(t *Trigger, matchedLine string, firedAt time.Time) {
+	e.firePipeWith(t, matchedLine, firedAt, nil)
+}
+
+// firePipeWith is firePipe with extra tokens that add to or override the
+// built-ins for this one firing.
+func (e *Engine) firePipeWith(t *Trigger, matchedLine string, firedAt time.Time, extra map[string]string) {
 	// Pipe triggers have no regex captures, but built-in tokens
 	// ({c}/{target}) still substitute into action text. Copy-on-write,
 	// same as fire().
 	builtins := e.builtinTokens("")
+	for k, v := range extra {
+		builtins[k] = v
+	}
 	actions := t.Actions
 	if len(builtins) > 0 {
 		actions = make([]Action, len(t.Actions))

@@ -652,6 +652,18 @@ type Engine struct {
 	// pipeTicked marks the timers the latest buff snapshot placed by tick
 	// count; server-tick snapping leaves those alone.
 	pipeTicked map[string]bool
+	// pipeStripCandidate marks confirmed buffs that left the window with
+	// more than stripMinRemaining to go and no other buff arriving in the
+	// same snapshot; they are reported as stripped once the fade confirms.
+	pipeStripCandidate map[string]bool
+
+	// stripFn receives buff/debuff strip callouts (see strip.go).
+	// earlyFades and dispelLands are the recent evidence the debuff rule
+	// pairs up; dispelSpells caches which spell ids are dispels.
+	stripFn      func(StripEvent)
+	earlyFades   []earlyFade
+	dispelLands  map[string]time.Time
+	dispelSpells map[int]bool
 
 	// tick is the active player's server tick phase from Zeal gauge 24, and
 	// tickBase / tickSnapped remember each formula timer's own expiry and
@@ -955,7 +967,7 @@ func (e *Engine) Handle(ev logparser.LogEvent) {
 			e.removeTimer(key)
 			return
 		}
-		e.removeFadedDetrimental(data.SpellName)
+		e.removeFadedDetrimental(data.SpellName, ev.Timestamp)
 
 	case logparser.EventSpellFadeFrom:
 		// "Tashanian effect fades from Soandso." — target is in the event.
@@ -1735,6 +1747,7 @@ func (e *Engine) recentSelfCastMatches(spellName, target string, singleTarget bo
 // the cast text is shared by multiple spells), the target (the active player
 // for self-cast events), and the duration (with item/AA focus extensions).
 func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedData) {
+	e.noteSpellLandedForStrip(landedAt, data)
 	spellName := e.resolveLandedSpellName(data)
 	if spellName == "" {
 		return
@@ -2723,7 +2736,10 @@ func (e *Engine) removeOnKill(target string, viaCorpseTarget bool, trustPipeTarg
 // to another caster under the "anyone" scope; among those, the
 // soonest-expiring instance is dropped — exact for a natural expiry, a
 // best guess for an early mez break with several mobs mezzed at once.
-func (e *Engine) removeFadedDetrimental(spellName string) {
+//
+// An instance that still had stripMinRemaining to go is also offered to the
+// dispel detector (see strip.go) as a possible strip.
+func (e *Engine) removeFadedDetrimental(spellName string, at time.Time) {
 	self := normalizeNPCName(e.activePlayerName())
 	e.mu.Lock()
 	var best string
@@ -2743,12 +2759,19 @@ func (e *Engine) removeFadedDetrimental(spellName string) {
 			best, bestExp, bestTagged = k, t.ExpiresAt, tagged
 		}
 	}
+	var strips []StripEvent
+	if best != "" {
+		if t := e.timers[best]; t.ExpiresAt.Sub(at) >= stripMinRemaining {
+			strips = e.noteEarlyFadeLocked(t, at)
+		}
+	}
 	e.mu.Unlock()
 	if best == "" {
 		slog.Debug("timer-debug: worn-off matched no detrimental timer", "spell", spellName)
 		return
 	}
 	e.removeTimer(best)
+	e.emitStrips(strips)
 }
 
 // resolvePendingKillsLocked settles the ambiguous-kill queue removeOnKill

@@ -769,6 +769,34 @@ func TestPipe_BuffLandedAndFaded(t *testing.T) {
 	}
 }
 
+func TestPipe_StrippedKinds(t *testing.T) {
+	s, e := openTestEngine(t)
+	insertPipeTrigger(t, s, e, "recast {spell} on {target}", PipeCondition{
+		Kind: PipeKindDebuffStripped,
+	})
+	insertPipeTrigger(t, s, e, "rebuff {spell}", PipeCondition{
+		Kind: PipeKindBuffStripped, SpellName: "aegolism",
+	})
+
+	now := time.Now()
+	e.HandleStrip("buff", "Clarity", "Osui", now)
+	if got := len(e.GetHistory()); got != 0 {
+		t.Fatalf("spell filter ignored: %d fires", got)
+	}
+	e.HandleStrip("buff", "Aegolism", "Osui", now)
+	e.HandleStrip("debuff", "Tashanian", "a gnoll", now)
+	hist := e.GetHistory()
+	if len(hist) != 2 {
+		t.Fatalf("expected 2 fires, got %+v", hist)
+	}
+	if got := hist[0].Actions[0].Text; got != "rebuff Aegolism fired" {
+		t.Errorf("buff text = %q", got)
+	}
+	if got := hist[1].Actions[0].Text; got != "recast Tashanian on a gnoll fired" {
+		t.Errorf("debuff text = %q", got)
+	}
+}
+
 func TestPipe_PipeCommandExactMatch(t *testing.T) {
 	s, e := openTestEngine(t)
 	insertPipeTrigger(t, s, e, "pull-cmd", PipeCondition{

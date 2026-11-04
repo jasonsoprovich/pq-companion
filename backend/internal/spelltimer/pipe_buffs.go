@@ -78,10 +78,21 @@ func (e *Engine) setPipeBuffSlotsAt(character string, buffs []PipeBuff, now time
 	applies := active != "You" && strings.EqualFold(character, active)
 
 	e.mu.Lock()
+	// A buff arriving in the same snapshot another leaves is an overwrite
+	// (a stronger buff, or a recast with a new name), not a strip. After an
+	// empty snapshot every buff counts as arriving.
+	arrived := false
+	for name := range set {
+		if !e.pipeBuffSlots[name] {
+			arrived = true
+			break
+		}
+	}
 	e.pipeBuffSlots = set
 	changed := false
+	var strips []StripEvent
 	if applies {
-		changed = e.reconcilePipeBuffsLocked(active, set, ticks, now)
+		changed, strips = e.reconcilePipeBuffsLocked(active, set, ticks, arrived, now)
 	}
 	missingFromPipe, missingFromTimers := e.pipeDivergenceLocked(active, set)
 	pipeKey := divergenceKey(missingFromPipe)
@@ -99,6 +110,7 @@ func (e *Engine) setPipeBuffSlotsAt(character string, buffs []PipeBuff, now time
 	if changed {
 		e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
 	}
+	e.emitStrips(strips)
 	if logPipe && len(missingFromPipe) > 0 {
 		slog.Info("zealpipe-divergence: timers think buff is active, pipe does not",
 			"spells", missingFromPipe)
@@ -116,12 +128,19 @@ func isSelfBuff(t *ActiveTimer, active string) bool {
 }
 
 // reconcilePipeBuffsLocked applies the pipe snapshot to the active player's
-// buff timers. Returns true when any timer changed. e.mu must be held.
-func (e *Engine) reconcilePipeBuffsLocked(active string, set map[string]bool, ticks map[string]int, now time.Time) bool {
+// buff timers. Returns true when any timer changed, plus the buffs that
+// were stripped: a confirmed buff gone from the window for pipeFadeConfirm
+// with more than stripMinRemaining left, where no other buff arrived in the
+// snapshot it left in (arrived). e.mu must be held.
+func (e *Engine) reconcilePipeBuffsLocked(active string, set map[string]bool, ticks map[string]int, arrived bool, now time.Time) (bool, []StripEvent) {
 	if e.pipeConfirmed == nil {
 		e.pipeConfirmed = make(map[string]bool)
 		e.pipeMissingSince = make(map[string]time.Time)
 	}
+	if e.pipeStripCandidate == nil {
+		e.pipeStripCandidate = make(map[string]bool)
+	}
+	var strips []StripEvent
 	e.pipeTicked = make(map[string]bool)
 	changed := false
 	for key, t := range e.timers {
@@ -131,6 +150,7 @@ func (e *Engine) reconcilePipeBuffsLocked(active string, set map[string]bool, ti
 		n := ticks[t.SpellName]
 		if set[t.SpellName] {
 			delete(e.pipeMissingSince, key)
+			delete(e.pipeStripCandidate, key)
 			if n <= 0 || n >= pipePermanentTicks {
 				continue
 			}
@@ -164,6 +184,9 @@ func (e *Engine) reconcilePipeBuffsLocked(active string, set map[string]bool, ti
 		since, ok := e.pipeMissingSince[key]
 		if !ok {
 			e.pipeMissingSince[key] = now
+			if !arrived && t.ExpiresAt.Sub(now) >= stripMinRemaining {
+				e.pipeStripCandidate[key] = true
+			}
 			// How far the predicted fade was from the buff actually leaving
 			// the window. Near zero for natural expiry; large and negative
 			// for a click-off or dispel. Kept at info level as calibration
@@ -181,15 +204,20 @@ func (e *Engine) reconcilePipeBuffsLocked(active string, set map[string]bool, ti
 		t.ExpiresAt = now
 		delete(e.pipeMissingSince, key)
 		changed = true
+		if e.pipeStripCandidate[key] {
+			strips = append(strips, StripEvent{Kind: StripBuff, Spell: t.SpellName, Target: active, At: now})
+		}
+		delete(e.pipeStripCandidate, key)
 		slog.Debug("timer-debug: buff left the Zeal buff window", "spell", t.SpellName)
 	}
 	for key := range e.pipeConfirmed {
 		if _, ok := e.timers[key]; !ok {
 			delete(e.pipeConfirmed, key)
 			delete(e.pipeMissingSince, key)
+			delete(e.pipeStripCandidate, key)
 		}
 	}
-	return changed
+	return changed, strips
 }
 
 // clampToPipeTicks keeps t's remaining time inside the window n remaining

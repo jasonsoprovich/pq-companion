@@ -208,6 +208,17 @@ const (
 	// PipeKindPipeCommand fires when the player types `/pipe <Text>` in-game
 	// and the text matches (case-sensitive, exact). One-shot per /pipe entry.
 	PipeKindPipeCommand PipeConditionKind = "pipe_command"
+	// PipeKindBuffStripped fires when one of the player's own buffs leaves
+	// the buff window with more than two ticks left and nothing replaced it
+	// (dispelled, or clicked off). SpellName is optional; empty matches any
+	// buff. Needs Zeal.
+	PipeKindBuffStripped PipeConditionKind = "buff_stripped"
+	// PipeKindDebuffStripped fires when one of the player's own detrimentals
+	// is dispelled off a mob: it wore off with more than two ticks left
+	// alongside a dispel landing on that mob, or a second early fade on it.
+	// SpellName is optional; empty matches any spell. Works from the log
+	// alone, without Zeal.
+	PipeKindDebuffStripped PipeConditionKind = "debuff_stripped"
 )
 
 // PipeCondition is the typed match definition for a pipe-source trigger.
@@ -216,7 +227,7 @@ const (
 type PipeCondition struct {
 	Kind        PipeConditionKind `json:"kind"`
 	HPThreshold int               `json:"hp_threshold,omitempty"` // PipeKindTargetHPBelow: 0–100
-	SpellName   string            `json:"spell_name,omitempty"`   // PipeKindBuffLanded / PipeKindBuffFaded
+	SpellName   string            `json:"spell_name,omitempty"`   // PipeKindBuffLanded / PipeKindBuffFaded / *Stripped (optional)
 	TargetName  string            `json:"target_name,omitempty"`  // PipeKindTargetName
 	Text        string            `json:"text,omitempty"`         // PipeKindPipeCommand
 }
