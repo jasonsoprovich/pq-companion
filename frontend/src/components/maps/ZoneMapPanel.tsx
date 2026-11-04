@@ -6,7 +6,9 @@ import { usePlayerPosition } from '../../hooks/usePlayerPosition'
 import { useGroupPositions } from '../../hooks/useGroupPositions'
 import { useMapStyle } from '../../hooks/useMapStyle'
 import { useZoneMap } from '../../hooks/useZoneMap'
-import { ZoneMap, type MapHighlight } from './ZoneMap'
+import { ZoneMap, type AggroRing, type MapHighlight } from './ZoneMap'
+import { useActiveCharacterLevel } from '../../hooks/useActiveCharacterLevel'
+import { CON_HEX, levelCon } from '../../lib/conColor'
 import { ErrorBoundary } from '../ErrorBoundary'
 import {
   mapMarkerCommand,
@@ -19,11 +21,12 @@ import {
   deleteMapAnnotation,
   getMapAnnotationExport,
   getZoneNPCLocations,
+  getZoneSpawnPoints,
   listMapAnnotations,
   updateMapAnnotation,
 } from '../../services/api'
 import type {
-  MapPOI, MapPOICategory, MapRenderMode, UserAnnotation, ZoneNPCLocation,
+  MapPOI, MapPOICategory, MapRenderMode, UserAnnotation, ZoneNPCLocation, ZoneSpawnPoint,
 } from '../../types/map'
 
 // USER_SOURCE marks a pin as the user's own, so the inspector can offer edit and
@@ -168,6 +171,43 @@ export interface ZoneMapPanelProps {
   live?: boolean
 }
 
+// Rings drawn when the active character's level is unknown.
+const UNKNOWN_CON_HEX = '#94a3b8'
+
+// spawnRing turns a spawn point into its aggro ring, judged by the most
+// dangerous NPC it can roll: the widest radius, the highest level, and any
+// see-invis.
+//
+// faint follows the server's aggro check (EQMacEmu Mob::CheckWillAggro): an
+// NPC below level 18 that cons green to you won't attack on sight unless it
+// is undead or flagged aggro_pc. Sitting overrides that, which the map can't
+// know, so these are dimmed rather than hidden.
+function spawnRing(p: ZoneSpawnPoint, playerLevel: number | null): AggroRing {
+  let radius = 0
+  let top = 0
+  let seeInvis = false
+  let faint = playerLevel != null
+  for (const n of p.npcs) {
+    const lvl = Math.max(n.level, n.max_level ?? 0)
+    radius = Math.max(radius, n.aggro_radius)
+    top = Math.max(top, lvl)
+    if (n.see_invis > 0 || n.see_invis_undead > 0) seeInvis = true
+    const passive =
+      playerLevel != null && lvl < 18 && !n.undead && !n.aggro_pc &&
+      levelCon(playerLevel, lvl) === 'green'
+    if (!passive) faint = false
+  }
+  return {
+    x: p.x,
+    y: p.y,
+    z: p.z,
+    radius,
+    color: playerLevel != null ? CON_HEX[levelCon(playerLevel, top)] : UNKNOWN_CON_HEX,
+    faint,
+    seeInvis,
+  }
+}
+
 export function ZoneMapPanel({
   zoneShortName,
   height = 'fill',
@@ -277,6 +317,27 @@ export function ZoneMapPanel({
       .catch(() => { if (!cancelled) setNPCs([]) })
     return () => { cancelled = true }
   }, [live, zoneShortName])
+
+  // Aggro rings: every spawn point's aggro radius, con-coloured against the
+  // active character. Off by default — a busy zone is hundreds of circles.
+  const [aggroOn, setAggroOn] = useCachedState('maps.aggroRings', false)
+  const playerLevel = useActiveCharacterLevel()
+  const [spawnPoints, setSpawnPoints] = useState<ZoneSpawnPoint[]>([])
+  useEffect(() => {
+    if (!aggroOn || !zoneShortName) {
+      setSpawnPoints([])
+      return
+    }
+    let cancelled = false
+    getZoneSpawnPoints(zoneShortName)
+      .then((r) => { if (!cancelled) setSpawnPoints(r) })
+      .catch(() => { if (!cancelled) setSpawnPoints([]) })
+    return () => { cancelled = true }
+  }, [aggroOn, zoneShortName])
+  const aggroRings = useMemo(
+    () => spawnPoints.map((p) => spawnRing(p, playerLevel)),
+    [spawnPoints, playerLevel],
+  )
 
   const allPois = useMemo(
     () => [...pois, ...annotations.map(annotationToPOI)],
@@ -741,6 +802,37 @@ export function ZoneMapPanel({
             )
           })}
 
+          {/* Rings are derived from spawn data rather than being POIs, so
+              they sit apart from the layer list. */}
+          <div className="mt-1 border-t pt-1.5" style={{ borderColor: 'var(--color-border)' }}>
+            <button
+              onClick={() => setAggroOn((v) => !v)}
+              title={
+                'Aggro radius around every spawn point, coloured by how the ' +
+                'toughest mob there cons to your active character. Dashed: a ' +
+                "green mob under level 18 that won't attack on sight (unless you " +
+                'sit). The eye marks a spawn that can see invisible. Aggro also ' +
+                'needs a hostile faction and line of sight.'
+              }
+              className="flex w-full items-center justify-between rounded border px-1.5 py-0.5 text-[10px] font-medium"
+              style={{
+                backgroundColor: aggroOn ? 'var(--color-surface-2)' : 'transparent',
+                borderColor: aggroOn ? 'var(--color-primary)' : 'var(--color-border)',
+                color: aggroOn ? 'var(--color-primary)' : 'var(--color-muted)',
+              }}
+            >
+              <span>Aggro rings</span>
+              {aggroOn && aggroRings.length > 0 && (
+                <span className="opacity-60 tabular-nums">{aggroRings.length}</span>
+              )}
+            </button>
+            {aggroOn && playerLevel == null && (
+              <p className="mt-1 text-[9px] leading-tight" style={{ color: 'var(--color-muted)' }}>
+                No character level yet, so rings aren't con-coloured.
+              </p>
+            )}
+          </div>
+
           {/* Set apart deliberately: everything above toggles markers that
               already exist, this one creates one. A dashed border and its own
               spacing say "different kind of thing" without needing a label to
@@ -806,6 +898,7 @@ export function ZoneMapPanel({
             visibleCategories={visible}
             poiIgnoreZFade={poiIgnoreZFade}
             highlights={searchGroup ? searchGroup.spots : inspect ? inspect.spots : []}
+            aggroRings={aggroOn ? aggroRings : undefined}
             onPOIClick={(p) => {
               setSelectedNPCs([])
               setSelectedSpots([])

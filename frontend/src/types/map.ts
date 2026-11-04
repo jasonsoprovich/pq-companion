@@ -69,6 +69,32 @@ export interface ZoneNPCLocation {
   raid_target: boolean
 }
 
+// ZoneSpawnPoint mirrors db.ZoneSpawnPoint: one spawn2 point and the NPCs it
+// can roll, for the aggro-ring layer.
+export interface ZoneSpawnPoint {
+  spawn_id: number
+  // Map space, same convention as MapPOI.
+  x: number
+  y: number
+  z: number
+  npcs: SpawnPointNPC[]
+}
+
+export interface SpawnPointNPC {
+  npc_id: number
+  name: string
+  level: number
+  max_level?: number
+  // Effective aggro range (the server's default of 70 when the row has 0).
+  aggro_radius: number
+  // 0 = no, 1 = always, higher = percent chance rolled at spawn.
+  see_invis: number
+  see_invis_undead: number
+  undead: boolean
+  aggro_pc: boolean
+  pct: number
+}
+
 export interface MapStatus {
   available: boolean
   zones: number

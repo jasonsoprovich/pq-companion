@@ -263,6 +263,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/short/{name}/npcs", zones.getNPCsByShortName)
 			r.Get("/short/{name}/npc-locations", zones.getNPCLocations)
 			r.Get("/short/{name}/npc-spawns", zones.getNPCSpawns)
+			r.Get("/short/{name}/spawn-points", zones.getSpawnPoints)
 			r.Get("/short/{name}/connections", zones.getConnections)
 			r.Get("/short/{name}/ground-spawns", zones.getGroundSpawns)
 			r.Get("/short/{name}/forage", zones.getForage)

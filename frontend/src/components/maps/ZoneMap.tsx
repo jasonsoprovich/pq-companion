@@ -20,6 +20,19 @@ export interface MapHighlight {
   label?: string
 }
 
+// AggroRing is a circle of an NPC's aggro radius around its spawn point.
+// color is the con colour. faint marks a spawn that won't aggro on you by
+// itself (the server's green-under-18 rule). seeInvis adds an eye marker.
+export interface AggroRing {
+  x: number
+  y: number
+  z: number
+  radius: number
+  color: string
+  faint?: boolean
+  seeInvis?: boolean
+}
+
 // ZoneMap draws a zone's geometry and POIs on a canvas with pan/zoom and a
 // depth control.
 //
@@ -59,6 +72,8 @@ export interface ZoneMapProps {
   // than a single pin because an NPC routinely has several spawn points, and
   // showing only one would quietly imply it is the only place it appears.
   highlights?: MapHighlight[]
+  // aggroRings are drawn over the geometry and under every pin.
+  aggroRings?: AggroRing[]
   // playerPos is the live position from ZealPipes, when connected. Carries its
   // own zone, because a position from a zone other than the one on screen must
   // not be drawn — it would put the arrow at plausible-looking coordinates on
@@ -291,6 +306,7 @@ export function ZoneMap({
   visibleCategories,
   poiIgnoreZFade = false,
   highlights,
+  aggroRings,
   playerPos,
   groupMembers,
   followDepth = true,
@@ -599,6 +615,61 @@ export function ZoneMap({
       }
     }
 
+    // ── aggro rings ──
+    //
+    // Under the pins so a dense camp of rings never hides a zone line or
+    // vendor. Fill is very light: overlapping rings should read as "deeper
+    // trouble" without turning a camp into a solid blob.
+    if (aggroRings && aggroRings.length > 0) {
+      const [ox] = toScreen(0, 0)
+      const [ux] = toScreen(1, 0)
+      const pxPerUnit = Math.abs(ux - ox)
+      ctx.save()
+      for (const r of aggroRings) {
+        const [px, py] = toScreen(r.x, r.y)
+        const rp = r.radius * pxPerUnit
+        if (px + rp < 0 || py + rp < 0 || px - rp > size.w || py - rp > size.h) continue
+        const dimmed = depth ? r.z < depth.lo || r.z > depth.hi : false
+        const a = (dimmed ? 0.3 : 1) * (r.faint ? 0.45 : 1)
+        ctx.globalAlpha = a
+        ctx.beginPath()
+        ctx.arc(px, py, Math.max(rp, 2), 0, Math.PI * 2)
+        ctx.fillStyle = r.color
+        ctx.globalAlpha = a * 0.08
+        ctx.fill()
+        ctx.globalAlpha = a * 0.7
+        ctx.lineWidth = 1.2
+        ctx.strokeStyle = r.color
+        ctx.setLineDash(r.faint ? [3, 3] : [])
+        ctx.stroke()
+        ctx.setLineDash([])
+        ctx.globalAlpha = a
+        ctx.beginPath()
+        ctx.arc(px, py, 2, 0, Math.PI * 2)
+        ctx.fill()
+        if (r.seeInvis && view.zoom > 1.2) {
+          // An eye: almond outline with a pupil, above-right of the spawn.
+          const ex = px + 7
+          const ey = py - 7
+          ctx.beginPath()
+          ctx.moveTo(ex - 5, ey)
+          ctx.quadraticCurveTo(ex, ey - 4.5, ex + 5, ey)
+          ctx.quadraticCurveTo(ex, ey + 4.5, ex - 5, ey)
+          ctx.lineWidth = 2.6
+          ctx.strokeStyle = 'rgba(0,0,0,0.75)'
+          ctx.stroke()
+          ctx.lineWidth = 1.2
+          ctx.strokeStyle = '#e2e8f0'
+          ctx.stroke()
+          ctx.beginPath()
+          ctx.arc(ex, ey, 1.4, 0, Math.PI * 2)
+          ctx.fillStyle = '#e2e8f0'
+          ctx.fill()
+        }
+      }
+      ctx.restore()
+    }
+
     // ── POIs ──
     //
     // Labels are decluttered: one is skipped if its box overlaps a label
@@ -782,7 +853,7 @@ export function ZoneMap({
       ctx.fill()
       ctx.restore()
     }
-  }, [geometry, shown, zone, size, toScreen, view.zoom, depth, highlights, playerPos, groupMembers, showLabels, detail, showDetail, outline, external, mode, zScale, paths])
+  }, [geometry, shown, zone, size, toScreen, view.zoom, depth, highlights, aggroRings, playerPos, groupMembers, showLabels, detail, showDetail, outline, external, mode, zScale, paths])
 
   // Wheel zoom is attached natively with passive:false. React registers wheel
   // as a passive listener, so preventDefault() there is ignored — it never

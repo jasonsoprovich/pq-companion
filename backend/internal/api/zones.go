@@ -136,6 +136,18 @@ func (h *zonesHandler) getNPCLocations(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+// getSpawnPoints backs the map's spawn layer and aggro rings: every spawn
+// point in the zone with the NPCs it can roll.
+func (h *zonesHandler) getSpawnPoints(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	result, err := h.db.GetZoneSpawnPoints(name)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
 // getNPCSpawns backs the Zones → NPCs tab's spawn % column: each NPC's share
 // of its spawn group(s) in the current era, keyed by npc id.
 func (h *zonesHandler) getNPCSpawns(w http.ResponseWriter, r *http.Request) {
