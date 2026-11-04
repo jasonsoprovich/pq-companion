@@ -79,6 +79,9 @@ type Config struct {
 	// as "use the default"; "keep forever" is stored as -1.
 	ChatRetentionDays int `yaml:"chat_retention_days" json:"chat_retention_days"`
 
+	// RaidReplay configures the raid replay recorder (see package raidtrack).
+	RaidReplay RaidReplaySettings `yaml:"raid_replay" json:"raid_replay"`
+
 	// LogTrim configures Settings > Logs "Archive & Trim" and the large-log
 	// warning threshold.
 	LogTrim LogTrimSettings `yaml:"log_trim" json:"log_trim"`
@@ -329,6 +332,16 @@ func DefaultDPSClassColors() DPSClassColors {
 		Beastlord:    "#03B78A",
 		Unknown:      "#B2B2B2",
 	}
+}
+
+// RaidReplaySettings configures raid replay recording.
+type RaidReplaySettings struct {
+	// Disabled stops recording. Stored inverted so the zero value means on.
+	Disabled bool `yaml:"disabled,omitempty" json:"disabled"`
+	// RetentionDays is how many days of recordings to keep. Same convention
+	// as ChatRetentionDays: 0 means the default (30), negative keeps them
+	// forever.
+	RetentionDays int `yaml:"retention_days" json:"retention_days"`
 }
 
 // CombatSettings configures the combat tracker and persisted fight history.
@@ -1588,6 +1601,7 @@ func defaults() Config {
 		},
 		CHChain:           DefaultCHChainSettings(),
 		ChatRetentionDays: 30,
+		RaidReplay:        RaidReplaySettings{RetentionDays: 30},
 		LogTrim: LogTrimSettings{
 			Mode:     LogTrimModeDays,
 			KeepDays: DefaultLogTrimKeepDays,
@@ -1709,6 +1723,10 @@ func applyDefaults(cfg *Config) bool {
 	// (keep forever).
 	if cfg.ChatRetentionDays == 0 {
 		cfg.ChatRetentionDays = 30
+		changed = true
+	}
+	if cfg.RaidReplay.RetentionDays == 0 {
+		cfg.RaidReplay.RetentionDays = 30
 		changed = true
 	}
 	// Log trim: same "0 means use the default" convention. WarnMB < 0 is a

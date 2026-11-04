@@ -38,6 +38,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/quarm"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/raidcomp"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/raidthreat"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/raidtrack"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/regen"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/respawn"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/rolltracker"
@@ -58,7 +59,7 @@ import (
 // NewRouter builds and returns the chi router wired to all backend components.
 // combatHistory may be nil when persistence is disabled (e.g. user.db open
 // failed); in that case the history endpoints respond 503.
-func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher *zeal.Watcher, pipeSupervisor *zealpipe.Supervisor, backupMgr *backup.Manager, tailer *logparser.Tailer, replayer *logparser.Replayer, npcTracker *overlay.NPCTracker, combatTracker *combat.Tracker, combatHistory *combat.HistoryStore, threatTracker *threat.Tracker, raidThreatAssembler *raidthreat.Assembler, timerEngine *spelltimer.Engine, respawnEngine *respawn.Engine, triggerStore *trigger.Store, triggerEngine *trigger.Engine, charStore *character.Store, rollTracker *rolltracker.Tracker, appBackupMgr *appbackup.Manager, playerStore *players.Store, chatStore *chat.Store, lootStore *loot.Store, backfillRegistry *backfill.Registry, keyringStore *keyring.Store, keyringMaster []keyring.MasterEntry, lockoutStore *lockout.Store, blockbuffStore *blockbuff.Store, sb *sandbox.Sandbox, savedQueryStore *savedquery.Store, skillsStore *skills.Store, traderStore *trader.Store, traderCapturer *trader.Capturer, popflagStore *popflag.Store, wishlistWatcher *wishlistwatch.Watcher, changelogEntries []changelog.Entry, factionEngine *factiontracker.Engine, emoteService *emote.Service, mapStore *maps.Store, mapAnnotations *maps.AnnotationStore, progressStore *progress.Store, mystatsStore *mystats.Store, raidStore *raidcomp.Store, roster *raidcomp.Roster, killStore *killtracker.Store, killCounters *killtracker.Engine, itemDisplay *itemdisplay.Tracker, petTracker *petoverlay.Tracker, regenTracker *regen.Tracker, liveZone func() (int, string), actualPort int) http.Handler {
+func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher *zeal.Watcher, pipeSupervisor *zealpipe.Supervisor, backupMgr *backup.Manager, tailer *logparser.Tailer, replayer *logparser.Replayer, npcTracker *overlay.NPCTracker, combatTracker *combat.Tracker, combatHistory *combat.HistoryStore, threatTracker *threat.Tracker, raidThreatAssembler *raidthreat.Assembler, timerEngine *spelltimer.Engine, respawnEngine *respawn.Engine, triggerStore *trigger.Store, triggerEngine *trigger.Engine, charStore *character.Store, rollTracker *rolltracker.Tracker, appBackupMgr *appbackup.Manager, playerStore *players.Store, chatStore *chat.Store, lootStore *loot.Store, backfillRegistry *backfill.Registry, keyringStore *keyring.Store, keyringMaster []keyring.MasterEntry, lockoutStore *lockout.Store, blockbuffStore *blockbuff.Store, sb *sandbox.Sandbox, savedQueryStore *savedquery.Store, skillsStore *skills.Store, traderStore *trader.Store, traderCapturer *trader.Capturer, popflagStore *popflag.Store, wishlistWatcher *wishlistwatch.Watcher, changelogEntries []changelog.Entry, factionEngine *factiontracker.Engine, emoteService *emote.Service, mapStore *maps.Store, mapAnnotations *maps.AnnotationStore, progressStore *progress.Store, mystatsStore *mystats.Store, raidStore *raidcomp.Store, roster *raidcomp.Roster, killStore *killtracker.Store, killCounters *killtracker.Engine, itemDisplay *itemdisplay.Tracker, petTracker *petoverlay.Tracker, regenTracker *regen.Tracker, raidTrackStore *raidtrack.Store, liveZone func() (int, string), actualPort int) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
@@ -117,6 +118,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	overlayH := &overlayHandler{npcTracker: npcTracker, petTracker: petTracker}
 	combatH := &combatHandler{tracker: combatTracker, historyStore: combatHistory}
 	regenH := &regenHandler{tracker: regenTracker}
+	raidReplayH := &raidReplayHandler{store: raidTrackStore, db: database}
 	threatH := &threatHandler{tracker: threatTracker}
 	raidThreatH := &raidThreatHandler{assembler: raidThreatAssembler}
 	timerH := &timerHandler{engine: timerEngine}
@@ -541,6 +543,12 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Post("/cleanup", logH.cleanup)
 			r.Post("/raw-feed", logH.rawFeed)
 			r.Post("/export-debug", logH.exportDebug)
+		})
+		r.Route("/raidreplay", func(r chi.Router) {
+			r.Get("/sessions", raidReplayH.sessions)
+			r.Delete("/sessions", raidReplayH.deleteAll)
+			r.Get("/sessions/{id}", raidReplayH.recording)
+			r.Delete("/sessions/{id}", raidReplayH.deleteSession)
 		})
 		r.Route("/replay", func(r chi.Router) {
 			r.Get("/files", replayH.files)

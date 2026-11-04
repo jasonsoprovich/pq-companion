@@ -49,6 +49,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/progress"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/raidcomp"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/raidthreat"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/raidtrack"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/regen"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/respawn"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/rolltracker"
@@ -1683,6 +1684,42 @@ func main() {
 	// Kill counters: user-defined counts (with the built-in Bertoxxulous
 	// preset) driven by kills and raw lines; live state persists in user.db.
 	// Built ahead of the pipe supervisor, which feeds it Zeal death events.
+	// Raid replay: samples Zeal raid frames into user.db while in a raid.
+	// Non-fatal — failing here only disables recording.
+	var raidRecorder *raidtrack.Recorder
+	raidTrackStore, err := raidtrack.OpenStore(filepath.Join(home, ".pq-companion", "user.db"))
+	if err != nil {
+		slog.Warn("open raid replay store (disabled)", "err", err)
+		raidTrackStore = nil
+	} else {
+		defer raidTrackStore.Close()
+		raidRecorder = raidtrack.NewRecorder(raidTrackStore, func() config.RaidReplaySettings {
+			return cfgMgr.Get().RaidReplay
+		})
+		go raidRecorder.Start(context.Background())
+		go func() {
+			prune := func() {
+				days := cfgMgr.Get().RaidReplay.RetentionDays
+				if days <= 0 {
+					return // keep forever
+				}
+				if n, err := raidTrackStore.PruneOlderThan(time.Now().AddDate(0, 0, -days)); err != nil {
+					slog.Warn("raid replay retention prune failed", "err", err)
+				} else if n > 0 {
+					slog.Info("raid replay retention prune", "sessions", n, "older_than_days", days)
+				}
+			}
+			// Off the startup path: the first sweep waits a minute.
+			time.Sleep(time.Minute)
+			prune()
+			ticker := time.NewTicker(24 * time.Hour)
+			defer ticker.Stop()
+			for range ticker.C {
+				prune()
+			}
+		}()
+	}
+
 	killCounters := killtracker.NewEngine(killStore, hub)
 
 	pipeSupervisor := zealpipe.NewSupervisor(func(env zealpipe.Envelope) {
@@ -1838,6 +1875,9 @@ func main() {
 				})
 			}
 			rosterKeeper.Set(pipeZoneID, pipeZoneShort, raidMembers)
+			if raidRecorder != nil {
+				raidRecorder.SetRaid(env.Character, pipeZoneShort, raidTrackMembers(members))
+			}
 			// Trigger for the Raid Readiness overlay: like lockouts.snapshot /
 			// keyring.snapshot, this carries no payload — the client re-fetches
 			// the roster + re-runs the comp check rather than trusting a
@@ -2128,6 +2168,9 @@ func main() {
 		guard.run("rollTracker", func() { rollTracker.Handle(ev) })
 		durable("factionEngine", func() { factionEngine.Handle(ev) })
 		durable("killCounters", func() { killCounters.Handle(ev) })
+		if raidRecorder != nil {
+			durable("raidRecorder", func() { raidRecorder.Handle(ev) })
+		}
 		if killLogger != nil {
 			durable("killLogger", func() { killLogger.HandleEvent(ev) })
 		}
@@ -2436,7 +2479,7 @@ func main() {
 	}
 	defer mapStore.Close()
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, replayer, npcTracker, combatTracker, historyStore, threatTracker, raidThreatAssembler, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, blockbuffStore, sb, savedQueryStore, skillsStore, traderStore, traderCapturer, popflagStore, wishlistWatcher, changelogEntries, factionEngine, emoteService, mapStore, mapAnnotations, progressStore, mystatsStore, raidStore, rosterKeeper, killStore, killCounters, itemDisplayTracker, petTracker, regenTracker, liveZoneFn, actualPort)
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, replayer, npcTracker, combatTracker, historyStore, threatTracker, raidThreatAssembler, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, blockbuffStore, sb, savedQueryStore, skillsStore, traderStore, traderCapturer, popflagStore, wishlistWatcher, changelogEntries, factionEngine, emoteService, mapStore, mapAnnotations, progressStore, mystatsStore, raidStore, rosterKeeper, killStore, killCounters, itemDisplayTracker, petTracker, regenTracker, raidTrackStore, liveZoneFn, actualPort)
 
 	// Raid disband watcher. Zeal emits MsgRaid only while is_in_raid(); on
 	// disband the envelopes just STOP — there is no "raid over" message on the
