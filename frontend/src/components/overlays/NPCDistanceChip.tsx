@@ -1,5 +1,8 @@
 import React from 'react'
 import type { NPCTargetDistance } from '../../hooks/useNPCTargetDistance'
+import { useLiveValue } from '../../hooks/useLiveValue'
+import { LIVE_TTL, STALE_OPACITY, fmtLiveAge } from '../../lib/live'
+import { useInZealStaleFrame } from './ZealStaleFrame'
 
 // Range colours, fixed rather than theme tokens: the floating overlay window
 // can't rely on the app's theme stylesheet (see NPCCasterSummarySection).
@@ -40,6 +43,8 @@ function rangeLine(label: string, distance: number, range: number): string {
 // NPCDistanceChip shows the live player→target distance, coloured against the
 // user's configured cast range. Renders nothing when this Zeal build doesn't
 // report target info, and "n/a" when Zeal withheld the position (250+ away).
+// Once Zeal stops updating it the chip dims with its age, then hides
+// (LIVE_TTL.targetDistance).
 //
 // size 'md' matches the popout overlay's stat chips (LV, class, resists: 12px
 // value, 10px uppercase label); 'sm' matches the dashboard panel's 10px badges.
@@ -50,7 +55,12 @@ export default function NPCDistanceChip({
   dist: NPCTargetDistance
   size?: 'sm' | 'md'
 }): React.ReactElement | null {
-  if (!dist.has_descriptors) return null
+  const live = useLiveValue(dist.at, LIVE_TTL.targetDistance)
+  const inStaleFrame = useInZealStaleFrame()
+  const aged = dist.at ? live.freshness : 'fresh'
+  if (!dist.has_descriptors || aged === 'gone') return null
+  const stale = aged === 'stale'
+  const staleNote = stale ? `\nZeal hasn't updated this since then (${fmtLiveAge(live.ageMs)}).` : ''
 
   const md = size === 'md'
   const base: React.CSSProperties = {
@@ -64,6 +74,7 @@ export default function NPCDistanceChip({
     fontWeight: 600,
     backgroundColor: md ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.08)',
     fontVariantNumeric: 'tabular-nums',
+    opacity: stale && !inStaleFrame ? STALE_OPACITY : undefined,
   }
   const label = (text: string): React.ReactNode =>
     md ? (
@@ -85,7 +96,7 @@ export default function NPCDistanceChip({
     return (
       <span
         style={{ ...base, color: MUTED }}
-        title="Target is 250+ units away. Zeal only reports a target's position within 250 units."
+        title={"Target is 250+ units away. Zeal only reports a target's position within 250 units." + staleNote}
       >
         {label('Dist')}
         n/a
@@ -103,7 +114,7 @@ export default function NPCDistanceChip({
   )
 
   return (
-    <span style={{ ...base, color: rangeColor(d, dist.castRange) }} title={lines.join('\n')}>
+    <span style={{ ...base, color: rangeColor(d, dist.castRange) }} title={lines.join('\n') + staleNote}>
       {label('Dist')}
       {d}
       {dist.rangedRange > 0 && (

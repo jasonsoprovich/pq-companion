@@ -30,6 +30,7 @@ import { ItemIcon } from '../components/Icon'
 import { ResistChip } from '../components/ResistChip'
 import NPCCasterSummarySection from '../components/overlays/NPCCasterSummarySection'
 import NPCDistanceChip from '../components/overlays/NPCDistanceChip'
+import ZealStaleFrame, { useInZealStaleFrame } from '../components/overlays/ZealStaleFrame'
 import { NPCOutlineFrame, NPCOutlineLabels } from '../components/overlays/NPCOutline'
 import TargetTimerList from '../components/overlays/TargetTimerList'
 import TargetPlayerCard from '../components/overlays/TargetPlayerCard'
@@ -841,7 +842,9 @@ export default function NPCOverlayWindowPage(): React.ReactElement {
           <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', margin: 0 }}>Loading…</p>
         </div>
       ) : target.has_target ? (
-        <NPCContent state={target} view={view} sections={sections} wishlistItemIds={wishlistItemIds} charLevel={charLevel} dist={pinned ? null : dist} />
+        <ZealStaleFrame at={pinned ? undefined : target.target_at}>
+          <NPCContent state={target} view={view} sections={sections} wishlistItemIds={wishlistItemIds} charLevel={charLevel} dist={pinned ? null : dist} />
+        </ZealStaleFrame>
       ) : (
         <NoTarget zone={target.current_zone} chrome={chrome} />
       )}
@@ -854,9 +857,11 @@ export default function NPCOverlayWindowPage(): React.ReactElement {
 // no stamp and never ages.
 function WindowHPBar({ percent, at }: { percent: number; at?: string }): React.ReactElement | null {
   const live = useLiveValue(at, LIVE_TTL.targetHP)
+  // A dimmed ZealStaleFrame already says how old everything is.
+  const inStaleFrame = useInZealStaleFrame()
   const aged = at ? live.freshness : 'fresh'
   if (aged === 'gone') return null
-  const stale = aged === 'stale'
+  const stale = aged === 'stale' && !inStaleFrame
   return (
     <div style={{ marginTop: 5, opacity: stale ? STALE_OPACITY : 1 }}>
       <div

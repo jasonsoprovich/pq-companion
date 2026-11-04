@@ -1097,11 +1097,11 @@ func TestNPCTracker_PipeHPStamp(t *testing.T) {
 
 	// Due on the heartbeat: the next repeat is broadcast.
 	tr.mu.Lock()
-	tr.hpSentAt = time.Now().Add(-live.Heartbeat)
+	tr.liveSentAt = time.Now().Add(-live.Heartbeat)
 	tr.mu.Unlock()
 	tr.SetPipeHPPercent(80)
 	tr.mu.RLock()
-	sent := tr.hpSentAt
+	sent := tr.liveSentAt
 	tr.mu.RUnlock()
 	if time.Since(sent) > time.Second {
 		t.Fatal("due repeat wasn't sent")
@@ -1110,5 +1110,74 @@ func TestNPCTracker_PipeHPStamp(t *testing.T) {
 	tr.ResetPipeFields()
 	if st := tr.GetState(); st.HPAt != nil || st.HPSource != "" || st.HPPercent != -1 {
 		t.Fatalf("reset left %+v %q", st.HPAt, st.HPSource)
+	}
+}
+
+func TestNPCTracker_PipeTargetStamp(t *testing.T) {
+	tr := newTestTracker()
+
+	// A target from the log has no feed, so no stamp.
+	tr.setTarget("an orc")
+	if st := tr.GetState(); st.TargetAt != nil || st.TargetSource != "" {
+		t.Fatalf("log target stamped: %v %q", st.TargetAt, st.TargetSource)
+	}
+
+	tr.SetPipeTarget("a gnoll")
+	st := tr.GetState()
+	if st.TargetName != "a gnoll" || st.TargetAt == nil || st.TargetSource != live.SourcePipe {
+		t.Fatalf("pipe target: %q %v %q", st.TargetName, st.TargetAt, st.TargetSource)
+	}
+	first := *st.TargetAt
+
+	// The ~10 Hz repeats refresh the stamp; the heartbeat re-sends it.
+	time.Sleep(5 * time.Millisecond)
+	tr.SetPipeTarget("a gnoll")
+	if st := tr.GetState(); !st.TargetAt.After(first) {
+		t.Fatal("repeat didn't refresh target_at")
+	}
+	tr.mu.Lock()
+	tr.liveSentAt = time.Now().Add(-live.Heartbeat)
+	tr.mu.Unlock()
+	tr.SetPipeTarget("a gnoll")
+	tr.mu.RLock()
+	sent := tr.liveSentAt
+	tr.mu.RUnlock()
+	if time.Since(sent) > time.Second {
+		t.Fatal("due repeat wasn't sent")
+	}
+}
+
+func TestNPCTracker_DistanceStamp(t *testing.T) {
+	tr := newTestTracker()
+	tr.updateDistance(true, 40, true)
+	d := tr.GetDistance()
+	if d.At == nil || d.Source != live.SourcePipe || d.Distance == nil || *d.Distance != 40 {
+		t.Fatalf("distance = %+v", d)
+	}
+	first := *d.At
+	tr.mu.Lock()
+	sentAt := tr.distSentAt
+	tr.mu.Unlock()
+
+	// Same reading inside the heartbeat: stamp refreshed, not re-sent.
+	time.Sleep(5 * time.Millisecond)
+	tr.updateDistance(true, 40, true)
+	tr.mu.Lock()
+	resent := tr.distSentAt != sentAt
+	tr.mu.Unlock()
+	if d := tr.GetDistance(); resent || !d.At.After(first) {
+		t.Fatalf("resent=%v at=%v", resent, d.At)
+	}
+
+	// Due: re-sent.
+	tr.mu.Lock()
+	tr.distSentAt = time.Now().Add(-live.Heartbeat)
+	tr.mu.Unlock()
+	tr.updateDistance(true, 40, true)
+	tr.mu.Lock()
+	sentAt = tr.distSentAt
+	tr.mu.Unlock()
+	if time.Since(sentAt) > time.Second {
+		t.Fatal("due distance wasn't sent")
 	}
 }

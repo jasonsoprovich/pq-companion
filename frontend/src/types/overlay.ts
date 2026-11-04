@@ -123,6 +123,10 @@ export interface TargetState {
   // confirmed it and from which feed. Absent while it's unknown.
   hp_at?: string
   hp_source?: string
+  // target_at / target_source stamp the target itself when Zeal picked it;
+  // absent for a target from the log.
+  target_at?: string
+  target_source?: string
   pet_owner?: string
   // is_corpse is true when the target name ended in "'s corpse" — the lookup
   // strips the suffix to find the underlying NPC, but the HP bar should pin
@@ -148,4 +152,7 @@ export interface TargetState {
 export interface TargetDistance {
   distance: number | null
   has_descriptors: boolean
+  // at / source stamp the reading (lib/live.ts); absent before the first one.
+  at?: string
+  source?: string
 }

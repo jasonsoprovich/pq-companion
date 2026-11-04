@@ -37,6 +37,7 @@ import { ItemIcon } from '../Icon'
 import { ResistChip } from '../ResistChip'
 import NPCCasterSummarySection from './NPCCasterSummarySection'
 import NPCDistanceChip from './NPCDistanceChip'
+import ZealStaleFrame, { useInZealStaleFrame } from './ZealStaleFrame'
 import { NPCOutlineFrame, NPCOutlineLabels } from './NPCOutline'
 import TargetTimerList from './TargetTimerList'
 import TargetPlayerCard from './TargetPlayerCard'
@@ -140,10 +141,12 @@ function hpBarColor(percent: number): string {
 function TargetHPBar({ percent, at }: { percent: number; at?: string }): React.ReactElement | null {
   const color = hpBarColor(percent)
   const live = useLiveValue(at, LIVE_TTL.targetHP)
+  // A dimmed ZealStaleFrame already says how old everything is.
+  const inStaleFrame = useInZealStaleFrame()
   // A corpse's pinned 0% has no stamp and never ages.
   const aged = at ? live.freshness : 'fresh'
   if (aged === 'gone') return null
-  const stale = aged === 'stale'
+  const stale = aged === 'stale' && !inStaleFrame
   return (
     <div className="mt-2" style={stale ? { opacity: STALE_OPACITY } : undefined}>
       <div
@@ -964,7 +967,9 @@ export default function NPCPanel({
             <p className="text-sm" style={{ color: 'var(--color-muted)' }}>Loading…</p>
           </div>
         ) : target.has_target ? (
-          <NPCCard state={target} view={view} sections={sections} onItemClick={handleItemClick} wishlistItemIds={wishlistItemIds} charLevel={charLevel} dist={pinned ? null : dist} />
+          <ZealStaleFrame at={pinned ? undefined : target.target_at}>
+            <NPCCard state={target} view={view} sections={sections} onItemClick={handleItemClick} wishlistItemIds={wishlistItemIds} charLevel={charLevel} dist={pinned ? null : dist} />
+          </ZealStaleFrame>
         ) : (
           <NoTarget zone={target.current_zone} />
         )}

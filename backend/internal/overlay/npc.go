@@ -42,6 +42,10 @@ type TargetDistance struct {
 	// of the 250-unit reporting range; with it false, the distance readout
 	// isn't available at all and the frontend hides it.
 	HasDescriptors bool `json:"has_descriptors"`
+	// At and Source stamp the reading per the live-value convention: when
+	// Zeal last reported it. Nil when no reading has arrived.
+	At     *time.Time `json:"at,omitempty"`
+	Source string     `json:"source,omitempty"`
 }
 
 // distanceMinInterval caps distance broadcasts (the pipe ticks at ~10 Hz).
@@ -103,6 +107,11 @@ type TargetState struct {
 	// while HPPercent is unknown or a corpse's pinned 0.
 	HPAt     *time.Time `json:"hp_at,omitempty"`
 	HPSource string     `json:"hp_source,omitempty"`
+	// TargetAt and TargetSource stamp the target itself: when Zeal last
+	// confirmed it. Nil for a target picked from the log, which has no feed
+	// to go quiet.
+	TargetAt     *time.Time `json:"target_at,omitempty"`
+	TargetSource string     `json:"target_source,omitempty"`
 	// PetOwner is the target's owner name when the target is a summoned pet.
 	// Empty for non-pet targets. Populated from the Zeal pipe.
 	PetOwner string `json:"pet_owner,omitempty"`
@@ -164,8 +173,9 @@ type NPCTracker struct {
 	// MsgPlayer snapshot (nil = older Zeal, no target, or not yet reported for
 	// the current target). Held under mu.
 	lastPipeTargetID *int
-	// hpSentAt is when an HP stamp was last broadcast (see SetPipeHPPercent).
-	hpSentAt time.Time
+	// liveSentAt is when the state's live stamps (HPAt, TargetAt) were last
+	// broadcast; repeats are re-sent on the live heartbeat.
+	liveSentAt time.Time
 
 	// variantCache memoises the resolved NPC / variant set for a spawn id.
 	// Re-targeting the same live mob then reuses the first resolution instead
@@ -381,12 +391,34 @@ func (t *NPCTracker) Handle(ev logparser.LogEvent) {
 // doesn't cause repeated DB lookups or broadcasts. An empty name is a no-op
 // (clearing is handled separately via ClearPipeTarget so the pipe stream's
 // transient empties don't fight log-driven state).
+//
+// Every call refreshes TargetAt; an unchanged target is re-broadcast on the
+// live heartbeat, so the overlay can tell a quiet pipe from a held target.
 func (t *NPCTracker) SetPipeTarget(displayName string) {
 	displayName = strings.TrimSpace(displayName)
 	if displayName == "" {
 		return
 	}
-	t.setTarget(displayName)
+	now := time.Now()
+	if t.setTargetStamped(displayName, &now) {
+		return
+	}
+	t.mu.Lock()
+	if !t.st.HasTarget || t.st.TargetName != displayName {
+		t.mu.Unlock()
+		return
+	}
+	first := t.st.TargetAt == nil
+	t.st.TargetAt = &now
+	t.st.TargetSource = live.SourcePipe
+	if !first && !live.Due(t.liveSentAt, now) {
+		t.mu.Unlock()
+		return
+	}
+	t.liveSentAt = now
+	snap := t.st
+	t.mu.Unlock()
+	t.broadcast(snap)
 }
 
 // ClearPipeTarget clears the current target. Called when the pipe reports an
@@ -539,22 +571,26 @@ func copyInt(p *int) *int {
 }
 
 // updateDistance publishes the player→target distance on its own lightweight
-// event: on any change in availability immediately, otherwise only when the
+// event: on any change in availability immediately, otherwise when the
 // rounded distance moved and distanceMinInterval has passed since the last
-// send.
+// send, or on the live heartbeat. Every call refreshes At.
 func (t *NPCTracker) updateDistance(hasDesc bool, dist float64, ok bool) {
-	next := TargetDistance{HasDescriptors: hasDesc}
+	now := time.Now()
+	next := TargetDistance{HasDescriptors: hasDesc, At: &now, Source: live.SourcePipe}
 	if ok {
 		d := math.Round(dist)
 		next.Distance = &d
 	}
-	now := time.Now()
 	t.mu.Lock()
 	prev := t.dist
 	availability := !t.distSentOnce || prev.HasDescriptors != next.HasDescriptors ||
 		(prev.Distance == nil) != (next.Distance == nil)
 	moved := prev.Distance != nil && next.Distance != nil && *prev.Distance != *next.Distance
-	if !availability && !(moved && now.Sub(t.distSentAt) >= distanceMinInterval) {
+	if !availability && !(moved && now.Sub(t.distSentAt) >= distanceMinInterval) &&
+		!live.Due(t.distSentAt, now) {
+		// Not sent, but the reading is confirmed: keep its value, refresh
+		// the stamp for GET /distance.
+		t.dist.At, t.dist.Source = next.At, next.Source
 		t.mu.Unlock()
 		return
 	}
@@ -734,7 +770,7 @@ func (t *NPCTracker) SetPipeHPPercent(percent int) {
 	changed := t.st.HPPercent != percent || t.st.HPAt == nil
 	t.st.HPAt = &now
 	t.st.HPSource = live.SourcePipe
-	if !changed && !live.Due(t.hpSentAt, now) {
+	if !changed && !live.Due(t.liveSentAt, now) {
 		t.mu.Unlock()
 		return
 	}
@@ -742,7 +778,7 @@ func (t *NPCTracker) SetPipeHPPercent(percent int) {
 		t.st.HPPercent = percent
 		t.st.LastUpdated = now
 	}
-	t.hpSentAt = now
+	t.liveSentAt = now
 	snap := t.st
 	t.mu.Unlock()
 	t.broadcast(snap)
@@ -912,6 +948,13 @@ func (t *NPCTracker) flushVariantCacheLocked() {
 }
 
 func (t *NPCTracker) setTarget(displayName string) {
+	t.setTargetStamped(displayName, nil)
+}
+
+// setTargetStamped switches to displayName and broadcasts, reporting whether
+// it did. at is the Zeal confirmation time for a pipe target, nil for one
+// from the log.
+func (t *NPCTracker) setTargetStamped(displayName string, at *time.Time) bool {
 	// Avoid redundant DB lookups when the same target is already tracked.
 	t.mu.RLock()
 	same := t.st.HasTarget && t.st.TargetName == displayName
@@ -923,13 +966,13 @@ func (t *NPCTracker) setTarget(displayName string) {
 	lastDesc := t.lastDesc
 	t.mu.RUnlock()
 	if same {
-		return
+		return false
 	}
 	// Guard: reject names that exactly match the current zone name.  Zone
 	// entry lines should never produce a target update, but this provides a
 	// belt-and-suspenders defence against any false-positive from the parser.
 	if zone != "" && displayName == zone {
-		return
+		return false
 	}
 
 	// Corpses target as "X's corpse" via ZealPipes — strip the suffix for DB
@@ -981,10 +1024,16 @@ func (t *NPCTracker) setTarget(displayName string) {
 		TargetType:       targetType,
 		LastUpdated:      time.Now(),
 	}
+	if at != nil {
+		t.st.TargetAt = at
+		t.st.TargetSource = live.SourcePipe
+		t.liveSentAt = *at
+	}
 	snap := t.st
 	t.mu.Unlock()
 
 	t.broadcast(snap)
+	return true
 }
 
 // stripCorpseSuffix detects an "X's corpse" target name (Zeal sends this when

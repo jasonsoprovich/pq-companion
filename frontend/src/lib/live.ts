@@ -18,6 +18,11 @@ export interface LiveTTL {
 export const LIVE_TTL = {
   // Zeal target HP%: labels arrive ~10 Hz while the pipe is healthy.
   targetHP: { staleMs: 6000, goneMs: 20000 },
+  // The Zeal target itself: dimmed when Zeal goes quiet, but kept until Zeal
+  // or the log picks a new one.
+  target: { staleMs: 6000, goneMs: Infinity },
+  // Player→target distance from Zeal.
+  targetDistance: { staleMs: 6000, goneMs: 20000 },
   // Zeal pet HP%.
   petHP: { staleMs: 6000, goneMs: 20000 },
   // A `/pet health` reply is a one-off reading; it ages but stays shown.
@@ -41,10 +46,15 @@ export function freshness(ageMs: number, ttl: LiveTTL): Freshness {
   return 'fresh'
 }
 
+// fmtAge is a short age: "12s", "3m", "2h".
+export function fmtAge(ageMs: number): string {
+  const s = Math.floor(ageMs / 1000)
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h`
+}
+
 // fmtLiveAge is the short "how old" text shown on a stale value.
 export function fmtLiveAge(ageMs: number): string {
-  const s = Math.floor(ageMs / 1000)
-  if (s < 60) return `${s}s old`
-  const m = Math.floor(s / 60)
-  return m < 60 ? `${m}m old` : `${Math.floor(m / 60)}h old`
+  return `${fmtAge(ageMs)} old`
 }
