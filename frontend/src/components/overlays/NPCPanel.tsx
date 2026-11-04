@@ -40,6 +40,7 @@ import NPCDistanceChip from './NPCDistanceChip'
 import ZealStaleFrame, { useInZealStaleFrame } from './ZealStaleFrame'
 import { NPCOutlineFrame, NPCOutlineLabels } from './NPCOutline'
 import TargetTimerList from './TargetTimerList'
+import TargetDebuffStrip from './TargetDebuffStrip'
 import TargetPlayerCard from './TargetPlayerCard'
 import type { TargetState, SpecialAbility, TargetVariant, NPCCasterSummary } from '../../types/overlay'
 import { variantSuffix } from '../../types/overlay'
@@ -730,6 +731,7 @@ export function NPCCard({
   wishlistItemIds,
   charLevel,
   dist,
+  onOpenTimers,
 }: {
   state: TargetState
   view: View
@@ -740,6 +742,7 @@ export function NPCCard({
   // dist is the live distance feed; null while the target is pinned (the
   // feed always describes the live target, not the pinned one).
   dist: NPCTargetDistance | null
+  onOpenTimers?: () => void
 }): React.ReactElement {
   const npc = state.npc_data
   const distance = dist?.distance ?? null
@@ -756,7 +759,7 @@ export function NPCCard({
 
   // Timers tab works for any target (player or NPC). Player lookup only runs
   // when there's no DB record — that's the case where the target is a player.
-  const targetTimers = useTargetTimers(state.target_name)
+  const targetTimers = useTargetTimers(state.target_name, state.target_id)
   const { player, loading: playerLoading } = useTargetPlayer(state.target_name, !npc)
 
   const lastUpdated = new Date(state.last_updated).toLocaleTimeString([], {
@@ -802,10 +805,21 @@ export function NPCCard({
           </div>
         )}
 
+        {view !== 'timers' && sections.debuffs && (
+          <TargetDebuffStrip
+            targetName={state.target_name}
+            targetId={state.target_id}
+            onOpen={onOpenTimers}
+          />
+        )}
       </div>
 
       {view === 'timers' ? (
-        <TargetTimerList timers={targetTimers} />
+        <TargetTimerList
+          timers={targetTimers}
+          targetName={state.target_name}
+          targetId={state.target_id}
+        />
       ) : npc ? (
         // The backend orders variants strongest-first, so npc/abilities is the
         // most boss-like row (raid_target, then HP) — headline it, and tuck any
@@ -968,7 +982,7 @@ export default function NPCPanel({
           </div>
         ) : target.has_target ? (
           <ZealStaleFrame at={pinned ? undefined : target.target_at}>
-            <NPCCard state={target} view={view} sections={sections} onItemClick={handleItemClick} wishlistItemIds={wishlistItemIds} charLevel={charLevel} dist={pinned ? null : dist} />
+            <NPCCard state={target} view={view} sections={sections} onItemClick={handleItemClick} wishlistItemIds={wishlistItemIds} charLevel={charLevel} dist={pinned ? null : dist} onOpenTimers={() => setView('timers')} />
           </ZealStaleFrame>
         ) : (
           <NoTarget zone={target.current_zone} />

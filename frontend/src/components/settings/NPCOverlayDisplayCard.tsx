@@ -65,6 +65,10 @@ const SECTION_HINTS: Record<string, { label: string; hint: string }> = {
     label: 'Distance',
     hint: 'Distance to target, colored against your range (needs a Zeal build that reports target info)',
   },
+  debuffs: {
+    label: 'Debuff strip',
+    hint: "The target's debuff timers as icons under its name, on the Stats and Loot tabs",
+  },
 }
 
 // Special abilities, bucketed so the long list is scannable: damaging specials
@@ -106,9 +110,9 @@ function buildSections(catalog: EnumsCatalog | null, order: string[]): Section[]
     const g = NPC_ITEM_GROUPS.find((x) => x.section === id)
     return g ? [{ items: g.items }] : []
   }
-  // Same order as the overlay (Layout card); Distance lives in the header
-  // area, so it goes last.
-  return [...resolveSectionOrder(order), 'distance'].map((id) => ({
+  // Same order as the overlay (Layout card); Distance and the debuff strip
+  // live in the header area, so they go last.
+  return [...resolveSectionOrder(order), 'distance', 'debuffs'].map((id) => ({
     id,
     ...SECTION_HINTS[id],
     groups: itemsFor(id),

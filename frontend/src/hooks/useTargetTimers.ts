@@ -18,8 +18,15 @@ import type { ActiveTimer, TimerState } from '../types/timer'
  *
  * Names are normalized the same way the engine keys timers (article-stripped,
  * lowercased) so log-driven NPC names line up with the engine's stored target.
+ *
+ * With targetId (the Zeal spawn id), timers pinned to a different same-named
+ * spawn are dropped, so two "a Kromrif warrior" up at once don't show each
+ * other's debuffs. Name-only timers stay; TargetTimerList marks them unproven.
  */
-export function useTargetTimers(targetName: string | undefined): ActiveTimer[] {
+export function useTargetTimers(
+  targetName: string | undefined,
+  targetId?: number,
+): ActiveTimer[] {
   const [state, setState] = useState<TimerState | null>(null)
 
   useEffect(() => {
@@ -36,6 +43,7 @@ export function useTargetTimers(targetName: string | undefined): ActiveTimer[] {
     const want = normalizeTargetName(targetName)
     return (state?.timers ?? [])
       .filter((t) => t.target_name && normalizeTargetName(t.target_name) === want)
+      .filter((t) => !targetId || !t.target_id || t.target_id === targetId)
       .sort((a, b) => a.remaining_seconds - b.remaining_seconds)
-  }, [state, targetName])
+  }, [state, targetName, targetId])
 }

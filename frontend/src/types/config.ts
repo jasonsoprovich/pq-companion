@@ -68,6 +68,10 @@ export interface NPCOverlaySections {
   // distance is the player→target distance readout and the caster spells'
   // in-reach markers (needs a Zeal build that reports target descriptors).
   distance: boolean
+  // debuffs is the strip of the target's debuff timers under the header.
+  // Frontend-only: the backend struct has no flag for it, so it's always on
+  // here and hidden through the "section.debuffs" key alone.
+  debuffs: boolean
 }
 
 export const DEFAULT_NPC_OVERLAY_SECTIONS: NPCOverlaySections = {
@@ -83,6 +87,7 @@ export const DEFAULT_NPC_OVERLAY_SECTIONS: NPCOverlaySections = {
   spells_signature: true,
   spells_class: true,
   distance: true,
+  debuffs: true,
 }
 
 /**

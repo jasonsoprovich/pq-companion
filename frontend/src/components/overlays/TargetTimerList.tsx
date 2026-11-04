@@ -1,8 +1,10 @@
 import React from 'react'
-import { Swords } from 'lucide-react'
+import { Eraser, Swords } from 'lucide-react'
 import { SpellIcon } from '../Icon'
 import { useTimerAppearance } from '../../hooks/useTimerAppearance'
 import { fmtRemaining } from '../../lib/timeFormat'
+import { DETRIM_CATEGORIES } from '../../lib/timerFilter'
+import { clearTargetTimers } from '../../services/api'
 import type { ActiveTimer, TimerCategory } from '../../types/timer'
 
 // Category accents mirror the dedicated buff/detrim overlays so a spell reads
@@ -18,7 +20,15 @@ const CATEGORY_COLORS: Record<TimerCategory, string> = {
   custom: '#38bdf8',
 }
 
-function TimerRow({ timer, showSeconds }: { timer: ActiveTimer; showSeconds: boolean }): React.ReactElement {
+function TimerRow({
+  timer,
+  showSeconds,
+  unproven,
+}: {
+  timer: ActiveTimer
+  showSeconds: boolean
+  unproven: boolean
+}): React.ReactElement {
   const pct =
     timer.duration_seconds > 0
       ? Math.max(0, Math.min(1, timer.remaining_seconds / timer.duration_seconds))
@@ -40,9 +50,15 @@ function TimerRow({ timer, showSeconds }: { timer: ActiveTimer; showSeconds: boo
         borderRadius: 3,
         overflow: 'hidden',
         backgroundColor: 'rgba(255,255,255,0.05)',
-        opacity: maybeDead ? 0.45 : 1,
+        opacity: maybeDead ? 0.45 : unproven ? 0.6 : 1,
       }}
-      title={maybeDead ? 'A mob with this name died — this may be it. Target it to confirm.' : undefined}
+      title={
+        maybeDead
+          ? 'A mob with this name died — this may be it. Target it to confirm.'
+          : unproven
+            ? 'Not tied to this exact spawn; may be on another mob with the same name'
+            : undefined
+      }
     >
       {/* depleting progress fill */}
       <div
@@ -94,6 +110,7 @@ function TimerRow({ timer, showSeconds }: { timer: ActiveTimer; showSeconds: boo
           >
             {maybeDead ? '? ' : ''}
             {timer.spell_name}
+            {unproven && ' ?'}
           </span>
           {timer.target_is_caster && (
             <span
@@ -134,18 +151,36 @@ function TimerRow({ timer, showSeconds }: { timer: ActiveTimer; showSeconds: boo
   )
 }
 
+const sectionLabel: React.CSSProperties = {
+  flex: 1,
+  fontSize: 9,
+  fontWeight: 600,
+  letterSpacing: 0.4,
+  textTransform: 'uppercase',
+  color: 'rgba(255,255,255,0.4)',
+}
+
 /**
- * Read-only list of the active spell timers ticking on the overlay's current
- * target. Fed by useTargetTimers (threshold-ignoring), so it shows buffs and
- * detrimentals that are still hidden from the main timer overlays. Shared by
- * the dashboard NPC panel and the popped-out NPC overlay window.
+ * The active spell timers ticking on the overlay's current target. Fed by
+ * useTargetTimers (threshold-ignoring), so it shows buffs and detrimentals
+ * that are still hidden from the main timer overlays. Shared by the
+ * dashboard NPC panel, the popped-out NPC overlay window and the pet card.
+ *
+ * With targetName, detrimentals and everything else get their own headings
+ * and the debuffs heading has a clear button, for leash and evade resets
+ * (which strip a mob's debuffs without a log line). With targetId, debuffs
+ * that aren't pinned to that spawn are dimmed and marked "?".
  */
 export default function TargetTimerList({
   timers,
   emptyText = 'No active timers on this target.',
+  targetName,
+  targetId,
 }: {
   timers: ActiveTimer[]
   emptyText?: string
+  targetName?: string
+  targetId?: number
 }): React.ReactElement {
   const appearance = useTimerAppearance()
   if (timers.length === 0) {
@@ -155,11 +190,52 @@ export default function TargetTimerList({
       </p>
     )
   }
+  const row = (t: ActiveTimer): React.ReactElement => (
+    <TimerRow
+      key={t.id}
+      timer={t}
+      showSeconds={appearance.showSeconds}
+      unproven={!!targetId && !t.target_id && DETRIM_CATEGORIES.has(t.category)}
+    />
+  )
+  if (!targetName) {
+    return <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>{timers.map(row)}</div>
+  }
+  // Own recast cooldowns aren't debuffs on the mob, so they sit with buffs.
+  const detrims = timers.filter((t) => DETRIM_CATEGORIES.has(t.category) && !t.target_is_caster)
+  const others = timers.filter((t) => !detrims.includes(t))
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      {timers.map((t) => (
-        <TimerRow key={t.id} timer={t} showSeconds={appearance.showSeconds} />
-      ))}
+      {detrims.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 2px' }}>
+          <span style={sectionLabel}>Debuffs · {detrims.length}</span>
+          <button
+            onClick={() => clearTargetTimers(targetName, targetId).catch(() => {})}
+            title={`Clear the debuffs on ${targetName} (after a leash or evade reset, which the log doesn't show)`}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 3,
+              background: 'none',
+              border: 'none',
+              padding: 0,
+              cursor: 'pointer',
+              fontSize: 10,
+              color: 'rgba(255,255,255,0.45)',
+            }}
+          >
+            <Eraser size={11} />
+            Clear
+          </button>
+        </div>
+      )}
+      {detrims.map(row)}
+      {others.length > 0 && detrims.length > 0 && (
+        <div style={{ padding: '4px 2px 0' }}>
+          <span style={sectionLabel}>Buffs &amp; cooldowns · {others.length}</span>
+        </div>
+      )}
+      {others.map(row)}
     </div>
   )
 }

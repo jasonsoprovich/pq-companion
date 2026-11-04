@@ -33,6 +33,7 @@ import NPCDistanceChip from '../components/overlays/NPCDistanceChip'
 import ZealStaleFrame, { useInZealStaleFrame } from '../components/overlays/ZealStaleFrame'
 import { NPCOutlineFrame, NPCOutlineLabels } from '../components/overlays/NPCOutline'
 import TargetTimerList from '../components/overlays/TargetTimerList'
+import TargetDebuffStrip from '../components/overlays/TargetDebuffStrip'
 import TargetPlayerCard from '../components/overlays/TargetPlayerCard'
 import { getOverlayNPCTarget, getNPCLoot, getNPCFaction } from '../services/api'
 import {
@@ -564,6 +565,7 @@ export function NPCContent({
   wishlistItemIds,
   charLevel,
   dist,
+  onOpenTimers,
 }: {
   state: TargetState
   view: View
@@ -573,6 +575,7 @@ export function NPCContent({
   // dist is the live distance feed; null while the target is pinned (the
   // feed always describes the live target, not the pinned one).
   dist: NPCTargetDistance | null
+  onOpenTimers?: () => void
 }): React.ReactElement {
   const npc = state.npc_data
   const distance = dist?.distance ?? null
@@ -631,10 +634,17 @@ export function NPCContent({
             <VariantRibbon variants={variants} />
           </div>
         )}
+        {view !== 'timers' && sections.debuffs && (
+          <TargetDebuffStrip
+            targetName={state.target_name}
+            targetId={state.target_id}
+            onOpen={onOpenTimers}
+          />
+        )}
       </div>
 
       {view === 'timers' ? (
-        <TargetTimersView targetName={state.target_name} />
+        <TargetTimersView targetName={state.target_name} targetId={state.target_id} />
       ) : npc ? (
         isAmbiguous ? (
           variants.map((v) => (
@@ -687,9 +697,15 @@ export function NPCContent({
 // so it only mounts when the Timers tab is active. Previously the hook lived at
 // the top of the body, so any active timer re-rendered the whole stats/loot
 // tree every second even on the other tabs.
-function TargetTimersView({ targetName }: { targetName: string | undefined }): React.ReactElement {
-  const timers = useTargetTimers(targetName)
-  return <TargetTimerList timers={timers} />
+function TargetTimersView({
+  targetName,
+  targetId,
+}: {
+  targetName: string | undefined
+  targetId?: number
+}): React.ReactElement {
+  const timers = useTargetTimers(targetName, targetId)
+  return <TargetTimerList timers={timers} targetName={targetName} targetId={targetId} />
 }
 
 // ── Page ───────────────────────────────────────────────────────────────────────
@@ -843,7 +859,7 @@ export default function NPCOverlayWindowPage(): React.ReactElement {
         </div>
       ) : target.has_target ? (
         <ZealStaleFrame at={pinned ? undefined : target.target_at}>
-          <NPCContent state={target} view={view} sections={sections} wishlistItemIds={wishlistItemIds} charLevel={charLevel} dist={pinned ? null : dist} />
+          <NPCContent state={target} view={view} sections={sections} wishlistItemIds={wishlistItemIds} charLevel={charLevel} dist={pinned ? null : dist} onOpenTimers={() => setView('timers')} />
         </ZealStaleFrame>
       ) : (
         <NoTarget zone={target.current_zone} chrome={chrome} />
