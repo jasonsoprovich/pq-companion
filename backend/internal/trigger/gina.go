@@ -173,7 +173,7 @@ func convertGINA(g ginaTrigger) (ImportedTrigger, bool) {
 	regexOK := validatePattern(t.Pattern)
 	if !regexOK {
 		t.Enabled = false
-		warnings = append(warnings, "pattern doesn't compile under RE2 — imported disabled, edit it in-app")
+		warnings = append(warnings, "pattern doesn't compile — imported disabled, edit it in-app")
 	}
 
 	return ImportedTrigger{Trigger: t, Warnings: warnings, RegexOK: regexOK}, true

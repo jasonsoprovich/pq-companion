@@ -939,6 +939,13 @@ func main() {
 	if err := triggerStore.MigrateBroadenAssistCallPattern(); err != nil {
 		slog.Warn("trigger assist-call broaden migration failed", "err", err)
 	}
+	// Imported triggers that were disabled because RE2 rejected their
+	// lookaround/backreference patterns now run on the regexp2 fallback.
+	if n, err := triggerStore.MigrateEnableBacktrackingPatterns(); err != nil {
+		slog.Warn("trigger backtracking-pattern migration failed", "err", err)
+	} else if n > 0 {
+		slog.Info("trigger: re-enabled imported triggers with lookaround patterns", "count", n)
+	}
 
 	// One-time additive default updates for built-in packs. Each is keyed
 	// and runs at most once, making only additive edits to installed pack

@@ -3,7 +3,6 @@ package trigger
 import (
 	"errors"
 	"fmt"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -181,7 +180,7 @@ func (e *Engine) compiledForTest(character string, draft *Trigger) ([]compiled, 
 
 // matchingExclude returns the first exclude pattern in res that matches s,
 // or nil. Like matchesAny but keeps the matched regex for reporting.
-func matchingExclude(res []*regexp.Regexp, s string) *regexp.Regexp {
+func matchingExclude(res []*pattern, s string) *pattern {
 	for _, re := range res {
 		if re.MatchString(s) {
 			return re

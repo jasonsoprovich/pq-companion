@@ -6,6 +6,7 @@ toolchain go1.26.10
 
 require (
 	github.com/Microsoft/go-winio v0.6.2
+	github.com/dlclark/regexp2 v1.12.0
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/go-sql-driver/mysql v1.7.1
 	github.com/gorilla/websocket v1.5.3

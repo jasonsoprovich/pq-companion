@@ -1067,6 +1067,43 @@ func (s *Store) MigrateAddBuffTargetCapture() error {
 	return s.MarkDefaultUpdateApplied(key)
 }
 
+// MigrateEnableBacktrackingPatterns re-enables triggers the importers
+// switched off because RE2 rejected their pattern (lookaround and
+// backreferences from GINA/EQLogParser/EQNag exports) and that now compile
+// under the backtracking fallback. A disabled log trigger whose pattern RE2
+// rejects can never have fired, so being disabled is taken as the
+// importer's doing, not the user's. Idempotent via pack_default_updates.
+func (s *Store) MigrateEnableBacktrackingPatterns() (int, error) {
+	const key = "Triggers:EnableBacktrackingPatterns:v1"
+	applied, err := s.IsDefaultUpdateApplied(key)
+	if err != nil {
+		return 0, err
+	}
+	if applied {
+		return 0, nil
+	}
+	all, err := s.List()
+	if err != nil {
+		return 0, err
+	}
+	enabled := 0
+	for _, t := range all {
+		if t.Enabled || t.Source == SourcePipe || t.Pattern == "" {
+			continue
+		}
+		p, err := compilePattern(normalizePattern(t.Pattern, ""))
+		if err != nil || !p.Backtracking() {
+			continue
+		}
+		t.Enabled = true
+		if err := s.Update(t); err != nil {
+			return enabled, fmt.Errorf("enable trigger %s: %w", t.ID, err)
+		}
+		enabled++
+	}
+	return enabled, s.MarkDefaultUpdateApplied(key)
+}
+
 func (s *Store) packHasAnyTrigger(pack string) (bool, error) {
 	var n int
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM triggers WHERE pack_name = ?`, pack).Scan(&n); err != nil {

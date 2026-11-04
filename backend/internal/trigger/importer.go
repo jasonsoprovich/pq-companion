@@ -41,9 +41,10 @@ type ImportedTrigger struct {
 	// Warnings describe pieces of the source trigger that couldn't be mapped
 	// 1:1 (dropped sound, flattened condition, etc.). Empty = clean mapping.
 	Warnings []string `json:"warnings,omitempty"`
-	// RegexOK reports whether the mapped Pattern compiles under Go's RE2. When
+	// RegexOK reports whether the mapped Pattern compiles (RE2, or the
+	// backtracking fallback for lookaround and backreferences). When
 	// false the trigger is imported disabled with a warning — .NET/EQNag
-	// regexes occasionally use backreferences or lookbehind RE2 rejects.
+	// regexes occasionally use syntax neither engine accepts.
 	RegexOK bool `json:"regex_ok"`
 }
 
@@ -257,14 +258,15 @@ func dedupeWarnings(warnings []string) []string {
 	return out
 }
 
-// validatePattern reports whether a trigger pattern compiles under Go's RE2
-// after the engine's token normalization. Used to flag (and disable on import)
-// foreign regexes that rely on backreferences or lookbehind RE2 rejects.
+// validatePattern reports whether a trigger pattern compiles, under RE2 or
+// the backtracking fallback (see compilePattern), after the engine's token
+// normalization. Used to flag (and disable on import) foreign regexes
+// neither engine accepts.
 func validatePattern(pattern string) bool {
 	if pattern == "" {
 		return false
 	}
-	_, err := regexp.Compile(normalizePattern(pattern, ""))
+	_, err := compilePattern(normalizePattern(pattern, ""))
 	return err == nil
 }
 

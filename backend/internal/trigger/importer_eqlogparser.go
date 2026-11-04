@@ -205,7 +205,7 @@ func convertEQLP(n *eqlpNode, group string) (ImportedTrigger, bool) {
 	regexOK := validatePattern(tr.Pattern)
 	if !regexOK {
 		tr.Enabled = false
-		warnings = append(warnings, "pattern doesn't compile under RE2 — imported disabled, edit it in-app")
+		warnings = append(warnings, "pattern doesn't compile — imported disabled, edit it in-app")
 	}
 
 	return ImportedTrigger{

@@ -539,8 +539,9 @@ export interface ImportedTrigger {
   trigger: Trigger
   original_group?: string
   warnings?: string[]
-  // false = the mapped pattern doesn't compile under Go's RE2; the trigger is
-  // imported disabled and flagged for manual editing.
+  // false = the mapped pattern compiles under neither backend engine (RE2 or
+  // its backtracking fallback); the trigger is imported disabled and flagged
+  // for manual editing.
   regex_ok: boolean
 }
 

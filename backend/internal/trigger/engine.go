@@ -69,16 +69,16 @@ type PolicySink interface {
 // per-pattern timer overrides, so a match knows which row's duration/spell
 // to apply.
 type compiledExtra struct {
-	re   *regexp.Regexp
+	re   *pattern
 	meta ExtraPattern
 }
 
 // compiled pairs a Trigger with its pre-compiled patterns for efficient matching.
 type compiled struct {
 	trigger  *Trigger
-	re       *regexp.Regexp
-	wornOff  *regexp.Regexp // non-nil only when the trigger has a worn-off pattern
-	timerKey string         // cached spelltimer key when timer_type != none
+	re       *pattern
+	wornOff  *pattern // non-nil only when the trigger has a worn-off pattern
+	timerKey string   // cached spelltimer key when timer_type != none
 	// extras are the precompiled enabled ExtraPatterns. The trigger fires
 	// when the primary pattern OR any extra matches; the first matching
 	// pattern's capture groups feed the actions and its timer overrides
@@ -87,7 +87,7 @@ type compiled struct {
 	// excludes are precompiled ExcludePatterns; if any match the same line
 	// the primary match is suppressed. Lets a broad pattern (e.g. "incoming
 	// tell") filter pet/merchant lines without needing RE2 lookbehind.
-	excludes []*regexp.Regexp
+	excludes []*pattern
 }
 
 // Engine loads triggers from the store and tests every incoming log line
@@ -336,7 +336,7 @@ func (e *Engine) Reload() {
 // and only add to the returned messages.
 func compileOne(t *Trigger, character string) (compiled, []string) {
 	var errs []string
-	re, err := regexp.Compile(normalizePattern(t.Pattern, character))
+	re, err := compilePattern(normalizePattern(t.Pattern, character))
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("invalid pattern: %v", err))
 		return compiled{trigger: t}, errs
@@ -346,7 +346,7 @@ func compileOne(t *Trigger, character string) (compiled, []string) {
 		if !ep.Enabled || ep.Pattern == "" {
 			continue
 		}
-		ex, err := regexp.Compile(normalizePattern(ep.Pattern, character))
+		ex, err := compilePattern(normalizePattern(ep.Pattern, character))
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("invalid extra pattern %q: %v", ep.Pattern, err))
 			continue
@@ -354,7 +354,7 @@ func compileOne(t *Trigger, character string) (compiled, []string) {
 		c.extras = append(c.extras, compiledExtra{re: ex, meta: ep})
 	}
 	if t.WornOffPattern != "" {
-		if wornRe, err := regexp.Compile(normalizePattern(t.WornOffPattern, character)); err == nil {
+		if wornRe, err := compilePattern(normalizePattern(t.WornOffPattern, character)); err == nil {
 			c.wornOff = wornRe
 		} else {
 			errs = append(errs, fmt.Sprintf("invalid worn-off pattern: %v", err))
@@ -367,7 +367,7 @@ func compileOne(t *Trigger, character string) (compiled, []string) {
 		if p == "" {
 			continue
 		}
-		ex, err := regexp.Compile(normalizePattern(p, character))
+		ex, err := compilePattern(normalizePattern(p, character))
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("invalid exclude pattern %q: %v", p, err))
 			continue
@@ -708,7 +708,7 @@ func (e *Engine) firePipeWith(t *Trigger, matchedLine string, firedAt time.Time,
 // matchesAny returns true if any of the regexes match s. Used to suppress a
 // primary trigger match when one of its ExcludePatterns also matches the
 // same line.
-func matchesAny(res []*regexp.Regexp, s string) bool {
+func matchesAny(res []*pattern, s string) bool {
 	for _, re := range res {
 		if re.MatchString(s) {
 			return true
