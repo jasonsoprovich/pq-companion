@@ -22,6 +22,8 @@ import { dpsModeAbbrev, useDPSMode } from '../../hooks/useDPSMode'
 import { useCharmFinder, type CharmFinderHook } from '../../hooks/useCharmFinder'
 import { usePersistentState } from '../../hooks/usePersistentState'
 import { useAppNavigate } from '../../hooks/useAppNavigate'
+import { useLiveValue } from '../../hooks/useLiveValue'
+import { LIVE_TTL, STALE_OPACITY, fmtLiveAge } from '../../lib/live'
 import { landColor } from '../../lib/charmFinder'
 import { fmtRemaining } from '../../lib/timeFormat'
 import type { CharmPet } from '../../services/api'
@@ -184,15 +186,18 @@ function HPBar({ state }: { state: PetState }): React.ReactElement {
   // Total HP from the scaled row; "~" when the level (and so the HP) is a range.
   const total = s ? s.hp_max : 0
   const approx = s != null && s.hp_min !== s.hp_max
-  const now = useNowTick(state.hp_source === 'pet_health')
-  const age = state.hp_source === 'pet_health' && state.hp_at
-    ? Math.max(0, Math.round((now - Date.parse(state.hp_at)) / 1000))
-    : null
+  const viaHealth = state.hp_source === 'pet_health'
+  const live = useLiveValue(state.hp_at, viaHealth ? LIVE_TTL.petHealthHP : LIVE_TTL.petHP)
+  const age = viaHealth && state.hp_at ? Math.round(live.ageMs / 1000) : null
+  // A Zeal reading that stopped updating is dimmed, then dropped.
+  const aged = known && state.hp_at ? live.freshness : 'fresh'
+  const shown = known && aged !== 'gone'
+  const stale = aged === 'stale'
 
   return (
-    <div>
+    <div style={stale ? { opacity: STALE_OPACITY } : undefined}>
       <div style={{ position: 'relative', height: 14, borderRadius: 3, backgroundColor: TRACK, overflow: 'hidden' }}>
-        {known && (
+        {shown && (
           <div style={{ position: 'absolute', inset: 0, width: `${pct}%`, backgroundColor: color, opacity: 0.55, transition: 'width 0.3s ease' }} />
         )}
         <div
@@ -208,10 +213,13 @@ function HPBar({ state }: { state: PetState }): React.ReactElement {
             fontVariantNumeric: 'tabular-nums',
           }}
         >
-          <span>{known ? `${pct}%` : 'HP unknown'}</span>
+          <span>
+            {shown ? `${pct}%` : 'HP unknown'}
+            {stale && !viaHealth && ` · ${fmtLiveAge(live.ageMs)}`}
+          </span>
           {total > 0 && (
             <span>
-              {known && `${approx ? '~' : ''}${fmtK(Math.round((total * pct) / 100))} / `}
+              {shown && `${approx ? '~' : ''}${fmtK(Math.round((total * pct) / 100))} / `}
               {approx ? '~' : ''}
               {fmtK(total)}
             </span>
@@ -221,7 +229,7 @@ function HPBar({ state }: { state: PetState }): React.ReactElement {
       {age != null && (
         <div style={{ fontSize: 9, color: FAINT, marginTop: 2 }}>via /pet health · {fmtAge(age)}</div>
       )}
-      {!known && (
+      {!shown && (
         <div style={{ fontSize: 9, color: FAINT, marginTop: 2 }}>Type /pet health for a reading.</div>
       )}
     </div>

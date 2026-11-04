@@ -25,6 +25,7 @@ import (
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/live"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/overlay"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/trigger"
@@ -848,7 +849,11 @@ func (t *Tracker) commitLocked(changed bool) {
 	now := t.now()
 	hpMoved := !eqIntPtr(t.st.HPPercent, t.lastSentHP)
 	hpDue := t.lastSentHP == nil || now.Sub(t.lastSentAt) >= hpBroadcastInterval
-	if !changed && !(hpMoved && hpDue) {
+	// An unchanged Zeal reading is re-sent on the live heartbeat so hp_at
+	// stays current while labels keep arriving.
+	stampDue := t.st.HPSource == HPSourceZeal && t.st.HPAt != nil &&
+		t.st.HPAt.After(t.lastSentAt) && live.Due(t.lastSentAt, now)
+	if !changed && !(hpMoved && hpDue) && !stampDue {
 		t.mu.Unlock()
 		return
 	}

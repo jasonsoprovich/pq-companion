@@ -119,6 +119,10 @@ export interface TargetState {
   // hp_percent is 0-100 when fed by the Zeal pipe, or -1 when unknown
   // (Zeal not running or no value yet for the current target).
   hp_percent: number
+  // hp_at / hp_source stamp hp_percent (lib/live.ts): when Zeal last
+  // confirmed it and from which feed. Absent while it's unknown.
+  hp_at?: string
+  hp_source?: string
   pet_owner?: string
   // is_corpse is true when the target name ended in "'s corpse" — the lookup
   // strips the suffix to find the underlying NPC, but the HP bar should pin

@@ -15,6 +15,8 @@ import { useNPCOutlineMatches } from '../hooks/useNPCOutlineMatches'
 import { useNPCOverlayDisplay } from '../hooks/useNPCOverlayDisplay'
 import { sortByTagOrder, type NPCSectionId } from '../lib/npcOverlayLayout'
 import { useNPCTargetDistance, type NPCTargetDistance } from '../hooks/useNPCTargetDistance'
+import { useLiveValue } from '../hooks/useLiveValue'
+import { LIVE_TTL, STALE_OPACITY, fmtLiveAge } from '../lib/live'
 import { useWishlistItemIds } from '../hooks/useWishlistItemIds'
 import { useActiveCharacterLevel } from '../hooks/useActiveCharacterLevel'
 import { useOverlayEntityLinks } from '../hooks/useOverlayEntityLinks'
@@ -610,43 +612,7 @@ export function NPCContent({
         {state.current_zone && (
           <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', margin: '2px 0 0' }}>{state.current_zone}</p>
         )}
-        {state.hp_percent >= 0 && (
-          <div style={{ marginTop: 5 }}>
-            <div
-              style={{
-                position: 'relative',
-                height: 7,
-                width: '100%',
-                backgroundColor: 'rgba(255,255,255,0.1)',
-                borderRadius: 3,
-                overflow: 'hidden',
-              }}
-            >
-              <div
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  right: 'auto',
-                  width: `${state.hp_percent}%`,
-                  backgroundColor:
-                    state.hp_percent > 50 ? '#22c55e' : state.hp_percent >= 20 ? '#eab308' : '#ef4444',
-                  transition: 'width 150ms, background-color 150ms',
-                }}
-              />
-            </div>
-            <div
-              style={{
-                marginTop: 2,
-                fontSize: 10,
-                color: 'rgba(255,255,255,0.45)',
-                textAlign: 'right',
-                fontVariantNumeric: 'tabular-nums',
-              }}
-            >
-              {state.hp_percent}% HP
-            </div>
-          </div>
-        )}
+        {state.hp_percent >= 0 && <WindowHPBar percent={state.hp_percent} at={state.hp_at} />}
         {((npc && (npc.raid_target === 1 || npc.rare_spawn === 1)) ||
           (sections.distance && dist?.has_descriptors)) && (
           <div style={{ marginTop: 4, display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -879,6 +845,53 @@ export default function NPCOverlayWindowPage(): React.ReactElement {
       ) : (
         <NoTarget zone={target.current_zone} chrome={chrome} />
       )}
+    </div>
+  )
+}
+
+// WindowHPBar is the target HP bar, dimmed with its age once Zeal stops
+// updating it and hidden after that (lib/live.ts). A corpse's pinned 0% has
+// no stamp and never ages.
+function WindowHPBar({ percent, at }: { percent: number; at?: string }): React.ReactElement | null {
+  const live = useLiveValue(at, LIVE_TTL.targetHP)
+  const aged = at ? live.freshness : 'fresh'
+  if (aged === 'gone') return null
+  const stale = aged === 'stale'
+  return (
+    <div style={{ marginTop: 5, opacity: stale ? STALE_OPACITY : 1 }}>
+      <div
+        style={{
+          position: 'relative',
+          height: 7,
+          width: '100%',
+          backgroundColor: 'rgba(255,255,255,0.1)',
+          borderRadius: 3,
+          overflow: 'hidden',
+        }}
+      >
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            right: 'auto',
+            width: `${percent}%`,
+            backgroundColor: percent > 50 ? '#22c55e' : percent >= 20 ? '#eab308' : '#ef4444',
+            transition: 'width 150ms, background-color 150ms',
+          }}
+        />
+      </div>
+      <div
+        style={{
+          marginTop: 2,
+          fontSize: 10,
+          color: 'rgba(255,255,255,0.45)',
+          textAlign: 'right',
+          fontVariantNumeric: 'tabular-nums',
+        }}
+      >
+        {stale && <span title="Zeal hasn't updated the target's HP since then">{fmtLiveAge(live.ageMs)} · </span>}
+        {percent}% HP
+      </div>
     </div>
   )
 }

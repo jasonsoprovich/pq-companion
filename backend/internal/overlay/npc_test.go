@@ -8,8 +8,10 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/live"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/zealpipe"
@@ -1069,5 +1071,44 @@ func TestResolveByName_UnknownLevel(t *testing.T) {
 	}
 	if r := tr.ResolveByName("Gobeker"); r.NPC != nil {
 		t.Errorf("generated pet name resolved to %q", r.NPC.Name)
+	}
+}
+
+func TestNPCTracker_PipeHPStamp(t *testing.T) {
+	tr := newTestTracker()
+	tr.SetPipeHPPercent(50) // no target: ignored
+	tr.SetPipeTarget("a gnoll")
+	if st := tr.GetState(); st.HPAt != nil {
+		t.Fatal("new target carries an HP stamp")
+	}
+	tr.SetPipeHPPercent(80)
+	st := tr.GetState()
+	if st.HPPercent != 80 || st.HPAt == nil || st.HPSource != live.SourcePipe {
+		t.Fatalf("after reading: %d %v %q", st.HPPercent, st.HPAt, st.HPSource)
+	}
+	first := *st.HPAt
+
+	// A repeat refreshes the stamp even though it isn't re-broadcast yet.
+	time.Sleep(5 * time.Millisecond)
+	tr.SetPipeHPPercent(80)
+	if st := tr.GetState(); !st.HPAt.After(first) {
+		t.Fatal("repeat didn't refresh hp_at")
+	}
+
+	// Due on the heartbeat: the next repeat is broadcast.
+	tr.mu.Lock()
+	tr.hpSentAt = time.Now().Add(-live.Heartbeat)
+	tr.mu.Unlock()
+	tr.SetPipeHPPercent(80)
+	tr.mu.RLock()
+	sent := tr.hpSentAt
+	tr.mu.RUnlock()
+	if time.Since(sent) > time.Second {
+		t.Fatal("due repeat wasn't sent")
+	}
+
+	tr.ResetPipeFields()
+	if st := tr.GetState(); st.HPAt != nil || st.HPSource != "" || st.HPPercent != -1 {
+		t.Fatalf("reset left %+v %q", st.HPAt, st.HPSource)
 	}
 }

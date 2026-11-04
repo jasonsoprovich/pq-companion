@@ -16,6 +16,8 @@ import { useTargetPlayer } from '../../hooks/useTargetPlayer'
 import { useActiveCharacterLevel } from '../../hooks/useActiveCharacterLevel'
 import { useUpgradeScores } from '../../hooks/useUpgradeScores'
 import { useNPCTargetDistance, type NPCTargetDistance } from '../../hooks/useNPCTargetDistance'
+import { useLiveValue } from '../../hooks/useLiveValue'
+import { LIVE_TTL, STALE_OPACITY, fmtLiveAge } from '../../lib/live'
 import { WSEvent } from '../../lib/wsEvents'
 import { getOverlayNPCTarget, getLogStatus, getNPCLoot, getNPCFaction, getItem } from '../../services/api'
 import {
@@ -135,10 +137,15 @@ function hpBarColor(percent: number): string {
   return '#ef4444'
 }
 
-function TargetHPBar({ percent }: { percent: number }): React.ReactElement {
+function TargetHPBar({ percent, at }: { percent: number; at?: string }): React.ReactElement | null {
   const color = hpBarColor(percent)
+  const live = useLiveValue(at, LIVE_TTL.targetHP)
+  // A corpse's pinned 0% has no stamp and never ages.
+  const aged = at ? live.freshness : 'fresh'
+  if (aged === 'gone') return null
+  const stale = aged === 'stale'
   return (
-    <div className="mt-2">
+    <div className="mt-2" style={stale ? { opacity: STALE_OPACITY } : undefined}>
       <div
         className="relative h-2 w-full overflow-hidden rounded"
         style={{ backgroundColor: 'var(--color-surface)' }}
@@ -149,6 +156,7 @@ function TargetHPBar({ percent }: { percent: number }): React.ReactElement {
         />
       </div>
       <div className="mt-0.5 text-right text-[10px] tabular-nums" style={{ color: 'var(--color-muted)' }}>
+        {stale && <span title="Zeal hasn't updated the target's HP since then">{fmtLiveAge(live.ageMs)} · </span>}
         {percent}% HP
       </div>
     </div>
@@ -775,7 +783,7 @@ export function NPCCard({
         {state.is_corpse ? (
           <TargetHPBar percent={0} />
         ) : state.hp_percent >= 0 ? (
-          <TargetHPBar percent={state.hp_percent} />
+          <TargetHPBar percent={state.hp_percent} at={state.hp_at} />
         ) : null}
 
         {((npc && (npc.raid_target === 1 || npc.rare_spawn === 1)) ||

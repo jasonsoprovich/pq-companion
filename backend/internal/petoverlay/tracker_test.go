@@ -6,6 +6,7 @@ import (
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/live"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/overlay"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/trigger"
@@ -493,5 +494,31 @@ func TestTracker_PetHealthSpellsCarryMetadata(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("[%d] = %+v, want %+v", i, got[i], want[i])
 		}
+	}
+}
+
+// TestTracker_ZealHPHeartbeat verifies an unchanged Zeal HP reading is
+// re-sent on the live heartbeat so hp_at keeps up, and not more often.
+func TestTracker_ZealHPHeartbeat(t *testing.T) {
+	h := newHarness()
+	h.tr.SetPipeConnected(true)
+	h.res.byID[812] = overlay.Resolution{NPC: revenant, Level: 52}
+	h.tr.SetPipePetName("a Shissar Revenant")
+	h.tr.SetPipePetID(ip(812))
+	h.tr.SetPipePetHPPercent("88")
+	base := len(h.sent)
+
+	h.advance(500 * time.Millisecond)
+	h.tr.SetPipePetHPPercent("88")
+	if len(h.sent) != base {
+		t.Fatalf("repeat inside the heartbeat was sent (%d → %d)", base, len(h.sent))
+	}
+	h.advance(live.Heartbeat)
+	h.tr.SetPipePetHPPercent("88")
+	if len(h.sent) != base+1 {
+		t.Fatalf("repeat on the heartbeat: sent %d, want %d", len(h.sent), base+1)
+	}
+	if got := h.sent[len(h.sent)-1].HPAt; got == nil || !got.Equal(h.now) {
+		t.Fatalf("hp_at = %v, want %v", got, h.now)
 	}
 }

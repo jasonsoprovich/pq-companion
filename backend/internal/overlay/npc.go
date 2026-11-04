@@ -15,6 +15,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/combat"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db/enums"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/live"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/zealpipe"
@@ -97,6 +98,11 @@ type TargetState struct {
 	// the Zeal pipe. -1 means "unknown" (no pipe available or no value yet);
 	// the overlay hides the bar when this is negative.
 	HPPercent int `json:"hp_percent"`
+	// HPAt and HPSource stamp HPPercent per the live-value convention (see
+	// package live): when the pipe last confirmed it, and which feed. Nil
+	// while HPPercent is unknown or a corpse's pinned 0.
+	HPAt     *time.Time `json:"hp_at,omitempty"`
+	HPSource string     `json:"hp_source,omitempty"`
 	// PetOwner is the target's owner name when the target is a summoned pet.
 	// Empty for non-pet targets. Populated from the Zeal pipe.
 	PetOwner string `json:"pet_owner,omitempty"`
@@ -158,6 +164,8 @@ type NPCTracker struct {
 	// MsgPlayer snapshot (nil = older Zeal, no target, or not yet reported for
 	// the current target). Held under mu.
 	lastPipeTargetID *int
+	// hpSentAt is when an HP stamp was last broadcast (see SetPipeHPPercent).
+	hpSentAt time.Time
 
 	// variantCache memoises the resolved NPC / variant set for a spawn id.
 	// Re-targeting the same live mob then reuses the first resolution instead
@@ -706,9 +714,10 @@ func (t *NPCTracker) isPipeConnected() bool {
 }
 
 // SetPipeHPPercent updates the current target's HP percentage from a Zeal
-// LabelTargetHPPerc payload. Values outside 0-100 are clamped; identical
-// repeats are de-duped (the pipe resends at ~10 Hz). A no-op when no target
-// is set so transient HP labels can't resurrect a cleared overlay.
+// LabelTargetHPPerc payload. Values outside 0-100 are clamped. Every call
+// refreshes HPAt; identical repeats (the pipe resends at ~10 Hz) are only
+// re-broadcast on the live heartbeat. A no-op when no target is set so
+// transient HP labels can't resurrect a cleared overlay.
 func (t *NPCTracker) SetPipeHPPercent(percent int) {
 	if percent < 0 {
 		percent = 0
@@ -716,13 +725,24 @@ func (t *NPCTracker) SetPipeHPPercent(percent int) {
 	if percent > 100 {
 		percent = 100
 	}
+	now := time.Now()
 	t.mu.Lock()
-	if !t.st.HasTarget || t.st.HPPercent == percent {
+	if !t.st.HasTarget {
 		t.mu.Unlock()
 		return
 	}
-	t.st.HPPercent = percent
-	t.st.LastUpdated = time.Now()
+	changed := t.st.HPPercent != percent || t.st.HPAt == nil
+	t.st.HPAt = &now
+	t.st.HPSource = live.SourcePipe
+	if !changed && !live.Due(t.hpSentAt, now) {
+		t.mu.Unlock()
+		return
+	}
+	if changed {
+		t.st.HPPercent = percent
+		t.st.LastUpdated = now
+	}
+	t.hpSentAt = now
 	snap := t.st
 	t.mu.Unlock()
 	t.broadcast(snap)
@@ -748,6 +768,7 @@ func (t *NPCTracker) ResetPipeFields() {
 	stateStale := t.st.HPPercent != -1 || t.st.PetOwner != "" || t.st.LiveLevel != nil ||
 		t.st.LiveClass != nil || t.st.TargetType != nil || t.st.TargetID != nil
 	t.st.HPPercent = -1
+	t.st.HPAt, t.st.HPSource = nil, ""
 	t.st.PetOwner = ""
 	t.st.LiveLevel, t.st.LiveClass, t.st.TargetType = nil, nil, nil
 	t.st.TargetID = nil
