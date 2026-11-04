@@ -98,8 +98,10 @@ interface ZoneLayers {
   // textures by file name (and whether masked), loaded the first time the
   // textured style is shown.
   textures: Map<string, THREE.Texture>
-  // materials currently assigned, freed when the look changes.
+  // materials currently assigned, freed when the look changes; faded is
+  // the walls' and ceilings' array, whose opacity follows the slider.
   materials: THREE.Material[]
+  faded: THREE.Material[]
 }
 
 interface Scene3D {
@@ -242,7 +244,8 @@ export default function ZoneMap3D({ zone, markers, target, pins, onUnavailable }
         const layers = buildLayers(zone, mesh)
         s.layers = layers
         sc.add(layers.group)
-        applyLook(s, prefsRef.current)
+        buildMaterials(s, prefsRef.current)
+        adjustLook(layers, prefsRef.current)
 
         const box = new THREE.Box3()
           .setFromBufferAttribute(layers.own.floor.geometry.getAttribute('position') as THREE.BufferAttribute)
@@ -316,12 +319,22 @@ export default function ZoneMap3D({ zone, markers, target, pins, onUnavailable }
     s.render()
   }, [pins, status])
 
+  // A new style or culling needs new materials; opacity and what's shown
+  // only adjust the ones there, so dragging the slider stays cheap.
   useEffect(() => {
     const s = scene.current
-    if (!s || status !== 'ready') return
-    applyLook(s, prefs)
+    if (!s || status !== 'ready' || !s.layers) return
+    buildMaterials(s, prefsRef.current)
+    adjustLook(s.layers, prefsRef.current)
     s.render()
-  }, [prefs, status])
+  }, [prefs.style, prefs.seeThroughOuter, status])
+
+  useEffect(() => {
+    const s = scene.current
+    if (!s || status !== 'ready' || !s.layers) return
+    adjustLook(s.layers, prefs)
+    s.render()
+  }, [prefs.wallOpacity, prefs.hideCeilings, prefs.showObjects, status])
 
   return (
     <div className="relative h-full w-full overflow-hidden rounded" style={{ backgroundColor: '#0b0d12' }}>
@@ -511,6 +524,7 @@ function buildLayers(zone: string, data: ZoneMesh3D): ZoneLayers {
     group,
     textures: new Map(),
     materials: [],
+    faded: [],
   }
 }
 
@@ -564,10 +578,12 @@ function texture(s: Scene3D, L: ZoneLayers, i: number): THREE.Texture | null {
   return t
 }
 
-// applyLook builds the zone's materials for the current style and options.
-// Material indices match the zone's own; each layer gets its own array so
-// walls and ceilings can be faded while floors stay solid.
-function applyLook(s: Scene3D, prefs: Map3DPrefs): void {
+// buildMaterials makes the zone's materials for the style and culling.
+// Material indices match the zone's own. Floors get one array and walls and
+// ceilings another, built opaque; adjustLook fades the second. Each
+// material's userData keeps its own opacity and whether it blends anyway
+// (water, glows), which fading starts from.
+function buildMaterials(s: Scene3D, prefs: Map3DPrefs): void {
   const L = s.layers
   if (!L) return
   L.materials.forEach((m) => m.dispose())
@@ -575,14 +591,12 @@ function applyLook(s: Scene3D, prefs: Map3DPrefs): void {
   const side = prefs.seeThroughOuter ? THREE.FrontSide : THREE.DoubleSide
   const make = (i: number, faded: boolean): THREE.Material => {
     const z = L.data.materials[i]
-    const opacity = faded ? prefs.wallOpacity : 1
-    const see = opacity < 1
     let m: THREE.Material
     if (prefs.style === 'textured') {
       const map = texture(s, L, i)
       if (z.kind === 3) {
         m = new THREE.MeshBasicMaterial({
-          map, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+          map, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
         })
       } else {
         m = new THREE.MeshLambertMaterial({
@@ -595,9 +609,9 @@ function applyLook(s: Scene3D, prefs: Map3DPrefs): void {
           emissiveIntensity: 0.35,
           side: z.kind === 1 ? THREE.DoubleSide : side,
           alphaTest: z.kind === 1 ? 0.5 : 0,
-          transparent: z.kind === 2 || see,
-          opacity: (z.kind === 2 ? z.opacity : 1) * opacity,
-          depthWrite: z.kind !== 2 && !see,
+          transparent: z.kind === 2,
+          opacity: z.kind === 2 ? z.opacity : 1,
+          depthWrite: z.kind !== 2,
         })
       }
     } else if (z.kind === 1 || z.kind === 3) {
@@ -606,7 +620,7 @@ function applyLook(s: Scene3D, prefs: Map3DPrefs): void {
       m = new THREE.MeshBasicMaterial({ visible: false })
     } else if (z.kind === 2) {
       m = new THREE.MeshLambertMaterial({
-        color: 0x3b82c4, transparent: true, opacity: 0.45 * opacity, depthWrite: false, side: THREE.DoubleSide,
+        color: 0x3b82c4, transparent: true, opacity: 0.45, depthWrite: false, side: THREE.DoubleSide,
       })
     } else {
       const height = prefs.style === 'height'
@@ -616,11 +630,9 @@ function applyLook(s: Scene3D, prefs: Map3DPrefs): void {
         color: height ? (faded ? 0x9aa0a8 : 0xffffff) : faded ? 0x6b7280 : 0xb3ac9c,
         flatShading: true,
         side,
-        transparent: see,
-        opacity,
-        depthWrite: !see,
       })
     }
+    m.userData = { opacity: m.opacity, blends: m.transparent }
     L.materials.push(m)
     return m
   }
@@ -629,15 +641,33 @@ function applyLook(s: Scene3D, prefs: Map3DPrefs): void {
   const n = L.data.materials.length
   const solid = Array.from({ length: n }, (_, i) => make(i, false))
   const faded = Array.from({ length: n }, (_, i) => make(i, true))
+  L.faded = faded
   for (const layers of [L.own, L.objects]) {
     layers.floor.material = solid
     layers.wall.material = faded
     layers.ceiling.material = faded
-    layers.ceiling.visible = !prefs.hideCeilings
     // Faded walls draw after solid floors.
     layers.wall.renderOrder = 1
     layers.ceiling.renderOrder = 1
   }
+}
+
+// adjustLook applies wall opacity and what's shown to the materials and
+// meshes already built. Opacity is a uniform; only crossing between solid
+// and see-through changes a material's shader, and three.js caches those.
+function adjustLook(L: ZoneLayers, prefs: Map3DPrefs): void {
+  const op = prefs.wallOpacity
+  for (const m of L.faded) {
+    const { opacity, blends } = m.userData as { opacity: number; blends: boolean }
+    m.opacity = opacity * op
+    const transparent = blends || op < 1
+    if (m.transparent !== transparent) {
+      m.transparent = transparent
+      m.depthWrite = !transparent
+      m.needsUpdate = true
+    }
+  }
+  L.own.ceiling.visible = !prefs.hideCeilings
   L.objects.floor.visible = prefs.showObjects
   L.objects.wall.visible = prefs.showObjects
   L.objects.ceiling.visible = prefs.showObjects && !prefs.hideCeilings
