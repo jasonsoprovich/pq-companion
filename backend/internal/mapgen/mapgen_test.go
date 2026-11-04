@@ -318,7 +318,7 @@ func TestLoadMesh3D(t *testing.T) {
 	}{{"gfaydark", true}, {"akheva", false}, {"qeynos2", true}} {
 		zone := tc.zone
 		t.Run(zone, func(t *testing.T) {
-			m, err := mapgen.LoadMesh3D(clientDir, zone)
+			m, err := mapgen.LoadMesh3D(clientDir, zone, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

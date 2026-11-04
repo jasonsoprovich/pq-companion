@@ -13,8 +13,8 @@ export interface Map3DPrefs {
   // building or dungeon you look in through its walls instead of at them.
   seeThroughOuter: boolean
   hideCeilings: boolean
-  // showObjects draws the zone's placed objects: trees, buildings, lamps,
-  // furniture.
+  // showObjects draws the zone's placed objects (trees, buildings, lamps,
+  // furniture) and its doors.
   showObjects: boolean
 }
 

@@ -74,7 +74,7 @@ func (h *mapsHandler) mesh3D(w http.ResponseWriter, r *http.Request) {
 	buf, ok := h.meshes.get(key)
 	if !ok {
 		start := time.Now()
-		m, err := mapgen.LoadMesh3D(eqPath, short)
+		m, err := mapgen.LoadMesh3D(eqPath, short, h.zoneDoors(short))
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
 				writeError(w, http.StatusNotFound, "no "+short+".s3d in the EverQuest folder")
@@ -93,6 +93,28 @@ func (h *mapsHandler) mesh3D(w http.ResponseWriter, r *http.Request) {
 	w.Write(buf) //nolint:errcheck
 }
 
+// zoneDoors returns the zone's doors for the 3D view. Doors are extra
+// detail: without the game database, or on an error, the zone draws without
+// them.
+func (h *mapsHandler) zoneDoors(zone string) []mapgen.Door {
+	if h.quarm == nil {
+		return nil
+	}
+	rows, err := h.quarm.ZoneDoors(zone)
+	if err != nil {
+		slog.Warn("maps: 3D doors skipped", "zone", zone, "err", err)
+		return nil
+	}
+	out := make([]mapgen.Door, 0, len(rows))
+	for _, d := range rows {
+		out = append(out, mapgen.Door{
+			Model: d.Name, X: d.X, Y: d.Y, Z: d.Z,
+			Heading: d.Heading, Incline: float64(d.Incline), Size: d.Size,
+		})
+	}
+	return out
+}
+
 // textureSize is the largest side, in pixels, a 3D-view texture is served
 // at. Client textures are 1024 px; a zone has dozens, and at full size they
 // would take hundreds of megabytes of GPU memory for a map view.
@@ -105,12 +127,17 @@ var textureNameRe = regexp.MustCompile(`^[a-z0-9_&' \-]{1,64}\.(bmp|dds)$`)
 // textureCache holds one zone's raw client textures and the PNGs made from
 // them so far. The 3D view asks for a zone's textures together, so only the
 // latest zone is kept; the mutex also makes those parallel requests share
-// one read of the archive.
+// one read of the archive. shared holds the shared model archives'
+// textures (mapgen.LoadSharedTextures), read the first time a zone asks
+// for one its own archives lack, and kept while the EQ folder stays the
+// same.
 type textureCache struct {
-	mu  sync.Mutex
-	key string
-	raw map[string][]byte
-	png map[string][]byte
+	mu        sync.Mutex
+	key       string
+	raw       map[string][]byte
+	png       map[string][]byte
+	sharedKey string
+	shared    map[string][]byte
 }
 
 // get returns the PNG for one texture, reading the zone archive if it isn't
@@ -135,7 +162,16 @@ func (c *textureCache) get(eqPath, zone, name string, masked bool) (buf []byte, 
 	}
 	raw, ok := c.raw[name]
 	if !ok {
-		return nil, false, nil
+		if c.sharedKey != eqPath {
+			shared, err := mapgen.LoadSharedTextures(eqPath)
+			if err != nil {
+				return nil, false, err
+			}
+			c.sharedKey, c.shared = eqPath, shared
+		}
+		if raw, ok = c.shared[name]; !ok {
+			return nil, false, nil
+		}
 	}
 	img, err := mapgen.DecodeTexture(raw, textureSize, masked)
 	if err != nil {

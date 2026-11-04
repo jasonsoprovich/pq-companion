@@ -32,3 +32,18 @@ func TestActorComponents(t *testing.T) {
 		t.Fatalf("components = %v", got)
 	}
 }
+
+func TestDoorPlacement(t *testing.T) {
+	// Game (x, y) is raw (y, x); size is a percentage.
+	p := Door{Model: "DOOR1", X: 10, Y: 20, Z: 3, Heading: 128, Incline: 0, Size: 50}.placement()
+	if p.Raw != (Vec3{20, 10, 3}) || p.Actor != "DOOR1_ACTORDEF" || p.Scale != 0.5 || p.Yaw != 128 {
+		t.Fatalf("placement = %+v", p)
+	}
+	// Map space matches the door pins (x, y negated).
+	if p.Pos.X != -10 || p.Pos.Y != -20 {
+		t.Fatalf("map position = %v, want (-10, -20)", p.Pos)
+	}
+	if (Door{Size: 0}).placement().Scale != 1 {
+		t.Fatal("size 0 should draw at the model's own size")
+	}
+}

@@ -451,7 +451,7 @@ function ViewOptions({ prefs, onChange }: {
           checked={prefs.showObjects}
           onChange={(e) => onChange({ showObjects: e.target.checked })}
         />
-        <span>Trees &amp; objects</span>
+        <span>Objects &amp; doors</span>
       </label>
       <label className="flex items-start gap-1.5">
         <input

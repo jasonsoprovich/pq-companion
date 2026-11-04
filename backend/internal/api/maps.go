@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/mapexport"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/mapfiles"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/maps"
@@ -24,6 +25,8 @@ type mapsHandler struct {
 	annotations *maps.AnnotationStore
 	// cfg supplies the EQ install path for the in-game map export.
 	cfg *config.Manager
+	// quarm is the game database, for the doors the 3D view places.
+	quarm *db.DB
 	// meshes caches 3D zone meshes read from the client (see mesh3D).
 	meshes meshCache
 	// textures holds the last 3D zone's client textures (see texture3D).

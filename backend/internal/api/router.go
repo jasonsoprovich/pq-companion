@@ -153,7 +153,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	popflagH := &popflagHandler{store: popflagStore, hub: hub, mgr: cfgMgr, charStore: charStore}
 	changelogH := &changelogHandler{entries: changelogEntries}
 	emotesH := &emotesHandler{service: emoteService}
-	mapsH := &mapsHandler{store: mapStore, annotations: mapAnnotations, cfg: cfgMgr}
+	mapsH := &mapsHandler{store: mapStore, annotations: mapAnnotations, cfg: cfgMgr, quarm: database}
 	raidsH := &raidsHandler{store: raidStore, roster: roster, pipe: pipeSupervisor, liveZone: liveZone}
 
 	r.Route("/api", func(r chi.Router) {

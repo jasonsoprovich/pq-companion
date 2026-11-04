@@ -58,11 +58,11 @@ type Mesh3D struct {
 }
 
 // LoadMesh3D reads <clientDir>/<shortName>.s3d and returns its 3D mesh,
-// with the zone's placed objects (trees, buildings, furniture) from its
-// _obj archives when the client has them. Unlike LoadZone, vertices aren't
+// with the zone's placed objects (trees, buildings, furniture) and doors
+// from its _obj archives when the client has them. Unlike LoadZone, vertices aren't
 // welded: neighbouring fragments that meet at a point usually give it
 // different texture coords.
-func LoadMesh3D(clientDir, shortName string) (*Mesh3D, error) {
+func LoadMesh3D(clientDir, shortName string, doors []Door) (*Mesh3D, error) {
 	w, err := loadZoneWLD(clientDir, shortName)
 	if err != nil {
 		return nil, err
@@ -71,7 +71,7 @@ func LoadMesh3D(clientDir, shortName string) (*Mesh3D, error) {
 	for _, m := range w.Meshes() {
 		b.add(w, m, nil, false)
 	}
-	if err := b.addObjects(clientDir, shortName); err != nil {
+	if err := b.addObjects(clientDir, shortName, doors); err != nil {
 		// Objects are extra detail; the zone still draws without them.
 		slog.Warn("mapgen: zone objects skipped", "zone", shortName, "err", err)
 	}

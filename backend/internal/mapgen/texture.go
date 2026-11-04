@@ -20,13 +20,9 @@ import (
 // its _obj archives (for placed objects), keyed by lowercased file name. A
 // name in both keeps the zone's own.
 func LoadTextures(clientDir, shortName string) (map[string][]byte, error) {
-	keep := func(name string) bool {
-		l := strings.ToLower(name)
-		return strings.HasSuffix(l, ".bmp") || strings.HasSuffix(l, ".dds")
-	}
 	out := map[string][]byte{}
 	for i, name := range append([]string{shortName + ".s3d"}, objArchives(shortName)...) {
-		arc, err := OpenArchiveFiles(filepath.Join(clientDir, name), keep)
+		arc, err := OpenArchiveFiles(filepath.Join(clientDir, name), isTexture)
 		if err != nil {
 			// Only the zone's own archive is required.
 			if i > 0 && errors.Is(err, fs.ErrNotExist) {
@@ -41,6 +37,33 @@ func LoadTextures(clientDir, shortName string) (map[string][]byte, error) {
 		}
 	}
 	return out, nil
+}
+
+// LoadSharedTextures reads the texture entries of the shared model archives
+// (see sharedArchives), for models a zone takes from them. Archives the
+// client doesn't have are skipped.
+func LoadSharedTextures(clientDir string) (map[string][]byte, error) {
+	out := map[string][]byte{}
+	for _, name := range sharedArchives {
+		arc, err := OpenArchiveFiles(filepath.Join(clientDir, name), isTexture)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		for n, b := range arc {
+			if _, ok := out[strings.ToLower(n)]; !ok {
+				out[strings.ToLower(n)] = b
+			}
+		}
+	}
+	return out, nil
+}
+
+func isTexture(name string) bool {
+	l := strings.ToLower(name)
+	return strings.HasSuffix(l, ".bmp") || strings.HasSuffix(l, ".dds")
 }
 
 // DecodeTexture decodes a zone texture, at most maxSize pixels on a side

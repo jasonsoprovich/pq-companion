@@ -27,11 +27,53 @@ const (
 // it negated have converted to a left-handed engine's axes.
 const objYawSign = 1.0
 
+// Door is a door the server places (the doors table), in game
+// coordinates. Model names an actor in the zone's _obj archive without its
+// _ACTORDEF suffix; Heading and Incline are in 1/512ths of a turn, and Size
+// is a percentage.
+type Door struct {
+	Model            string
+	X, Y, Z          float64
+	Heading, Incline float64
+	Size             int
+}
+
+// doorHeadingSign turns a door's heading into a placement yaw: the same
+// direction as objects.wld yaw. Checked on plans of door headings 128 and
+// 384, where the sign swings a door 180 degrees about its hinge, in four
+// zones: this way every slab closes its doorway, the other way it lies
+// along the wall beside it.
+const doorHeadingSign = 1.0
+
+// placement returns the door as an object placement. Game x and y are raw
+// WLD y and x (see ToMapSpace).
+func (d Door) placement() Placement {
+	raw := Vec3{d.Y, d.X, d.Z}
+	scale := float64(d.Size) / 100
+	if scale <= 0 {
+		scale = 1
+	}
+	return Placement{
+		Pos:   ToMapSpace(raw.X, raw.Y, raw.Z),
+		Raw:   raw,
+		Actor: d.Model + "_ACTORDEF",
+		Yaw:   doorHeadingSign * d.Heading,
+		Tilt:  d.Incline,
+		Scale: scale,
+	}
+}
+
 // objArchives are the archives that can hold a zone's object models, in
 // lookup order.
 func objArchives(shortName string) []string {
 	return []string{shortName + "_obj.s3d", shortName + "_2_obj.s3d"}
 }
+
+// sharedArchives hold models any zone can use, which doors mostly come from
+// when a zone's own archives lack them: Kael's crates, the Plane of
+// Knowledge books. They're read only for models a zone is missing, since
+// gequip.s3d alone is 13 MB.
+var sharedArchives = []string{"global_obj.s3d", "gequip.s3d"}
 
 // objMargin is how far, in world units, a placement may sit outside the
 // zone's geometry and still be drawn. Some zones park unused objects far
@@ -39,26 +81,28 @@ func objArchives(shortName string) []string {
 // stretch the 3D view's framing to nothing.
 const objMargin = 500
 
-// addObjects places every object from objects.wld using models from the
-// zone's _obj archives. Call it after the zone's own geometry is added: its
-// bounds decide which placements are kept. A zone with no objects or no _obj
-// archive adds nothing.
-func (b *meshBuilder) addObjects(clientDir, shortName string) error {
+// addObjects places every object from objects.wld, and the given doors,
+// using models from the zone's _obj archives. Call it after the zone's own
+// geometry is added: its bounds decide which placements are kept. A zone
+// with no objects or no _obj archive adds nothing.
+func (b *meshBuilder) addObjects(clientDir, shortName string, doors []Door) error {
 	arc, err := OpenArchiveFiles(filepath.Join(clientDir, shortName+".s3d"), func(name string) bool {
 		return strings.EqualFold(name, "objects.wld")
 	})
 	if err != nil {
 		return err
 	}
-	raw, ok := arc["objects.wld"]
-	if !ok {
-		return nil
+	var places []Placement
+	if raw, ok := arc["objects.wld"]; ok {
+		ow, err := ParseWLD(raw)
+		if err != nil {
+			return err
+		}
+		places = ow.Placements()
 	}
-	ow, err := ParseWLD(raw)
-	if err != nil {
-		return err
+	for _, d := range doors {
+		places = append(places, d.placement())
 	}
-	places := ow.Placements()
 	if len(places) == 0 {
 		return nil
 	}
@@ -67,19 +111,29 @@ func (b *meshBuilder) addObjects(clientDir, shortName string) error {
 		w      *WLD
 		meshes []Mesh
 	}
+	// Only the actors placed are parsed; missing counts those not found yet.
+	missing := map[string]bool{}
+	for _, p := range places {
+		missing[strings.ToUpper(p.Actor)] = true
+	}
 	models := map[string]model{}
-	for _, name := range objArchives(shortName) {
+	for i, name := range append(objArchives(shortName), sharedArchives...) {
+		if len(missing) == 0 {
+			break
+		}
 		w, err := loadArchiveWLD(filepath.Join(clientDir, name))
 		if errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
 		if err != nil {
+			if i >= len(objArchives(shortName)) {
+				continue // a shared archive is only a fallback
+			}
 			return err
 		}
-		for actor, meshes := range w.actorMeshes() {
-			if _, ok := models[actor]; !ok {
-				models[actor] = model{w, meshes}
-			}
+		for actor, meshes := range w.actorMeshes(missing) {
+			models[actor] = model{w, meshes}
+			delete(missing, actor)
 		}
 	}
 	lo, hi := b.bounds()
@@ -138,11 +192,15 @@ func placeTransform(p Placement) func(Vec3) Vec3 {
 
 // actorMeshes maps each actor's name ("TREE1_ACTORDEF", uppercased) to its
 // meshes: a static actor's own, or an animated one's posed at its first
-// frame (see skeletonMeshes).
-func (w *WLD) actorMeshes() map[string][]Mesh {
+// frame (see skeletonMeshes). With want set, only those actors are read.
+func (w *WLD) actorMeshes(want map[string]bool) map[string][]Mesh {
 	out := map[string][]Mesh{}
 	for _, f := range w.Fragments {
 		if f.kind != fragActor {
+			continue
+		}
+		name := strings.ToUpper(w.str(f.nameRef))
+		if want != nil && !want[name] {
 			continue
 		}
 		var meshes []Mesh
@@ -154,7 +212,7 @@ func (w *WLD) actorMeshes() map[string][]Mesh {
 			}
 		}
 		if len(meshes) > 0 {
-			out[strings.ToUpper(w.str(f.nameRef))] = meshes
+			out[name] = meshes
 		}
 	}
 	return out
