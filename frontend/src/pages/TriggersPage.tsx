@@ -993,7 +993,11 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, timerG
     color: 'var(--color-foreground)',
   }
 
-  const canSubmit = name.trim() && pattern.trim() && !patternError && !submitting
+  // Pipe triggers have no regex; their pipe condition is checked on submit.
+  const canSubmit =
+    name.trim() &&
+    (source === 'pipe' || (pattern.trim() && !patternError)) &&
+    !submitting
 
   return (
     <form
