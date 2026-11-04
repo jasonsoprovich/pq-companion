@@ -487,6 +487,10 @@ a future data source fix this?" column against the new capabilities.
   dots. The port still says nothing about the instance's *type*, and the
   server reuses ports, so a zone that shut down and restarted on the same
   port looks like the same copy.
+  Boxed clients that run from the same EverQuest folder also share one
+  `dbg.txt`, so the copy follows whichever client zoned last; a box zoning
+  into another copy marks your own kills "[other copy]" until you zone again. Run
+  each client from its own folder to keep them apart.
 - **Could a future data source fix this?** **No** for the type, unless Zeal
   exposes the instance ID/type. Re-check on each Zeal release.
 
