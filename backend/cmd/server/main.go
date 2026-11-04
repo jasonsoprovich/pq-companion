@@ -49,6 +49,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/progress"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/raidcomp"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/raidthreat"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/regen"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/respawn"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/rolltracker"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/sandbox"
@@ -786,6 +787,10 @@ func main() {
 		s := cfgMgr.Get().CHChain
 		return s.Enabled && s.PossibleMissEnabled
 	})
+	// Measured HP/mana regen per tick, from Zeal's HP/mana labels and the
+	// gauge 24 tick phase. Shown on Character Info.
+	regenTracker := regen.NewTracker(hub, timerEngine.NextServerTick, spelltimer.ServerTickPeriod)
+
 	timerEngine.SetExpiredKeepProvider(func(spellName string, detrimental bool) time.Duration {
 		return cfgMgr.Get().SpellTimer.ExpiredKeep(spellName, detrimental)
 	})
@@ -1893,6 +1898,7 @@ func main() {
 		// learn the prior value is gone.
 		var castingName, targetName, targetPetOwner string
 		targetHP := -1
+		curHP, maxHP, curMana, maxMana := -1, -1, 0, 0
 		var buffSlots []string
 		var pipeBuffs []spelltimer.PipeBuff
 		for _, l := range labels {
@@ -1936,6 +1942,21 @@ func main() {
 				}
 			case zealpipe.LabelCastingName:
 				castingName = l.Value
+			case zealpipe.LabelCurrentHP, zealpipe.LabelMaxHP, zealpipe.LabelMana, zealpipe.LabelMaxMana:
+				n, err := strconv.Atoi(strings.TrimSpace(l.Value))
+				if err != nil {
+					break
+				}
+				switch l.Type {
+				case zealpipe.LabelCurrentHP:
+					curHP = n
+				case zealpipe.LabelMaxHP:
+					maxHP = n
+				case zealpipe.LabelMana:
+					curMana = n
+				default:
+					maxMana = n
+				}
 			default:
 				// Buff slots: 45-59 (Buff0-14) and 135-140 (Buff15-20).
 				id := int(l.Type)
@@ -1957,6 +1978,9 @@ func main() {
 		}
 		timerEngine.SetPipeCasting(castingName)
 		timerEngine.SetPipeBuffSlots(env.Character, pipeBuffs)
+		if curHP >= 0 && maxHP > 0 {
+			regenTracker.SetVitals(env.Character, curHP, maxHP, curMana, maxMana)
+		}
 		// Corpse-target death signal: drops detrimental timers when a boss
 		// dies while still selected, even if the slain-line is out of log
 		// range (raid casters far from the target). See HandlePipeTarget.
@@ -2086,6 +2110,7 @@ func main() {
 		guard.run("threatTracker", func() { threatTracker.Handle(ev) })
 		guard.run("raidThreatAssembler", func() { raidThreatAssembler.Handle(ev) })
 		guard.run("timerEngine", func() { timerEngine.Handle(ev) })
+		guard.run("regenTracker", func() { regenTracker.Handle(ev) })
 		guard.run("respawnEngine", func() { respawnEngine.Handle(ev) })
 		guard.run("rollTracker", func() { rollTracker.Handle(ev) })
 		durable("factionEngine", func() { factionEngine.Handle(ev) })
@@ -2398,7 +2423,7 @@ func main() {
 	}
 	defer mapStore.Close()
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, replayer, npcTracker, combatTracker, historyStore, threatTracker, raidThreatAssembler, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, blockbuffStore, sb, savedQueryStore, skillsStore, traderStore, traderCapturer, popflagStore, wishlistWatcher, changelogEntries, factionEngine, emoteService, mapStore, mapAnnotations, progressStore, mystatsStore, raidStore, rosterKeeper, killStore, killCounters, itemDisplayTracker, petTracker, liveZoneFn, actualPort)
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, replayer, npcTracker, combatTracker, historyStore, threatTracker, raidThreatAssembler, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, blockbuffStore, sb, savedQueryStore, skillsStore, traderStore, traderCapturer, popflagStore, wishlistWatcher, changelogEntries, factionEngine, emoteService, mapStore, mapAnnotations, progressStore, mystatsStore, raidStore, rosterKeeper, killStore, killCounters, itemDisplayTracker, petTracker, regenTracker, liveZoneFn, actualPort)
 
 	// Raid disband watcher. Zeal emits MsgRaid only while is_in_raid(); on
 	// disband the envelopes just STOP — there is no "raid over" message on the

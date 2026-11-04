@@ -140,6 +140,17 @@ func phaseDiff(a, b time.Time) time.Duration {
 	return d
 }
 
+// ServerTickPeriod is the length of one server tick.
+const ServerTickPeriod = serverTickPeriod
+
+// NextServerTick returns the active player's first server tick boundary at
+// or after now, and whether the gauge 24 phase is currently trusted.
+func (e *Engine) NextServerTick(now time.Time) (time.Time, bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.tick.nextTick(now)
+}
+
 // SetPipeServerTick feeds a Zeal gauge 24 reading for character. Readings
 // for any character other than the active one are ignored: the phase is per
 // client. Once the phase is trusted, self-buff timers not already placed by

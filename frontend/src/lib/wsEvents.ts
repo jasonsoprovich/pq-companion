@@ -13,6 +13,8 @@ export const WSEvent = {
   OverlayNPCTargetDistance: 'overlay:npc_target_distance',
   OverlayThreat: 'overlay:threat',
   OverlayRaidThreat: 'overlay:raidthreat',
+  // Measured HP/mana regen per tick (regen.Snapshot) for one character.
+  Regen: 'regen:state',
   TriggerFired: 'trigger:fired',
   TriggerTest: 'trigger:test',
   TriggerTestPosition: 'trigger:test_position',

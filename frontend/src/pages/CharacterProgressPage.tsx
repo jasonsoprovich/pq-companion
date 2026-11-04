@@ -12,6 +12,8 @@ import { useWebSocket, type WsMessage } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
 import { useActivePlayerName } from '../hooks/useActivePlayerName'
 import { usePersistentState } from '../hooks/usePersistentState'
+import { useMeasuredRegen } from '../hooks/useMeasuredRegen'
+import type { MeasuredRegen } from '../types/regen'
 import type { ActiveTimer, TimerState } from '../types/timer'
 import type {
   QuarmyData, CharacterAA, AAInfo, Character,
@@ -535,6 +537,7 @@ interface StatsPanelProps {
 }
 
 function StatsPanel({ stats, hasStats, characterID, characterName }: StatsPanelProps): React.ReactElement {
+  const measuredRegen = useMeasuredRegen(characterName)
   const [mode, setMode] = usePersistentState<StatMode>(
     'pq-tab:char-stats-mode', 'equipped', ['base', 'equipped', 'buffed', 'live'],
   )
@@ -934,6 +937,7 @@ function StatsPanel({ stats, hasStats, characterID, characterName }: StatsPanelP
               <BreakdownRow label="Mana Regen"      value={`+${block.mana_regen}/tick`} split={block.breakdown.mana_regen} />
               <BreakdownRow label="Damage Shield"   value={`${block.dmg_shield}`}     split={block.breakdown.dmg_shield} includeAA={false} />
             </div>
+            <MeasuredRegenLine regen={measuredRegen} />
           </div>
         )}
       </div>
@@ -1063,6 +1067,33 @@ function StatModeToggle({ mode, onChange }: StatModeToggleProps): React.ReactEle
 // it appears immediately and reliably — unlike the native `title` tooltip it
 // replaces, which was laggy and easy to miss. Pass includeAA=false for stats
 // with no AA source (Flowing Thought is worn-focus only on Quarm).
+// MeasuredRegenLine shows the regen actually seen in game this session,
+// beside the computed values above. Hidden until a rate has been measured.
+function MeasuredRegenLine({ regen }: { regen: MeasuredRegen | null }): React.ReactElement | null {
+  if (!regen || (regen.hp_per_tick === undefined && regen.mana_per_tick === undefined)) return null
+  const parts: string[] = []
+  if (regen.hp_per_tick !== undefined) parts.push(`HP +${regen.hp_per_tick}/tick`)
+  if (regen.mana_per_tick !== undefined) parts.push(`Mana +${regen.mana_per_tick}/tick`)
+  return (
+    <div
+      className="mt-2 flex items-center justify-between gap-2"
+      title={
+        'Measured live from Zeal: the median HP/mana gain over your last ' +
+        `${Math.max(regen.hp_ticks, regen.mana_ticks)} clean ticks (no damage, heals, ` +
+        'casting, combat, zoning or max HP/mana change). Sitting and medding ' +
+        'raise it, so it reflects how you were resting.'
+      }
+    >
+      <span style={{ textDecoration: 'underline dotted', textUnderlineOffset: '2px', cursor: 'help' }}>
+        Measured in game
+      </span>
+      <span className="font-mono" style={{ color: 'var(--color-foreground)' }}>
+        {parts.join(' · ')}
+      </span>
+    </div>
+  )
+}
+
 function BreakdownRow({
   label, value, split, includeAA = true, note,
 }: {

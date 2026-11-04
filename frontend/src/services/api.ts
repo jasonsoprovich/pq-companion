@@ -1618,6 +1618,12 @@ export function getPetState(): Promise<PetState> {
   return get<PetState>('/api/overlay/pet')
 }
 
+type MeasuredRegen = import('../types/regen').MeasuredRegen
+
+export function getMeasuredRegen(character: string): Promise<MeasuredRegen> {
+  return get<MeasuredRegen>(`/api/overlay/regen?character=${encodeURIComponent(character)}`)
+}
+
 export function getKillCounterPresets(): Promise<{ presets: import('../types/kills').KillCounterPreset[] }> {
   return get<{ presets: import('../types/kills').KillCounterPreset[] }>('/api/kill-counters/presets')
 }
