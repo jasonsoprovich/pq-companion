@@ -649,6 +649,16 @@ type Engine struct {
 	// absent from a non-empty slot snapshot, so a single dropped frame can't
 	// end it.
 	pipeMissingSince map[string]time.Time
+	// pipeTicked marks the timers the latest buff snapshot placed by tick
+	// count; server-tick snapping leaves those alone.
+	pipeTicked map[string]bool
+
+	// tick is the active player's server tick phase from Zeal gauge 24, and
+	// tickBase / tickSnapped remember each formula timer's own expiry and
+	// the value it was last snapped to (see server_tick.go).
+	tick        tickClock
+	tickBase    map[string]time.Time
+	tickSnapped map[string]time.Time
 
 	// lastDivergenceFromPipe / lastDivergenceFromTimers hold a sorted,
 	// joined form of the divergence sets we most recently emitted to the

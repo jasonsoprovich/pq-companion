@@ -122,6 +122,7 @@ func (e *Engine) reconcilePipeBuffsLocked(active string, set map[string]bool, ti
 		e.pipeConfirmed = make(map[string]bool)
 		e.pipeMissingSince = make(map[string]time.Time)
 	}
+	e.pipeTicked = make(map[string]bool)
 	changed := false
 	for key, t := range e.timers {
 		if !isSelfBuff(t, active) {
@@ -134,6 +135,19 @@ func (e *Engine) reconcilePipeBuffsLocked(active string, set map[string]bool, ti
 				continue
 			}
 			e.pipeConfirmed[key] = true
+			e.pipeTicked[key] = true
+			// With the server tick phase known, the fade is an exact tick;
+			// without it, keep the timer inside the tick count's window.
+			if fade, ok := e.pipeTickFadeLocked(n, now); ok {
+				if d := fade.Sub(t.ExpiresAt); d > tickSnapMove || d < -tickSnapMove {
+					t.ExpiresAt = fade
+					if dur := fade.Sub(t.StartsAt).Seconds(); dur > 0 {
+						t.DurationSeconds = dur
+					}
+					changed = true
+				}
+				continue
+			}
 			if clampToPipeTicks(t, n, now) {
 				changed = true
 				slog.Debug("timer-debug: buff synced to Zeal ticks",
@@ -150,6 +164,13 @@ func (e *Engine) reconcilePipeBuffsLocked(active string, set map[string]bool, ti
 		since, ok := e.pipeMissingSince[key]
 		if !ok {
 			e.pipeMissingSince[key] = now
+			// How far the predicted fade was from the buff actually leaving
+			// the window. Near zero for natural expiry; large and negative
+			// for a click-off or dispel. Kept at info level as calibration
+			// data for the tick-count and tick-phase model.
+			slog.Info("zealpipe: buff left the buff window",
+				"spell", t.SpellName,
+				"predicted_offset", now.Sub(t.ExpiresAt).Round(10*time.Millisecond))
 			continue
 		}
 		if now.Sub(since) < pipeFadeConfirm {

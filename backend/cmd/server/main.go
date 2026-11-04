@@ -1828,6 +1828,20 @@ func main() {
 				}
 			}
 			return
+		case zealpipe.MsgGauge:
+			// Only the server tick gauge is used: its phase places self-buff
+			// fades on the exact tick (see spelltimer/server_tick.go).
+			gauges, err := zealpipe.DecodeGauges(env.Data)
+			if err != nil {
+				slog.Debug("zealpipe: decode gauges failed", "err", err)
+				return
+			}
+			for _, g := range gauges {
+				if g.Type == zealpipe.GaugeServerTick {
+					timerEngine.SetPipeServerTick(env.Character, g.Value, g.Text)
+				}
+			}
+			return
 		case zealpipe.MsgLabel:
 			// Fall through to the label aggregator below.
 		default:
