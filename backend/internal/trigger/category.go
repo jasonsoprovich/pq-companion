@@ -636,7 +636,7 @@ func (s *Store) SplitCategoryName(id string) (Category, error) {
 	return s.CategoryByID(id)
 }
 
-// resolveCategoryID returns the id of a top-level category named name,
+// resolveCategoryIDWith returns the id of a top-level category named name,
 // materializing an implicit (explicit=0) row if none exists yet. This is the
 // compatibility boundary for the many callers — pack installs, GINA import,
 // and any other code that only knows a category by name — that set
@@ -644,13 +644,13 @@ func (s *Store) SplitCategoryName(id string) (Category, error) {
 // to a real category_id here rather than requiring every call site to be
 // rewritten. Always resolves at the top level; only nesting-aware callers
 // (the create/import paths that pick a parent explicitly) produce children.
-func (s *Store) resolveCategoryID(name string) (string, error) {
+func resolveCategoryIDWith(ex execer, name string) (string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return "", nil
 	}
 	var id string
-	err := s.db.QueryRow(
+	err := ex.QueryRow(
 		`SELECT id FROM trigger_categories WHERE parent_id = '' AND name = ?`, name,
 	).Scan(&id)
 	if err == nil {
@@ -663,7 +663,7 @@ func (s *Store) resolveCategoryID(name string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("generate category id: %w", err)
 	}
-	if _, err := s.db.Exec(
+	if _, err := ex.Exec(
 		`INSERT INTO trigger_categories (id, name, parent_id, created_at, explicit, sort_order)
 		 VALUES (?, ?, '', ?, 0, 0)
 		 ON CONFLICT(parent_id, name) DO NOTHING`,
@@ -673,7 +673,7 @@ func (s *Store) resolveCategoryID(name string) (string, error) {
 	}
 	// Re-select rather than assume newID won — a concurrent resolve for the
 	// same name may have won the ON CONFLICT race.
-	if err := s.db.QueryRow(
+	if err := ex.QueryRow(
 		`SELECT id FROM trigger_categories WHERE parent_id = '' AND name = ?`, name,
 	).Scan(&id); err != nil {
 		return "", fmt.Errorf("resolve category %s after create: %w", name, err)
@@ -697,8 +697,12 @@ func (s *Store) resolveCategoryID(name string) (string, error) {
 // longer exists at all (the category was deleted concurrently), the trigger
 // falls back the same way rather than failing the write.
 func (s *Store) resolveCategoryLink(t *Trigger) error {
+	return resolveCategoryLinkWith(s.db, t)
+}
+
+func resolveCategoryLinkWith(ex execer, t *Trigger) error {
 	if t.CategoryID != "" {
-		row, err := s.getCategoryRow(t.CategoryID)
+		row, err := getCategoryRowWith(ex, t.CategoryID)
 		switch {
 		case err == ErrCategoryNotFound:
 			t.CategoryID = ""
@@ -714,7 +718,7 @@ func (s *Store) resolveCategoryLink(t *Trigger) error {
 	if t.PackName == "" {
 		return nil
 	}
-	id, err := s.resolveCategoryID(t.PackName)
+	id, err := resolveCategoryIDWith(ex, t.PackName)
 	if err != nil {
 		return err
 	}

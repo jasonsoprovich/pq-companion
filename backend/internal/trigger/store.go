@@ -1146,11 +1146,12 @@ func (s *Store) BackfillCharactersIfNeeded(names []string) error {
 	return nil
 }
 
-// execer is the subset of *sql.DB / *sql.Tx that insertWith needs, so a
-// single insert body serves both the standalone Insert and the transactional
-// InsertMany.
+// execer is the subset of *sql.DB / *sql.Tx that insertWith needs. Category
+// lookups must use the same connection as the write: InsertMany's transaction
+// already owns the store's only connection.
 type execer interface {
 	Exec(query string, args ...any) (sql.Result, error)
+	queryRower
 }
 
 // Insert saves a new trigger to the database.
@@ -1212,7 +1213,7 @@ func (s *Store) insertWith(ex execer, t *Trigger) error {
 	}
 	t.NormalizeTimerPolicy()
 	source, pipeJSON := normalizeSourceAndCondition(t)
-	if err := s.resolveCategoryLink(t); err != nil {
+	if err := resolveCategoryLinkWith(ex, t); err != nil {
 		return fmt.Errorf("resolve category link: %w", err)
 	}
 	_, err = ex.Exec(
