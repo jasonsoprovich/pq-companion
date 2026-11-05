@@ -28,6 +28,11 @@ import {
   type AnchorResult,
   type ChainView,
   computeAnchorMs,
+  requestAdaptiveEvidence,
+  shareAdaptiveEvidence,
+  loadSustainedDropout,
+  METRONOME_CONFIG_EVENT,
+  metronomeConfigKey,
   loadAlertsEnabled,
   loadSeen,
   mergeSeen,
@@ -44,19 +49,20 @@ const ANCHOR_GRACE_SECS = 3
 const PULSE_SECS = 1.5
 const CHAIN_STORAGE_KEY = 'chMetronome:chain'
 
-type Cfg = { position: number; chainSize: number; delay: number }
+type Cfg = { position: number; chainSize: number; delay: number; sustainedDropout?: boolean }
 const DEFAULT_CFG: Cfg = { position: 2, chainSize: 3, delay: 4 }
 
 function loadCfg(): Cfg {
   const read = (k: string, d: number): number => {
     const raw = localStorage.getItem(`chMetronome:${k}`)
-    const n = raw == null ? NaN : parseInt(raw, 10)
+    const n = raw == null ? NaN : (k === 'delay' && loadSustainedDropout() ? parseFloat(raw) : parseInt(raw, 10))
     return Number.isFinite(n) ? n : d
   }
   return {
     position: read('position', DEFAULT_CFG.position),
     chainSize: read('chainSize', DEFAULT_CFG.chainSize),
     delay: read('delay', DEFAULT_CFG.delay),
+    sustainedDropout: loadSustainedDropout(),
   }
 }
 
@@ -96,6 +102,10 @@ export function useMetronomeAlerts(): void {
   const chainRef = useRef<ChainView>(loadChainSelection())
   const seenRef = useRef<Map<number, number>>(loadSeen(chainRef.current))
   const anchorRef = useRef<AnchorResult | null>(null)
+  const timersRef = useRef<ActiveTimer[]>([])
+  const cfgRef = useRef(loadCfg())
+  const configKeyRef = useRef(metronomeConfigKey(cfgRef.current, chainRef.current))
+  const retiredRef = useRef(false)
   // Which cycle each cue has already spoken for, held as the anchor time it
   // fired against and compared with sameCycle rather than for exact equality.
   //
@@ -139,7 +149,20 @@ export function useMetronomeAlerts(): void {
   // metronomes use, shared via the same localStorage key, and reload the
   // learned chain-number map on a real switch.
   useEffect(() => {
+    const retireConfig = (): void => {
+      const cfg = loadCfg()
+      const key = metronomeConfigKey(cfg, secondaryEnabledRef.current ? loadChainSelection() : 'main')
+      if (key !== configKeyRef.current && (cfg.sustainedDropout || cfgRef.current.sustainedDropout)) {
+        anchorRef.current = null
+        seenRef.current = new Map()
+        retiredRef.current = true
+      }
+      configKeyRef.current = key
+      cfgRef.current = cfg
+      if (cfg.sustainedDropout) chainRef.current = loadChainSelection()
+    }
     const onStorage = (e: StorageEvent): void => {
+      retireConfig()
       if (e.key === CHAIN_STORAGE_KEY) {
         const next = loadChainSelection()
         if (next !== chainRef.current) {
@@ -148,13 +171,17 @@ export function useMetronomeAlerts(): void {
           anchorRef.current = null
         }
       } else if (e.key === seenStorageKey(chainRef.current)) {
-        mergeSeen(seenRef.current, loadSeen(chainRef.current))
+        if (!loadSustainedDropout()) mergeSeen(seenRef.current, loadSeen(chainRef.current))
       } else if (e.key === ALERTS_ENABLED_KEY) {
         alertsEnabledRef.current = loadAlertsEnabled()
       }
     }
     window.addEventListener('storage', onStorage)
-    return () => window.removeEventListener('storage', onStorage)
+    window.addEventListener(METRONOME_CONFIG_EVENT, retireConfig)
+    return () => {
+      window.removeEventListener('storage', onStorage)
+      window.removeEventListener(METRONOME_CONFIG_EVENT, retireConfig)
+    }
   }, [])
 
   // Electron doesn't push window open/close state, so poll the same way
@@ -185,19 +212,50 @@ export function useMetronomeAlerts(): void {
 
   const recomputeAnchor = useCallback(
     (timers: ActiveTimer[]) => {
+      timersRef.current = timers
       const chain = activeChain()
       const cfg = loadCfg()
       const anchor = computeAnchorMs(timers, cfg, chain, seenRef.current, Date.now())
-      saveSeen(chain, seenRef.current)
-      if (anchor != null && acceptNewAnchor(anchorRef.current, anchor, cfg)) anchorRef.current = anchor
+      const key = metronomeConfigKey(cfg, chain)
+      if (key !== configKeyRef.current && (cfg.sustainedDropout || cfgRef.current.sustainedDropout)) {
+        anchorRef.current = null
+        retiredRef.current = true
+      }
+      configKeyRef.current = key
+      cfgRef.current = cfg
+      if (!cfg.sustainedDropout) saveSeen(chain, seenRef.current)
+      if (cfg.sustainedDropout && anchor == null) anchorRef.current = null
+      if (anchor != null && acceptNewAnchor(anchorRef.current, anchor, cfg)) {
+        const prev = anchorRef.current
+        // Topology corrections can move backwards. Carry already-fired cues
+        // onto the corrected anchor; never mistake dropout/rejoin for a new
+        // cycle. A new scope/config consumes the first cue rather than replaying.
+        if (retiredRef.current || (prev?.scopeKey && prev.scopeKey !== anchor.scopeKey)) {
+          firedStartAnchorMsRef.current = anchor.anchorMs
+          firedCastAnchorMsRef.current = anchor.anchorMs
+        } else if (prev && prev.decisionKey !== anchor.decisionKey) {
+          if (firedStartAnchorMsRef.current !== null) firedStartAnchorMsRef.current = anchor.anchorMs
+          if (firedCastAnchorMsRef.current !== null) firedCastAnchorMsRef.current = anchor.anchorMs
+        }
+        retiredRef.current = false
+        anchorRef.current = anchor
+      }
+      if (cfg.sustainedDropout) requestAdaptiveEvidence(seenRef.current)
     },
     [activeChain],
   )
 
+  useEffect(() => shareAdaptiveEvidence(
+    () => ({ seen: seenRef.current, cfg: cfgRef.current, chain: activeChain() }),
+    () => recomputeAnchor(timersRef.current),
+  ), [recomputeAnchor, activeChain])
+
   useEffect(() => {
+    let cancelled = false
     getTimerState()
-      .then((s) => recomputeAnchor(s.timers))
+      .then((s) => { if (!cancelled) recomputeAnchor(s.timers) })
       .catch(() => {})
+    return () => { cancelled = true }
   }, [recomputeAnchor])
 
   const handleMessage = useCallback(
@@ -224,10 +282,13 @@ export function useMetronomeAlerts(): void {
 
       const a = anchorRef.current
       const now = Date.now()
-      const active = a != null && now - a.anchorMs <= (CH_CAST + ANCHOR_GRACE_SECS) * 1000
+      const active = a != null && now - a.anchorMs <= (CH_CAST + ANCHOR_GRACE_SECS) * 1000 &&
+        (a.validUntilMs == null || now <= a.validUntilMs)
       if (!active) return
       const anchor = a as AnchorResult
       const cfg = loadCfg()
+      if ((cfg.sustainedDropout || cfgRef.current.sustainedDropout) &&
+          metronomeConfigKey(cfg, activeChain()) !== configKeyRef.current) return
       const elapsed = (now - anchor.anchorMs) / 1000
       const castIn = cfg.delay - elapsed
       const flashing = castIn <= 0.15 && elapsed <= cfg.delay + PULSE_SECS
@@ -235,7 +296,7 @@ export function useMetronomeAlerts(): void {
       // A "new cycle" is a new trip around the chain, not merely a changed
       // anchor value — see firedStartAnchorMsRef's comment above.
       const isNewCycle = (fired: number | null): boolean =>
-        fired === null || !sameCycle(anchor.anchorMs, fired, cfg.chainSize, anchor.cadenceSecs)
+        fired === null || !sameCycle(anchor.anchorMs, fired, anchor.effectiveChainSize ?? cfg.chainSize, anchor.cadenceSecs)
 
       const startDue = isNewCycle(firedStartAnchorMsRef.current)
       const castDue = flashing && isNewCycle(firedCastAnchorMsRef.current)

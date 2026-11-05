@@ -21,6 +21,13 @@ import {
   type AnchorResult,
   type ChainView,
   computeAnchorMs,
+  requestAdaptiveEvidence,
+  shareAdaptiveEvidence,
+  DROPOUT_KEY,
+  notifyMetronomeConfig,
+  loadSustainedDropout,
+  METRONOME_CONFIG_EVENT,
+  metronomeConfigKey,
   loadSeen,
   mergeSeen,
   saveSeen,
@@ -47,7 +54,7 @@ const PULSE_SECS = 1.5
 // post-cast state still render even after the source timer expires.
 const ANCHOR_GRACE_SECS = 3
 
-type Cfg = { position: number; chainSize: number; delay: number }
+type Cfg = { position: number; chainSize: number; delay: number; sustainedDropout?: boolean }
 
 const DEFAULT_CFG: Cfg = { position: 2, chainSize: 3, delay: 4 }
 
@@ -72,13 +79,14 @@ function posLabel(position: number, chain: ChainView): string {
 function loadCfg(): Cfg {
   const read = (k: string, d: number): number => {
     const raw = localStorage.getItem(`chMetronome:${k}`)
-    const n = raw == null ? NaN : parseInt(raw, 10)
+    const n = raw == null ? NaN : (k === 'delay' && loadSustainedDropout() ? parseFloat(raw) : parseInt(raw, 10))
     return Number.isFinite(n) ? n : d
   }
   return {
     position: read('position', DEFAULT_CFG.position),
     chainSize: read('chainSize', DEFAULT_CFG.chainSize),
     delay: read('delay', DEFAULT_CFG.delay),
+    sustainedDropout: loadSustainedDropout(),
   }
 }
 
@@ -86,6 +94,8 @@ function saveCfg(c: Cfg): void {
   localStorage.setItem('chMetronome:position', String(c.position))
   localStorage.setItem('chMetronome:chainSize', String(c.chainSize))
   localStorage.setItem('chMetronome:delay', String(c.delay))
+  localStorage.setItem(DROPOUT_KEY, String(c.sustainedDropout === true))
+  notifyMetronomeConfig()
 }
 
 // Stepper is a small "− value +" control used for the three config fields.
@@ -194,17 +204,31 @@ export default function CHMetronomePanel({
   const activeRef = useRef(false)
   const recomputeAnchor = useCallback((timers: ActiveTimer[]) => {
     const anchor = computeAnchorMs(timers, cfgRef.current, chainRef.current, seenRef.current, Date.now())
-    saveSeen(chainRef.current, seenRef.current)
+    if (!cfgRef.current.sustainedDropout) saveSeen(chainRef.current, seenRef.current)
+    if (cfgRef.current.sustainedDropout && anchor == null) {
+      anchorRef.current = null
+      setTick((t) => t + 1)
+    }
     if (anchor != null && acceptNewAnchor(anchorRef.current, anchor, cfgRef.current)) {
       anchorRef.current = anchor
       // Force a render so a new anchor re-activates the (possibly idle) tick.
       setTick((t) => (t + 1) % 1_000_000)
     }
+    if (cfgRef.current.sustainedDropout) requestAdaptiveEvidence(seenRef.current)
   }, [])
 
   useEffect(() => {
+    const changed = (cfg.sustainedDropout || cfgRef.current.sustainedDropout) &&
+      metronomeConfigKey(cfg, chainRef.current) !== metronomeConfigKey(cfgRef.current, chainRef.current)
+    if (changed) {
+      anchorRef.current = null
+      seenRef.current = new Map()
+      confirmedAnchorMsRef.current = null
+      setTick((t) => t + 1)
+    }
     cfgRef.current = cfg
     saveCfg(cfg)
+    if (changed) return // Await a fresh feed, not a cached remaining_seconds.
     // Re-evaluate the anchor against the latest feed when config changes so
     // switching position takes effect without waiting for the next callout.
     recomputeAnchor(timersRef.current)
@@ -213,6 +237,7 @@ export default function CHMetronomePanel({
   useEffect(() => {
     chainRef.current = activeChain
     localStorage.setItem(CHAIN_STORAGE_KEY, chain)
+    if (cfgRef.current.sustainedDropout) notifyMetronomeConfig()
     if (mountedRef.current) {
       // Switching chains drops the old chain's anchor and learned slots — a
       // countdown keyed to the other chain's cadence/numbering would flash
@@ -220,6 +245,10 @@ export default function CHMetronomePanel({
       // for activeChain above, so this only fires on a real switch.
       anchorRef.current = null
       seenRef.current = loadSeen(activeChain)
+      if (cfgRef.current.sustainedDropout) {
+        setTick((t) => t + 1)
+        return
+      }
     }
     mountedRef.current = true
     recomputeAnchor(timersRef.current)
@@ -232,21 +261,45 @@ export default function CHMetronomePanel({
   // the other already made.
   useEffect(() => {
     const onStorage = (e: StorageEvent): void => {
-      if (e.key !== seenStorageKey(chainRef.current)) return
+      if (e.key == null || ['chMetronome:position', 'chMetronome:chainSize', 'chMetronome:delay', DROPOUT_KEY].includes(e.key)) {
+        const next = loadCfg()
+        if (next.sustainedDropout || cfgRef.current.sustainedDropout || e.key === DROPOUT_KEY) setCfg(next)
+        return
+      }
+      if (e.key === CHAIN_STORAGE_KEY && cfgRef.current.sustainedDropout) { setChain(loadChain()); return }
+      if (cfgRef.current.sustainedDropout || e.key !== seenStorageKey(chainRef.current)) return
       mergeSeen(seenRef.current, loadSeen(chainRef.current))
       recomputeAnchor(timersRef.current)
     }
+    const onConfig = (): void => {
+      const next = loadCfg()
+      if (!next.sustainedDropout && !cfgRef.current.sustainedDropout) return
+      setChain(loadChain())
+      setCfg(c => metronomeConfigKey(c, chainRef.current) === metronomeConfigKey(next, chainRef.current) ? c : next)
+    }
     window.addEventListener('storage', onStorage)
-    return () => window.removeEventListener('storage', onStorage)
+    window.addEventListener(METRONOME_CONFIG_EVENT, onConfig)
+    return () => {
+      window.removeEventListener('storage', onStorage)
+      window.removeEventListener(METRONOME_CONFIG_EVENT, onConfig)
+    }
   }, [recomputeAnchor])
 
+  useEffect(() => shareAdaptiveEvidence(
+    () => ({ seen: seenRef.current, cfg: cfgRef.current, chain: chainRef.current }),
+    () => recomputeAnchor(timersRef.current),
+  ), [recomputeAnchor])
+
   useEffect(() => {
+    let cancelled = false
     getTimerState()
       .then((s) => {
+        if (cancelled) return
         timersRef.current = s.timers
         recomputeAnchor(s.timers)
       })
       .catch(() => {})
+    return () => { cancelled = true }
   }, [recomputeAnchor])
 
   const handleMessage = useCallback(
@@ -280,12 +333,13 @@ export default function CHMetronomePanel({
     return () => clearInterval(id)
   }, [])
 
-  const watch = watchPosition(cfg)
+  const watch = anchorRef.current?.watch ?? watchPosition(cfg)
   const now = Date.now()
   const anchorResult = anchorRef.current
   const anchor = anchorResult?.anchorMs ?? null
   const predicted = anchorResult?.predicted ?? false
-  const active = anchor != null && now - anchor <= (CH_CAST + ANCHOR_GRACE_SECS) * 1000
+  const active = anchor != null && now - anchor <= (CH_CAST + ANCHOR_GRACE_SECS) * 1000 &&
+    (anchorResult?.validUntilMs == null || now <= anchorResult.validUntilMs)
   activeRef.current = active
 
   // Derived timing for the current cycle.
@@ -431,6 +485,14 @@ export default function CHMetronomePanel({
         />
         {secondaryEnabled && <ChainSwitch chain={activeChain} onChange={setChain} />}
       </div>
+      <label style={{ fontSize: 10, padding: 4 }}>
+        <input type="checkbox" checked={cfg.sustainedDropout === true}
+          onChange={(e) => setCfg(c => ({ ...c, sustainedDropout: e.target.checked }))} />
+        Adapt to sustained dropouts (experimental)
+      </label>
+      {active && !!anchorResult?.skipped?.length && <div role="status" style={{ fontSize: 10, padding: 4 }}>
+        Skipping {anchorResult.skipped.map(p => posLabel(p, activeChain)).join(', ')} — shortened rotation ({anchorResult.effectiveChainSize}/{cfg.chainSize})
+      </div>}
     </OverlayWindow>
   )
 }

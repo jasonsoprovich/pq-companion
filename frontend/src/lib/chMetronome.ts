@@ -22,6 +22,8 @@ export interface MetronomeCfg {
   position: number
   chainSize: number
   delay: number
+  /** Strict opt-in: sustained absence may shorten a learned rotation. */
+  sustainedDropout?: boolean
 }
 
 // CH cast time in seconds — mirrors backend config.CHCastSecs. A constant of
@@ -265,6 +267,13 @@ export interface AnchorResult {
   anchorMs: number
   predicted: boolean
   cadenceSecs: number
+  /** Present only on the opt-in path; transient, never saved as preferences. */
+  decisionKey?: string
+  scopeKey?: string
+  validUntilMs?: number
+  effectiveChainSize?: number
+  watch?: number
+  skipped?: number[]
 }
 
 // cycleMs is how long one full pass around the chain takes at the given
@@ -295,6 +304,9 @@ export function computeAnchorMs(
   nowMs: number,
 ): AnchorResult | null {
   const category = categoryFor(chain)
+  if (c.sustainedDropout === true) return computeAdaptiveAnchor(timers, c, chain, seen, nowMs)
+  // Opt-out retires all transient evidence; legacy timing below is unchanged.
+  if (adaptiveStates.delete(seen)) seen.clear()
   // Scope to one chain before measuring anything — a concurrent chain on
   // another tank otherwise poisons the cadence, the learned slot numbers, and
   // the choice of anchor alike (see resolveChainTarget).
@@ -344,6 +356,8 @@ export function computeAnchorMs(
 //     so retuning delay mid-fight can't loosen it.
 export function acceptNewAnchor(prev: AnchorResult | null, next: AnchorResult, c: MetronomeCfg): boolean {
   if (!prev) return true
+  if (next.decisionKey !== prev.decisionKey) return true
+  if (next.decisionKey && next.anchorMs === prev.anchorMs) return true // refresh evidence expiry
   const gapMs = next.anchorMs - prev.anchorMs
   if (!next.predicted && prev.predicted && Math.abs(gapMs) < cycleMs(c.chainSize, next.cadenceSecs) / 2) {
     return true
@@ -439,6 +453,200 @@ export function mergeSeen(into: Map<number, number>, from: Map<number, number>):
     const cur = into.get(num)
     if (cur === undefined || ts > cur) into.set(num, ts)
   }
+}
+
+// Adaptive evidence belongs to live learners, never saved preferences. A fresh
+// owner can request qualified evidence from a currently mounted sibling. The
+// nonce-bound storage EVENT is transport only: no saved response is ever read.
+// The legacy learned-number map is never evidence of a real call.
+interface AdaptiveCall { num: number; start: number; local: number }
+interface AdaptiveState {
+  scope: string
+  calls: Map<number, AdaptiveCall>
+  history: AdaptiveCall[]
+  roster: number[] | null
+  lastStart: number
+  lastLocal: number
+  cadence: number
+  request?: { nonce: string; start: number; at: number }
+}
+const adaptiveStates = new WeakMap<Map<number, number>, AdaptiveState>()
+const EVIDENCE_EVENT = 'chMetronome:liveEvidence'
+const EVIDENCE_KEY = 'chMetronome:liveEvidence'
+
+function sendEvidence(message: object): void {
+  const raw = JSON.stringify(message)
+  // Siblings in one document and separate renderer windows use the same wire.
+  window.dispatchEvent(new CustomEvent(EVIDENCE_EVENT, { detail: raw }))
+  try {
+    localStorage.setItem(EVIDENCE_KEY, raw)
+    localStorage.removeItem(EVIDENCE_KEY)
+  } catch { /* no persistent fallback: relearn if transport is unavailable */ }
+}
+
+export function requestAdaptiveEvidence(seen: Map<number, number>): void {
+  const s = adaptiveStates.get(seen)
+  if (!s || s.roster || !Number.isFinite(s.lastStart) || s.request?.start === s.lastStart) return
+  s.request = { nonce: crypto.randomUUID(), start: s.lastStart, at: Date.now() }
+  sendEvidence({ kind: 'request', scope: s.scope, nonce: s.request.nonce })
+}
+
+/** Existing owners register/unregister with their ordinary effect lifetime.
+ * Only a live, fresh, same-scope qualified sibling may answer a new nonce.
+ * Config/target changes replace the learner, invalidating pending replies.
+ */
+export function shareAdaptiveEvidence(
+  read: () => { seen: Map<number, number>; cfg: MetronomeCfg; chain: ChainView },
+  refresh: () => void,
+): () => void {
+  let alive = true
+  const receive = (raw: unknown): void => {
+    if (!alive || typeof raw !== 'string' || raw.length > 8192) return
+    try {
+      const m = JSON.parse(raw)
+      const { seen, cfg, chain } = read()
+      const s = adaptiveStates.get(seen), now = Date.now()
+      if (!cfg.sustainedDropout || !loadSustainedDropout() || !s || m.scope !== s.scope ||
+          JSON.parse(s.scope)[0] !== metronomeConfigKey(cfg, chain)) return
+      if (m.kind === 'request') {
+        if (typeof m.nonce !== 'string' || m.nonce.length > 64 || !s.roster ||
+            now < s.lastLocal || now - s.lastLocal >= CH_CAST * 1000) return
+        // Defer delivery, not learning: React owners may be computing right now.
+        queueMicrotask(() => {
+          if (!alive || adaptiveStates.get(read().seen) !== s || !loadSustainedDropout()) return
+          sendEvidence({ kind: 'response', nonce: m.nonce, scope: s.scope,
+            roster: s.roster, calls: [...s.calls.values()], cadence: s.cadence })
+        })
+      } else if (m.kind === 'response' && !s.roster && s.request && s.request.nonce === m.nonce) {
+        if (now < s.request.at || now - s.request.at >= CH_CAST * 1000 ||
+            !Array.isArray(m.roster) || m.roster.length !== cfg.chainSize ||
+            !m.roster.every((n: number, i: number) => Number.isInteger(n) && n > 0 && (i === 0 || n > m.roster[i - 1])) ||
+            !Array.isArray(m.calls) || m.calls.length !== cfg.chainSize ||
+            !Number.isFinite(m.cadence) || m.cadence <= 0) return
+        const calls = new Map<number, AdaptiveCall>()
+        for (const v of m.calls) {
+          if (!v || !m.roster.includes(v.num) || calls.has(v.num) ||
+              !Number.isFinite(v.start) || !Number.isFinite(v.local) || v.local > now) return
+          calls.set(v.num, { num: v.num, start: v.start, local: v.local })
+        }
+        const latest = [...calls.values()].sort((a, b) => b.start - a.start)[0]
+        // A late reply cannot erase a returning call or rejuvenate an old feed.
+        if (latest.start < s.lastStart || now - latest.local >= CH_CAST * 1000) return
+        s.calls = calls; s.roster = [...m.roster]; s.cadence = m.cadence
+        s.lastStart = latest.start; s.lastLocal = latest.local; s.history = []
+        s.request = undefined
+        refresh()
+      }
+    } catch { /* malformed or unrelated storage traffic cannot supply evidence */ }
+  }
+  const onLocal = (e: Event): void => receive((e as CustomEvent).detail)
+  const onStorage = (e: StorageEvent): void => { if (e.key === EVIDENCE_KEY) receive(e.newValue) }
+  window.addEventListener(EVIDENCE_EVENT, onLocal)
+  window.addEventListener('storage', onStorage)
+  return () => {
+    alive = false
+    adaptiveStates.delete(read().seen)
+    window.removeEventListener(EVIDENCE_EVENT, onLocal)
+    window.removeEventListener('storage', onStorage)
+  }
+}
+export const DROPOUT_KEY = 'chMetronome:sustainedDropout'
+export const METRONOME_CONFIG_EVENT = 'chMetronome:configChanged'
+export function loadSustainedDropout(): boolean {
+  return localStorage.getItem(DROPOUT_KEY) === 'true'
+}
+export function metronomeConfigKey(c: MetronomeCfg, chain: ChainView): string {
+  return JSON.stringify([chain, c.position, c.chainSize, c.delay, c.sustainedDropout === true])
+}
+export function notifyMetronomeConfig(): void {
+  window.dispatchEvent(new Event(METRONOME_CONFIG_EVENT))
+}
+
+function computeAdaptiveAnchor(
+  timers: ActiveTimer[], c: MetronomeCfg, chain: ChainView,
+  seen: Map<number, number>, now: number,
+): AnchorResult | null {
+  if (!Number.isInteger(c.chainSize) || c.chainSize < 2 || c.chainSize > 12 ||
+      !Number.isInteger(c.position) || c.position < 1 || c.position > c.chainSize ||
+      !Number.isFinite(c.delay) || c.delay <= 0) return null
+  const category = categoryFor(chain)
+  const valid = timers.filter(t => t.category === category && t.target_name &&
+    !t.expired && Number.isFinite(t.remaining_seconds) && t.remaining_seconds > 0 &&
+    t.remaining_seconds <= CH_CAST && Number.isFinite(Date.parse(t.starts_at)) && parsePosition(t.spell_name) > 0)
+  const target = resolveChainTarget(valid, category, chain)
+  const scoped = valid.filter(t => t.target_name === target)
+  const scope = JSON.stringify([metronomeConfigKey(c, chain), target])
+  let s = adaptiveStates.get(seen)
+  if (!s || s.scope !== scope) {
+    s = { scope, calls: new Map(), history: [], roster: null, lastStart: -Infinity, lastLocal: now, cadence: c.delay }
+    adaptiveStates.set(seen, s)
+    seen.clear()
+  }
+  // Retire learning after a feed/chain idle gap. Keep the high-water mark so a
+  // frozen snapshot cannot reintroduce old calls as a fresh chain.
+  if (now - s.lastLocal > Math.max(60_000, cycleMs(c.chainSize, Math.max(c.delay, s.cadence)) * 3)) {
+    s.calls.clear(); s.history = []; s.roster = null; seen.clear()
+  }
+  for (const t of [...scoped].sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at))) {
+    const start = Date.parse(t.starts_at)
+    if (start <= s.lastStart) continue
+    const call = { num: parsePosition(t.spell_name), start, local: now - (CH_CAST - t.remaining_seconds) * 1000 }
+    s.lastStart = start
+    s.lastLocal = call.local
+    // A changed numbering scheme invalidates the whole learned roster rather
+    // than silently renumbering existing slots around an absent coded number.
+    if (s.roster && !s.roster.includes(call.num)) {
+      s.calls.clear(); s.history = []; s.roster = null; seen.clear()
+    }
+    s.calls.set(call.num, call)
+    s.history.push(call)
+    s.history = s.history.slice(-c.chainSize * 2)
+    if (s.calls.size > c.chainSize) {
+      s.calls.clear(); s.calls.set(call.num, call); s.history = [call]; seen.clear()
+    }
+    if (!s.roster && s.calls.size === c.chainSize && s.history.length === c.chainSize * 2) {
+      const ranked = [...s.calls.keys()].sort((a, b) => a - b)
+      const coherent = s.history.every((v, i, h) => i === 0 ||
+        (ranked.indexOf(v.num) === (ranked.indexOf(h[i - 1].num) + 1) % c.chainSize &&
+         v.local > h[i - 1].local && v.local - h[i - 1].local <= Math.max(10, c.delay * 2) * 1000))
+      if (coherent) {
+        s.roster = ranked
+        const gaps = s.history.slice(1).map((v, i) => (v.local - s!.history[i].local) / 1000).sort((a, b) => a - b)
+        s.cadence = gaps[Math.floor(gaps.length / 2)]
+      }
+    }
+  }
+  // The externally shared map remains legacy presentation data only. Never
+  // import its refreshed snapshot timestamps into absence evidence.
+  seen.clear()
+  for (const [num, call] of s.calls) seen.set(num, call.local)
+  const latest = [...s.calls.values()].sort((a, b) => b.start - a.start)[0]
+  if (!latest || now - latest.local >= CH_CAST * 1000 || now < latest.local) return null
+  const roster = s.roster ?? [...s.calls.keys()].sort((a, b) => a - b)
+  const position = (num: number): number => roster.length === c.chainSize ? roster.indexOf(num) + 1 : num
+  const cadence = s.roster ? s.cadence : (measureCadence(scoped, category) ?? c.delay)
+  const fullCycle = cycleMs(c.chainSize, Math.max(c.delay, cadence))
+  // Three FULL configured cycles absent, plus all surviving slots heard in
+  // the last full cycle. Two survivors minimum; own slot is never removed.
+  let skipped = s.roster ? s.roster.flatMap((num, i) =>
+    i + 1 !== c.position && now - s!.calls.get(num)!.local > fullCycle * 3 ? [i + 1] : []) : []
+  const survivors = Array.from({ length: c.chainSize }, (_, i) => i + 1).filter(p => !skipped.includes(p))
+  if (survivors.length < 2 || (skipped.length > 0 && survivors.some(p =>
+    now - s!.calls.get(roster[p - 1])!.local > fullCycle))) skipped = []
+  const ring = Array.from({ length: c.chainSize }, (_, i) => i + 1).filter(p => !skipped.includes(p))
+  const mine = ring.indexOf(c.position)
+  const watch = ring[(mine + ring.length - 1) % ring.length]
+  const from = position(latest.num)
+  if (!ring.includes(from)) return null
+  const gap = (ring.indexOf(watch) - ring.indexOf(from) + ring.length) % ring.length
+  const watchNum = roster.length === c.chainSize ? roster[watch - 1] : watch
+  const direct = s.calls.get(watchNum)
+  const heardWatch = direct && now - direct.local < CH_CAST * 1000 &&
+    scoped.some(t => parsePosition(t.spell_name) === watchNum && Date.parse(t.starts_at) === direct.start)
+  const anchorMs = heardWatch ? direct.local : latest.local + gap * cadence * 1000
+  return { anchorMs, predicted: !heardWatch && gap !== 0, cadenceSecs: cadence, scopeKey: scope,
+    decisionKey: JSON.stringify([scope, skipped]), validUntilMs: latest.local + CH_CAST * 1000,
+    effectiveChainSize: ring.length, watch, skipped }
 }
 
 // alertsEnabledKey namespaces the bell-icon mute toggle in the popped-out
