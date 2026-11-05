@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"sync"
@@ -190,7 +191,14 @@ func (c *textureCache) get(eqPath, zone, name string, masked bool) (buf []byte, 
 // key as transparency, for cutout materials like foliage.
 func (h *mapsHandler) texture3D(w http.ResponseWriter, r *http.Request) {
 	short := chi.URLParam(r, "zone")
-	name := strings.ToLower(chi.URLParam(r, "name"))
+	// chi routes on the escaped path when the request has one, as it does
+	// for "&" (%26), so the name can arrive still escaped.
+	name, err := url.PathUnescape(chi.URLParam(r, "name"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid texture")
+		return
+	}
+	name = strings.ToLower(name)
 	if !zoneShortRe.MatchString(short) || !textureNameRe.MatchString(name) {
 		writeError(w, http.StatusBadRequest, "invalid texture")
 		return
