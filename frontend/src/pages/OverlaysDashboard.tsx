@@ -38,7 +38,6 @@ import TimerGroupsModal from '../components/TimerGroupsModal'
 import { clearTimers, listTimerGroups, getConfig } from '../services/api'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useItemInfoOffered } from '../hooks/useItemDisplay'
-import { usePetOverlayOffered } from '../hooks/usePetState'
 import { WSEvent } from '../lib/wsEvents'
 import type { TimerGroup } from '../types/trigger'
 import {
@@ -449,22 +448,17 @@ export default function OverlaysDashboard(): React.ReactElement {
   // Item Info stays out of the dashboard until Zeal has sent an item display
   // event (or Developer Mode is on) — see itemInfoOffered.
   const itemInfoOffered = useItemInfoOffered()
-  // The Pet overlay is in development — offered only behind its Developer-tab
-  // flag (pet_overlay_enabled).
-  const petOffered = usePetOverlayOffered()
 
   // Panel keys actually offered in the UI: hps is gated by SHOW_HPS_PANEL
   // (shared with the sidebar's pop-out-all toggle); discordVoice is gated by
-  // the setting above; itemInfo by Zeal support; pet by its Developer-tab
-  // flag; the rest (including Raid
-  // Readiness and the Threat Meter) are always available.
+  // the setting above; itemInfo by Zeal support; the rest (including Raid
+  // Readiness, the Threat Meter and Pet) are always available.
   const visiblePanelKeys = useMemo(() => {
     let keys = VISIBLE_DASHBOARD_PANEL_KEYS
     if (!discordVoiceEnabled) keys = keys.filter((k) => k !== 'discordVoice')
     if (!itemInfoOffered) keys = keys.filter((k) => k !== 'itemInfo')
-    if (!petOffered) keys = keys.filter((k) => k !== 'pet')
     return keys
-  }, [discordVoiceEnabled, itemInfoOffered, petOffered])
+  }, [discordVoiceEnabled, itemInfoOffered])
 
   useEffect(() => {
     saveDashboardLayout(layout)
@@ -868,7 +862,7 @@ export default function OverlaysDashboard(): React.ReactElement {
             onLayoutChange={handleLayoutChange('itemInfo')}
           />
         )}
-        {layout.pet.visible && petOffered && (
+        {layout.pet.visible && (
           <PetPanel
             key={`pet-${layoutVersion}`}
             defaultX={layout.pet.x}

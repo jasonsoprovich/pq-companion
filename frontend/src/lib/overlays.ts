@@ -85,13 +85,6 @@ export function itemInfoOffered(prefs: { zeal_item_display_seen?: boolean; devel
   return Boolean(prefs.zeal_item_display_seen || prefs.developer_mode)
 }
 
-// The Pet overlay is in development: offered only once its Developer-tab flag
-// (pet_overlay_enabled) is on. Until then it's absent from Settings and the
-// dashboard, like Item Info before Zeal support.
-export function petOverlayOffered(prefs: { pet_overlay_enabled?: boolean }): boolean {
-  return Boolean(prefs.pet_overlay_enabled)
-}
-
 export const OVERLAY_DEFS: { name: OverlayName; label: string }[] = [
   { name: 'dps', label: 'DPS Meter' },
   { name: 'hps', label: 'HPS Meter' },

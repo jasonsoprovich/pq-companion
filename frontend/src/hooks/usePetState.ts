@@ -3,15 +3,10 @@
  * popout window. Seeds from the REST snapshot, then follows pet:state
  * broadcasts; refetches whenever the socket (re)opens so a backend restart
  * doesn't leave a stale pet on screen.
- *
- * usePetOverlayOffered gates the overlay behind the Developer-tab
- * pet_overlay_enabled flag, tracking config:updated so flipping it shows or
- * hides the panel without a reload.
  */
 import { useEffect, useMemo, useState } from 'react'
 import { useWebSocket } from './useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
-import { petOverlayOffered } from '../lib/overlays'
 import { normalizeTargetName } from '../lib/targetName'
 import { getCombatState, getConfig, getPetState, getTimerState } from '../services/api'
 import { dpsForMode, useDPSMode, type DPSMode } from './useDPSMode'
@@ -41,26 +36,6 @@ export function usePetState(): PetState {
   }, [ready]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return state
-}
-
-export function usePetOverlayOffered(): boolean {
-  const [offered, setOffered] = useState(false)
-
-  useEffect(() => {
-    let cancelled = false
-    getConfig()
-      .then((c) => { if (!cancelled) setOffered(petOverlayOffered(c.preferences)) })
-      .catch(() => {})
-    return () => { cancelled = true }
-  }, [])
-
-  useWebSocket((msg) => {
-    if (msg.type !== WSEvent.ConfigUpdated) return
-    const cfg = msg.data as Config
-    if (cfg?.preferences) setOffered(petOverlayOffered(cfg.preferences))
-  })
-
-  return offered
 }
 
 // usePetOverlaySettings returns preferences.pet_overlay, tracking
