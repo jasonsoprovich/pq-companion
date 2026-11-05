@@ -1689,6 +1689,9 @@ func main() {
 	posTracker.SetGroupBroadcast(func(gs playerpos.GroupState) {
 		hub.Broadcast(ws.Event{Type: "player:group_positions", Data: gs})
 	})
+	posTracker.SetRaidBroadcast(func(rs playerpos.RaidState) {
+		hub.Broadcast(ws.Event{Type: "player:raid_positions", Data: rs})
+	})
 
 	// Serialized state for the pipe callback (readLoop calls onEvent from one
 	// goroutine, so plain vars are safe here). pipeZoneShort is the local
@@ -1967,6 +1970,7 @@ func main() {
 				})
 			}
 			rosterKeeper.Set(pipeZoneID, pipeZoneShort, raidMembers)
+			posTracker.UpdateRaid(pipeZoneShort, raidPositions(members, env.Character))
 			if raidRecorder != nil {
 				raidRecorder.SetRaid(env.Character, pipeZoneShort, raidTrackMembers(members))
 			}
@@ -2162,6 +2166,7 @@ func main() {
 		respawnEngine.ResetPipeZone()
 		posTracker.Reset()
 		posTracker.ResetGroup()
+		posTracker.ResetRaid()
 		lastRaidSeen = map[string]string{}
 		rosterKeeper.Clear()
 		hub.Broadcast(ws.Event{Type: "raid.roster", Data: map[string]any{}})

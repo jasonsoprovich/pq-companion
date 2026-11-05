@@ -4,6 +4,9 @@ import { AlertTriangle, Check, Copy, Plus, X } from 'lucide-react'
 import { useCachedState } from '../../hooks/useCachedState'
 import { usePlayerPosition } from '../../hooks/usePlayerPosition'
 import { useGroupPositions } from '../../hooks/useGroupPositions'
+import { useRaidPositions } from '../../hooks/useRaidPositions'
+import { useDPSClassColors } from '../../hooks/useDPSClassColors'
+import { classColor, groupColor } from '../../lib/raidColors'
 import { useMapStyle } from '../../hooks/useMapStyle'
 import { useZoneMap } from '../../hooks/useZoneMap'
 import { CATEGORY_STYLE, ZoneMap, type AggroRing, type MapHighlight, type RaiderMarker, type ReplayTarget, type SpawnDot } from './ZoneMap'
@@ -331,6 +334,18 @@ export function ZoneMapPanel({
   // pipe stalled, not on Windows — so every consumer has one thing to check.
   const playerPos = usePlayerPosition()
   const groupMembers = useGroupPositions()
+  const raidMembers = useRaidPositions()
+  const palette = useDPSClassColors()
+  // Group and Raid toggles, per surface. Group starts from the Settings
+  // default until it's flipped here; Raid starts on. Raiders are coloured by
+  // raid group or by class.
+  const [groupToggle, setGroupToggle] = useCachedState<boolean | null>(
+    live ? 'liveMap.showGroup' : 'maps.showGroup',
+    null,
+  )
+  const groupOn = groupToggle ?? showGroup
+  const [raidOn, setRaidOn] = useCachedState(live ? 'liveMap.showRaid' : 'maps.showRaid', true)
+  const [raidColor, setRaidColor] = useCachedState<'group' | 'class'>('maps.raidColor', 'group')
   // Follow the view to the player. Off by default: it takes pan away from you,
   // which is the wrong default while browsing a map you are not standing in.
   const [followPlayer, setFollowPlayer] = useCachedState(
@@ -623,20 +638,35 @@ export function ZoneMapPanel({
   useEffect(() => setNo3D(null), [zoneShortName])
   const show3D = view3D && !replay && !no3D
 
-  // You and your group as 3D markers; the camera follows you with Follow me.
+  // The raid around you, live: everyone in your zone but you, and but your
+  // group while it's shown, since those are drawn as your group.
+  const liveRaiders = useMemo((): RaiderMarker[] => {
+    if (replay || !raidOn || !here) return []
+    const grouped = new Set(groupOn ? groupMembers.map((g) => g.name) : [])
+    return raidMembers
+      .filter((m) => !grouped.has(m.name))
+      .map((m) => ({
+        x: m.x, y: m.y, z: m.z, heading: m.heading, label: m.name,
+        color: raidColor === 'class' ? classColor(palette, m.class) : groupColor(m.group),
+      }))
+  }, [replay, raidOn, here, groupOn, groupMembers, raidMembers, raidColor, palette])
+
+  // You, your group and the raid as 3D markers; the camera follows you with
+  // Follow me. Your group comes after the raid so it draws over it.
   const markers3D = useMemo((): RaiderMarker[] => {
     if (!show3D || !playerPos || !zone || playerPos.zone !== zone.zone) return []
-    const out: RaiderMarker[] = [{
-      x: playerPos.x, y: playerPos.y, z: playerPos.z, heading: playerPos.heading,
-      color: PLAYER_3D, label: 'You', focus: followPlayer, mine: true,
-    }]
-    if (showGroup) {
+    const out: RaiderMarker[] = [...liveRaiders]
+    if (groupOn) {
       for (const g of groupMembers) {
         out.push({ x: g.x, y: g.y, z: g.z, heading: g.heading, color: GROUP_3D, label: g.name, mine: true })
       }
     }
+    out.push({
+      x: playerPos.x, y: playerPos.y, z: playerPos.z, heading: playerPos.heading,
+      color: PLAYER_3D, label: 'You', focus: followPlayer, mine: true,
+    })
     return out
-  }, [show3D, playerPos, zone, groupMembers, showGroup, followPlayer])
+  }, [show3D, playerPos, zone, groupMembers, groupOn, liveRaiders, followPlayer])
 
   // The visible pin layers and your markers, plus whatever search or a click
   // picked out, as 3D pins.
@@ -993,6 +1023,58 @@ export function ZoneMapPanel({
             )
           })}
 
+          {/* People: your group and the raid, live. */}
+          {!replay && (
+            <div className="mt-1 space-y-1 border-t pt-1.5" style={{ borderColor: 'var(--color-border)' }}>
+              {(
+                [
+                  ['Group', groupOn, () => setGroupToggle(!groupOn), groupMembers.length,
+                    'Your groupmates in this zone (Zeal)'],
+                  ['Raid', raidOn, () => setRaidOn(!raidOn), liveRaiders.length,
+                    'Everyone else in your raid who is in this zone (Zeal)'],
+                ] as const
+              ).map(([label, on, toggle, n, title]) => (
+                <button
+                  key={label}
+                  onClick={toggle}
+                  title={title}
+                  className="flex w-full items-center justify-between rounded border px-1.5 py-0.5 text-[10px] font-medium"
+                  style={{
+                    backgroundColor: on ? 'var(--color-surface-2)' : 'transparent',
+                    borderColor: on ? 'var(--color-primary)' : 'var(--color-border)',
+                    color: on ? 'var(--color-primary)' : 'var(--color-muted)',
+                  }}
+                >
+                  <span>{label}</span>
+                  {on && n > 0 && <span className="opacity-60 tabular-nums">{n}</span>}
+                </button>
+              ))}
+              {raidOn && (
+                <div className="flex overflow-hidden rounded border" style={{ borderColor: 'var(--color-border)' }}>
+                  {(
+                    [
+                      ['group', 'By group', 'Colour raiders by raid group'],
+                      ['class', 'By class', 'Colour raiders by class, using your DPS meter class colours'],
+                    ] as const
+                  ).map(([v, label, title]) => (
+                    <button
+                      key={v}
+                      onClick={() => setRaidColor(v)}
+                      title={title}
+                      className="flex-1 px-1 py-0.5 text-[10px] font-medium"
+                      style={{
+                        backgroundColor: raidColor === v ? 'var(--color-primary)' : 'transparent',
+                        color: raidColor === v ? 'var(--color-background)' : 'var(--color-muted)',
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Rings are derived from spawn data rather than being POIs, so
               they sit apart from the layer list. */}
           <div className="mt-1 border-t pt-1.5" style={{ borderColor: 'var(--color-border)' }}>
@@ -1160,9 +1242,9 @@ export function ZoneMapPanel({
             mode={mode}
             colorByHeight={heightColor}
             playerPos={replay ? null : playerPos}
-            groupMembers={showGroup && !replay ? groupMembers : []}
+            groupMembers={groupOn && !replay ? groupMembers : []}
             followPlayer={followPlayer && !replay}
-            raiders={raiders}
+            raiders={replay ? raiders : liveRaiders}
             replayTarget={replayTarget}
             // Panning is a deliberate act; treat it as "I want to look
             // somewhere else" and stop following. The Follow me toggle above is

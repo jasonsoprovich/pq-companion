@@ -48,6 +48,9 @@ export const WSEvent = {
   // Groupmates' live map positions (Zeal MsgGroup, in-zone members only) —
   // carries playerpos.GroupState {zone, members[]}. Empty members = drop.
   PlayerGroupPositions: 'player:group_positions',
+  // In-zone raiders' live map positions (Zeal MsgRaid), self excluded —
+  // carries playerpos.RaidState {zone, members[]}. Empty members = drop.
+  PlayerRaidPositions: 'player:raid_positions',
   SkillsUpdate: 'skills:update',
   ProgressEvent: 'progress:event',
   BackfillProgress: 'backfill:progress',

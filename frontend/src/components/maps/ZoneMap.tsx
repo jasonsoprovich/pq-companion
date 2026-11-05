@@ -121,7 +121,8 @@ export interface ZoneMapProps {
   aggroRings?: AggroRing[]
   // spawnDots are drawn over the aggro rings and under every pin.
   spawnDots?: SpawnDot[]
-  // raiders are raid replay markers, drawn over the group members.
+  // raiders are raid replay markers, or the live raid, drawn under the
+  // group members.
   raiders?: RaiderMarker[]
   // replayTarget is drawn over the raiders.
   replayTarget?: ReplayTarget | null
@@ -878,43 +879,7 @@ export function ZoneMap({
       }
     }
 
-    // ── group members ──
-    // Only when the local player's own position places this map on screen —
-    // the backend already filters to same-zone groupmates, so "player is on
-    // this map" is the check that they belong here too.
-    if (playerPos && playerPos.zone === zone.zone && groupMembers && groupMembers.length > 0) {
-      for (const gm of groupMembers) {
-        const [gx, gy] = toScreen(gm.x, gm.y)
-        ctx.save()
-        ctx.translate(gx, gy)
-        ctx.rotate(-((gm.heading ?? 0) / 512) * Math.PI * 2)
-        ctx.beginPath()
-        ctx.moveTo(0, -5.5)
-        ctx.lineTo(3.5, 4.5)
-        ctx.lineTo(0, 2.5)
-        ctx.lineTo(-3.5, 4.5)
-        ctx.closePath()
-        ctx.lineWidth = 2.5
-        ctx.strokeStyle = 'rgba(0,0,0,0.6)'
-        ctx.stroke()
-        ctx.fillStyle = 'rgba(125,211,252,0.8)' // sky-300, dimmer than the player's near-white
-        ctx.fill()
-        ctx.restore()
-        if (showLabels) {
-          ctx.save()
-          ctx.font = '9px system-ui, sans-serif'
-          ctx.textAlign = 'center'
-          ctx.lineWidth = 3
-          ctx.strokeStyle = 'rgba(0,0,0,0.7)'
-          ctx.strokeText(gm.name, gx, gy - 9)
-          ctx.fillStyle = 'rgba(186,230,253,0.9)'
-          ctx.fillText(gm.name, gx, gy - 9)
-          ctx.restore()
-        }
-      }
-    }
-
-    // ── raid replay ──
+    // ── raid replay, or the live raid ──
     for (const r of raiders ?? []) {
       const [rx, ry] = toScreen(r.x, r.y)
       ctx.save()
@@ -997,6 +962,43 @@ export function ZoneMap({
         ctx.fillText(replayTarget.label, tx, ty - 9)
       }
       ctx.restore()
+    }
+
+    // ── group members ──
+    // Over the raid, which live is everyone else in the zone.
+    // Only when the local player's own position places this map on screen —
+    // the backend already filters to same-zone groupmates, so "player is on
+    // this map" is the check that they belong here too.
+    if (playerPos && playerPos.zone === zone.zone && groupMembers && groupMembers.length > 0) {
+      for (const gm of groupMembers) {
+        const [gx, gy] = toScreen(gm.x, gm.y)
+        ctx.save()
+        ctx.translate(gx, gy)
+        ctx.rotate(-((gm.heading ?? 0) / 512) * Math.PI * 2)
+        ctx.beginPath()
+        ctx.moveTo(0, -5.5)
+        ctx.lineTo(3.5, 4.5)
+        ctx.lineTo(0, 2.5)
+        ctx.lineTo(-3.5, 4.5)
+        ctx.closePath()
+        ctx.lineWidth = 2.5
+        ctx.strokeStyle = 'rgba(0,0,0,0.6)'
+        ctx.stroke()
+        ctx.fillStyle = 'rgba(125,211,252,0.8)' // sky-300, dimmer than the player's near-white
+        ctx.fill()
+        ctx.restore()
+        if (showLabels) {
+          ctx.save()
+          ctx.font = '9px system-ui, sans-serif'
+          ctx.textAlign = 'center'
+          ctx.lineWidth = 3
+          ctx.strokeStyle = 'rgba(0,0,0,0.7)'
+          ctx.strokeText(gm.name, gx, gy - 9)
+          ctx.fillStyle = 'rgba(186,230,253,0.9)'
+          ctx.fillText(gm.name, gx, gy - 9)
+          ctx.restore()
+        }
+      }
     }
 
     // ── player ──

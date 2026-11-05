@@ -4,6 +4,7 @@ import { ZoneMapPanel } from '../components/maps/ZoneMapPanel'
 import type { RaiderMarker, ReplayTarget } from '../components/maps/ZoneMap'
 import { useCachedState } from '../hooks/useCachedState'
 import { useDPSClassColors } from '../hooks/useDPSClassColors'
+import { classColor } from '../lib/raidColors'
 import {
   deleteRaidSession,
   getConfig,
@@ -12,7 +13,7 @@ import {
   saveConfigChanges,
 } from '../services/api'
 import { RETENTION_CHOICES, groupsAt, lastSeenAt, raidersAt, recentDeaths, recentKills, targetAt } from '../lib/raidReplay'
-import type { Config, DPSClassColors } from '../types/config'
+import type { Config } from '../types/config'
 import type { RaidEvent, RaidRecording, RaidSession } from '../types/raidReplay'
 
 // RaidReplayPage plays back raids recorded from Zeal's raid frames (backend
@@ -24,17 +25,6 @@ import type { RaidEvent, RaidRecording, RaidSession } from '../types/raidReplay'
 const ZoneMap3D = lazy(() => import('../components/maps/ZoneMap3D'))
 
 const SPEEDS = [1, 4, 16, 60]
-
-// Zeal class ids are 1-indexed in this order.
-const CLASS_KEYS: (keyof DPSClassColors)[] = [
-  'warrior', 'cleric', 'paladin', 'ranger', 'shadow_knight', 'druid', 'monk',
-  'bard', 'rogue', 'shaman', 'necromancer', 'wizard', 'magician', 'enchanter', 'beastlord',
-]
-
-function classColor(palette: DPSClassColors, cls: number): string {
-  const key = CLASS_KEYS[cls - 1]
-  return key ? palette[key] : palette.unknown
-}
 
 function fmtClock(ms: number): string {
   return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })

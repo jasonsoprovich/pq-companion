@@ -60,6 +60,10 @@ const (
 	// arrow. Set below perceptibility instead of below a guess at it.
 	moveEpsilon    = 0.4
 	headingEpsilon = 1.5 // of 512, i.e. ~1 degree
+	// raidMinInterval is the floor for raid frames, slower than the group's:
+	// up to 72 raiders, nearly always one of them moving, would otherwise put
+	// a full roster on the wire ten times a second.
+	raidMinInterval = 250 * time.Millisecond
 )
 
 // GroupMemberInput is one groupmate's position in *game* coordinates, as it
@@ -91,6 +95,38 @@ type GroupState struct {
 	Members []GroupMemberState `json:"members"`
 }
 
+// RaidMemberInput is one raider's position in *game* coordinates, from a
+// Zeal MsgRaid frame. Only raiders in the local player's zone carry one.
+type RaidMemberInput struct {
+	Name    string
+	Class   int
+	Group   int
+	GameX   float64
+	GameY   float64
+	GameZ   float64
+	Heading float64
+}
+
+// RaidMemberState is one raider's position in map space (same negation as
+// State). Class is Zeal's 1-indexed class id and Group the raid group, 0
+// for ungrouped.
+type RaidMemberState struct {
+	Name    string  `json:"name"`
+	Class   int     `json:"class"`
+	Group   int     `json:"group"`
+	X       float64 `json:"x"`
+	Y       float64 `json:"y"`
+	Z       float64 `json:"z"`
+	Heading float64 `json:"heading"`
+}
+
+// RaidState is the payload of the player:raid_positions broadcast: the
+// raiders on the local player's map, for the live map to draw.
+type RaidState struct {
+	Zone    string            `json:"zone"`
+	Members []RaidMemberState `json:"members"`
+}
+
 // Tracker holds the latest position and rate-limits broadcasts.
 type Tracker struct {
 	mu        sync.Mutex
@@ -104,6 +140,10 @@ type Tracker struct {
 	groupBroadcast func(GroupState)
 	lastGroupSent  GroupState
 	lastGroupAt    time.Time
+
+	raidBroadcast func(RaidState)
+	lastRaidSent  RaidState
+	lastRaidAt    time.Time
 }
 
 // New returns a Tracker that calls broadcast when a position is worth sending.
@@ -116,6 +156,14 @@ func New(broadcast func(State)) *Tracker {
 func (t *Tracker) SetGroupBroadcast(fn func(GroupState)) {
 	t.mu.Lock()
 	t.groupBroadcast = fn
+	t.mu.Unlock()
+}
+
+// SetRaidBroadcast registers the sink for raid-position updates. Optional —
+// when unset, UpdateRaid is a no-op.
+func (t *Tracker) SetRaidBroadcast(fn func(RaidState)) {
+	t.mu.Lock()
+	t.raidBroadcast = fn
 	t.mu.Unlock()
 }
 
@@ -222,13 +270,92 @@ func (t *Tracker) shouldSendGroupLocked(gs GroupState) bool {
 		if !ok {
 			return true
 		}
-		if math.Hypot(m.X-p.X, m.Y-p.Y) >= moveEpsilon ||
-			math.Abs(m.Z-p.Z) >= moveEpsilon ||
-			math.Abs(m.Heading-p.Heading) >= headingEpsilon {
+		if moved(m.X, m.Y, m.Z, m.Heading, p.X, p.Y, p.Z, p.Heading) {
 			return true
 		}
 	}
 	return false
+}
+
+// moved reports whether a position or heading changed enough for a frame.
+func moved(x, y, z, h, px, py, pz, ph float64) bool {
+	return math.Hypot(x-px, y-py) >= moveEpsilon ||
+		math.Abs(z-pz) >= moveEpsilon ||
+		math.Abs(h-ph) >= headingEpsilon
+}
+
+// UpdateRaid records the in-zone raiders' positions from a Zeal MsgRaid
+// frame and broadcasts them under the same rules as UpdateGroup, with a
+// slower floor.
+func (t *Tracker) UpdateRaid(zone string, members []RaidMemberInput) {
+	rs := RaidState{Zone: zone, Members: make([]RaidMemberState, 0, len(members))}
+	for _, m := range members {
+		rs.Members = append(rs.Members, RaidMemberState{
+			Name:    m.Name,
+			Class:   m.Class,
+			Group:   m.Group,
+			X:       -m.GameX, // same negation as State
+			Y:       -m.GameY,
+			Z:       m.GameZ,
+			Heading: m.Heading,
+		})
+	}
+
+	t.mu.Lock()
+	fn := t.raidBroadcast
+	send := fn != nil && t.shouldSendRaidLocked(rs)
+	if send {
+		t.lastRaidSent = rs
+		t.lastRaidAt = t.now()
+	}
+	t.mu.Unlock()
+
+	if send {
+		fn(rs)
+	}
+}
+
+// shouldSendRaidLocked is shouldSendGroupLocked for raid frames, where a
+// raider changing group also counts. Caller holds the lock.
+func (t *Tracker) shouldSendRaidLocked(rs RaidState) bool {
+	elapsed := t.now().Sub(t.lastRaidAt)
+	if elapsed < raidMinInterval {
+		return false
+	}
+	if elapsed >= heartbeat {
+		return true
+	}
+	if rs.Zone != t.lastRaidSent.Zone || len(rs.Members) != len(t.lastRaidSent.Members) {
+		return true
+	}
+	prev := make(map[string]RaidMemberState, len(t.lastRaidSent.Members))
+	for _, m := range t.lastRaidSent.Members {
+		prev[m.Name] = m
+	}
+	for _, m := range rs.Members {
+		p, ok := prev[m.Name]
+		if !ok || m.Group != p.Group {
+			return true
+		}
+		if moved(m.X, m.Y, m.Z, m.Heading, p.X, p.Y, p.Z, p.Heading) {
+			return true
+		}
+	}
+	return false
+}
+
+// ResetRaid clears raid state and, if a sink is set, emits one empty frame
+// so the renderer drops any lingering raiders. Called when the pipe drops.
+func (t *Tracker) ResetRaid() {
+	t.mu.Lock()
+	fn := t.raidBroadcast
+	had := len(t.lastRaidSent.Members) > 0
+	t.lastRaidSent = RaidState{}
+	t.lastRaidAt = time.Time{}
+	t.mu.Unlock()
+	if fn != nil && had {
+		fn(RaidState{})
+	}
 }
 
 // ResetGroup clears group state and, if a sink is set, emits one empty frame so

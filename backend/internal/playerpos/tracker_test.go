@@ -206,3 +206,68 @@ func TestResetGroupEmitsEmptyThenQuiet(t *testing.T) {
 		t.Errorf("a second reset broadcast again: sent=%d", len(*sent))
 	}
 }
+
+// ── Raid positions (Zeal MsgRaid) ──────────────────────────────────────────
+
+func newRaidTestTracker() (*Tracker, *[]RaidState, *time.Time) {
+	var sent []RaidState
+	clock := time.Unix(1_700_000_000, 0)
+	tr := New(nil)
+	tr.now = func() time.Time { return clock }
+	tr.SetRaidBroadcast(func(rs RaidState) { sent = append(sent, rs) })
+	return tr, &sent, &clock
+}
+
+func TestUpdateRaidNegatesAndKeepsGroupAndClass(t *testing.T) {
+	tr, sent, _ := newRaidTestTracker()
+	tr.UpdateRaid("potactics", []RaidMemberInput{
+		{Name: "Udabut", Class: 2, Group: 5, GameX: 100, GameY: -250, GameZ: 42, Heading: 128},
+	})
+	if len(*sent) != 1 {
+		t.Fatalf("broadcasts = %d, want 1", len(*sent))
+	}
+	got := (*sent)[0]
+	want := RaidMemberState{Name: "Udabut", Class: 2, Group: 5, X: -100, Y: 250, Z: 42, Heading: 128}
+	if got.Zone != "potactics" || len(got.Members) != 1 || got.Members[0] != want {
+		t.Errorf("got %+v, want zone potactics and %+v", got, want)
+	}
+}
+
+func TestUpdateRaidRateLimitsAndDetectsChange(t *testing.T) {
+	tr, sent, clock := newRaidTestTracker()
+	mk := func(x float64, group int) []RaidMemberInput {
+		return []RaidMemberInput{{Name: "Tank", Group: group, GameX: x}}
+	}
+	tests := []struct {
+		step  time.Duration
+		in    []RaidMemberInput
+		total int
+	}{
+		{0, mk(0, 1), 1},                       // first
+		{100 * time.Millisecond, mk(50, 1), 1}, // under the raid floor
+		{200 * time.Millisecond, mk(50, 1), 2}, // past it, moved
+		{300 * time.Millisecond, mk(50, 1), 2}, // unchanged
+		{300 * time.Millisecond, mk(50, 2), 3}, // regrouped
+		{3 * time.Second, mk(50, 2), 4},        // heartbeat
+	}
+	for i, tc := range tests {
+		*clock = clock.Add(tc.step)
+		tr.UpdateRaid("z", tc.in)
+		if len(*sent) != tc.total {
+			t.Fatalf("step %d: broadcasts = %d, want %d", i, len(*sent), tc.total)
+		}
+	}
+}
+
+func TestResetRaidSendsOneEmptyFrame(t *testing.T) {
+	tr, sent, _ := newRaidTestTracker()
+	tr.ResetRaid()
+	if len(*sent) != 0 {
+		t.Fatalf("reset with nothing sent broadcast %d frames, want 0", len(*sent))
+	}
+	tr.UpdateRaid("z", []RaidMemberInput{{Name: "A"}})
+	tr.ResetRaid()
+	if len(*sent) != 2 || len((*sent)[1].Members) != 0 {
+		t.Fatalf("got %+v, want a frame then one empty frame", *sent)
+	}
+}

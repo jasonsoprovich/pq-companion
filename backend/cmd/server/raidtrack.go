@@ -3,6 +3,7 @@ package main
 import (
 	"strconv"
 
+	"github.com/jasonsoprovich/pq-companion/backend/internal/playerpos"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/raidtrack"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/zealpipe"
 )
@@ -26,6 +27,28 @@ func raidTrackMembers(members []zealpipe.RaidMember) []raidtrack.Member {
 			rm.HPPct = *m.HPCur * 100 / *m.HPMax
 		}
 		out = append(out, rm)
+	}
+	return out
+}
+
+// raidPositions is the in-zone raiders other than self, for the live map.
+// Zeal reports raiders outside the zone with no location, or all zeros.
+func raidPositions(members []zealpipe.RaidMember, self string) []playerpos.RaidMemberInput {
+	out := make([]playerpos.RaidMemberInput, 0, len(members))
+	for _, m := range members {
+		l := m.Loc
+		if m.Name == "" || m.Name == self || l == nil || (l.X == 0 && l.Y == 0 && l.Z == 0) {
+			continue
+		}
+		in := playerpos.RaidMemberInput{
+			Name: m.Name, Class: int(m.Class),
+			GameX: l.GameX(), GameY: l.GameY(), GameZ: l.Z,
+		}
+		in.Group, _ = strconv.Atoi(m.Group)
+		if m.Heading != nil {
+			in.Heading = *m.Heading
+		}
+		out = append(out, in)
 	}
 	return out
 }
