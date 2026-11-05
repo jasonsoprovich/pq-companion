@@ -13,6 +13,7 @@
 //	go run ./cmd/zealdump -types     # count envelopes per type; sample per type
 //	go run ./cmd/zealdump -deaths    # one line per death event (type 7)
 //	go run ./cmd/zealdump -items     # one line per item window opened
+//	go run ./cmd/zealdump -considers # one line per consider event
 //	go run ./cmd/zealdump -file cap  # replay a capture instead of dialing
 //
 // To keep a capture for later: go run ./cmd/zealdump -raw > capture.txt
@@ -70,6 +71,7 @@ func main() {
 	types := flag.Bool("types", false, "count envelopes per type; print one sample payload per type (diagnoses which message types a Zeal build actually emits — e.g. raid/type 5)")
 	deaths := flag.Bool("deaths", false, "print one line per death event (type 7, proposed Zeal PR) instead of target changes")
 	items := flag.Bool("items", false, "print one line per item display event (proposed Zeal PR; type 7 or 8) instead of target changes")
+	considers := flag.Bool("considers", false, "print one line per consider event (proposed Zeal PR; type 7 alone, 9 on the combined build) instead of target changes")
 	pipeName := flag.String("pipe", "", "pipe to read (default: first one discovered)")
 	fromFile := flag.String("file", "", "read a saved capture instead of dialing a pipe")
 	flag.Parse()
@@ -97,6 +99,10 @@ func main() {
 	}
 	if *items {
 		runItems(ctx, conn)
+		return
+	}
+	if *considers {
+		runConsiders(ctx, conn)
 		return
 	}
 	run(ctx, conn, *raw, *every, *types)
@@ -152,6 +158,50 @@ func runItems(ctx context.Context, conn io.Reader) {
 		fmt.Printf("%s #%d type=%d item_id=%d name=%s\n", time.Now().Format("15:04:05"), n, env.Type, it.ItemID, it.Name)
 	}
 	fmt.Printf("\n%d item display events\n", n)
+}
+
+// runConsiders prints one line per consider event. Like item display, the
+// message type isn't settled, so any envelope from type 7 up whose payload is
+// shaped like a consider counts, and the type it arrived under is shown.
+func runConsiders(ctx context.Context, conn io.Reader) {
+	fmt.Println("waiting for consider events. Con an NPC (or click one with /leftclickcon on). Ctrl+C to stop.")
+	n := 0
+	dec := json.NewDecoder(conn)
+	for ctx.Err() == nil {
+		var env zealpipe.Envelope
+		if err := dec.Decode(&env); err != nil {
+			if !errors.Is(err, io.EOF) && ctx.Err() == nil {
+				fmt.Fprintf(os.Stderr, "\nread ended: %v\n", err)
+			}
+			break
+		}
+		line, ok := formatConsider(env)
+		if !ok {
+			continue
+		}
+		n++
+		fmt.Printf("%s #%d %s\n", time.Now().Format("15:04:05"), n, line)
+	}
+	fmt.Printf("\n%d consider events\n", n)
+}
+
+// formatConsider renders one consider envelope as a single line, or ok=false
+// when the envelope isn't a consider. A consider-shaped payload with a
+// faction outside 1..9 is still shown, flagged, since that's what a tester
+// needs to see.
+func formatConsider(env zealpipe.Envelope) (string, bool) {
+	if env.Type < zealpipe.MsgDeath {
+		return "", false
+	}
+	c, err := zealpipe.DecodeConsider(env.Data)
+	if errors.Is(err, zealpipe.ErrNotConsider) {
+		return "", false
+	}
+	if err != nil {
+		return fmt.Sprintf("type=%d UNUSABLE %v: %s", env.Type, err, env.Data), true
+	}
+	return fmt.Sprintf("type=%d spawn_id=%d name=%s faction=%d (%s)",
+		env.Type, c.SpawnID, c.Name, c.Faction, zealpipe.ConsiderStanding(c.Faction)), true
 }
 
 // formatDeath renders one death payload as a single line.

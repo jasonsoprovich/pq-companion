@@ -2,8 +2,11 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/jasonsoprovich/pq-companion/backend/internal/zealpipe"
 )
 
 // decode is a fixture helper: payloads here are copied in the exact shape
@@ -120,5 +123,29 @@ func TestFormatPlayerLocWithheldIsNotMissing(t *testing.T) {
 	}
 	if !strings.Contains(got, "loc=withheld") {
 		t.Errorf("formatPlayer() = %q, want loc=withheld", got)
+	}
+}
+
+func TestFormatConsider(t *testing.T) {
+	for _, typ := range []zealpipe.PipeMessageType{7, 9} {
+		got, ok := formatConsider(zealpipe.Envelope{Type: typ,
+			Data: `{"spawn_id":1234,"name":"a gnoll pup","faction":9}`})
+		want := fmt.Sprintf("type=%d spawn_id=1234 name=a gnoll pup faction=9 (scowls)", typ)
+		if !ok || got != want {
+			t.Errorf("formatConsider(type %d) = %q, %v; want %q", typ, got, ok, want)
+		}
+	}
+	for _, env := range []zealpipe.Envelope{
+		{Type: 7, Data: `{"spawn_id":1234,"killer_id":0}`},             // a death
+		{Type: 8, Data: `{"item_id":13073,"name":"Bone Chips"}`},       // an item
+		{Type: 6, Data: `{"spawn_id":1,"name":"a gnoll","faction":9}`}, // below 7
+	} {
+		if got, ok := formatConsider(env); ok {
+			t.Errorf("formatConsider(%+v) = %q, want not a consider", env, got)
+		}
+	}
+	got, ok := formatConsider(zealpipe.Envelope{Type: 9, Data: `{"spawn_id":1,"name":"a gnoll","faction":0}`})
+	if !ok || !strings.Contains(got, "UNUSABLE") {
+		t.Errorf("bad faction: %q, %v", got, ok)
 	}
 }

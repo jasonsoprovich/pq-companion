@@ -2,6 +2,7 @@ package zealpipe
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 )
 
@@ -514,5 +515,108 @@ func TestLabelBuffTicks(t *testing.T) {
 			t.Errorf("label %d (%s): BuffTicks = %d,%v want %d,%v",
 				i, labels[i].Value, n, ok, w.ticks, w.ok)
 		}
+	}
+}
+
+func TestDecodeConsider(t *testing.T) {
+	c, err := DecodeConsider(`{"spawn_id":1234,"name":"a gnoll pup","faction":9}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.SpawnID != 1234 || c.Name != "a gnoll pup" || c.Faction != ConsiderScowls {
+		t.Errorf("unexpected decode: %+v", c)
+	}
+	notConsider := []string{
+		`{"spawn_id":5,"name":"a gnoll","killer_id":1}`,             // a death
+		`{"spawn_id":5,"name":"a gnoll","faction":9,"killer_id":1}`, // death + faction
+		`{"item_id":13073,"name":"Bone Chips"}`,                     // an item
+		`{"spawn_id":5,"faction":9}`,                                // no name
+		`{"name":"a gnoll","faction":9}`,                            // no spawn_id
+		`[{"spawn_id":5,"name":"a gnoll","faction":9}]`,             // array
+		`not json`,
+	}
+	for _, payload := range notConsider {
+		if _, err := DecodeConsider(payload); !errors.Is(err, ErrNotConsider) {
+			t.Errorf("%s: err = %v, want ErrNotConsider", payload, err)
+		}
+	}
+	// Consider-shaped but unusable: rejected, and not as ErrNotConsider.
+	for _, payload := range []string{
+		`{"spawn_id":5,"name":"a gnoll","faction":0}`,
+		`{"spawn_id":5,"name":"a gnoll","faction":10}`,
+		`{"spawn_id":0,"name":"a gnoll","faction":9}`,
+	} {
+		_, err := DecodeConsider(payload)
+		if err == nil || errors.Is(err, ErrNotConsider) {
+			t.Errorf("%s: err = %v, want a value error", payload, err)
+		}
+	}
+}
+
+func TestConsiderStanding(t *testing.T) {
+	want := []string{"", "ally", "warmly", "kindly", "amiable", "indifferent",
+		"apprehensive", "dubious", "threatening", "scowls", ""}
+	for f, w := range want {
+		if got := ConsiderStanding(f); got != w {
+			t.Errorf("ConsiderStanding(%d) = %q, want %q", f, got, w)
+		}
+	}
+}
+
+// Consider, death and item payloads never decode as one another, whatever
+// type number they arrive under.
+func TestDecodeShapesAreDisjoint(t *testing.T) {
+	const (
+		consider = `{"spawn_id":1234,"name":"a gnoll pup","faction":9}`
+		death    = `{"spawn_id":1234,"name":"a gnoll pup","type":1,"level":12,"killer_id":567,"killer_name":"Soandso"}`
+		item     = `{"item_id":13073,"name":"Bone Chips"}`
+	)
+	if _, err := DecodeDeath(consider); err == nil {
+		t.Error("consider decoded as a death")
+	}
+	if _, err := DecodeItemDisplay(consider); err == nil {
+		t.Error("consider decoded as an item")
+	}
+	if _, err := DecodeConsider(death); err == nil {
+		t.Error("death decoded as a consider")
+	}
+	if _, err := DecodeItemDisplay(death); err == nil {
+		t.Error("death decoded as an item")
+	}
+	if _, err := DecodeConsider(item); err == nil {
+		t.Error("item decoded as a consider")
+	}
+	if _, err := DecodeDeath(item); err == nil {
+		t.Error("item decoded as a death")
+	}
+}
+
+func TestDecodeProposed(t *testing.T) {
+	const (
+		consider = `{"spawn_id":1234,"name":"a gnoll pup","faction":8}`
+		death    = `{"spawn_id":1234,"killer_id":0}`
+		item     = `{"item_id":13073,"name":"Bone Chips"}`
+	)
+	for _, typ := range []PipeMessageType{7, 8, 9} {
+		p, ok := DecodeProposed(Envelope{Type: typ, Data: consider})
+		if !ok || p.Consider == nil || p.Consider.Faction != ConsiderThreatening || p.Item != nil {
+			t.Errorf("type %d consider: got %+v ok=%v", typ, p, ok)
+		}
+		p, ok = DecodeProposed(Envelope{Type: typ, Data: item})
+		if !ok || p.Item == nil || p.Consider != nil {
+			t.Errorf("type %d item: got %+v ok=%v", typ, p, ok)
+		}
+		if _, ok := DecodeProposed(Envelope{Type: typ, Data: death}); ok {
+			t.Errorf("type %d death: claimed by DecodeProposed", typ)
+		}
+		// An out-of-range faction is consumed (dropped), never passed on.
+		p, ok = DecodeProposed(Envelope{Type: typ, Data: `{"spawn_id":5,"name":"x","faction":12}`})
+		if !ok || p.Consider != nil || p.Item != nil {
+			t.Errorf("type %d bad faction: got %+v ok=%v", typ, p, ok)
+		}
+	}
+	// Below the death number nothing is claimed, even a matching shape.
+	if _, ok := DecodeProposed(Envelope{Type: MsgGroup, Data: consider}); ok {
+		t.Error("type 6 consider shape claimed")
 	}
 }

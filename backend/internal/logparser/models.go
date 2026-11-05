@@ -372,6 +372,28 @@ var FactionBucketOrder = []FactionBucket{
 	BucketIndifferent, BucketAmiable, BucketKindly, BucketWarmly, BucketAlly,
 }
 
+// FactionBucketForLevel maps a numeric consider faction level (1 ally ..
+// 9 scowls, as the proposed Zeal consider message reports it) to its bucket,
+// or "" for a value outside 1..9.
+func FactionBucketForLevel(level int) FactionBucket {
+	if level < 1 || level > len(FactionBucketOrder) {
+		return ""
+	}
+	// FactionBucketOrder runs worst to best; the level runs best to worst.
+	return FactionBucketOrder[len(FactionBucketOrder)-level]
+}
+
+// FactionLevel is the inverse of FactionBucketForLevel: 1 for ally .. 9 for
+// scowling, 0 for an unknown bucket.
+func FactionLevel(b FactionBucket) int {
+	for i, ob := range FactionBucketOrder {
+		if ob == b {
+			return len(FactionBucketOrder) - i
+		}
+	}
+	return 0
+}
+
 // ConsideredData is the structured payload for EventConsidered.
 type ConsideredData struct {
 	// TargetName is the NPC display name as it appeared in the /con output.
