@@ -142,7 +142,27 @@ export interface TargetState {
   // target_id is the current target's spawn id from the Zeal pipe (v1.4.6+);
   // absent without Zeal or with no target.
   target_id?: number
+  // consider is the latest /con reading of this target, absent when there is
+  // none or it no longer applies (dropped on a retarget, zoning, and when the
+  // player's invis / illusion / feign state changes).
+  consider?: ConsiderReading
   last_updated: string
+}
+
+// ConsiderReading mirrors the Go overlay.ConsiderReading: the server's /con
+// answer at a moment, which already reflects the player's invis, illusion,
+// faction buffs and engagement.
+export interface ConsiderReading {
+  // 1 ally .. 5 indifferent .. 9 scowls (higher is worse).
+  faction: number
+  // In-game word: 'scowls', 'threatening', 'indifferent', ...
+  standing: string
+  at: string
+  // 'pipe' (Zeal consider message) or 'log' (the /con line).
+  source: string
+  // Player state the server folded into the reading ('invisible',
+  // 'feigned', ...), absent for none.
+  while?: string
 }
 
 // TargetDistance is the player→target distance feed (overlay:npc_target_distance

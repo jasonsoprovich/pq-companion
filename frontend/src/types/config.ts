@@ -29,6 +29,9 @@ export interface NPCOutlineRule {
   classes: number[]
   color: string
   flash: boolean
+  // Shown as a label only, never drawing the frame. Set only on the
+  // synthetic /con rule (hooks/useNPCOutlineMatches); never saved.
+  labelOnly?: boolean
 }
 
 // One character's own outline rules (character is lowercased).
@@ -375,6 +378,9 @@ export interface Preferences {
   // match wins), plus per-character replacement lists.
   npc_overlay_outline_rules?: NPCOutlineRule[]
   npc_overlay_outline_rule_sets?: NPCOutlineRuleSet[]
+  // Turns off the /con border (red scowls, amber threatening) and standing
+  // label on both NPC overlay surfaces. Absent/false = on.
+  npc_overlay_consider_border_off?: boolean
   // Per-overlay locked behaviour, keyed by canonical overlay name. Missing
   // keys default to "interactive". See lib/overlays.ts.
   overlay_locked_modes?: Partial<Record<OverlayName, LockedMode>>

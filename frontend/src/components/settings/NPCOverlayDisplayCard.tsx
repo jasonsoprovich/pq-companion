@@ -31,6 +31,9 @@ interface Props {
   /** True when the user typed their own ranges instead of the gear-based ones. */
   rangesManual: boolean
   onChangeRanges: (cast: number, ranged: number, manual: boolean) => void
+  /** The /con border and standing label (both surfaces, all characters). */
+  considerBorder: boolean
+  onChangeConsiderBorder: (on: boolean) => void
 }
 
 interface Item {
@@ -131,6 +134,8 @@ export default function NPCOverlayDisplayCard({
   rangedRange,
   rangesManual,
   onChangeRanges,
+  considerBorder,
+  onChangeConsiderBorder,
 }: Props): React.ReactElement {
   const auto = useCharacterRanges()
   const [catalog, setCatalog] = useState<EnumsCatalog | null>(null)
@@ -389,6 +394,35 @@ export default function NPCOverlayDisplayCard({
           })}
         </div>
       )}
+
+      <label
+        className="mt-4 flex cursor-pointer items-start gap-2 rounded px-3 py-2 text-sm"
+        style={{
+          color: 'var(--color-foreground)',
+          backgroundColor: 'var(--color-surface-2)',
+          border: '1px solid var(--color-border)',
+        }}
+      >
+        <input
+          type="checkbox"
+          checked={considerBorder}
+          onChange={(e) => onChangeConsiderBorder(e.target.checked)}
+          style={{ marginTop: 3 }}
+        />
+        <span>
+          Faction border from /con
+          <span className="block text-xs" style={muted}>
+            After you consider the target, both overlays show its standing and outline red for
+            scowls or amber for threatening (a faint frame for dubious and apprehensive). It&rsquo;s
+            the server&rsquo;s answer at that moment, so it already allows for your invisibility,
+            illusion and faction buffs, and it&rsquo;s cleared when you retarget, zone, or your
+            invis, illusion or feign state changes. With Zeal&rsquo;s{' '}
+            <code>/leftclickcon on</code>, clicking an NPC cons it, so the border updates with
+            every click. Works from the log /con line too, best with a Zeal build that sends
+            consider events.
+          </span>
+        </span>
+      </label>
     </section>
   )
 }

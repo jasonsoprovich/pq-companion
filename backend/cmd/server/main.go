@@ -55,6 +55,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/rolltracker"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/sandbox"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/savedquery"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/selfstate"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/skills"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/spelltimer"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/threat"
@@ -1267,7 +1268,7 @@ func main() {
 	// every currently active buff timer's spell effects for SPA 58
 	// (Illusion), the same check buffmod already uses for the Permanent
 	// Illusion AA override.
-	factionEngine.SetIllusionProvider(func() bool {
+	timerIllusioned := func() bool {
 		for _, t := range timerEngine.GetState().Timers {
 			if t.Category != spelltimer.CategoryBuff || t.SpellID == 0 {
 				continue
@@ -1281,6 +1282,61 @@ func main() {
 			}
 		}
 		return false
+	}
+	factionEngine.SetIllusionProvider(timerIllusioned)
+	// The player's con-affecting state: invisibility, hide, illusion, faction
+	// buffs, feign death, engagement — everything the server folds into a
+	// /con answer (see internal/selfstate). Buffs come from the pipe's buff
+	// slots; the log covers the rest. A change drops the NPC overlay's /con
+	// reading, since it no longer says what the NPC would do now.
+	selfState := selfstate.New(func(name string) ([]int, bool) {
+		sp, err := database.GetSpellByExactName(name)
+		if err != nil || sp == nil {
+			return nil, false
+		}
+		return sp.EffectIDs[:], true
+	})
+	selfState.OnChange(npcTracker.InvalidateConsider)
+	npcTracker.SetConsiderStateProvider(func() string {
+		if r := selfState.State().Reason(); r != "" {
+			return r
+		}
+		if timerIllusioned() {
+			return "illusioned"
+		}
+		return ""
+	})
+	const npcClassMerchant = 41 // npc_types.class
+	// pipePetID is the player's pet spawn id from Zeal (0 = none / unknown).
+	var pipePetID atomic.Int64
+	// Faction tracker: only clean /con readings count. A reading taken while
+	// the player's state overrides the answer, or of an NPC fighting them, is
+	// suspect; a merchant reading dubious may be the server's merchant clamp.
+	factionEngine.SetConsiderSuspectProvider(func(c factiontracker.ConsiderContext) bool {
+		if selfState.State().Reason() != "" || selfState.EngagedWith(c.NPCName, c.SpawnID) {
+			return true
+		}
+		if c.Bucket == logparser.BucketDubious {
+			if id, ok := database.GetNPCIDByName(c.NPCName); ok {
+				if n, err := database.GetNPC(id); err == nil && n != nil && n.Class == npcClassMerchant {
+					return true
+				}
+			}
+		}
+		return false
+	})
+	// Pets con amiable to their owner and indifferent to everyone else, so
+	// their readings say nothing about faction: the player's own pet by spawn
+	// id, or a target Zeal reports a pet owner for.
+	factionEngine.SetConsiderPetProvider(func(c factiontracker.ConsiderContext) bool {
+		if c.SpawnID > 0 && int64(c.SpawnID) == pipePetID.Load() {
+			return true
+		}
+		st := npcTracker.GetState()
+		if st.PetOwner == "" || !strings.EqualFold(st.TargetName, c.NPCName) {
+			return false
+		}
+		return c.SpawnID == 0 || (st.TargetID != nil && *st.TargetID == c.SpawnID)
 	})
 	factionEngine.SetPersistFunc(func(characterID int, tally factiontracker.Tally) {
 		row := character.FactionTallyRow{
@@ -1741,15 +1797,23 @@ func main() {
 	}
 
 	pipeSupervisor := zealpipe.NewSupervisor(func(env zealpipe.Envelope) {
-		// Proposed Zeal item display message. Its type number is 7 on a build
-		// with only that PR and 8 alongside the death PR, so it's matched by
-		// payload shape ahead of the type switch — a death payload never
-		// decodes as an item, so MsgDeath still reaches its case below.
-		if env.Type >= zealpipe.MsgDeath {
-			if it, err := zealpipe.DecodeItemDisplay(env.Data); err == nil {
-				itemDisplayTracker.Handle(it.ItemID, it.Name, env.Character)
-				return
+		// Proposed Zeal consider and item display messages. Their type
+		// numbers aren't fixed (consider 7 alone or 9 on the combined build,
+		// item display 7 or 8), so they're matched by payload shape ahead of
+		// the type switch — a death payload never matches either, so MsgDeath
+		// still reaches its case below.
+		if p, ok := zealpipe.DecodeProposed(env); ok {
+			switch {
+			case p.Consider != nil:
+				// The server's /con answer for one NPC: the overlay's live
+				// KOS border, and a faction tracker reading.
+				c := p.Consider
+				npcTracker.SetPipeConsider(c.SpawnID, c.Name, c.Faction)
+				factionEngine.HandlePipeConsider(c.SpawnID, c.Name, c.Faction, time.Now())
+			case p.Item != nil:
+				itemDisplayTracker.Handle(p.Item.ItemID, p.Item.Name, env.Character)
 			}
+			return
 		}
 		switch env.Type {
 		case zealpipe.MsgCmd:
@@ -1805,6 +1869,12 @@ func main() {
 			// writes to the log.
 			timerEngine.SetPipePetID(p.PetID)
 			combatTracker.SetPipePetID(p.PetID)
+			if p.PetID != nil {
+				pipePetID.Store(int64(*p.PetID))
+			} else {
+				pipePetID.Store(0)
+			}
+			selfState.SetPipeAutoAttack(p.AutoAttack, p.TargetID)
 			// target_id: keys the NPC overlay's resolved variant to a stable
 			// spawn id so re-targeting the same same-named mob is sticky
 			// instead of re-rolling the position/strength disambiguation.
@@ -2053,6 +2123,7 @@ func main() {
 		}
 		timerEngine.SetPipeCasting(castingName)
 		timerEngine.SetPipeBuffSlots(env.Character, pipeBuffs)
+		selfState.SetPipeBuffs(buffSlots)
 		if curHP >= 0 && maxHP > 0 {
 			regenTracker.SetVitals(env.Character, curHP, maxHP, curMana, maxMana)
 		}
@@ -2083,6 +2154,9 @@ func main() {
 		// the normal Handle() flow.
 		npcTracker.SetPipeConnected(false)
 		npcTracker.ResetPipeFields()
+		selfState.ResetPipe()
+		factionEngine.ResetPipe()
+		pipePetID.Store(0)
 		petTracker.SetPipeConnected(false)
 		combatTracker.ResetPipeState()
 		respawnEngine.ResetPipeZone()
@@ -2190,6 +2264,7 @@ func main() {
 	}
 	dispatchEvent := func(ev logparser.LogEvent) {
 		hub.Broadcast(ws.Event{Type: string(ev.Type), Data: ev})
+		guard.run("selfState", func() { selfState.Handle(ev) })
 		guard.run("npcTracker", func() { npcTracker.Handle(ev) })
 		guard.run("combatTracker", func() { combatTracker.Handle(ev) })
 		guard.run("petTracker", func() { petTracker.Handle(ev) })
@@ -2329,6 +2404,7 @@ func main() {
 		// Loot lines identify which same-name raid-boss row just died
 		// (Kaas Thox pair) — see overlay/variant_elimination.go.
 		guard.run("npcTracker", func() { npcTracker.HandleLootLine(ts, msg) })
+		guard.run("selfState", func() { selfState.HandleLine(msg) })
 		guard.run("petTracker", func() { petTracker.HandleLine(ts, msg) })
 		if playersConsumer != nil {
 			durable("playersConsumer", func() { playersConsumer.HandleLine(ts, msg) })

@@ -1,5 +1,6 @@
 import React from 'react'
 import type { NPCOutlineRule } from '../../types/config'
+import { CONSIDER_RULE_ID } from '../../lib/considerOutline'
 
 const PIN_COLOR = '#c9a84c'
 
@@ -7,7 +8,8 @@ const PIN_COLOR = '#c9a84c'
  * Coloured frame drawn over an NPC overlay window when the target matches an
  * outline rule (the first match). Absolutely positioned, so the parent must
  * be a positioned element. When the target is also pinned, the pin's gold
- * ring moves just inside the rule frame so both stay visible.
+ * ring moves just inside the rule frame so both stay visible. A label-only
+ * rule draws no frame, just the pin ring when pinned.
  */
 export function NPCOutlineFrame({
   rule,
@@ -21,6 +23,15 @@ export function NPCOutlineFrame({
     position: 'absolute',
     pointerEvents: 'none',
     zIndex: 50,
+  }
+  if (rule.labelOnly) {
+    // The parent leaves the pin ring to us once any rule matched.
+    return pinned ? (
+      <div
+        aria-hidden
+        style={{ ...layer, inset: 0, border: `2px solid ${PIN_COLOR}`, borderRadius: 8 }}
+      />
+    ) : null
   }
   return (
     <>
@@ -55,7 +66,14 @@ export function NPCOutlineLabels({
       {rules.map((r, i) => (
         <span
           key={r.id}
-          title={i === 0 ? 'Outline rule (drawing the frame)' : 'Outline rule (also matched)'}
+          title={
+            r.id === CONSIDER_RULE_ID
+              ? 'Standing from your last /con of this target. Cleared when you retarget, zone, ' +
+                'or your invis, illusion or feign state changes.'
+              : i === 0
+                ? 'Outline rule (drawing the frame)'
+                : 'Outline rule (also matched)'
+          }
           style={{
             backgroundColor: i === 0 ? r.color : 'transparent',
             border: `1px solid ${r.color}`,
