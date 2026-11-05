@@ -23,6 +23,7 @@ export interface MapHighlight {
 // AggroRing is a circle of an NPC's aggro radius around its spawn point.
 // color is the con colour. faint marks a spawn that won't aggro on you by
 // itself (the server's green-under-18 rule). seeInvis adds an eye marker.
+// alpha fades a ring with distance when only nearby rings are shown.
 export interface AggroRing {
   x: number
   y: number
@@ -31,6 +32,7 @@ export interface AggroRing {
   color: string
   faint?: boolean
   seeInvis?: boolean
+  alpha?: number
 }
 
 // SpawnDot is one spawn point coloured by its respawn state. label, when
@@ -43,6 +45,8 @@ export interface SpawnDot {
   label?: string
   // known marks a dot with a respawn timer; unknown ones draw smaller.
   known: boolean
+  // name is who spawns there, shown on hover in 3D.
+  name?: string
 }
 
 // RaiderMarker is one raider in a raid replay frame, in map space.
@@ -58,6 +62,8 @@ export interface RaiderMarker {
   dead?: boolean
   // focus rings the marker and always labels it.
   focus?: boolean
+  // mine is you or someone in your group, labelled under Labels: Group.
+  mine?: boolean
 }
 
 // ReplayTarget is the observer's target in a raid replay, in map space: a
@@ -678,7 +684,7 @@ export function ZoneMap({
         const rp = r.radius * pxPerUnit
         if (px + rp < 0 || py + rp < 0 || px - rp > size.w || py - rp > size.h) continue
         const dimmed = depth ? r.z < depth.lo || r.z > depth.hi : false
-        const a = (dimmed ? 0.3 : 1) * (r.faint ? 0.45 : 1)
+        const a = (dimmed ? 0.3 : 1) * (r.faint ? 0.45 : 1) * (r.alpha ?? 1)
         ctx.globalAlpha = a
         ctx.beginPath()
         ctx.arc(px, py, Math.max(rp, 2), 0, Math.PI * 2)

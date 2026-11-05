@@ -283,6 +283,10 @@ export default function RaidReplayPage(): React.ReactElement {
     if (!rec) return []
     const out: RaiderMarker[] = []
     const shown = new Set<number>()
+    // The recorder and their group are "mine", for Labels: Group.
+    const meIdx = indexByName.get(rec.session.character.toLowerCase())
+    const myGroup = present.find((r) => r.index === meIdx)?.group ?? 0
+    const mine = (idx: number, group: number): boolean => idx === meIdx || (myGroup > 0 && group === myGroup)
     // Raiders who died recently are drawn as a cross where they fell, even
     // after they've left the zone's frames.
     const dead = new Set<number>()
@@ -296,7 +300,7 @@ export default function RaidReplayPage(): React.ReactElement {
       out.push({
         x: -at.x, y: -at.y, z: at.z, heading: at.heading,
         color: classColor(palette, mem?.class ?? 0), label: mem?.name ?? '?',
-        dead: true, focus: focus === idx,
+        dead: true, focus: focus === idx, mine: idx === meIdx,
       })
       shown.add(idx)
     }
@@ -307,7 +311,7 @@ export default function RaidReplayPage(): React.ReactElement {
         // Map space is the negated game position (see playerpos).
         x: -r.x, y: -r.y, z: r.z, heading: r.heading,
         color: classColor(palette, mem?.class ?? 0), label: mem?.name ?? '?',
-        focus: focus === r.index,
+        focus: focus === r.index, mine: mine(r.index, r.group),
       })
     }
     return out

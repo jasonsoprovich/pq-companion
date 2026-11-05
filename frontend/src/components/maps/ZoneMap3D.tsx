@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-import { RotateCcw, SlidersHorizontal } from 'lucide-react'
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+import { RotateCcw, SlidersHorizontal, Tag } from 'lucide-react'
 import { getZoneMesh3D, getZoneTextureUrl } from '../../services/api'
 import type { ZoneMesh3D } from '../../services/api'
 import { useMap3DPrefs } from '../../hooks/useMap3DPrefs'
-import type { Map3DPrefs, Map3DStyle } from '../../hooks/useMap3DPrefs'
-import type { RaiderMarker, ReplayTarget } from './ZoneMap'
+import type { Map3DLabels, Map3DPrefs, Map3DStyle } from '../../hooks/useMap3DPrefs'
+import type { AggroRing, RaiderMarker, ReplayTarget, SpawnDot } from './ZoneMap'
 
 // ZoneMap3D draws a zone in 3D from the user's own installed client files
 // (<eq_path>/<zone>.s3d, read by the backend): the zone's geometry with its
@@ -20,13 +21,15 @@ import type { RaiderMarker, ReplayTarget } from './ZoneMap'
 // left/right the same as the 2D map.
 
 // Pin3D is a fixed point drawn as a small diamond: a map pin, a user marker,
-// or a kill mark in a replay. In map space, like markers.
+// or a kill mark in a replay. In map space, like markers. picked is a
+// search result or the clicked pin, labelled whatever Labels is set to.
 export interface Pin3D {
   x: number
   y: number
   z: number
   color: string
   label: string
+  picked?: boolean
 }
 
 export interface ZoneMap3DProps {
@@ -37,6 +40,10 @@ export interface ZoneMap3DProps {
   // target draws a line from the observer to their target.
   target?: ReplayTarget | null
   pins?: Pin3D[]
+  // rings are spawn points' aggro radii, drawn flat on the floor, and
+  // spawnDots the spawn points themselves; both as the 2D map has them.
+  rings?: AggroRing[]
+  spawnDots?: SpawnDot[]
   // onUnavailable fires when 3D can't be shown (no WebGL, no s3d), so the
   // caller can fall back to 2D.
   onUnavailable?: (reason: string) => void
@@ -54,6 +61,34 @@ const FLAT = 0.55
 // pin PIN_LABEL_PX: a whole raid's names from far away is a smear.
 const LABEL_PX = 18
 const PIN_LABEL_PX = 13
+
+// Markers, pins and spawn dots stay the same size on screen at any zoom,
+// like the 2D map's, so a packed raid reads as arrows rather than blobs.
+// Sizes are in CSS pixels.
+const PIN_PX = 5
+const DOT_PX = 9
+const DOT_UNKNOWN_PX = 6
+const HOVER_PX = 10
+const HIGHLIGHT = '#ff4fd8'
+
+// Scrolling in never gets closer to the orbit point than the zone's size
+// over CLOSEST: past that the point is pushed ahead, so zooming keeps
+// moving instead of crawling to a stop. FLY_SPEED is keyboard movement in
+// zone sizes per second.
+const CLOSEST = 25
+const FLY_SPEED = 1 / 8
+
+const LABEL_NAMES: Record<Map3DLabels, string> = { off: 'Off', group: 'Group', all: 'All' }
+const LABEL_NEXT: Record<Map3DLabels, Map3DLabels> = { off: 'group', group: 'all', all: 'off' }
+
+// Hover is the marker, pin or spawn dot under the mouse, named over it.
+interface Hover {
+  x: number
+  y: number
+  z: number
+  text: string
+  color: string
+}
 
 function heightColors(pos: Float32Array): Float32Array {
   let lo = Infinity
@@ -111,16 +146,26 @@ interface Scene3D {
   controls: OrbitControls
   markers: THREE.Group
   pins: THREE.Group
+  ringFill: THREE.Mesh
+  ringLine: THREE.LineSegments
+  dotsKnown: THREE.Points
+  dotsOther: THREE.Points
   targetLine: THREE.Line
   layers: ZoneLayers | null
+  // markerSize is a nominal marker size in world units, for when names
+  // show and the target line's dashes. radius is the zone's size.
   markerSize: number
+  radius: number
+  hover: Hover | null
   // home is the starting camera, for Reset view.
   home: { position: THREE.Vector3; target: THREE.Vector3 } | null
   render: () => void
   dispose: () => void
 }
 
-export default function ZoneMap3D({ zone, markers, target, pins, onUnavailable }: ZoneMap3DProps): React.ReactElement {
+export default function ZoneMap3D({
+  zone, markers, target, pins, rings, spawnDots, onUnavailable,
+}: ZoneMap3DProps): React.ReactElement {
   const host = useRef<HTMLDivElement>(null)
   const labelCanvas = useRef<HTMLCanvasElement>(null)
   const scene = useRef<Scene3D | null>(null)
@@ -128,6 +173,10 @@ export default function ZoneMap3D({ zone, markers, target, pins, onUnavailable }
   markersRef.current = markers
   const pinsRef = useRef(pins)
   pinsRef.current = pins
+  const ringsRef = useRef(rings)
+  ringsRef.current = rings
+  const dotsRef = useRef(spawnDots)
+  dotsRef.current = spawnDots
   const [status, setStatus] = useState<'loading' | 'ready' | string>('loading')
   const lastFocus = useRef<THREE.Vector3 | null>(null)
   const [prefs, setPrefs] = useMap3DPrefs()
@@ -158,6 +207,9 @@ export default function ZoneMap3D({ zone, markers, target, pins, onUnavailable }
     camera.up.set(0, 0, 1)
     const controls = new OrbitControls(camera, renderer.domElement)
     controls.screenSpacePanning = true
+    // Zoom toward what's under the mouse, not the middle of the zone.
+    controls.zoomToCursor = true
+    controls.zoomSpeed = 1.5
     sc.add(new THREE.HemisphereLight(0xdde6f5, 0x202430, 1.6))
     const sun = new THREE.DirectionalLight(0xffffff, 1.4)
     sun.position.set(0.4, -0.6, 1)
@@ -168,6 +220,24 @@ export default function ZoneMap3D({ zone, markers, target, pins, onUnavailable }
     const pinGroup = new THREE.Group()
     pinGroup.renderOrder = 8
     sc.add(pinGroup)
+    // Rings and spawn dots, like markers, are drawn over the walls, the
+    // same way the 2D map draws them over geometry.
+    const over = { transparent: true, depthTest: false, depthWrite: false, vertexColors: true }
+    const ringFill = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ ...over, side: THREE.DoubleSide }))
+    ringFill.renderOrder = 5
+    const ringLine = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial(over))
+    ringLine.renderOrder = 5
+    const dot = (px: number): THREE.Points => {
+      const p = new THREE.Points(
+        new THREE.BufferGeometry(),
+        new THREE.PointsMaterial({ ...over, size: px, sizeAttenuation: false, map: dotTexture(), alphaTest: 0.05 }),
+      )
+      p.renderOrder = 6
+      return p
+    }
+    const dotsKnown = dot(DOT_PX)
+    const dotsOther = dot(DOT_UNKNOWN_PX)
+    sc.add(ringFill, ringLine, dotsOther, dotsKnown)
     const targetLine = new THREE.Line(
       new THREE.BufferGeometry(),
       new THREE.LineDashedMaterial({ color: 0xf87171, dashSize: 6, gapSize: 4, depthTest: false, transparent: true }),
@@ -178,8 +248,9 @@ export default function ZoneMap3D({ zone, markers, target, pins, onUnavailable }
 
     let frame = 0
     const s: Scene3D = {
-      renderer, scene: sc, camera, controls, markers: markerGroup, pins: pinGroup, targetLine,
-      layers: null, markerSize: 4, home: null,
+      renderer, scene: sc, camera, controls, markers: markerGroup, pins: pinGroup,
+      ringFill, ringLine, dotsKnown, dotsOther, targetLine,
+      layers: null, markerSize: 4, radius: 1000, hover: null, home: null,
       render: () => {
         if (frame) return
         frame = requestAnimationFrame(() => {
@@ -196,14 +267,28 @@ export default function ZoneMap3D({ zone, markers, target, pins, onUnavailable }
               camera.updateProjectionMatrix()
             }
           }
+          if (h > 0) scaleToScreen(s, h)
           renderer.render(sc, camera)
-          drawLabels(s, labelCanvas.current, w, h, markersRef.current, pinsRef.current ?? [])
+          drawLabels(s, labelCanvas.current, w, h, {
+            markers: markersRef.current,
+            pins: pinsRef.current ?? [],
+            dots: dotsRef.current ?? [],
+            labels: prefsRef.current.labels,
+          })
         })
       },
       dispose: () => {
         cancelAnimationFrame(frame)
+        cancelAnimationFrame(flying)
         ro.disconnect()
         controls.dispose()
+        el.removeEventListener('keydown', onKeyDown)
+        el.removeEventListener('keyup', onKeyUp)
+        el.removeEventListener('blur', onBlur)
+        el.removeEventListener('pointerdown', onPointerDown)
+        renderer.domElement.removeEventListener('wheel', onWheel)
+        renderer.domElement.removeEventListener('pointermove', onPointerMove)
+        renderer.domElement.removeEventListener('pointerleave', onPointerLeave)
         // Marker and pin geometry and materials are shared module-wide; only
         // the zone's own meshes, materials and textures and the target line
         // are freed.
@@ -228,6 +313,103 @@ export default function ZoneMap3D({ zone, markers, target, pins, onUnavailable }
       },
     }
     controls.addEventListener('change', s.render)
+
+    // OrbitControls zooms by a fraction of the distance to its orbit point,
+    // so near that point each scroll moves less and zoom seems to stop. On
+    // a scroll in that gets too close, the point is pushed ahead along the
+    // view. Runs after the controls' own wheel handler, registered first.
+    const onWheel = (e: WheelEvent): void => {
+      if (e.deltaY >= 0) return
+      const closest = s.radius / CLOSEST
+      const toTarget = controls.target.clone().sub(camera.position)
+      if (toTarget.length() >= closest) return
+      controls.target.copy(camera.position).addScaledVector(toTarget.normalize(), closest)
+      controls.update()
+    }
+    renderer.domElement.addEventListener('wheel', onWheel, { passive: true })
+
+    // WASD or the arrows fly the camera across the floor, Q and E down and
+    // up, Shift faster. Keys only count while the map has focus, which a
+    // click on it gives, so typing in the search box never moves it.
+    el.tabIndex = 0
+    el.style.outline = 'none'
+    const keys = new Set<string>()
+    let fast = false
+    let flying = 0
+    let lastStep = 0
+    const fly = (now: number): void => {
+      if (keys.size === 0) {
+        flying = 0
+        lastStep = 0
+        return
+      }
+      const dt = lastStep ? Math.min(0.1, (now - lastStep) / 1000) : 1 / 60
+      lastStep = now
+      const on = (...codes: string[]): number => (codes.some((c) => keys.has(c)) ? 1 : 0)
+      const ahead = on('KeyW', 'ArrowUp') - on('KeyS', 'ArrowDown')
+      const side = on('KeyD', 'ArrowRight') - on('KeyA', 'ArrowLeft')
+      const rise = on('KeyE') - on('KeyQ')
+      // Forward is where the camera looks, flattened onto the floor; looking
+      // straight down, it's the top of the screen.
+      const fwd = camera.getWorldDirection(new THREE.Vector3())
+      fwd.z = 0
+      if (fwd.lengthSq() < 1e-6) fwd.set(0, 1, 0).applyQuaternion(camera.quaternion).setZ(0)
+      fwd.normalize()
+      const right = new THREE.Vector3(fwd.y, -fwd.x, 0)
+      const move = fwd.multiplyScalar(ahead).addScaledVector(right, side)
+      move.z = rise
+      if (move.lengthSq() > 0) {
+        move.normalize().multiplyScalar(s.radius * FLY_SPEED * (fast ? 3 : 1) * dt)
+        camera.position.add(move)
+        controls.target.add(move)
+        controls.update()
+      }
+      flying = requestAnimationFrame(fly)
+    }
+    const FLY_KEYS = new Set([
+      'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+    ])
+    const onKeyDown = (e: KeyboardEvent): void => {
+      fast = e.shiftKey
+      if (!FLY_KEYS.has(e.code) || e.ctrlKey || e.metaKey || e.altKey) return
+      // Arrows would otherwise scroll the page.
+      e.preventDefault()
+      keys.add(e.code)
+      if (!flying) flying = requestAnimationFrame(fly)
+    }
+    const onKeyUp = (e: KeyboardEvent): void => {
+      fast = e.shiftKey
+      keys.delete(e.code)
+    }
+    const onBlur = (): void => keys.clear()
+    const onPointerDown = (): void => el.focus({ preventScroll: true })
+    el.addEventListener('keydown', onKeyDown)
+    el.addEventListener('keyup', onKeyUp)
+    el.addEventListener('blur', onBlur)
+    el.addEventListener('pointerdown', onPointerDown)
+
+    // Hovering names the marker, pin or spawn dot under the mouse.
+    const onPointerMove = (e: PointerEvent): void => {
+      if (e.buttons !== 0 || !s.home) return
+      const r = el.getBoundingClientRect()
+      const next = pick(s, r.width, r.height, e.clientX - r.left, e.clientY - r.top, {
+        markers: markersRef.current,
+        pins: pinsRef.current ?? [],
+        dots: dotsRef.current ?? [],
+      })
+      if (next?.text !== s.hover?.text || next?.x !== s.hover?.x || next?.y !== s.hover?.y) {
+        s.hover = next
+        s.render()
+      }
+    }
+    const onPointerLeave = (): void => {
+      if (!s.hover) return
+      s.hover = null
+      s.render()
+    }
+    renderer.domElement.addEventListener('pointermove', onPointerMove)
+    renderer.domElement.addEventListener('pointerleave', onPointerLeave)
+
     const ro = new ResizeObserver(s.render)
     ro.observe(el)
     scene.current = s
@@ -253,6 +435,8 @@ export default function ZoneMap3D({ zone, markers, target, pins, onUnavailable }
         const extent = box.getSize(new THREE.Vector3())
         const radius = Math.max(extent.x, extent.y, 1)
         s.markerSize = Math.max(3, radius / 250)
+        s.radius = radius
+        controls.maxDistance = radius * 3
         // Start over the markers if there are any, else over the zone,
         // looking north and down at about 50 degrees.
         const start = markerCentroid(markersRef.current) ?? center
@@ -268,6 +452,8 @@ export default function ZoneMap3D({ zone, markers, target, pins, onUnavailable }
         setStatus('ready')
         updateMarkers(s, markersRef.current)
         updatePins(s, pinsRef.current ?? [])
+        updateRings(s, ringsRef.current ?? [])
+        updateDots(s, dotsRef.current ?? [])
         s.render()
       })
       .catch((err: Error) => {
@@ -319,6 +505,25 @@ export default function ZoneMap3D({ zone, markers, target, pins, onUnavailable }
     s.render()
   }, [pins, status])
 
+  useEffect(() => {
+    const s = scene.current
+    if (!s || status !== 'ready') return
+    updateRings(s, rings ?? [])
+    s.render()
+  }, [rings, status])
+
+  useEffect(() => {
+    const s = scene.current
+    if (!s || status !== 'ready') return
+    updateDots(s, spawnDots ?? [])
+    s.render()
+  }, [spawnDots, status])
+
+  // Names are drawn each frame from the current setting.
+  useEffect(() => {
+    scene.current?.render()
+  }, [prefs.labels])
+
   // A new style or culling needs new materials; opacity and what's shown
   // only adjust the ones there, so dragging the slider stays cheap.
   useEffect(() => {
@@ -350,6 +555,18 @@ export default function ZoneMap3D({ zone, markers, target, pins, onUnavailable }
           <div className="absolute right-2 top-2 flex items-center gap-1">
             <button
               className="flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px]"
+              style={{ backgroundColor: 'rgba(11,13,18,0.8)', borderColor: 'var(--color-border)', color: 'var(--color-muted-foreground)' }}
+              title={
+                'Whose names show: Off (only who the camera follows), Group ' +
+                '(you and your group) or All (everyone close enough to read). ' +
+                'Hover anything to name it.'
+              }
+              onClick={() => setPrefs({ labels: LABEL_NEXT[prefs.labels] })}
+            >
+              <Tag size={10} /> Labels: {LABEL_NAMES[prefs.labels]}
+            </button>
+            <button
+              className="flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px]"
               style={{
                 backgroundColor: showOptions ? 'var(--color-surface-2)' : 'rgba(11,13,18,0.8)',
                 borderColor: 'var(--color-border)',
@@ -377,7 +594,7 @@ export default function ZoneMap3D({ zone, markers, target, pins, onUnavailable }
           </div>
           {showOptions && <ViewOptions prefs={prefs} onChange={setPrefs} />}
           <div className="pointer-events-none absolute bottom-2 left-2 text-[10px]" style={{ color: 'rgba(255,255,255,0.45)' }}>
-            Drag to orbit · right-drag to pan · scroll to zoom
+            Drag to orbit · right-drag to pan · scroll to zoom · click, then WASD/arrows to move, Q/E down/up, Shift faster
           </div>
         </>
       )}
@@ -687,67 +904,225 @@ function markerCentroid(markers: RaiderMarker[]): THREE.Vector3 | null {
   return c.divideScalar(markers.length)
 }
 
-// Marker and pin geometry and materials are shared per size/colour and
-// reused across frames, so playback at 20 fps doesn't churn GPU buffers.
-const sphereGeo = new Map<number, THREE.BufferGeometry>()
-const diamondGeo = new Map<number, THREE.BufferGeometry>()
+// Marker and pin geometry and materials are shared module-wide and reused
+// across frames, so playback at 20 fps doesn't churn GPU buffers. Shapes are
+// in screen pixels at scale 1; scaleToScreen sizes them each frame.
 const overMat = new Map<string, THREE.MeshBasicMaterial>()
 
-function cached<K>(m: Map<K, THREE.BufferGeometry>, k: K, make: () => THREE.BufferGeometry): THREE.BufferGeometry {
-  let g = m.get(k)
-  if (!g) {
-    g = make()
-    m.set(k, g)
-  }
-  return g
-}
-
-function matFor(color: string): THREE.MeshBasicMaterial {
-  let m = overMat.get(color)
+function matFor(color: string, opacity = 1): THREE.MeshBasicMaterial {
+  const key = `${color}|${opacity}`
+  let m = overMat.get(key)
   if (!m) {
     // Drawn over the walls, the same way the 2D map draws markers over
     // geometry: a raider behind a pillar should still be visible.
-    m = new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true })
-    overMat.set(color, m)
+    m = new THREE.MeshBasicMaterial({ color, opacity, depthTest: false, transparent: true, side: THREE.DoubleSide })
+    overMat.set(key, m)
   }
   return m
 }
 
+// The 2D map's raider arrow, pointing north, and a slightly larger copy
+// behind it as its dark casing.
+const CHEVRON: [number, number][] = [[0, 6], [4, -5], [0, -2.5], [-4, -5]]
+
+function polygon(pts: [number, number][], grow: number): THREE.BufferGeometry {
+  return new THREE.ShapeGeometry(new THREE.Shape(pts.map(([x, y]) => new THREE.Vector2(x * grow, y * grow))))
+}
+
+// cross is a dead raider's X, as the 2D map draws it; arm is its half
+// thickness.
+function cross(arm: number): THREE.BufferGeometry {
+  const bar = (turn: number): THREE.BufferGeometry => new THREE.PlaneGeometry(11.5, arm * 2).rotateZ(turn)
+  return mergeGeometries([bar(Math.PI / 4), bar(-Math.PI / 4)])
+}
+
+let shapes: Record<'chevron' | 'chevronCase' | 'cross' | 'crossCase' | 'ring' | 'ringCase' | 'pin', THREE.BufferGeometry> | null = null
+
+function markerShapes(): NonNullable<typeof shapes> {
+  if (!shapes) {
+    shapes = {
+      chevron: polygon(CHEVRON, 1),
+      chevronCase: polygon(CHEVRON, 1.35),
+      cross: cross(1),
+      crossCase: cross(2),
+      ring: new THREE.RingGeometry(9.25, 10.75, 32),
+      ringCase: new THREE.RingGeometry(8.25, 11.75, 32),
+      pin: new THREE.OctahedronGeometry(1),
+    }
+  }
+  return shapes
+}
+
+// A marker is a group of four meshes: casing, shape, and the focus ring's
+// casing and ring. userData holds where it stands and its size, for
+// scaleToScreen.
 function updateMarkers(s: Scene3D, markers: RaiderMarker[]): void {
   const g = s.markers
+  const sh = markerShapes()
   while (g.children.length > markers.length) g.remove(g.children[g.children.length - 1])
-  const size = s.markerSize
   markers.forEach((r, i) => {
-    let m = g.children[i] as THREE.Mesh | undefined
+    let m = g.children[i] as THREE.Group | undefined
     if (!m) {
-      m = new THREE.Mesh(undefined, matFor(r.color))
-      m.renderOrder = 10
+      m = new THREE.Group()
+      for (let k = 0; k < 4; k++) {
+        const mesh = new THREE.Mesh()
+        // Casings under shapes, focus rings over everything.
+        mesh.renderOrder = [10, 11, 12, 13][k]
+        m.add(mesh)
+      }
+      m.userData = { base: new THREE.Vector3(), px: 1, lift: 0 }
       g.add(m)
     }
-    const sz = r.focus ? size * 1.8 : size
-    m.geometry = cached(sphereGeo, sz, () => new THREE.SphereGeometry(sz, 12, 8))
-    m.material = matFor(r.dead ? '#6b7280' : r.color)
-    // Raised a little: positions are at the feet.
-    m.position.set(r.x, -r.y, r.z + size)
+    const [casing, shape, ringCase, ring] = m.children as THREE.Mesh[]
+    casing.geometry = r.dead ? sh.crossCase : sh.chevronCase
+    casing.material = matFor('#000000', 0.7)
+    shape.geometry = r.dead ? sh.cross : sh.chevron
+    shape.material = matFor(r.color, r.dead ? 0.7 : 1)
+    ringCase.geometry = sh.ringCase
+    ringCase.material = matFor('#000000', 0.7)
+    ring.geometry = sh.ring
+    ring.material = matFor(HIGHLIGHT)
+    ringCase.visible = !!r.focus
+    ring.visible = !!r.focus
+    // Lying flat at the feet, pointing along the heading: EQ's heading
+    // turns counter-clockwise from north, as rotation about +z does here.
+    // The ring is a child too, so it turns with it, which a circle hides.
+    m.rotation.z = r.dead ? 0 : ((r.heading ?? 0) / 512) * Math.PI * 2
+    ;(m.userData.base as THREE.Vector3).set(r.x, -r.y, r.z + 1)
+    m.userData.px = r.focus ? 1.3 : 1
   })
 }
 
 function updatePins(s: Scene3D, pins: Pin3D[]): void {
   const g = s.pins
+  const geo = markerShapes().pin
   while (g.children.length > pins.length) g.remove(g.children[g.children.length - 1])
-  const size = s.markerSize * 1.3
-  const geo = cached(diamondGeo, size, () => new THREE.OctahedronGeometry(size))
   pins.forEach((p, i) => {
     let m = g.children[i] as THREE.Mesh | undefined
     if (!m) {
-      m = new THREE.Mesh(geo, matFor(p.color))
+      m = new THREE.Mesh(geo)
       m.renderOrder = 8
+      m.userData = { base: new THREE.Vector3(), px: PIN_PX, lift: PIN_PX * 1.4 }
       g.add(m)
     }
-    m.geometry = geo
     m.material = matFor(p.color)
-    m.position.set(p.x, -p.y, p.z + size * 1.5)
+    ;(m.userData.base as THREE.Vector3).set(p.x, -p.y, p.z)
+    m.userData.px = p.picked ? PIN_PX * 1.4 : PIN_PX
   })
+}
+
+// RING_SEGMENTS is how many sides each aggro ring has.
+const RING_SEGMENTS = 40
+
+// updateRings draws every aggro ring as one mesh of faint discs and one set
+// of outlines, coloured per vertex with alpha, matching the 2D map's light
+// fill and stronger edge. Rebuilt whenever the rings change.
+function updateRings(s: Scene3D, rings: AggroRing[]): void {
+  const n = rings.length
+  const seg = RING_SEGMENTS
+  const fillPos = new Float32Array(n * (seg + 1) * 3)
+  const fillCol = new Float32Array(n * (seg + 1) * 4)
+  const fillIdx = new Uint32Array(n * seg * 3)
+  const linePos = new Float32Array(n * seg * 3)
+  const lineCol = new Float32Array(n * seg * 4)
+  const lineIdx = new Uint32Array(n * seg * 2)
+  const c = new THREE.Color()
+  rings.forEach((r, i) => {
+    c.set(r.color)
+    const a = (r.faint ? 0.45 : 1) * (r.alpha ?? 1)
+    const x = r.x
+    const y = -r.y
+    const z = r.z + 1
+    const fv = i * (seg + 1)
+    fillPos.set([x, y, z], fv * 3)
+    fillCol.set([c.r, c.g, c.b, a * 0.1], fv * 4)
+    for (let k = 0; k < seg; k++) {
+      const t = (k / seg) * Math.PI * 2
+      const px = x + Math.cos(t) * r.radius
+      const py = y + Math.sin(t) * r.radius
+      fillPos.set([px, py, z], (fv + 1 + k) * 3)
+      fillCol.set([c.r, c.g, c.b, a * 0.1], (fv + 1 + k) * 4)
+      fillIdx.set([fv, fv + 1 + k, fv + 1 + ((k + 1) % seg)], (i * seg + k) * 3)
+      const lv = i * seg + k
+      linePos.set([px, py, z], lv * 3)
+      lineCol.set([c.r, c.g, c.b, a * 0.75], lv * 4)
+      lineIdx.set([lv, i * seg + ((k + 1) % seg)], lv * 2)
+    }
+  })
+  const build = (pos: Float32Array, col: Float32Array, idx: Uint32Array): THREE.BufferGeometry => {
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 4))
+    geo.setIndex(new THREE.BufferAttribute(idx, 1))
+    return geo
+  }
+  s.ringFill.geometry.dispose()
+  s.ringFill.geometry = build(fillPos, fillCol, fillIdx)
+  s.ringLine.geometry.dispose()
+  s.ringLine.geometry = build(linePos, lineCol, lineIdx)
+}
+
+// updateDots draws spawn points as screen-sized dots, those with a respawn
+// timer larger, as the 2D map does.
+function updateDots(s: Scene3D, dots: SpawnDot[]): void {
+  const c = new THREE.Color()
+  for (const [pts, known] of [[s.dotsKnown, true], [s.dotsOther, false]] as const) {
+    const sel = dots.filter((d) => d.known === known)
+    const pos = new Float32Array(sel.length * 3)
+    const col = new Float32Array(sel.length * 4)
+    sel.forEach((d, i) => {
+      c.set(d.color)
+      pos.set([d.x, -d.y, d.z + 1], i * 3)
+      col.set([c.r, c.g, c.b, known ? 1 : 0.7], i * 4)
+    })
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 4))
+    pts.geometry.dispose()
+    pts.geometry = geo
+  }
+}
+
+// dotTexture is a white disc with a dark edge, tinted per dot.
+let dotTex: THREE.Texture | null = null
+
+function dotTexture(): THREE.Texture {
+  if (dotTex) return dotTex
+  const c = document.createElement('canvas')
+  c.width = 32
+  c.height = 32
+  const ctx = c.getContext('2d')
+  if (ctx) {
+    ctx.beginPath()
+    ctx.arc(16, 16, 15, 0, Math.PI * 2)
+    ctx.fillStyle = 'rgba(0,0,0,0.8)'
+    ctx.fill()
+    ctx.beginPath()
+    ctx.arc(16, 16, 11, 0, Math.PI * 2)
+    ctx.fillStyle = '#ffffff'
+    ctx.fill()
+  }
+  dotTex = new THREE.CanvasTexture(c)
+  dotTex.colorSpace = THREE.SRGBColorSpace
+  return dotTex
+}
+
+// worldPerPx is how many world units one screen pixel covers at distance 1.
+function worldPerPx(s: Scene3D, h: number): number {
+  return (2 * Math.tan(THREE.MathUtils.degToRad(s.camera.fov / 2))) / h
+}
+
+// scaleToScreen sizes each marker and pin for its distance from the camera,
+// so they stay the same size on screen, and lifts pins by a pixel amount.
+function scaleToScreen(s: Scene3D, h: number): void {
+  const k = worldPerPx(s, h)
+  const cam = s.camera.position
+  for (const o of [...s.markers.children, ...s.pins.children]) {
+    const { base, px, lift } = o.userData as { base: THREE.Vector3; px: number; lift: number }
+    const per = cam.distanceTo(base) * k
+    o.scale.setScalar(per * px)
+    o.position.set(base.x, base.y, base.z + per * lift)
+  }
 }
 
 function updateTargetLine(s: Scene3D, t: ReplayTarget | null): void {
@@ -766,15 +1141,50 @@ function updateTargetLine(s: Scene3D, t: ReplayTarget | null): void {
   mat.gapSize = up
 }
 
-// drawLabels writes names over the WebGL canvas for markers and pins near
-// the camera (and the focused marker at any distance).
+// Overlays is what's drawn over the zone, for names and hover.
+interface Overlays {
+  markers: RaiderMarker[]
+  pins: Pin3D[]
+  dots: SpawnDot[]
+}
+
+function dotText(d: SpawnDot): string {
+  const when = !d.known ? 'no kill seen' : d.label === 'up' ? 'up' : `respawn in ${d.label}`
+  return `${d.name ?? 'Spawn point'} · ${when}`
+}
+
+// pick returns what's under the mouse at (mx, my): the nearest marker, pin
+// or spawn dot within HOVER_PX, markers first when two are as close.
+function pick(s: Scene3D, w: number, h: number, mx: number, my: number, o: Overlays): Hover | null {
+  const v = new THREE.Vector3()
+  let best: Hover | null = null
+  let bestD = HOVER_PX * HOVER_PX
+  const consider = (x: number, y: number, z: number, text: string, color: string): void => {
+    v.set(x, -y, z).project(s.camera)
+    if (v.z > 1) return
+    const dx = (v.x + 1) * 0.5 * w - mx
+    const dy = (1 - v.y) * 0.5 * h - my
+    const d = dx * dx + dy * dy
+    if (d < bestD) {
+      bestD = d
+      best = { x, y, z, text, color }
+    }
+  }
+  for (const r of o.markers) consider(r.x, r.y, r.z + 1, r.dead ? `${r.label} (dead)` : r.label, 'rgba(255,255,255,0.95)')
+  for (const p of o.pins) if (p.label) consider(p.x, p.y, p.z, p.label, p.color)
+  for (const d of o.dots) consider(d.x, d.y, d.z + 1, dotText(d), 'rgba(255,255,255,0.95)')
+  return best
+}
+
+// drawLabels writes names over the WebGL canvas: whatever is hovered, then
+// markers by the Labels setting, then pins and respawn countdowns near the
+// camera.
 function drawLabels(
   s: Scene3D,
   canvas: HTMLCanvasElement | null,
   w: number,
   h: number,
-  markers: RaiderMarker[],
-  pins: Pin3D[],
+  o: Overlays & { labels: Map3DLabels },
 ): void {
   if (!canvas) return
   const dpr = window.devicePixelRatio || 1
@@ -793,11 +1203,12 @@ function drawLabels(
   // Boxes of labels already drawn: one that would overlap is skipped, so a
   // packed raid shows a readable few rather than a smear.
   const taken: [number, number, number, number][] = []
+  // lift is how far above the point the text sits, in pixels.
   const put = (x: number, y: number, z: number, lift: number, text: string, color: string, bold: boolean): void => {
-    v.set(x, -y, z + lift).project(s.camera)
+    v.set(x, -y, z).project(s.camera)
     if (v.z > 1 || v.x < -1.1 || v.x > 1.1 || v.y < -1.1 || v.y > 1.1) return
     const px = (v.x + 1) * 0.5 * w
-    const py = (1 - v.y) * 0.5 * h - 8
+    const py = (1 - v.y) * 0.5 * h - lift
     ctx.font = bold ? '600 11px system-ui, sans-serif' : '10px system-ui, sans-serif'
     const half = ctx.measureText(text).width / 2 + 2
     const box: [number, number, number, number] = [px - half, py - 11, px + half, py + 3]
@@ -810,19 +1221,36 @@ function drawLabels(
     ctx.fillStyle = color
     ctx.fillText(text, px, py)
   }
-  // Pixels per world unit at distance 1, for the on-screen size of a marker.
-  const pxPerUnit = h / 2 / Math.tan(THREE.MathUtils.degToRad(s.camera.fov / 2))
+  // Markers stay one size on screen, so "close enough to name" is judged
+  // from a nominal world size instead.
+  const pxPerUnit = 1 / worldPerPx(s, h)
   const near = (x: number, y: number, z: number, across: number, minPx: number): boolean =>
     (across * pxPerUnit) / Math.max(1, cam.distanceTo(v.set(x, -y, z))) >= minPx
-  // Focused marker first, so it always gets its label; then the others,
-  // then pins.
-  const ordered = [...markers].sort((a, b) => Number(!!b.focus) - Number(!!a.focus))
+  // The hovered thing first, so it always gets its label.
+  if (s.hover) put(s.hover.x, s.hover.y, s.hover.z, 14, s.hover.text, s.hover.color, true)
+  // Then the followed marker, then your group, then the rest.
+  const rank = (r: RaiderMarker): number => (r.focus ? 0 : r.mine ? 1 : 2)
+  const ordered = [...o.markers].sort((a, b) => rank(a) - rank(b))
   for (const r of ordered) {
-    if (r.focus || near(r.x, r.y, r.z, size * 2, LABEL_PX)) {
-      put(r.x, r.y, r.z, size * 2.5, r.label, r.dead ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.9)', !!r.focus)
+    const show =
+      r.focus ||
+      (o.labels !== 'off' && r.mine) ||
+      (o.labels === 'all' && near(r.x, r.y, r.z, size * 2, LABEL_PX))
+    if (show) {
+      put(r.x, r.y, r.z + 1, r.focus ? 17 : 11, r.label, r.dead ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.9)', !!r.focus)
     }
   }
-  for (const p of pins) {
-    if (p.label && near(p.x, p.y, p.z, size * 2.6, PIN_LABEL_PX)) put(p.x, p.y, p.z, size * 3, p.label, p.color, false)
+  for (const p of o.pins) {
+    if (!p.label) continue
+    if (p.picked || (o.labels !== 'off' && near(p.x, p.y, p.z, size * 2.6, PIN_LABEL_PX))) {
+      put(p.x, p.y, p.z, PIN_PX * 3.4, p.label, p.color, !!p.picked)
+    }
+  }
+  // Respawn countdowns once close; names wait for a hover.
+  if (o.labels === 'off') return
+  for (const d of o.dots) {
+    if (d.known && d.label && near(d.x, d.y, d.z, size * 2, LABEL_PX)) {
+      put(d.x, d.y, d.z + 1, 8, d.label, 'rgba(255,255,255,0.7)', false)
+    }
   }
 }

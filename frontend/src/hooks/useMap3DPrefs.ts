@@ -4,6 +4,10 @@ import { useCallback, useState } from 'react'
 // textures, a height ramp, or plain floors and walls.
 export type Map3DStyle = 'textured' | 'height' | 'plain'
 
+// Map3DLabels is whose names are drawn: nobody's but the followed marker,
+// you and your group, or everyone close enough to read.
+export type Map3DLabels = 'off' | 'group' | 'all'
+
 export interface Map3DPrefs {
   style: Map3DStyle
   // wallOpacity applies to walls and ceilings (0.1–1); floors stay solid so
@@ -16,13 +20,16 @@ export interface Map3DPrefs {
   // showObjects draws the zone's placed objects (trees, buildings, lamps,
   // furniture) and its doors.
   showObjects: boolean
+  labels: Map3DLabels
 }
 
 const KEY = 'map3d.prefs'
 const DEFAULTS: Map3DPrefs = {
   style: 'textured', wallOpacity: 1, seeThroughOuter: true, hideCeilings: false, showObjects: true,
+  labels: 'group',
 }
 const STYLES: readonly Map3DStyle[] = ['textured', 'height', 'plain']
+const LABELS: readonly Map3DLabels[] = ['off', 'group', 'all']
 
 function load(): Map3DPrefs {
   try {
@@ -35,6 +42,7 @@ function load(): Map3DPrefs {
       seeThroughOuter: typeof p.seeThroughOuter === 'boolean' ? p.seeThroughOuter : DEFAULTS.seeThroughOuter,
       hideCeilings: typeof p.hideCeilings === 'boolean' ? p.hideCeilings : DEFAULTS.hideCeilings,
       showObjects: typeof p.showObjects === 'boolean' ? p.showObjects : DEFAULTS.showObjects,
+      labels: LABELS.includes(p.labels as Map3DLabels) ? (p.labels as Map3DLabels) : DEFAULTS.labels,
     }
   } catch {
     return DEFAULTS
