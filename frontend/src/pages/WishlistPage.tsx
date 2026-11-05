@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Star,
@@ -502,6 +502,31 @@ export default function WishlistPage(): React.ReactElement {
   const { active } = useActiveCharacter()
   const [viewedCharacter, setViewedCharacter] = useState('')
   const [characters, setCharacters] = useState<Character[]>([])
+
+  useEffect(() => {
+    listCharacters().then((r) => setCharacters(r.characters)).catch(() => setCharacters([]))
+  }, [])
+  const viewedCharID = useMemo(() => {
+    return characters.find((c) => c.name.toLowerCase() === viewedCharacter.toLowerCase())?.id ?? 0
+  }, [characters, viewedCharacter])
+
+  useEffect(() => {
+    if (!viewedCharacter && active) setViewedCharacter(active)
+  }, [active, viewedCharacter])
+
+  // Entries, layout and every dialog belong to one mounted character visit.
+  // Switching back to the same character must not revive its earlier requests.
+  return (
+    <CharacterWishlist key={viewedCharID} viewedCharID={viewedCharID}>
+      <CharacterSubTabs value={viewedCharacter} onChange={setViewedCharacter} />
+    </CharacterWishlist>
+  )
+}
+
+function CharacterWishlist({ viewedCharID, children }: {
+  viewedCharID: number
+  children: React.ReactNode
+}): React.ReactElement {
   const [entries, setEntries] = useState<WishlistEntry[]>([])
   const [slotLayout, setSlotLayout] = useState<WishlistSlotLayout[]>([])
   const [viewMode, setViewMode] = usePersistentState<ViewMode>(
@@ -525,18 +550,21 @@ export default function WishlistPage(): React.ReactElement {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
-  useEffect(() => {
-    listCharacters().then((r) => setCharacters(r.characters)).catch(() => setCharacters([]))
+  const mounted = useRef(false)
+  const loadGeneration = useRef(0)
+  useLayoutEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+      ++loadGeneration.current
+    }
   }, [])
-  const viewedCharID = useMemo(() => {
-    return characters.find((c) => c.name.toLowerCase() === viewedCharacter.toLowerCase())?.id ?? 0
-  }, [characters, viewedCharacter])
-
-  useEffect(() => {
-    if (!viewedCharacter && active) setViewedCharacter(active)
-  }, [active, viewedCharacter])
 
   const load = useCallback(() => {
+    // Mutation continuations may still call load after their owner unmounts.
+    if (!mounted.current) return
+    const generation = ++loadGeneration.current
+    const isCurrent = () => mounted.current && generation === loadGeneration.current
     if (!viewedCharID) {
       setEntries([])
       setSlotLayout([])
@@ -547,11 +575,12 @@ export default function WishlistPage(): React.ReactElement {
     setError(null)
     listWishlist(viewedCharID)
       .then((r) => {
+        if (!isCurrent()) return
         setEntries(r.entries ?? [])
         setSlotLayout(r.slot_layout ?? [])
       })
-      .catch((err: Error) => setError(err.message))
-      .finally(() => setLoading(false))
+      .catch((err: Error) => { if (isCurrent()) setError(err.message) })
+      .finally(() => { if (isCurrent()) setLoading(false) })
   }, [viewedCharID])
 
   useEffect(() => {
@@ -897,7 +926,7 @@ export default function WishlistPage(): React.ReactElement {
         </button>
       </div>
 
-      <CharacterSubTabs value={viewedCharacter} onChange={setViewedCharacter} />
+      {children}
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
