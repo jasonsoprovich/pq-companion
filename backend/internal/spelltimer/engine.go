@@ -2077,8 +2077,11 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 		if existing.CustomGroup != "" {
 			timer.CustomGroup = existing.CustomGroup
 		}
+		// No break: one land can leave two twins to absorb. Howl of Tashan's
+		// pack trigger keys on the cast line (its own same-spell row) while
+		// the broad Tashanian trigger fires on the shared land line (a
+		// same-land orphan) — stopping at the first left the other on screen.
 		delete(e.timers, existingKey)
-		break
 	}
 	// A buff recast on the same recipient replaces the old row no matter how
 	// old it is or how it was keyed. The absorb loop above only merges rows
