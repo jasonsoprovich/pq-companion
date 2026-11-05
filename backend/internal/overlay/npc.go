@@ -73,6 +73,47 @@ type TargetVariant struct {
 	Distinguish []string `json:"distinguish,omitempty"`
 }
 
+// ConsiderReading is a /con reading of the current target: the server's
+// answer at that moment, already reflecting the player's invisibility,
+// illusion, faction buffs, feign death and whether the NPC is engaged. It's a
+// point-in-time reading, dropped when the player's state changes (see
+// NPCTracker.InvalidateConsider), on a retarget to another spawn and on zoning.
+type ConsiderReading struct {
+	// Faction is the standing level, 1 ally .. 5 indifferent .. 9 scowls.
+	Faction int `json:"faction"`
+	// Standing is its in-game word ("scowls", "indifferent", ...).
+	Standing string `json:"standing"`
+	// At and Source stamp the reading: the Zeal consider message
+	// (live.SourcePipe) or the log /con line (live.SourceLog).
+	At     time.Time `json:"at"`
+	Source string    `json:"source"`
+	// While names the player state the server folded into the reading
+	// ("invisible", "feigned", ...), "" for none — a non-KOS reading taken
+	// while invisible says nothing about what happens once invis drops.
+	While string `json:"while,omitempty"`
+}
+
+// logConsiderTTL bounds how long a log /con reading with no spawn id to key
+// it to (no Zeal, or a Zeal without target_id) is shown, since a same-named
+// spawn can't be told apart from the one that was conned.
+const logConsiderTTL = time.Minute
+
+// considerDedupeWindow is how far apart the log line and the pipe event for
+// one /con can arrive.
+const considerDedupeWindow = 2 * time.Second
+
+// considerRecord is the latest /con reading, kept apart from TargetState so a
+// reading that arrives a beat before the retarget it belongs to isn't lost.
+// It's applied to TargetState.Consider whenever it matches the target.
+type considerRecord struct {
+	// spawnID keys the reading to a spawn; 0 for a log reading taken with no
+	// pipe target id, which is matched by name until expires.
+	spawnID int
+	name    string // considered NPC's name
+	expires time.Time
+	reading ConsiderReading
+}
+
 // TargetState is the payload for WSEventNPCTarget events and the REST
 // response for GET /api/overlay/npc/target.
 type TargetState struct {
@@ -130,6 +171,9 @@ type TargetState struct {
 	// Nil without Zeal, on older Zeal, or with no target. The Filtered Timers
 	// "current target" view uses it to tell same-named mobs apart.
 	TargetID *int `json:"target_id,omitempty"`
+	// Consider is the latest /con reading of this target, nil when there is
+	// none or it no longer applies. See ConsiderReading.
+	Consider *ConsiderReading `json:"consider,omitempty"`
 	// LastUpdated is the wall-clock time the state last changed.
 	LastUpdated time.Time `json:"last_updated"`
 }
@@ -205,6 +249,15 @@ type NPCTracker struct {
 	dist         TargetDistance
 	distSentAt   time.Time
 	distSentOnce bool
+
+	// con is the latest /con reading (see considerRecord); pipeConSeen is set
+	// by the first Zeal consider message, after which log /con lines are
+	// ignored. conWhile names the player's con-affecting state for stamping
+	// a reading (nil = never set). Held under mu, except conWhile is called
+	// without it.
+	con         *considerRecord
+	pipeConSeen bool
+	conWhile    func() string
 }
 
 // resolvedTarget is a memoised lookupNPCVariants result, keyed in variantCache
@@ -347,6 +400,7 @@ func (t *NPCTracker) Handle(ev logparser.LogEvent) {
 		if !t.isPipeConnected() && data.TargetName != "" {
 			t.setTarget(data.TargetName)
 		}
+		t.setLogConsider(data.TargetName, data.Bucket)
 
 	// ── Verified player chat → remember the name so the pet-name heuristic ───
 	// never mistakes a real player for the player's own pet.
@@ -470,9 +524,24 @@ func (t *NPCTracker) SetPipeTargetSnapshot(id *int, desc *zealpipe.TargetDescrip
 		t.st.TargetID = copyInt(id)
 		t.st.LastUpdated = time.Now()
 	}
+	conChanged := false
+	if id != nil && t.con != nil {
+		switch {
+		case t.con.spawnID == 0 && strings.EqualFold(t.con.name, name):
+			// A log reading taken before the id arrived: key it to the spawn.
+			t.con.spawnID, t.con.expires = *id, time.Time{}
+		case idChanged && t.con.spawnID != *id:
+			// Retargeted to another spawn. Only on a change: a consider
+			// can arrive a tick before the retarget it belongs to.
+			t.con = nil
+		}
+	}
+	if idStale || id != nil {
+		conChanged = t.syncConsiderLocked()
+	}
 	idSnap := t.st
 	t.mu.Unlock()
-	if idStale {
+	if idStale || conChanged {
 		t.broadcast(idSnap)
 	}
 
@@ -801,8 +870,10 @@ func (t *NPCTracker) ResetPipeFields() {
 	distStale := t.dist.HasDescriptors || t.dist.Distance != nil
 	t.dist = TargetDistance{}
 	t.distSentOnce = false
+	t.pipeConSeen = false
 	stateStale := t.st.HPPercent != -1 || t.st.PetOwner != "" || t.st.LiveLevel != nil ||
-		t.st.LiveClass != nil || t.st.TargetType != nil || t.st.TargetID != nil
+		t.st.LiveClass != nil || t.st.TargetType != nil || t.st.TargetID != nil ||
+		t.st.Consider != nil
 	t.st.HPPercent = -1
 	t.st.HPAt, t.st.HPSource = nil, ""
 	t.st.PetOwner = ""
@@ -843,8 +914,13 @@ func (t *NPCTracker) SetPipePlayerSnapshot(zoneIDNumber int, x, y, z float64) {
 	// DB call so concurrent readers aren't held up.
 	t.pipeZoneIDNumber = zoneIDNumber
 	t.pipeZoneShort = ""
+	hadCon := t.st.Consider != nil
 	t.flushVariantCacheLocked()
+	snap := t.st
 	t.mu.Unlock()
+	if hadCon {
+		t.broadcast(snap)
+	}
 
 	if t.db == nil || zoneIDNumber == 0 {
 		return
@@ -935,16 +1011,18 @@ func (t *NPCTracker) setZone(zoneName string) {
 	t.mu.Unlock()
 }
 
-// flushVariantCacheLocked drops the spawn-id variant cache and the tracked
-// target id. Called on every zone change — the zone server recycles spawn ids
-// on a reset, so a cached entry for id N in the old zone must never satisfy a
-// lookup for id N in the new one. Caller holds t.mu.
+// flushVariantCacheLocked drops the spawn-id variant cache, the tracked
+// target id and the /con reading. Called on every zone change — the zone
+// server recycles spawn ids on a reset, so a cached entry for id N in the old
+// zone must never satisfy a lookup for id N in the new one. Caller holds t.mu.
 func (t *NPCTracker) flushVariantCacheLocked() {
 	if len(t.variantCache) > 0 {
 		t.variantCache = make(map[int]resolvedTarget)
 	}
 	t.lastPipeTargetID = nil
 	t.lastDesc = nil
+	t.con = nil
+	t.st.Consider = nil
 }
 
 func (t *NPCTracker) setTarget(displayName string) {
@@ -1009,6 +1087,9 @@ func (t *NPCTracker) setTargetStamped(displayName string, at *time.Time) bool {
 	}
 
 	t.mu.Lock()
+	if t.con != nil && t.con.spawnID == 0 && !strings.EqualFold(t.con.name, lookupName) {
+		t.con = nil
+	}
 	t.st = TargetState{
 		HasTarget:        true,
 		TargetName:       displayName,
@@ -1029,6 +1110,7 @@ func (t *NPCTracker) setTargetStamped(displayName string, at *time.Time) bool {
 		t.st.TargetSource = live.SourcePipe
 		t.liveSentAt = *at
 	}
+	t.syncConsiderLocked()
 	snap := t.st
 	t.mu.Unlock()
 
@@ -1055,6 +1137,11 @@ func stripCorpseSuffix(name string) (string, bool) {
 
 func (t *NPCTracker) clearTarget() {
 	t.mu.Lock()
+	// A name-keyed reading can't follow its spawn; a spawn-keyed one stays
+	// for a reselect of the same spawn.
+	if t.con != nil && t.con.spawnID == 0 {
+		t.con = nil
+	}
 	if !t.st.HasTarget {
 		t.mu.Unlock()
 		return
@@ -1446,4 +1533,167 @@ func (t *NPCTracker) broadcast(state TargetState) {
 		Type: WSEventNPCTarget,
 		Data: state,
 	})
+}
+
+// SetConsiderStateProvider registers the callback that names the player's
+// con-affecting state ("invisible", "feigned", ... or "") for stamping a
+// reading's While. Optional.
+func (t *NPCTracker) SetConsiderStateProvider(fn func() string) {
+	t.mu.Lock()
+	t.conWhile = fn
+	t.mu.Unlock()
+}
+
+// SetPipeConsider records a consider reading from the Zeal pipe (the proposed
+// consider message): the considered spawn id and name and the faction level,
+// 1 ally .. 9 scowls. It shows on the overlay while that spawn is the target.
+// A level outside 1..9 is ignored. From the first one on, log /con lines no
+// longer feed the overlay.
+func (t *NPCTracker) SetPipeConsider(spawnID int, name string, faction int) {
+	standing := zealpipe.ConsiderStanding(faction)
+	if standing == "" || spawnID <= 0 {
+		return
+	}
+	rec := &considerRecord{
+		spawnID: spawnID,
+		name:    name,
+		reading: ConsiderReading{
+			Faction:  faction,
+			Standing: standing,
+			At:       time.Now(),
+			Source:   live.SourcePipe,
+			While:    t.considerWhile(),
+		},
+	}
+	t.mu.Lock()
+	t.pipeConSeen = true
+	t.con = rec
+	changed := t.syncConsiderLocked()
+	snap := t.st
+	t.mu.Unlock()
+	if changed {
+		t.broadcast(snap)
+	}
+}
+
+// setLogConsider records a log /con reading of the named NPC, unless the pipe
+// is sending considers (it has the better reading) or just sent this one.
+// With a pipe target id it's keyed to that spawn, provided the name matches
+// the target; without one it's matched by name for logConsiderTTL.
+func (t *NPCTracker) setLogConsider(name string, bucket logparser.FactionBucket) {
+	level := logparser.FactionLevel(bucket)
+	if level == 0 || name == "" {
+		return
+	}
+	while := t.considerWhile()
+	now := time.Now()
+	t.mu.Lock()
+	if t.pipeConSeen {
+		t.mu.Unlock()
+		return
+	}
+	rec := &considerRecord{
+		name: name,
+		reading: ConsiderReading{
+			Faction:  level,
+			Standing: zealpipe.ConsiderStanding(level),
+			At:       now,
+			Source:   live.SourceLog,
+			While:    while,
+		},
+	}
+	if t.lastPipeTargetID != nil {
+		cur, _ := stripCorpseSuffix(t.st.TargetName)
+		if !t.st.HasTarget || !strings.EqualFold(cur, name) {
+			t.mu.Unlock()
+			return // not the current target; nothing to key it to
+		}
+		rec.spawnID = *t.lastPipeTargetID
+	} else {
+		rec.expires = now.Add(logConsiderTTL)
+		time.AfterFunc(logConsiderTTL, func() { t.expireConsider(rec) })
+	}
+	t.con = rec
+	changed := t.syncConsiderLocked()
+	snap := t.st
+	t.mu.Unlock()
+	if changed {
+		t.broadcast(snap)
+	}
+}
+
+// InvalidateConsider drops the /con reading. Called when the player's own
+// state changes in a way the server folds into a consider (invisibility,
+// hide, illusion, faction buffs, feign death), since the reading no longer
+// says what the NPC would do now.
+func (t *NPCTracker) InvalidateConsider() {
+	t.mu.Lock()
+	if t.con == nil {
+		t.mu.Unlock()
+		return
+	}
+	t.con = nil
+	changed := t.syncConsiderLocked()
+	snap := t.st
+	t.mu.Unlock()
+	if changed {
+		t.broadcast(snap)
+	}
+}
+
+// expireConsider drops a name-keyed log reading once logConsiderTTL passes,
+// if it's still the current one.
+func (t *NPCTracker) expireConsider(rec *considerRecord) {
+	t.mu.Lock()
+	if t.con != rec {
+		t.mu.Unlock()
+		return
+	}
+	t.con = nil
+	changed := t.syncConsiderLocked()
+	snap := t.st
+	t.mu.Unlock()
+	if changed {
+		t.broadcast(snap)
+	}
+}
+
+func (t *NPCTracker) considerWhile() string {
+	t.mu.RLock()
+	fn := t.conWhile
+	t.mu.RUnlock()
+	if fn == nil {
+		return ""
+	}
+	return fn()
+}
+
+// syncConsiderLocked sets st.Consider from the stored reading — when it
+// applies to the current target — reporting whether that changed it. A
+// spawn-keyed reading applies while that spawn id is the target and the name
+// matches; a name-keyed one while the target has no pipe id, the name matches
+// and it hasn't expired. Never on a corpse. Caller holds t.mu.
+func (t *NPCTracker) syncConsiderLocked() bool {
+	var want *ConsiderReading
+	if c := t.con; c != nil && t.st.HasTarget && !t.st.IsCorpse {
+		cur, _ := stripCorpseSuffix(t.st.TargetName)
+		nameOK := strings.EqualFold(cur, c.name)
+		switch {
+		case c.spawnID > 0:
+			if nameOK && t.st.TargetID != nil && *t.st.TargetID == c.spawnID {
+				r := c.reading
+				want = &r
+			}
+		case nameOK && t.st.TargetID == nil && time.Now().Before(c.expires):
+			r := c.reading
+			want = &r
+		}
+	}
+	old := t.st.Consider
+	if (old == nil && want == nil) || (old != nil && want != nil && *old == *want) {
+		return false
+	}
+	t.st.Consider = want
+	t.st.LastUpdated = time.Now()
+	return true
 }

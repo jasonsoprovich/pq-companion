@@ -785,6 +785,11 @@ type Preferences struct {
 	// existing config and can't delete map keys). Frontend-only.
 	NPCOverlayOutlineRuleSets []NPCOutlineRuleSet `yaml:"npc_overlay_outline_rule_sets,omitempty" json:"npc_overlay_outline_rule_sets"`
 
+	// NPCOverlayConsiderBorderOff turns off the NPC overlay's /con border (red
+	// for scowls, amber for threatening) and standing label. Stored as "off"
+	// so the zero value, and every existing config, has it on. Frontend-only.
+	NPCOverlayConsiderBorderOff bool `yaml:"npc_overlay_consider_border_off,omitempty" json:"npc_overlay_consider_border_off"`
+
 	// OverlayLockedModes maps each popout overlay (by its canonical name:
 	// "dps", "hps", "buffTimer", "detrimTimer", "npc", "rollTracker",
 	// "respawnTimer") to how it behaves while locked:

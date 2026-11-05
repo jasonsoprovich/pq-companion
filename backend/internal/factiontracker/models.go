@@ -70,9 +70,10 @@ type Tally struct {
 	// omits it in JSON when unset — encoding/json's omitempty has no effect
 	// on non-pointer struct fields.
 	LastConsideredAt *time.Time `json:"last_considered_at,omitempty"`
-	// LastConsiderSuspect flags that LastBucket may be wrong because the
-	// player had an illusion active at the time of the reading — illusions
-	// change how NPCs perceive (and therefore /con) the player.
+	// LastConsiderSuspect flags that LastBucket may not be the real standing
+	// because of the player's state at the time of the reading: an illusion,
+	// invisibility or hide, feign death, a faction buff, or being engaged
+	// with the NPC. The server's /con answer reflects all of those.
 	LastConsiderSuspect bool `json:"last_consider_suspect,omitempty"`
 }
 

@@ -2664,6 +2664,13 @@ export default function SettingsPage(): React.ReactElement {
                   },
                 })
               }
+              considerBorder={!config.preferences.npc_overlay_consider_border_off}
+              onChangeConsiderBorder={(on) =>
+                setConfig({
+                  ...config,
+                  preferences: { ...config.preferences, npc_overlay_consider_border_off: !on },
+                })
+              }
             />
 
             {/* ── NPC Overlay tag colors ─────────────────────────────────────── */}

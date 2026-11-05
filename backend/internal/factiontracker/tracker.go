@@ -52,6 +52,31 @@ type QuestDialogueResolver func(npcName, sayText string) (hits []NPCFactionHit, 
 // trusted at face value.
 type IsIllusionedProvider func() bool
 
+// ConsiderContext describes one /con reading to the suspect and pet checks.
+type ConsiderContext struct {
+	NPCName string
+	// SpawnID is the considered spawn's id when the reading came from the Zeal
+	// pipe, 0 for a log reading.
+	SpawnID int
+	Bucket  logparser.FactionBucket
+}
+
+// ConsiderSuspectProvider reports whether a /con reading isn't a clean read
+// of standing because of the player's state at the time: invisible to
+// anything, hidden, feigned, a faction buff active, or engaged with the NPC.
+// The server answers all of those with an override (indifferent,
+// threatening) or an adjusted value, not the standing itself.
+type ConsiderSuspectProvider func(c ConsiderContext) bool
+
+// ConsiderPetProvider reports whether the considered NPC is a pet. A pet
+// cons amiable to its owner and indifferent to everyone else, so its reading
+// says nothing about its faction and is dropped.
+type ConsiderPetProvider func(c ConsiderContext) bool
+
+// considerDedupeWindow is how far apart the log line and the pipe event for
+// one /con can arrive.
+const considerDedupeWindow = 2 * time.Second
+
 // PersistFunc is called after every tally mutation with the full current
 // state of that one faction's tally, so the caller can write it to durable
 // storage. Called outside the engine's lock.
@@ -86,22 +111,41 @@ type Engine struct {
 	resolveFactionID FactionIDResolver
 	resolveDialogue  QuestDialogueResolver
 	isIllusioned     IsIllusionedProvider
+	isSuspect        ConsiderSuspectProvider
+	isPet            ConsiderPetProvider
 	persist          PersistFunc
 	clearPersisted   ClearPersistedFunc
+
+	// now and after are the wall clock used to pair a log /con with its pipe
+	// event (both arrive for one /con, the log's own timestamp only has
+	// second resolution). Swapped in tests.
+	now   func() time.Time
+	after func(time.Duration, func())
 
 	mu          sync.Mutex
 	characterID int
 	tallies     map[string]*Tally // key: strings.ToLower(FactionName)
 	pending     []pendingKill
+
+	// pipeSeen is set by the first pipe consider this Zeal session; from then
+	// on the pipe is the primary /con source and a log reading only counts
+	// if no pipe event for that NPC turns up within considerDedupeWindow.
+	// pipeConsiders maps a lowercased NPC name to its last pipe consider's
+	// arrival.
+	pipeSeen      bool
+	pipeConsiders map[string]time.Time
 }
 
 // NewEngine returns an initialized Engine tracking no character yet. Call
 // SetCharacter once the active character is known.
 func NewEngine(hub *ws.Hub, resolve NPCFactionResolver) *Engine {
 	return &Engine{
-		hub:     hub,
-		resolve: resolve,
-		tallies: make(map[string]*Tally),
+		hub:           hub,
+		resolve:       resolve,
+		tallies:       make(map[string]*Tally),
+		now:           time.Now,
+		after:         func(d time.Duration, fn func()) { time.AfterFunc(d, fn) },
+		pipeConsiders: make(map[string]time.Time),
 	}
 }
 
@@ -139,6 +183,60 @@ func (e *Engine) SetQuestDialogueResolver(fn QuestDialogueResolver) {
 func (e *Engine) SetIllusionProvider(fn IsIllusionedProvider) {
 	e.mu.Lock()
 	e.isIllusioned = fn
+	e.mu.Unlock()
+}
+
+// SetConsiderSuspectProvider registers the callback used to flag /con
+// readings taken while the player's state overrides the server's answer.
+// Optional, and checked in addition to the illusion provider.
+func (e *Engine) SetConsiderSuspectProvider(fn ConsiderSuspectProvider) {
+	e.mu.Lock()
+	e.isSuspect = fn
+	e.mu.Unlock()
+}
+
+// SetConsiderPetProvider registers the callback used to drop /con readings
+// of pets. Optional — no reading is dropped as a pet if never set.
+func (e *Engine) SetConsiderPetProvider(fn ConsiderPetProvider) {
+	e.mu.Lock()
+	e.isPet = fn
+	e.mu.Unlock()
+}
+
+// HandlePipeConsider records a consider reading from the Zeal pipe (the
+// proposed consider message): the considered spawn's id and name and the
+// faction level, 1 ally .. 9 scowls. A level outside 1..9 is ignored. It
+// takes over from the log /con line for the same consider, which is dropped
+// (see Handle).
+func (e *Engine) HandlePipeConsider(spawnID int, npcName string, level int, ts time.Time) {
+	bucket := logparser.FactionBucketForLevel(level)
+	if bucket == "" || npcName == "" {
+		return
+	}
+	key := strings.ToLower(npcName)
+	e.mu.Lock()
+	arrived := e.now()
+	e.pipeSeen = true
+	for k, at := range e.pipeConsiders {
+		if arrived.Sub(at) > considerDedupeWindow {
+			delete(e.pipeConsiders, k)
+		}
+	}
+	e.pipeConsiders[key] = arrived
+	e.mu.Unlock()
+
+	c := ConsiderContext{NPCName: npcName, SpawnID: spawnID, Bucket: bucket}
+	if suspect, ok := e.checkConsider(c); ok {
+		e.applyConsidered(c, suspect, ts)
+	}
+}
+
+// ResetPipe forgets that the pipe has been sending considers, so log /con
+// readings count straight away again. Called when Zeal disconnects.
+func (e *Engine) ResetPipe() {
+	e.mu.Lock()
+	e.pipeSeen = false
+	e.pipeConsiders = make(map[string]time.Time)
 	e.mu.Unlock()
 }
 
@@ -365,31 +463,81 @@ func (e *Engine) handleFactionChanged(factionName, direction string, ts time.Tim
 	}
 }
 
-// handleConsidered resolves a /con'd NPC to its primary faction — creating a
-// new tally entry the first time this faction is seen — and records the
-// disposition bucket as its latest reading, flagged suspect if the player
-// was illusioned at the time.
+// handleConsidered takes a log /con reading. Before any pipe consider has
+// arrived it's recorded straight away. Once the pipe is sending considers the
+// matching pipe event is the better reading, so the log one is dropped if a
+// pipe event for the same NPC arrived within considerDedupeWindow, and
+// otherwise held that long in case it's still coming. The player's state is
+// checked on arrival either way.
 func (e *Engine) handleConsidered(npcName string, bucket logparser.FactionBucket, ts time.Time) {
+	key := strings.ToLower(npcName)
+	e.mu.Lock()
+	arrived := e.now()
+	pipeSeen := e.pipeSeen
+	at, dup := e.pipeConsiders[key]
+	e.mu.Unlock()
+	if dup && arrived.Sub(at) <= considerDedupeWindow {
+		return
+	}
+
+	c := ConsiderContext{NPCName: npcName, Bucket: bucket}
+	suspect, ok := e.checkConsider(c)
+	if !ok {
+		return
+	}
+	if !pipeSeen {
+		e.applyConsidered(c, suspect, ts)
+		return
+	}
+	e.after(considerDedupeWindow, func() {
+		e.mu.Lock()
+		at, dup := e.pipeConsiders[key]
+		e.mu.Unlock()
+		if dup && !at.Before(arrived.Add(-considerDedupeWindow)) {
+			return
+		}
+		e.applyConsidered(c, suspect, ts)
+	})
+}
+
+// checkConsider runs the pet and suspect checks for a reading. ok is false
+// when the reading should be dropped (a pet).
+func (e *Engine) checkConsider(c ConsiderContext) (suspect, ok bool) {
+	e.mu.Lock()
+	isPet, isSuspect, isIllusioned := e.isPet, e.isSuspect, e.isIllusioned
+	e.mu.Unlock()
+	if isPet != nil && isPet(c) {
+		return false, false
+	}
+	if isIllusioned != nil && isIllusioned() {
+		suspect = true
+	}
+	if !suspect && isSuspect != nil {
+		suspect = isSuspect(c)
+	}
+	return suspect, true
+}
+
+// applyConsidered resolves a /con'd NPC to its primary faction — creating a
+// new tally entry the first time this faction is seen — and records the
+// disposition bucket as its latest reading, flagged suspect when the
+// player's state at the time kept it from being a clean read.
+func (e *Engine) applyConsidered(c ConsiderContext, suspect bool, ts time.Time) {
 	if e.resolvePrimary == nil {
 		return
 	}
-	factionID, factionName, ok := e.resolvePrimary(npcName)
+	factionID, factionName, ok := e.resolvePrimary(c.NPCName)
 	if !ok {
 		return
 	}
 	key := strings.ToLower(factionName)
-
-	suspect := false
-	if e.isIllusioned != nil {
-		suspect = e.isIllusioned()
-	}
 
 	e.mu.Lock()
 	tally := e.tallyLocked(key, factionName, factionID)
 	if tally.FactionID == 0 && factionID != 0 {
 		tally.FactionID = factionID
 	}
-	tally.LastBucket = string(bucket)
+	tally.LastBucket = string(c.Bucket)
 	tally.LastConsideredAt = &ts
 	tally.LastConsiderSuspect = suspect
 	snapshot := *tally

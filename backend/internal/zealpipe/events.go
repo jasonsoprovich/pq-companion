@@ -2,6 +2,7 @@ package zealpipe
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"regexp"
@@ -327,6 +328,52 @@ type ItemDisplay struct {
 	Name   string `json:"name"`
 }
 
+// Consider is the payload of the proposed Zeal consider message, sent once
+// each time the server answers a consider of an NPC (never a player or a
+// corpse). Faction is the standing the server reported, with the wire swap
+// already undone by Zeal: 1 ally .. 5 indifferent .. 9 scowls, so higher is
+// worse. Like ItemDisplay its type number isn't settled (7 with only that PR,
+// 9 on the combined test build), so it's recognised by shape with
+// DecodeConsider.
+//
+// The value is the server's answer at that moment, not the raw standing: it
+// already accounts for the player's invisibility, illusion, faction buffs,
+// feign death and whether the NPC is engaged with them.
+type Consider struct {
+	SpawnID int    `json:"spawn_id"`
+	Name    string `json:"name"`
+	Faction int    `json:"faction"`
+}
+
+// Consider faction levels as Zeal reports them (higher is worse).
+const (
+	ConsiderAlly         = 1
+	ConsiderWarmly       = 2
+	ConsiderKindly       = 3
+	ConsiderAmiable      = 4
+	ConsiderIndifferent  = 5
+	ConsiderApprehensive = 6
+	ConsiderDubious      = 7
+	ConsiderThreatening  = 8
+	ConsiderScowls       = 9
+)
+
+// considerStandings are the in-game words for each faction level, indexed by
+// the level.
+var considerStandings = [...]string{
+	"", "ally", "warmly", "kindly", "amiable", "indifferent",
+	"apprehensive", "dubious", "threatening", "scowls",
+}
+
+// ConsiderStanding returns the in-game word for a consider faction level
+// ("scowls", "indifferent", ...), or "" for a value outside 1..9.
+func ConsiderStanding(faction int) string {
+	if faction < ConsiderAlly || faction > ConsiderScowls {
+		return ""
+	}
+	return considerStandings[faction]
+}
+
 // Location is a 3D world position, with Zeal's field names.
 //
 // Read GameX/GameY rather than these fields directly — see the methods below.
@@ -475,6 +522,82 @@ func DecodeItemDisplay(payload string) (ItemDisplay, error) {
 		return it, fmt.Errorf("zealpipe: decode item display: item_id %d", it.ItemID)
 	}
 	return it, nil
+}
+
+// ErrNotConsider is returned by DecodeConsider when the payload isn't shaped
+// like a consider at all, so the caller can hand it on to other decoders. Any
+// other error means it is a consider whose values can't be used.
+var ErrNotConsider = errors.New("zealpipe: not a consider payload")
+
+// DecodeConsider parses a consider payload. The type number isn't fixed (7, or
+// 9 on the combined test build), and 7 is also the death message, so the
+// payload must look like a consider: an object with spawn_id, name and
+// faction, and none of killer_id (a death) or item_id (an item display).
+// Shape mismatches return ErrNotConsider. A consider with a non-positive
+// spawn id or a faction outside 1..9 returns a different error and should be
+// dropped, not decoded as anything else.
+func DecodeConsider(payload string) (Consider, error) {
+	var c Consider
+	var keys map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(payload), &keys); err != nil {
+		return c, ErrNotConsider
+	}
+	for _, k := range []string{"spawn_id", "name", "faction"} {
+		if _, ok := keys[k]; !ok {
+			return c, ErrNotConsider
+		}
+	}
+	for _, k := range []string{"killer_id", "item_id"} {
+		if _, ok := keys[k]; ok {
+			return c, ErrNotConsider
+		}
+	}
+	if err := json.Unmarshal([]byte(payload), &c); err != nil {
+		return c, fmt.Errorf("zealpipe: decode consider: %w", err)
+	}
+	if c.SpawnID <= 0 {
+		return c, fmt.Errorf("zealpipe: decode consider: spawn_id %d", c.SpawnID)
+	}
+	if ConsiderStanding(c.Faction) == "" {
+		return c, fmt.Errorf("zealpipe: decode consider: faction %d", c.Faction)
+	}
+	return c, nil
+}
+
+// Proposed is a message from an unmerged Zeal PR whose type number isn't
+// fixed, recognised by DecodeProposed. At most one field is set.
+type Proposed struct {
+	Consider *Consider
+	Item     *ItemDisplay
+}
+
+// DecodeProposed recognises the proposed consider and item display messages
+// by payload shape, for any envelope type from MsgDeath up: a consider is 7 on
+// a Zeal build with only that PR and 9 on the combined test build, an item
+// display 7 or 8, and either may be renumbered on merge. A death payload never
+// matches either shape, so ok=false hands it (and every other message) on to
+// the caller's type switch.
+//
+// A payload shaped like a consider but carrying an unusable value (a faction
+// outside 1..9) is reported as ok with nothing set: it is dropped rather than
+// passed on to be mistaken for a death.
+func DecodeProposed(env Envelope) (p Proposed, ok bool) {
+	if env.Type < MsgDeath {
+		return p, false
+	}
+	c, err := DecodeConsider(env.Data)
+	if err == nil {
+		p.Consider = &c
+		return p, true
+	}
+	if !errors.Is(err, ErrNotConsider) {
+		return p, true
+	}
+	if it, err := DecodeItemDisplay(env.Data); err == nil {
+		p.Item = &it
+		return p, true
+	}
+	return p, false
 }
 
 // DecodeGroup parses a MsgGroup (type 6) payload — an array of GroupMember.

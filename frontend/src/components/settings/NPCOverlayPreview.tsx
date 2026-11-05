@@ -236,6 +236,19 @@ function PreviewWindow({
   )
 }
 
+// In-game /con words by faction level, for the preview's sample reading.
+const SAMPLE_STANDINGS: Record<number, string> = {
+  1: 'ally',
+  2: 'warmly',
+  3: 'kindly',
+  4: 'amiable',
+  5: 'indifferent',
+  6: 'apprehensive',
+  7: 'dubious',
+  8: 'threatening',
+  9: 'scowls',
+}
+
 /**
  * Live preview of the NPC overlay for the Settings editor. Pick any NPC and
  * every change in the cards beside it shows here immediately — before the
@@ -256,6 +269,8 @@ export default function NPCOverlayPreview({
   const [target, setTarget] = useState<TargetState | null>(null)
   const [error, setError] = useState(false)
   const [pinned, setPinned] = useState(false)
+  // Sample /con standing (faction level, 0 = none) to try the border on.
+  const [conLevel, setConLevel] = useState(0)
   const [characters, setCharacters] = useState<string[]>([])
 
   useEffect(() => {
@@ -285,6 +300,21 @@ export default function NPCOverlayPreview({
   }
 
   const ctx = useMemo(() => ({ prefs, character }), [prefs, character])
+  const shown = useMemo<TargetState | null>(
+    () =>
+      target && conLevel > 0
+        ? {
+            ...target,
+            consider: {
+              faction: conLevel,
+              standing: SAMPLE_STANDINGS[conLevel],
+              at: new Date().toISOString(),
+              source: 'pipe',
+            },
+          }
+        : target,
+    [target, conLevel],
+  )
 
   const segment = (active: boolean): React.CSSProperties => ({
     backgroundColor: active ? 'var(--color-primary)' : 'transparent',
@@ -338,6 +368,22 @@ export default function NPCOverlayPreview({
           <input type="checkbox" checked={pinned} onChange={(e) => setPinned(e.target.checked)} />
           Pinned
         </label>
+        <label className="flex items-center gap-1" style={{ color: 'var(--color-muted-foreground)' }}>
+          /con
+          <select
+            value={conLevel}
+            onChange={(e) => setConLevel(Number(e.target.value))}
+            className="rounded px-1.5 py-0.5 text-xs"
+            style={selectStyle}
+          >
+            <option value={0}>none</option>
+            {[9, 8, 7, 6, 5, 4, 1].map((n) => (
+              <option key={n} value={n}>
+                {SAMPLE_STANDINGS[n]}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
       <label className="flex items-center gap-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
@@ -362,7 +408,7 @@ export default function NPCOverlayPreview({
           <p className="text-xs" style={{ color: 'var(--color-muted)' }}>
             Couldn&rsquo;t load that NPC. Try another.
           </p>
-        ) : target === null ? (
+        ) : shown === null ? (
           <div className="flex h-full items-center justify-center">
             <Loader2 size={18} className="animate-spin" style={{ color: 'var(--color-muted)' }} />
           </div>
@@ -372,7 +418,7 @@ export default function NPCOverlayPreview({
               // Remount on surface change so each starts on the Stats view.
               key={surface}
               surface={surface}
-              target={target}
+              target={shown}
               pinned={pinned}
             />
           </NPCOverlayPreviewContext.Provider>
