@@ -271,3 +271,43 @@ func TestResetRaidSendsOneEmptyFrame(t *testing.T) {
 		t.Fatalf("got %+v, want a frame then one empty frame", *sent)
 	}
 }
+
+// ── Target position ─────────────────────────────────────────────────────────
+
+func TestUpdateTarget(t *testing.T) {
+	var sent []TargetState
+	clock := time.Unix(1_700_000_000, 0)
+	tr := New(nil)
+	tr.now = func() time.Time { return clock }
+	tr.SetTargetBroadcast(func(ts TargetState) { sent = append(sent, ts) })
+
+	tests := []struct {
+		step  time.Duration
+		name  string
+		x     float64
+		known bool
+		total int
+	}{
+		{0, "", 0, false, 0},                                   // no target, nothing shown: quiet
+		{0, "Zun Va Liako", 100, true, 1},                      // new target
+		{50 * time.Millisecond, "Zun Va Liako", 150, true, 1},  // under the floor
+		{100 * time.Millisecond, "Zun Va Liako", 150, true, 2}, // moved
+		{100 * time.Millisecond, "Zun Va Liako", 150, true, 2}, // still
+		{0, "Eom Va Dyn", 150, true, 3},                        // retarget goes at once
+		{0, "Eom Va Dyn", 150, false, 4},                       // out of range: one empty frame
+		{time.Second, "Eom Va Dyn", 150, false, 4},             // then quiet
+	}
+	for i, tc := range tests {
+		clock = clock.Add(tc.step)
+		tr.UpdateTarget("potactics", tc.name, 1, tc.x, -20, 5, tc.known)
+		if len(sent) != tc.total {
+			t.Fatalf("step %d: broadcasts = %d, want %d", i, len(sent), tc.total)
+		}
+	}
+	if got := sent[1]; got.Name != "Zun Va Liako" || got.X != -150 || got.Y != 20 || got.Z != 5 {
+		t.Errorf("moved frame = %+v, want negated map-space position", got)
+	}
+	if sent[3].Name != "" {
+		t.Errorf("lost-target frame = %+v, want empty", sent[3])
+	}
+}

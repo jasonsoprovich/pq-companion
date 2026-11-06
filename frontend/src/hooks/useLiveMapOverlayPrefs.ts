@@ -11,6 +11,7 @@ export interface LiveMapOverlayPrefs {
   group: boolean | null
   raid: boolean
   raidColor: 'group' | 'class'
+  target: boolean
   aggro: AggroScope
   aggroNear: number
   dots: boolean
@@ -23,6 +24,7 @@ export const LIVE_MAP_OVERLAY_DEFAULTS: LiveMapOverlayPrefs = {
   group: null,
   raid: true,
   raidColor: 'group',
+  target: true,
   aggro: 'off',
   aggroNear: 300,
   dots: false,
@@ -48,6 +50,7 @@ function load(): LiveMapOverlayPrefs {
       group: typeof p.group === 'boolean' ? p.group : null,
       raid: bool(p.raid, d.raid),
       raidColor: p.raidColor === 'class' ? 'class' : 'group',
+      target: bool(p.target, d.target),
       aggro: p.aggro === 'near' || p.aggro === 'all' ? p.aggro : 'off',
       aggroNear: typeof p.aggroNear === 'number' ? Math.min(1500, Math.max(100, p.aggroNear)) : d.aggroNear,
       dots: bool(p.dots, d.dots),

@@ -97,15 +97,28 @@ export function DotLegend(): React.ReactElement {
 }
 
 
+// TARGET_RING_COLOR is your live target's aggro ring, the same red as the
+// line drawn to it.
+export const TARGET_RING_COLOR = '#f87171'
+
+// npcKey reduces an NPC name to compare a Zeal target against spawn data:
+// "a_death_beetle" and "a death beetle" match, as do "#Lord_Vyemm" and
+// "Lord Vyemm".
+function npcKey(name: string): string {
+  return name.replace(/[#_\d]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase()
+}
+
 // SpawnOverlayOptions is what's drawn from a zone's spawn points: aggro rings
 // by scope (Near fades them out within aggroNear of here), and respawn dots,
-// without the dead ones when hideKilled is set.
+// without the dead ones when hideKilled is set. target, an NPC you have
+// targeted, gets its aggro ring where it stands.
 export interface SpawnOverlayOptions {
   aggroScope: AggroScope
   aggroNear: number
   dots: boolean
   hideKilled: boolean
   here: { x: number; y: number; z: number } | null
+  target?: { name: string; type: number; x: number; y: number; z: number } | null
 }
 
 // useSpawnOverlays fetches a zone's spawn points and the live respawn state
@@ -113,15 +126,19 @@ export interface SpawnOverlayOptions {
 // A spawn known to be dead has no ring.
 export function useSpawnOverlays(
   zoneShortName: string | null | undefined,
-  { aggroScope, aggroNear, dots, hideKilled, here }: SpawnOverlayOptions,
-): { aggroRings: AggroRing[]; spawnDots: SpawnDot[] } {
+  { aggroScope, aggroNear, dots, hideKilled, here, target }: SpawnOverlayOptions,
+): { aggroRings: AggroRing[]; spawnDots: SpawnDot[]; targetRing: AggroRing | null } {
   const aggroOn = aggroScope !== 'off'
   const dotsOn = dots
   const playerLevel = useActiveCharacterLevel()
   const [spawnPoints, setSpawnPoints] = useState<ZoneSpawnPoint[]>([])
   const wantSpawns = aggroOn || dotsOn
+  // An NPC target needs the spawn data for its aggro radius, but not the
+  // respawn state.
+  const targetNPC = target && target.type === 1 ? target : null
+  const wantPoints = wantSpawns || targetNPC != null
   useEffect(() => {
-    if (!wantSpawns || !zoneShortName) {
+    if (!wantPoints || !zoneShortName) {
       setSpawnPoints([])
       return
     }
@@ -130,7 +147,7 @@ export function useSpawnOverlays(
       .then((r) => { if (!cancelled) setSpawnPoints(r) })
       .catch(() => { if (!cancelled) setSpawnPoints([]) })
     return () => { cancelled = true }
-  }, [wantSpawns, zoneShortName])
+  }, [wantPoints, zoneShortName])
   const [respawns, setRespawns] = useState<RespawnState | null>(null)
   const wsReady = useWebSocket((msg) => {
     // Rings want it too: a spawn that's dead has no ring.
@@ -186,5 +203,24 @@ export function useSpawnOverlays(
     return out
   }, [spawnPoints, respawnLeft, playerLevel, aggroScope, aggroNear, here])
 
-  return { aggroRings, spawnDots }
+  // The target's widest aggro radius among the spawn points that can roll
+  // it, centred where it stands now.
+  const targetKey = targetNPC ? npcKey(targetNPC.name) : ''
+  const targetRadius = useMemo(() => {
+    if (!targetKey) return 0
+    let r = 0
+    for (const p of spawnPoints) {
+      for (const n of p.npcs) if (npcKey(n.name) === targetKey) r = Math.max(r, n.aggro_radius)
+    }
+    return r
+  }, [spawnPoints, targetKey])
+  const targetRing = useMemo(
+    (): AggroRing | null =>
+      targetNPC && targetRadius > 0
+        ? { x: targetNPC.x, y: targetNPC.y, z: targetNPC.z, radius: targetRadius, color: TARGET_RING_COLOR }
+        : null,
+    [targetNPC, targetRadius],
+  )
+
+  return { aggroRings, spawnDots, targetRing }
 }

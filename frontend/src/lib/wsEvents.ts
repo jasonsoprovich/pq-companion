@@ -51,6 +51,9 @@ export const WSEvent = {
   // In-zone raiders' live map positions (Zeal MsgRaid), self excluded —
   // carries playerpos.RaidState {zone, members[]}. Empty members = drop.
   PlayerRaidPositions: 'player:raid_positions',
+  // The local player's Zeal target in map space — carries
+  // playerpos.TargetState {zone, name, type, x, y, z}. Empty name = none.
+  PlayerTarget: 'player:target',
   SkillsUpdate: 'skills:update',
   ProgressEvent: 'progress:event',
   BackfillProgress: 'backfill:progress',

@@ -4,13 +4,14 @@ import { useMapStyle } from '../../hooks/useMapStyle'
 import { usePlayerPosition } from '../../hooks/usePlayerPosition'
 import { useGroupPositions } from '../../hooks/useGroupPositions'
 import { useRaidPositions } from '../../hooks/useRaidPositions'
+import { useTargetPosition } from '../../hooks/useTargetPosition'
 import { useDPSClassColors } from '../../hooks/useDPSClassColors'
 import { useZoneMap } from '../../hooks/useZoneMap'
 import type { LiveMapOverlayPrefs } from '../../hooks/useLiveMapOverlayPrefs'
 import { classColor, groupColor } from '../../lib/raidColors'
-import { CATEGORY_STYLE, ZoneMap, type RaiderMarker } from './ZoneMap'
+import { CATEGORY_STYLE, ZoneMap, type RaiderMarker, type ReplayTarget } from './ZoneMap'
 import type { Pin3D } from './ZoneMap3D'
-import { useSpawnOverlays } from './spawnOverlays'
+import { TARGET_RING_COLOR, useSpawnOverlays } from './spawnOverlays'
 import { ErrorBoundary } from '../ErrorBoundary'
 import type { MapPOICategory } from '../../types/map'
 
@@ -40,6 +41,7 @@ export default function LiveMapView({ zone: zoneName, prefs }: LiveMapViewProps)
   const playerPos = usePlayerPosition()
   const groupMembers = useGroupPositions()
   const raidMembers = useRaidPositions()
+  const targetPos = useTargetPosition()
   const palette = useDPSClassColors()
   const { poiIgnoreZFade, showGroup } = useMapStyle()
   const [enabled] = useCachedState<MapPOICategory[]>('maps.layers', DEFAULT_LAYERS)
@@ -56,12 +58,14 @@ export default function LiveMapView({ zone: zoneName, prefs }: LiveMapViewProps)
 
   const here = playerPos && zone && playerPos.zone === zone.zone ? playerPos : null
   const groupOn = prefs.group ?? showGroup
-  const { aggroRings, spawnDots } = useSpawnOverlays(zoneName, {
+  const liveTarget = prefs.target && here && targetPos?.zone === here.zone ? targetPos : null
+  const { aggroRings, spawnDots, targetRing } = useSpawnOverlays(zoneName, {
     aggroScope: prefs.aggro,
     aggroNear: prefs.aggroNear,
     dots: prefs.dots,
     hideKilled: prefs.hideKilled,
     here,
+    target: liveTarget,
   })
 
   // The raid but you, and but your group while it's drawn as your group.
@@ -75,6 +79,23 @@ export default function LiveMapView({ zone: zoneName, prefs }: LiveMapViewProps)
         color: prefs.raidColor === 'class' ? classColor(palette, m.class) : groupColor(m.group),
       }))
   }, [prefs.raid, prefs.raidColor, here, groupOn, groupMembers, raidMembers, palette])
+
+  // The line to your target: onto a raider's own arrow, or to a ring and
+  // name for anything else.
+  const targetLine = useMemo((): ReplayTarget | null => {
+    if (!liveTarget || !here) return null
+    const drawn = new Set([...(groupOn ? groupMembers.map((g) => g.name) : []), ...raiders.map((r) => r.label)])
+    return {
+      from: { x: here.x, y: here.y, z: here.z },
+      to: { x: liveTarget.x, y: liveTarget.y, z: liveTarget.z },
+      label: liveTarget.name,
+      onRaider: drawn.has(liveTarget.name),
+    }
+  }, [liveTarget, here, groupOn, groupMembers, raiders])
+  const rings = useMemo(
+    () => [...(prefs.aggro !== 'off' ? aggroRings : []), ...(targetRing ? [targetRing] : [])],
+    [prefs.aggro, aggroRings, targetRing],
+  )
 
   const markers3D = useMemo((): RaiderMarker[] => {
     if (!show3D || !here) return []
@@ -91,15 +112,16 @@ export default function LiveMapView({ zone: zoneName, prefs }: LiveMapViewProps)
     return out
   }, [show3D, here, raiders, groupOn, groupMembers])
 
-  const pins3D = useMemo(
-    (): Pin3D[] =>
-      show3D
-        ? pois
-            .filter((p) => visible.has(p.category))
-            .map((p) => ({ x: p.x, y: p.y, z: p.z, color: CATEGORY_STYLE[p.category]?.color ?? '#94a3b8', label: p.label }))
-        : [],
-    [show3D, pois, visible],
-  )
+  const pins3D = useMemo((): Pin3D[] => {
+    if (!show3D) return []
+    const out: Pin3D[] = pois
+      .filter((p) => visible.has(p.category))
+      .map((p) => ({ x: p.x, y: p.y, z: p.z, color: CATEGORY_STYLE[p.category]?.color ?? '#94a3b8', label: p.label }))
+    if (targetLine && !targetLine.onRaider) {
+      out.push({ ...targetLine.to, color: TARGET_RING_COLOR, label: targetLine.label, picked: true })
+    }
+    return out
+  }, [show3D, pois, visible, targetLine])
 
   if (!zone) return <div style={{ height: '100%' }} />
 
@@ -112,7 +134,8 @@ export default function LiveMapView({ zone: zoneName, prefs }: LiveMapViewProps)
             zone={zoneName}
             markers={markers3D}
             pins={pins3D}
-            rings={prefs.aggro !== 'off' ? aggroRings : undefined}
+            target={targetLine}
+            rings={rings}
             spawnDots={prefs.dots ? spawnDots : undefined}
             labels={prefs.labels}
             chromeless
@@ -132,7 +155,8 @@ export default function LiveMapView({ zone: zoneName, prefs }: LiveMapViewProps)
           playerPos={playerPos}
           groupMembers={groupOn ? groupMembers : []}
           raiders={raiders}
-          aggroRings={prefs.aggro !== 'off' ? aggroRings : undefined}
+          replayTarget={targetLine}
+          aggroRings={rings}
           spawnDots={prefs.dots ? spawnDots : undefined}
           // Follow starts on — an overlay you have to pan by hand every time
           // you move is worse than no overlay — but it is not forced. The

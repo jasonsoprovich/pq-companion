@@ -1692,6 +1692,9 @@ func main() {
 	posTracker.SetRaidBroadcast(func(rs playerpos.RaidState) {
 		hub.Broadcast(ws.Event{Type: "player:raid_positions", Data: rs})
 	})
+	posTracker.SetTargetBroadcast(func(ts playerpos.TargetState) {
+		hub.Broadcast(ws.Event{Type: "player:target", Data: ts})
+	})
 
 	// Serialized state for the pipe callback (readLoop calls onEvent from one
 	// goroutine, so plain vars are safe here). pipeZoneShort is the local
@@ -1890,6 +1893,13 @@ func main() {
 			// for the map's respawn dots.
 			if td := p.TargetDescriptors(); td != nil && td.LocKnown && td.Type == zealpipe.TargetTypeNPC {
 				respawnEngine.SetPipeTargetLoc(zealpipe.CleanTargetName(td.Name), td.GameX, td.GameY)
+			}
+			// The live map marks the target where Zeal places it.
+			if td := p.TargetDescriptors(); td != nil {
+				posTracker.UpdateTarget(pipeZoneShort, zealpipe.CleanTargetName(td.Name), td.Type,
+					td.GameX, td.GameY, td.Z, td.LocKnown)
+			} else {
+				posTracker.UpdateTarget(pipeZoneShort, "", 0, 0, 0, 0, false)
 			}
 			// Raid replay draws a line from the observer to their target.
 			if td := p.TargetDescriptors(); raidRecorder != nil && td != nil && td.LocKnown {
@@ -2167,6 +2177,7 @@ func main() {
 		posTracker.Reset()
 		posTracker.ResetGroup()
 		posTracker.ResetRaid()
+		posTracker.ResetTarget()
 		lastRaidSeen = map[string]string{}
 		rosterKeeper.Clear()
 		hub.Broadcast(ws.Event{Type: "raid.roster", Data: map[string]any{}})

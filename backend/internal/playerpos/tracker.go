@@ -127,6 +127,19 @@ type RaidState struct {
 	Members []RaidMemberState `json:"members"`
 }
 
+// TargetState is the payload of the player:target broadcast: the local
+// player's Zeal target in map space. Name "" means no target, or none whose
+// position Zeal reports (it withholds it past 250 units). Type is Zeal's
+// target type: 0 PC, 1 NPC, 2 NPC corpse, 3 PC corpse.
+type TargetState struct {
+	Zone string  `json:"zone"`
+	Name string  `json:"name"`
+	Type int     `json:"type"`
+	X    float64 `json:"x"`
+	Y    float64 `json:"y"`
+	Z    float64 `json:"z"`
+}
+
 // Tracker holds the latest position and rate-limits broadcasts.
 type Tracker struct {
 	mu        sync.Mutex
@@ -144,6 +157,10 @@ type Tracker struct {
 	raidBroadcast func(RaidState)
 	lastRaidSent  RaidState
 	lastRaidAt    time.Time
+
+	targetBroadcast func(TargetState)
+	lastTargetSent  TargetState
+	lastTargetAt    time.Time
 }
 
 // New returns a Tracker that calls broadcast when a position is worth sending.
@@ -165,6 +182,56 @@ func (t *Tracker) SetRaidBroadcast(fn func(RaidState)) {
 	t.mu.Lock()
 	t.raidBroadcast = fn
 	t.mu.Unlock()
+}
+
+// SetTargetBroadcast registers the sink for target-position updates.
+// Optional — when unset, UpdateTarget is a no-op.
+func (t *Tracker) SetTargetBroadcast(fn func(TargetState)) {
+	t.mu.Lock()
+	t.targetBroadcast = fn
+	t.mu.Unlock()
+}
+
+// UpdateTarget records the local player's target from a Zeal player frame,
+// in *game* coordinates. known is false when there's no target or Zeal
+// gave no position for it. Losing the target sends one empty frame, then
+// stays quiet; a target is sent on change, and on the heartbeat.
+func (t *Tracker) UpdateTarget(zone, name string, typ int, gameX, gameY, gameZ float64, known bool) {
+	ts := TargetState{Zone: zone}
+	if known && name != "" && zone != "" {
+		ts = TargetState{Zone: zone, Name: name, Type: typ, X: -gameX, Y: -gameY, Z: gameZ}
+	}
+
+	t.mu.Lock()
+	fn := t.targetBroadcast
+	send := fn != nil && t.shouldSendTargetLocked(ts)
+	if send {
+		t.lastTargetSent = ts
+		t.lastTargetAt = t.now()
+	}
+	t.mu.Unlock()
+
+	if send {
+		fn(ts)
+	}
+}
+
+// shouldSendTargetLocked applies the rate limit to target frames. Caller
+// holds the lock.
+func (t *Tracker) shouldSendTargetLocked(ts TargetState) bool {
+	prev := t.lastTargetSent
+	if ts.Name == "" {
+		// Gone: say so once.
+		return prev.Name != ""
+	}
+	elapsed := t.now().Sub(t.lastTargetAt)
+	if ts.Name != prev.Name || ts.Type != prev.Type || ts.Zone != prev.Zone {
+		return true
+	}
+	if elapsed < minInterval {
+		return false
+	}
+	return elapsed >= heartbeat || moved(ts.X, ts.Y, ts.Z, 0, prev.X, prev.Y, prev.Z, 0)
 }
 
 // Update records a pipe player snapshot in *game* coordinates and broadcasts it
@@ -342,6 +409,20 @@ func (t *Tracker) shouldSendRaidLocked(rs RaidState) bool {
 		}
 	}
 	return false
+}
+
+// ResetTarget clears the target and, if one was being shown, sends one
+// empty frame. Called when the pipe drops.
+func (t *Tracker) ResetTarget() {
+	t.mu.Lock()
+	fn := t.targetBroadcast
+	had := t.lastTargetSent.Name != ""
+	t.lastTargetSent = TargetState{}
+	t.lastTargetAt = time.Time{}
+	t.mu.Unlock()
+	if fn != nil && had {
+		fn(TargetState{})
+	}
 }
 
 // ResetRaid clears raid state and, if a sink is set, emits one empty frame

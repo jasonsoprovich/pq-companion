@@ -5,6 +5,7 @@ import { useCachedState } from '../../hooks/useCachedState'
 import { usePlayerPosition } from '../../hooks/usePlayerPosition'
 import { useGroupPositions } from '../../hooks/useGroupPositions'
 import { useRaidPositions } from '../../hooks/useRaidPositions'
+import { useTargetPosition } from '../../hooks/useTargetPosition'
 import { useDPSClassColors } from '../../hooks/useDPSClassColors'
 import { classColor, groupColor } from '../../lib/raidColors'
 import { useMapStyle } from '../../hooks/useMapStyle'
@@ -21,7 +22,7 @@ const PLAYER_3D = '#f8fafc'
 const GROUP_3D = '#7dd3fc'
 import { useActiveCharacterLevel } from '../../hooks/useActiveCharacterLevel'
 import { ErrorBoundary } from '../ErrorBoundary'
-import { AGGRO_SCOPES, DotLegend, useSpawnOverlays, type AggroScope } from './spawnOverlays'
+import { AGGRO_SCOPES, DotLegend, TARGET_RING_COLOR, useSpawnOverlays, type AggroScope } from './spawnOverlays'
 import {
   mapMarkerCommand,
   mapRestoreZoneCommand,
@@ -245,6 +246,9 @@ export function ZoneMapPanel({
   const playerPos = usePlayerPosition()
   const groupMembers = useGroupPositions()
   const raidMembers = useRaidPositions()
+  const targetPos = useTargetPosition()
+  // Your target where it stands, with a line to it and its aggro ring.
+  const [targetOn, setTargetOn] = useCachedState(live ? 'liveMap.showTarget' : 'maps.showTarget', true)
   const palette = useDPSClassColors()
   // Group and Raid toggles, per surface. Group starts from the Settings
   // default until it's flipped here; Raid starts on. Raiders are coloured by
@@ -326,8 +330,9 @@ export function ZoneMapPanel({
   // Rings leave out spawns that are dead, and under Near the ones beyond the
   // chosen distance. Without a position here, Near shows them all.
   const here = playerPos && zone && playerPos.zone === zone.zone ? playerPos : null
-  const { aggroRings, spawnDots } = useSpawnOverlays(zoneShortName, {
-    aggroScope, aggroNear, dots: dotsOn, hideKilled, here,
+  const liveTarget = !replay && targetOn && here && targetPos?.zone === here.zone ? targetPos : null
+  const { aggroRings, spawnDots, targetRing } = useSpawnOverlays(zoneShortName, {
+    aggroScope, aggroNear, dots: dotsOn, hideKilled, here, target: liveTarget,
   })
 
   const allPois = useMemo(
@@ -495,6 +500,26 @@ export function ZoneMapPanel({
         color: raidColor === 'class' ? classColor(palette, m.class) : groupColor(m.group),
       }))
   }, [replay, raidOn, here, groupOn, groupMembers, raidMembers, raidColor, palette])
+
+  // The line to your target. It ends on a raider's own arrow when you've
+  // targeted one; anything else gets a ring and its name.
+  const liveTargetLine = useMemo((): ReplayTarget | null => {
+    if (!liveTarget || !here) return null
+    const drawn = new Set([
+      ...(groupOn ? groupMembers.map((g) => g.name) : []),
+      ...liveRaiders.map((r) => r.label),
+    ])
+    return {
+      from: { x: here.x, y: here.y, z: here.z },
+      to: { x: liveTarget.x, y: liveTarget.y, z: liveTarget.z },
+      label: liveTarget.name,
+      onRaider: drawn.has(liveTarget.name),
+    }
+  }, [liveTarget, here, groupOn, groupMembers, liveRaiders])
+  const shownRings = useMemo(
+    () => [...(aggroOn ? aggroRings : []), ...(targetRing ? [targetRing] : [])],
+    [aggroOn, aggroRings, targetRing],
+  )
 
   // You, your group and the raid as 3D markers; the camera follows you with
   // Follow me. Your group comes after the raid so it draws over it.
@@ -877,6 +902,8 @@ export function ZoneMapPanel({
                     'Your groupmates in this zone (Zeal)'],
                   ['Raid', raidOn, () => setRaidOn(!raidOn), liveRaiders.length,
                     'Everyone else in your raid who is in this zone (Zeal)'],
+                  ['Target', targetOn, () => setTargetOn(!targetOn), liveTarget ? 1 : 0,
+                    'Your target where it stands, a line to it, and its aggro ring. Zeal only reports positions within 250 units.'],
                 ] as const
               ).map(([label, on, toggle, n, title]) => (
                 <button
@@ -1062,8 +1089,13 @@ export function ZoneMapPanel({
                 key={zoneShortName}
                 zone={zoneShortName}
                 markers={markers3D}
-                pins={pins3D}
-                rings={aggroOn ? aggroRings : undefined}
+                pins={
+                  liveTargetLine && !liveTargetLine.onRaider
+                    ? [...pins3D, { ...liveTargetLine.to, color: TARGET_RING_COLOR, label: liveTargetLine.label, picked: true }]
+                    : pins3D
+                }
+                target={liveTargetLine}
+                rings={shownRings}
                 spawnDots={dotsOn ? spawnDots : undefined}
                 onUnavailable={(why) =>
                   setNo3D(
@@ -1090,7 +1122,7 @@ export function ZoneMapPanel({
             groupMembers={groupOn && !replay ? groupMembers : []}
             followPlayer={followPlayer && !replay}
             raiders={replay ? raiders : liveRaiders}
-            replayTarget={replayTarget}
+            replayTarget={replay ? replayTarget : liveTargetLine}
             // Panning is a deliberate act; treat it as "I want to look
             // somewhere else" and stop following. The Follow me toggle above is
             // right there to turn it back on.
@@ -1100,7 +1132,7 @@ export function ZoneMapPanel({
             visibleCategories={visible}
             poiIgnoreZFade={poiIgnoreZFade}
             highlights={searchGroup ? searchGroup.spots : inspect ? inspect.spots : []}
-            aggroRings={aggroOn ? aggroRings : undefined}
+            aggroRings={shownRings}
             spawnDots={dotsOn ? spawnDots : undefined}
             onPOIClick={(p) => {
               setSelectedNPCs([])

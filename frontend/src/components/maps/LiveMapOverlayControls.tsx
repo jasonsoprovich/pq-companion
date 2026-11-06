@@ -47,6 +47,13 @@ export default function LiveMapOverlayControls({ prefs, onChange, groupDefault, 
           {prefs.raidColor === 'group' ? 'By group' : 'By class'}
         </Chip>
       )}
+      <Chip
+        on={prefs.target}
+        onClick={() => onChange({ target: !prefs.target })}
+        title="Your target where it stands, a line to it, and its aggro ring (within 250 units)"
+      >
+        Target
+      </Chip>
       <Sep />
       <Chip
         on={prefs.aggro !== 'off'}
