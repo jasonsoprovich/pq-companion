@@ -709,6 +709,20 @@ func TestParseLine(t *testing.T) {
 			wantData: DeathData{SlainBy: "a greater gnoll"},
 		},
 		{
+			name:     "death: slain by NPC, client's '!' form",
+			line:     "[Mon Apr 13 06:00:00 2026] You have been slain by A Shissar Revenant!",
+			wantOK:   true,
+			wantType: EventDeath,
+			wantData: DeathData{SlainBy: "A Shissar Revenant"},
+		},
+		{
+			name:     "death: slain by an unseen hand",
+			line:     "[Mon Apr 13 06:00:00 2026] You have been slain by an unseen hand!",
+			wantOK:   true,
+			wantType: EventDeath,
+			wantData: DeathData{SlainBy: "an unseen hand"},
+		},
+		{
 			name:     "death: you died (no named killer)",
 			line:     "[Mon Apr 13 06:00:00 2026] You died.",
 			wantOK:   true,

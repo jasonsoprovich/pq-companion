@@ -199,8 +199,9 @@ var (
 	// "You block a gnoll's attack!"
 	reYouDefend = regexp.MustCompile(`^You (dodge|parry|riposte|block) (.+?)(?:'s)? attack!$`)
 
-	// Death: "You have been slain by a gnoll."
-	reDeath = regexp.MustCompile(`^You have been slain by (.+)\.$`)
+	// Death: "You have been slain by a gnoll!" (the client's string 12107
+	// ends in "!"; older logs and some tools write a trailing ".").
+	reDeath = regexp.MustCompile(`^You have been slain by (.+?)[.!]$`)
 
 	// Death (no killer): "You died."
 	reDiedSimple = regexp.MustCompile(`^You died\.$`)
