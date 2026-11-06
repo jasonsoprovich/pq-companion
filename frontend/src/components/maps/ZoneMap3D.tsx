@@ -216,6 +216,14 @@ export default function ZoneMap3D({
   transparentRef.current = transparent
   const [showOptions, setShowOptions] = useState(false)
   const [camOwn, setCamOwn] = useState<Camera3D>('free')
+  // zRange is the zone's lowest and highest point; slice is the height the
+  // Slice slider cuts the zone at, null for none. Some zones (Akheva Ruins)
+  // roof their levels with solid slabs whose tops face up, so Hide ceilings
+  // can't tell them from floors; slicing them off works in any camera.
+  const [zRange, setZRange] = useState<[number, number] | null>(null)
+  const [slice, setSlice] = useState<number | null>(null)
+  const sliceRef = useRef(slice)
+  sliceRef.current = slice
   const cam = camera ?? camOwn
   const camRef = useRef(cam)
   camRef.current = cam
@@ -232,6 +240,8 @@ export default function ZoneMap3D({
     if (!el) return
     let cancelled = false
     let renderer: THREE.WebGLRenderer
+    setZRange(null)
+    setSlice(null)
     try {
       renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
     } catch {
@@ -481,6 +491,7 @@ export default function ZoneMap3D({
           .setFromBufferAttribute(layers.own.floor.geometry.getAttribute('position') as THREE.BufferAttribute)
         const center = box.getCenter(new THREE.Vector3())
         const extent = box.getSize(new THREE.Vector3())
+        setZRange([Math.floor(box.min.z), Math.ceil(box.max.z)])
         const radius = Math.max(extent.x, extent.y, 1)
         s.markerSize = Math.max(3, radius / 250)
         s.radius = radius
@@ -544,7 +555,7 @@ export default function ZoneMap3D({
     } else {
       lastFocus.current = null
     }
-    cutAbove(s, f, camRef.current, prefsRef.current.cutAbove)
+    cutAbove(s, f, camRef.current, prefsRef.current.cutAbove, sliceRef.current)
     s.render()
   }, [markers, target, status])
 
@@ -556,10 +567,10 @@ export default function ZoneMap3D({
     if (cam === 'top') lookDown(s)
     const f = markersRef.current.find((r) => r.focus)
     if (cam === 'chase' && f) chaseBehind(s, f)
-    cutAbove(s, f, cam, prefs.cutAbove)
+    cutAbove(s, f, cam, prefs.cutAbove, slice)
     s.controls.update()
     s.render()
-  }, [cam, prefs.cutAbove, status])
+  }, [cam, prefs.cutAbove, slice, status])
 
   // Fit: frame every marker, keeping the direction the camera looks from.
   useEffect(() => {
@@ -722,7 +733,9 @@ export default function ZoneMap3D({
               <RotateCcw size={10} /> Reset view
             </button>
           </div>
-          {showOptions && <ViewOptions prefs={prefs} onChange={setPrefs} />}
+          {showOptions && (
+            <ViewOptions prefs={prefs} onChange={setPrefs} zRange={zRange} slice={slice} onSlice={setSlice} />
+          )}
           <div className="pointer-events-none absolute bottom-2 left-2 text-[10px]" style={{ color: 'rgba(255,255,255,0.45)' }}>
             Drag to orbit · right-drag to pan · scroll to zoom · click, then WASD/arrows to move, Q/E down/up, Shift faster
           </div>
@@ -734,9 +747,12 @@ export default function ZoneMap3D({
 
 // ViewOptions is the 3D view's look: style, wall transparency, and what to
 // hide so the inside of a zone can be seen from outside.
-function ViewOptions({ prefs, onChange }: {
+function ViewOptions({ prefs, onChange, zRange, slice, onSlice }: {
   prefs: Map3DPrefs
   onChange: (patch: Partial<Map3DPrefs>) => void
+  zRange: [number, number] | null
+  slice: number | null
+  onSlice: (z: number | null) => void
 }): React.ReactElement {
   const styles: [Map3DStyle, string, string][] = [
     ['textured', 'Textured', 'The zone’s own textures, from your EverQuest files'],
@@ -842,6 +858,29 @@ function ViewOptions({ prefs, onChange }: {
         />
         <span>Cut away levels above you</span>
       </label>
+      {zRange && zRange[1] > zRange[0] && (
+        <label
+          className="block"
+          title="Cut the zone off above this height, to see under roofs and upper levels that Hide ceilings leaves (slabs whose tops face up). Kept for this zone only."
+        >
+          <div className="mb-1 flex justify-between" style={{ color: 'var(--color-muted)' }}>
+            <span>Slice from top</span>
+            <span>{slice === null ? 'Off' : `z ${slice}`}</span>
+          </div>
+          <input
+            type="range"
+            min={zRange[0]}
+            max={zRange[1]}
+            step={1}
+            value={slice ?? zRange[1]}
+            onChange={(e) => {
+              const z = Number(e.target.value)
+              onSlice(z >= zRange[1] ? null : z)
+            }}
+            className="w-full"
+          />
+        </label>
+      )}
     </div>
   )
 }
@@ -1067,9 +1106,13 @@ const CHASE_PITCH = THREE.MathUtils.degToRad(35)
 // cutAbove clips the zone a little over the marker the camera follows,
 // while Top or Chase does, so the levels overhead in a stacked zone don't
 // hide the one you're on. A free camera is for looking round the whole
-// zone, hills above you included, so it never cuts.
-function cutAbove(s: Scene3D, f: RaiderMarker | undefined, cam: Camera3D, on: boolean): void {
-  s.cut.constant = on && f && cam !== 'free' ? f.z + CUT_ABOVE : NO_CUT
+// zone, hills above you included, so it never cuts. slice, when set, cuts
+// at that height whatever the camera, and the lower of the two wins.
+function cutAbove(
+  s: Scene3D, f: RaiderMarker | undefined, cam: Camera3D, on: boolean, slice: number | null,
+): void {
+  const follow = on && f && cam !== 'free' ? f.z + CUT_ABOVE : NO_CUT
+  s.cut.constant = Math.min(follow, slice ?? NO_CUT)
 }
 
 // chaseBehind orbits the camera to sit behind marker r, looking the way it
