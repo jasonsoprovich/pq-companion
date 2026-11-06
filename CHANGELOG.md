@@ -9,6 +9,41 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.33.0 — 2026-11-06
+
+The maps go 3D, with the zone's own textures, objects and doors. The Live Map overlay becomes a full live map with your raid and target on it. Raid Replay plays a raid night back on the zone map. Also new: a Pet overlay, death recaps, per-file history for your EQ settings files, and buff timers synced to Zeal's tick counts. Fixes cover finishing-blow hits in parses, bard song timers, phantom timers and Zek fight readings.
+
+### Highlights
+- **3D maps** — a 2D/3D switch on the Maps page, Live Map, NPC spawn map and Raid Replay. The 3D view draws the zone from your own EQ client files with its textures, trees, buildings, furniture, animated objects and doors. View options cover textured, height or plain style, see-through walls, hiding ceilings, cutting away the levels above you in stacked zones like Bastion of Thunder, and a "Slice from top" height slider. Cameras include Top, Chase and free-fly, plus Fit group.
+- **Live raid and target on the map** — with Zeal, the Live Map shows every raider in your zone (coloured by group or class), your group on top, and a dashed line to your target with its aggro ring. Heading-up mode turns the 2D map so the way you face is up, with a compass. Your arrow now moves smoothly instead of stepping.
+- **Aggro rings and respawn dots** — new zone map layers. Aggro rings are con-coloured to your level, mark mobs that see invisible, and dash greens that won't attack on sight. Respawn dots show each spawn point as on cooldown, up soon, popped or unknown. Respawn timers and zone kill counters now follow the zone copy you're in (from `dbg.txt`).
+- **Live Map overlay** — the map overlay now draws everything the Live Map page does, in 2D or 3D, with a toggle row while it's unlocked (also in Settings → Maps). Layers you turn on in the Live Map show on the overlay too. Map toggles are now kept across restarts.
+- **Raid Replay** — Parsing → Raid Replay records raider positions while Zeal sends raid frames, then plays the night back on the zone map. It has a scrubber marked with kills, deaths, CH calls, enrages, rampages, shouts and loot, a groups panel, and your target line. Recording controls and retention are in Settings → Logs.
+- **Pet overlay** — now open to everyone (no developer flag). It shows your charmed or summoned pet's stats, buffs and debuffs, charm time left, live pet DPS, and alerts for charm break, low HP and missing buffs. Charm timers now work without the Enchanter pack.
+- **Death recap** — every death records the 20 seconds before it: hits taken, heals and CHs received, the biggest hit, the killer and the time since the last CH. You can browse recaps by night or see them on an overlay.
+- **Backup & Restore page** — the EQ Config Backups tab is now Backup & Restore. Each character's settings files (spellsets, bandolier, hotkeys and macros, UI layout, bazaar, plus eqclient/zeal/quarmclient.ini) keep their last 30 versions. You can preview and restore any version on its own. A restore first saves the current file as a version, so it can be undone.
+- **Buff timers synced to Zeal** — your own buff timers snap to Zeal's remaining-tick counts, which fixes durations of buffs cast by others. Fades now line up with your server tick.
+- **Smarter NPC overlay** — a live /con border (red for scowls, amber for threatening). Timers are matched to the exact spawn, so two same-named mobs no longer share debuffs. A strip of the target's debuff icons shows with time left, and a Clear button handles leash and evade resets. The card dims with a "Zeal stale" badge when Zeal stops confirming the target. The Filtered Timers "Target debuffs" view is spawn-aware too.
+- **Trigger additions** — target HP triggers can filter by mob name or by a special ability the mob has. A new "Enrage Soon" raid alert uses this. New buff-stripped and debuff-stripped conditions can call out dispels. Imported GINA/EQLogParser patterns that use lookarounds or backreferences now run instead of being imported disabled.
+- **Measured regen** — Character Info shows the HP and mana regen per tick actually seen in game (needs Zeal) next to the computed values.
+- **Upgrade scores on loot** — the NPC overlay's loot list and the Item Info card show the gear-upgrade score for your active character.
+- **Open source** — the source code is now MIT-licensed. Game data, map geometry and EverQuest artwork keep their owners' terms.
+
+### Fixes
+- **Finishing blows inflated DPS** — instant-kill specials (finishing blow, slay, assassinate) log about 32,000 damage, and one could double a player's total. They now count as finishing blows in the row tooltip. They're also left out of the threat meter.
+- **Other players' ranged hits** — shots, fires and flings from other players now count on the meter.
+- **Bard song timers ended a tick early** — song-window buffs fade one tick after their duration, and pack song timers now default to 24 s. Existing timers are rescaled automatically.
+- **Phantom Tashanian timer** — casting Howl of Tashan no longer adds a second Tashanian timer.
+- **Pet timers and DPS** — a same-named mob dying no longer wipes your charm pet's buffs. Pet DPS shows even when you dealt no damage yourself. The Staff of the Serpent's haste on a pet or groupmate now gets a timer.
+- **Zek fights and PoP flags** — the upstairs Rallos Zek fight showed 9,036 HP from an untargetable shell. It now shows the real script-spawned NPC, and the same applies to Jeplak, Foreman Gworknop and Emperor Ssraeshza. Hailing the Vallon, Tallon and Rallos Planar Projections now ticks off their flags. Kill-based Zek flags are dropped, because the kill messages were wrong. Locked flag steps now explain what they need and where to start.
+- **CH metronome after a dropout** — when a cleric stops calling, the metronome now follows the compressed chain instead of cueing everyone a beat late (#151).
+- **"Illusioned" tags on /con readings** — stale illusion timers no longer tag readings; only live Zeal buff slots do.
+- **Triggers** — trigger pack import could hang (#166), and pipe triggers can now be saved without a regex pattern.
+- **Wishlist leaked across characters** — switching characters no longer carries over wishlist state (#164).
+- **Overlays vanishing** — visible overlays are re-raised on an interval, so another topmost window can't stay stacked over them.
+- **Stray log copies became characters** — copied or renamed log files (like a "(1)" duplicate) are no longer listed as characters.
+- **Relaunching wiped the app log** — opening the app again while it was running pushed the live session's log out of the debug export.
+
 ## v0.32.0 — 2026-11-01
 
 PoP hail flags tick themselves off as you earn them, an optional zone-in reminder of hails you can do now, NPC slow mitigation on the overlay, and new custom timer options for encounter timers. Fixes cover PoP flag readings, pet DPS in multi-fight parses and disappearing overlays.
