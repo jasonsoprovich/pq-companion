@@ -16,6 +16,30 @@ export function labelFor(flags: PoPFlagStatus[], id: string): string {
   return flags.find((f) => f.id === id)?.label ?? id
 }
 
+// startingPoints walks a locked flag's unmet prereqs back to the steps that
+// can be done right now (unmet but not themselves locked) — the real reason a
+// late step is blocked, e.g. Rallos Zek waiting on a Torment kill several
+// steps upstream. Returns their labels with zones, in dataset order.
+export function startingPoints(flags: PoPFlagStatus[], flag: PoPFlagStatus): string[] {
+  const byId = new Map(flags.map((f) => [f.id, f]))
+  const roots = new Set<string>()
+  const seen = new Set<string>()
+  const walk = (ids: string[]): void => {
+    for (const id of ids) {
+      if (seen.has(id)) continue
+      seen.add(id)
+      const f = byId.get(id)
+      if (!f || f.done) continue
+      if (f.locked && f.missing?.length) walk(f.missing)
+      else roots.add(id)
+    }
+  }
+  walk(flag.missing ?? [])
+  return flags
+    .filter((f) => roots.has(f.id))
+    .map((f) => (f.zone ? `${f.label} (${f.zone})` : f.label))
+}
+
 export function ProvenanceChip({
   source, onConfirm,
 }: { source?: string; onConfirm?: () => void }): React.ReactElement | null {
@@ -72,7 +96,16 @@ export function PopFlagRow({
   flag, allFlags, requiredByDone, canToggle, busy, onToggle, onConfirm, compact,
 }: PopFlagRowProps): React.ReactElement {
   const missingLabels = (flag.missing ?? []).map((id) => labelFor(allFlags, id))
-  const lockTitle = flag.locked ? `Needs: ${missingLabels.join(', ')}` : ''
+  // Name the step to go do when the immediate prereq is itself blocked, so a
+  // greyed-out row explains why without clicking back through the chain.
+  const blockedDeeper = (flag.missing ?? []).some(
+    (id) => allFlags.find((f) => f.id === id)?.locked,
+  )
+  const starts = flag.locked && blockedDeeper ? startingPoints(allFlags, flag) : []
+  const needs = flag.locked
+    ? `Needs: ${missingLabels.join(', ')}` +
+      (starts.length ? `\nStart with: ${starts.join(', ')}` : '')
+    : ''
   // Checking is blocked while prerequisites are unmet (must be done in order);
   // un-checking is blocked while a completed later step depends on this one
   // (must be retracted top-down). Confirming an already-done auto/seer
@@ -89,7 +122,7 @@ export function PopFlagRow({
   const checkTitle = !canToggle
     ? 'Select a character to track'
     : lockedForCheck
-      ? `Complete prerequisites first — Needs: ${missingLabels.join(', ')}`
+      ? `Complete prerequisites first — ${needs}`
       : lockedForUncheck
         ? 'Required by a completed later step'
         : anchorViaMember
@@ -130,20 +163,26 @@ export function PopFlagRow({
         paddingLeft: isMember ? (compact ? '1.25rem' : '2.25rem') : undefined,
       }}
     >
-      <button
-        type="button"
-        onClick={() => onToggle(flag)}
-        disabled={checkDisabled}
-        className="mt-0.5 shrink-0"
+      {/* The title lives on a wrapper: a disabled button gets no hover events,
+          so its own tooltip never shows — exactly when it's needed most. */}
+      <span
+        className="mt-0.5 shrink-0 inline-flex"
         title={checkTitle}
         style={{ cursor: checkDisabled ? 'not-allowed' : 'pointer' }}
       >
-        {flag.done ? (
-          <CheckCircle2 size={compact ? 13 : 16} style={{ color: 'var(--color-success)' }} />
-        ) : (
-          <Circle size={compact ? 13 : 16} style={{ color: 'var(--color-muted)' }} />
-        )}
-      </button>
+        <button
+          type="button"
+          onClick={() => onToggle(flag)}
+          disabled={checkDisabled}
+          style={{ pointerEvents: checkDisabled ? 'none' : undefined }}
+        >
+          {flag.done ? (
+            <CheckCircle2 size={compact ? 13 : 16} style={{ color: 'var(--color-success)' }} />
+          ) : (
+            <Circle size={compact ? 13 : 16} style={{ color: 'var(--color-muted)' }} />
+          )}
+        </button>
+      </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center flex-wrap" title={compact ? flag.detail : undefined}>
           {KindIcon && (
@@ -203,7 +242,7 @@ export function PopFlagRow({
             </span>
           )}
           {flag.locked && !flag.done && (
-            <span className="ml-1.5 shrink-0" title={lockTitle}>
+            <span className="ml-1.5 shrink-0" title={needs}>
               <Lock size={compact ? 10 : 11} style={{ color: '#f87171' }} />
             </span>
           )}
