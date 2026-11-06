@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, Check, Copy, Plus, X } from 'lucide-react'
 import { useCachedState } from '../../hooks/useCachedState'
 import { usePlayerPosition } from '../../hooks/usePlayerPosition'
+import { useSmoothPosition } from '../../hooks/useSmoothPosition'
+import { useMapLayers } from '../../hooks/useMapLayers'
 import { useGroupPositions } from '../../hooks/useGroupPositions'
 import { useRaidPositions } from '../../hooks/useRaidPositions'
 import { useTargetPosition } from '../../hooks/useTargetPosition'
@@ -110,31 +112,24 @@ function toSpot(p: { x: number; y: number; z: number }): MapHighlight {
 // because the two surfaces want identical behaviour, and this codebase has
 // already been bitten once by two copies of a list view drifting apart.
 
-// Defaults are what a player is usually hunting for. Doors, ground spawns and
-// tradeskill containers start off: switching everything on at once is what
-// makes dense zones unreadable.
-const LAYERS: { key: MapPOICategory; label: string; on: boolean }[] = [
-  { key: 'vendor', label: 'Vendors', on: true },
-  { key: 'raid_target', label: 'Raid targets', on: true },
-  { key: 'zone_line', label: 'Zone lines', on: true },
-  { key: 'trap', label: 'Traps', on: true },
-  // All three default on despite adding to the default set: they are low-count
-  // by nature (173 locked, 387 teleports and 29 switches across all 178 zones),
-  // so they cannot clutter a zone the way doors or ground spawns do, and each
-  // answers a question you would otherwise have to leave the app for.
-  { key: 'locked', label: 'Locked', on: true },
-  { key: 'teleport', label: 'Teleports', on: true },
-  { key: 'switch', label: 'Switches', on: true },
-  // Annotation layers, shipped (source=research) and the user's own. On by
-  // default: someone deliberately recorded these, which is a stronger signal
-  // than anything derived, and there are few of them.
-  { key: 'wall', label: 'Walls', on: true },
-  { key: 'hazard', label: 'Hazards', on: true },
-  { key: 'note', label: 'Notes', on: true },
-  { key: 'succor', label: 'Succor', on: false },
-  { key: 'door', label: 'Doors', on: false },
-  { key: 'ground_spawn', label: 'Ground spawns', on: false },
-  { key: 'tradeskill', label: 'Tradeskills', on: false },
+// The layer toggles, in order. Which start on is DEFAULT_MAP_LAYERS: the
+// usual hunting targets plus the low-count ones (locked doors, teleports,
+// switches) and the annotation layers someone deliberately recorded.
+const LAYERS: { key: MapPOICategory; label: string }[] = [
+  { key: 'vendor', label: 'Vendors' },
+  { key: 'raid_target', label: 'Raid targets' },
+  { key: 'zone_line', label: 'Zone lines' },
+  { key: 'trap', label: 'Traps' },
+  { key: 'locked', label: 'Locked' },
+  { key: 'teleport', label: 'Teleports' },
+  { key: 'switch', label: 'Switches' },
+  { key: 'wall', label: 'Walls' },
+  { key: 'hazard', label: 'Hazards' },
+  { key: 'note', label: 'Notes' },
+  { key: 'succor', label: 'Succor' },
+  { key: 'door', label: 'Doors' },
+  { key: 'ground_spawn', label: 'Ground spawns' },
+  { key: 'tradeskill', label: 'Tradeskills' },
 ]
 
 // entityRoute maps a POI to the database page its ref_id opens, or null when
@@ -217,12 +212,9 @@ export function ZoneMapPanel({
   const setMode = setOverride
   const { zone, outline, geometry, detail, external, pois, loading, error } =
     useZoneMap(zoneShortName, mode)
-  // Layer choices persist across zones and across the two surfaces, so a player
-  // who turns doors on keeps them on.
-  const [enabled, setEnabled] = useCachedState<MapPOICategory[]>(
-    'maps.layers',
-    LAYERS.filter((l) => l.on).map((l) => l.key),
-  )
+  // Layer choices persist across zones, restarts and every map surface,
+  // the overlay included, so a player who turns doors on keeps them on.
+  const [enabled, setEnabled] = useMapLayers()
   const [selected, setSelected] = useState<MapPOI | null>(null)
   // Every spot of the POI picked from search, when it has more than one (one
   // trap name repeated across a zone). Empty for a map click, which is about
@@ -244,6 +236,8 @@ export function ZoneMapPanel({
   // Live position from Zeal. Null whenever we don't know — Zeal not running,
   // pipe stalled, not on Windows — so every consumer has one thing to check.
   const playerPos = usePlayerPosition()
+  // Your arrow, eased between Zeal's samples; playerPos stays the logic's.
+  const arrowPos = useSmoothPosition(playerPos)
   const groupMembers = useGroupPositions()
   const raidMembers = useRaidPositions()
   const targetPos = useTargetPosition()
@@ -513,12 +507,13 @@ export function ZoneMapPanel({
       ...liveRaiders.map((r) => r.label),
     ])
     return {
-      from: { x: here.x, y: here.y, z: here.z },
+      // From the arrow as drawn, so the line stays on it.
+      from: arrowPos ? { x: arrowPos.x, y: arrowPos.y, z: arrowPos.z } : { x: here.x, y: here.y, z: here.z },
       to: { x: liveTarget.x, y: liveTarget.y, z: liveTarget.z },
       label: liveTarget.name,
       onRaider: drawn.has(liveTarget.name),
     }
-  }, [liveTarget, here, groupOn, groupMembers, liveRaiders])
+  }, [liveTarget, here, arrowPos, groupOn, groupMembers, liveRaiders])
   // Who Fit group frames: everyone drawn.
   const fitTo = useMemo(
     () =>
@@ -540,7 +535,7 @@ export function ZoneMapPanel({
   // You, your group and the raid as 3D markers; the camera follows you with
   // Follow me. Your group comes after the raid so it draws over it.
   const markers3D = useMemo((): RaiderMarker[] => {
-    if (!show3D || !playerPos || !zone || playerPos.zone !== zone.zone) return []
+    if (!show3D || !arrowPos || !zone || arrowPos.zone !== zone.zone) return []
     const out: RaiderMarker[] = [...liveRaiders]
     if (groupOn) {
       for (const g of groupMembers) {
@@ -548,11 +543,11 @@ export function ZoneMapPanel({
       }
     }
     out.push({
-      x: playerPos.x, y: playerPos.y, z: playerPos.z, heading: playerPos.heading,
+      x: arrowPos.x, y: arrowPos.y, z: arrowPos.z, heading: arrowPos.heading,
       color: PLAYER_3D, label: 'You', focus: followPlayer, mine: true,
     })
     return out
-  }, [show3D, playerPos, zone, groupMembers, groupOn, liveRaiders, followPlayer])
+  }, [show3D, arrowPos, zone, groupMembers, groupOn, liveRaiders, followPlayer])
 
   // The visible pin layers and your markers, plus whatever search or a click
   // picked out, as 3D pins.
@@ -1165,7 +1160,7 @@ export function ZoneMapPanel({
             external={external}
             mode={mode}
             colorByHeight={heightColor}
-            playerPos={replay ? null : playerPos}
+            playerPos={replay ? null : arrowPos}
             groupMembers={groupOn && !replay ? groupMembers : []}
             followPlayer={followPlayer && !replay}
             raiders={replay ? raiders : liveRaiders}

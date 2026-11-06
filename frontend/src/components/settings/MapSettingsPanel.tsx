@@ -289,6 +289,11 @@ export default function MapSettingsPanel(): React.ReactElement {
           clicks go through to the game. Changes apply to an open overlay right
           away.
         </p>
+        <p className="mb-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+          Which pins show (doors, zone lines, teleports and the rest) and the 3D
+          look (style, walls, objects, cutting away the levels above you) follow
+          the Live Map page: set them there.
+        </p>
         <LiveMapOverlayControls
           prefs={overlayPrefs}
           onChange={setOverlayPrefs}

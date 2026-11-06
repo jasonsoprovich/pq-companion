@@ -1,7 +1,8 @@
 import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react'
-import { useCachedState } from '../../hooks/useCachedState'
 import { useMapStyle } from '../../hooks/useMapStyle'
 import { usePlayerPosition } from '../../hooks/usePlayerPosition'
+import { useSmoothPosition } from '../../hooks/useSmoothPosition'
+import { useMapLayers } from '../../hooks/useMapLayers'
 import { useGroupPositions } from '../../hooks/useGroupPositions'
 import { useRaidPositions } from '../../hooks/useRaidPositions'
 import { useTargetPosition } from '../../hooks/useTargetPosition'
@@ -13,15 +14,9 @@ import { CATEGORY_STYLE, ZoneMap, type RaiderMarker, type ReplayTarget } from '.
 import type { Pin3D } from './ZoneMap3D'
 import { TARGET_RING_COLOR, useSpawnOverlays } from './spawnOverlays'
 import { ErrorBoundary } from '../ErrorBoundary'
-import type { MapPOICategory } from '../../types/map'
 
 // three.js is large; it loads only when the 3D view is picked.
 const ZoneMap3D = lazy(() => import('./ZoneMap3D'))
-
-// Mirrors the map page's default layers and reads the same key.
-const DEFAULT_LAYERS: MapPOICategory[] = [
-  'vendor', 'raid_target', 'zone_line', 'trap', 'locked', 'teleport', 'switch',
-]
 
 // The 3D view's colours for you and your group, as on the map page.
 const PLAYER_3D = '#f8fafc'
@@ -39,12 +34,15 @@ interface LiveMapViewProps {
 // the Live Map page has.
 export default function LiveMapView({ zone: zoneName, prefs }: LiveMapViewProps): React.ReactElement {
   const playerPos = usePlayerPosition()
+  // Your arrow, eased between Zeal's samples; playerPos stays the logic's.
+  const arrowPos = useSmoothPosition(playerPos)
   const groupMembers = useGroupPositions()
   const raidMembers = useRaidPositions()
   const targetPos = useTargetPosition()
   const palette = useDPSClassColors()
   const { poiIgnoreZFade, showGroup } = useMapStyle()
-  const [enabled] = useCachedState<MapPOICategory[]>('maps.layers', DEFAULT_LAYERS)
+  // The Live Map's layer toggles; there's no room for them here.
+  const [enabled] = useMapLayers()
   // Outline only in 2D: at overlay size the detailed layers are illegible.
   const { zone, outline, pois } = useZoneMap(zoneName, 'outline')
   const visible = useMemo(() => new Set(enabled), [enabled])
@@ -57,6 +55,7 @@ export default function LiveMapView({ zone: zoneName, prefs }: LiveMapViewProps)
   const show3D = prefs.view3D && !no3D
 
   const here = playerPos && zone && playerPos.zone === zone.zone ? playerPos : null
+  const arrow = arrowPos && zone && arrowPos.zone === zone.zone ? arrowPos : null
   const groupOn = prefs.group ?? showGroup
   const liveTarget = prefs.target && here && targetPos?.zone === here.zone ? targetPos : null
   const { aggroRings, spawnDots, targetRing } = useSpawnOverlays(zoneName, {
@@ -83,22 +82,22 @@ export default function LiveMapView({ zone: zoneName, prefs }: LiveMapViewProps)
   // The line to your target: onto a raider's own arrow, or to a ring and
   // name for anything else.
   const targetLine = useMemo((): ReplayTarget | null => {
-    if (!liveTarget || !here) return null
+    if (!liveTarget || !arrow) return null
     const drawn = new Set([...(groupOn ? groupMembers.map((g) => g.name) : []), ...raiders.map((r) => r.label)])
     return {
-      from: { x: here.x, y: here.y, z: here.z },
+      from: { x: arrow.x, y: arrow.y, z: arrow.z },
       to: { x: liveTarget.x, y: liveTarget.y, z: liveTarget.z },
       label: liveTarget.name,
       onRaider: drawn.has(liveTarget.name),
     }
-  }, [liveTarget, here, groupOn, groupMembers, raiders])
+  }, [liveTarget, arrow, groupOn, groupMembers, raiders])
   const rings = useMemo(
     () => [...(prefs.aggro !== 'off' ? aggroRings : []), ...(targetRing ? [targetRing] : [])],
     [prefs.aggro, aggroRings, targetRing],
   )
 
   const markers3D = useMemo((): RaiderMarker[] => {
-    if (!show3D || !here) return []
+    if (!show3D || !arrow) return []
     const out = [...raiders]
     if (groupOn) {
       for (const g of groupMembers) {
@@ -106,11 +105,11 @@ export default function LiveMapView({ zone: zoneName, prefs }: LiveMapViewProps)
       }
     }
     out.push({
-      x: here.x, y: here.y, z: here.z, heading: here.heading,
+      x: arrow.x, y: arrow.y, z: arrow.z, heading: arrow.heading,
       color: PLAYER_3D, label: 'You', focus: true, mine: true,
     })
     return out
-  }, [show3D, here, raiders, groupOn, groupMembers])
+  }, [show3D, arrow, raiders, groupOn, groupMembers])
 
   const pins3D = useMemo((): Pin3D[] => {
     if (!show3D) return []
@@ -153,7 +152,7 @@ export default function LiveMapView({ zone: zoneName, prefs }: LiveMapViewProps)
           pois={pois}
           visibleCategories={visible}
           poiIgnoreZFade={poiIgnoreZFade}
-          playerPos={playerPos}
+          playerPos={arrowPos}
           groupMembers={groupOn ? groupMembers : []}
           raiders={raiders}
           replayTarget={targetLine}
