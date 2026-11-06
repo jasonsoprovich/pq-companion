@@ -9,6 +9,13 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.33.1 — 2026-11-06
+
+A fix for deaths going unrecorded on Project Quarm, which kept the new Death Recap and several other death-driven features from working.
+
+### Fixes
+- **Most deaths weren't recognised** — Project Quarm writes "You have been slain by X!", but the app only recognised that line ending in a period, so only the rarer "You died." was caught. Every death now counts: Death Recap and the Combat Log death list record it, your buff timers clear (the server strips them when you die), the Threat Meter resets your hate, the NPC overlay drops the target, and Raid Replay marks your death on the timeline.
+
 ## v0.33.0 — 2026-11-06
 
 The maps go 3D, with the zone's own textures, objects and doors. The Live Map overlay becomes a full live map with your raid and target on it. Raid Replay plays a raid night back on the zone map. Also new: a Pet overlay, an Item Info overlay, death recaps, per-file history for your EQ settings files, and buff timers synced to Zeal's tick counts. Fixes cover finishing-blow hits in parses, bard song timers, phantom timers and Zek fight readings.
