@@ -95,6 +95,12 @@ const HIGHLIGHT = '#ff4fd8'
 const CLOSEST = 25
 const FLY_SPEED = 1 / 8
 
+// CUT_ABOVE is how far over the followed marker the zone is cut away when
+// cutAbove is on: clear of your head and the ceiling just over it, under
+// the floor of the level above. NO_CUT keeps everything.
+const CUT_ABOVE = 20
+const NO_CUT = 1e9
+
 const LABEL_NAMES: Record<Map3DLabels, string> = { off: 'Off', group: 'Group', all: 'All' }
 const LABEL_NEXT: Record<Map3DLabels, Map3DLabels> = { off: 'group', group: 'all', all: 'off' }
 
@@ -168,6 +174,9 @@ interface Scene3D {
   dotsKnown: THREE.Points
   dotsOther: THREE.Points
   targetLine: THREE.Line
+  // cut is the plane the zone's materials are clipped by, keeping what's
+  // under it; NO_CUT when nothing is cut.
+  cut: THREE.Plane
   layers: ZoneLayers | null
   // markerSize is a nominal marker size in world units, for when names
   // show and the target line's dashes. radius is the zone's size.
@@ -231,6 +240,7 @@ export default function ZoneMap3D({
       return
     }
     renderer.setPixelRatio(window.devicePixelRatio)
+    renderer.localClippingEnabled = true
     renderer.setClearColor(0x0b0d12, transparentRef.current ? 0 : 1)
     el.appendChild(renderer.domElement)
     renderer.domElement.style.display = 'block'
@@ -283,6 +293,7 @@ export default function ZoneMap3D({
     const s: Scene3D = {
       renderer, scene: sc, camera, controls, markers: markerGroup, pins: pinGroup,
       ringFill, ringLine, dotsKnown, dotsOther, targetLine,
+      cut: new THREE.Plane(new THREE.Vector3(0, 0, -1), NO_CUT),
       layers: null, markerSize: 4, radius: 1000, hover: null, home: null,
       render: () => {
         if (frame) return
@@ -533,6 +544,7 @@ export default function ZoneMap3D({
     } else {
       lastFocus.current = null
     }
+    cutAbove(s, f, camRef.current, prefsRef.current.cutAbove)
     s.render()
   }, [markers, target, status])
 
@@ -542,13 +554,12 @@ export default function ZoneMap3D({
     const s = scene.current
     if (!s || status !== 'ready') return
     if (cam === 'top') lookDown(s)
-    if (cam === 'chase') {
-      const f = markersRef.current.find((r) => r.focus)
-      if (f) chaseBehind(s, f)
-    }
+    const f = markersRef.current.find((r) => r.focus)
+    if (cam === 'chase' && f) chaseBehind(s, f)
+    cutAbove(s, f, cam, prefs.cutAbove)
     s.controls.update()
     s.render()
-  }, [cam, status])
+  }, [cam, prefs.cutAbove, status])
 
   // Fit: frame every marker, keeping the direction the camera looks from.
   useEffect(() => {
@@ -819,6 +830,18 @@ function ViewOptions({ prefs, onChange }: {
         />
         <span>Dash passive greens</span>
       </label>
+      <label
+        className="flex items-start gap-1.5"
+        title="While the Top or Chase camera follows you, hide everything above head height, so the levels over you don't block the view"
+      >
+        <input
+          type="checkbox"
+          className="mt-0.5"
+          checked={prefs.cutAbove}
+          onChange={(e) => onChange({ cutAbove: e.target.checked })}
+        />
+        <span>Cut away levels above you</span>
+      </label>
     </div>
   )
 }
@@ -990,6 +1013,7 @@ function buildMaterials(s: Scene3D, prefs: Map3DPrefs): void {
       })
     }
     m.userData = { opacity: m.opacity, blends: m.transparent }
+    m.clippingPlanes = [s.cut]
     L.materials.push(m)
     return m
   }
@@ -1039,6 +1063,14 @@ function lookDown(s: Scene3D): void {
 
 // CHASE_PITCH is how far above the follow's back Chase sits.
 const CHASE_PITCH = THREE.MathUtils.degToRad(35)
+
+// cutAbove clips the zone a little over the marker the camera follows,
+// while Top or Chase does, so the levels overhead in a stacked zone don't
+// hide the one you're on. A free camera is for looking round the whole
+// zone, hills above you included, so it never cuts.
+function cutAbove(s: Scene3D, f: RaiderMarker | undefined, cam: Camera3D, on: boolean): void {
+  s.cut.constant = on && f && cam !== 'free' ? f.z + CUT_ABOVE : NO_CUT
+}
 
 // chaseBehind orbits the camera to sit behind marker r, looking the way it
 // faces, keeping the current distance. EQ's heading turns counter-clockwise
@@ -1141,8 +1173,9 @@ function matFor(color: string, opacity = 1): THREE.MeshBasicMaterial {
   return m
 }
 
-// The 2D map's raider arrow, pointing north, and a slightly larger copy
-// behind it as its dark casing.
+// The 2D map's raider arrow, pointing north, and a larger copy behind it
+// as its dark casing: wide and solid enough to stand out on the light
+// floors of the Height and Plain styles as well as on textures.
 const CHEVRON: [number, number][] = [[0, 6], [4, -5], [0, -2.5], [-4, -5]]
 
 function polygon(pts: [number, number][], grow: number): THREE.BufferGeometry {
@@ -1162,7 +1195,7 @@ function markerShapes(): NonNullable<typeof shapes> {
   if (!shapes) {
     shapes = {
       chevron: polygon(CHEVRON, 1),
-      chevronCase: polygon(CHEVRON, 1.35),
+      chevronCase: polygon(CHEVRON, 1.6),
       cross: cross(1),
       crossCase: cross(2),
       ring: new THREE.RingGeometry(9.25, 10.75, 32),
@@ -1195,7 +1228,7 @@ function updateMarkers(s: Scene3D, markers: RaiderMarker[]): void {
     }
     const [casing, shape, ringCase, ring] = m.children as THREE.Mesh[]
     casing.geometry = r.dead ? sh.crossCase : sh.chevronCase
-    casing.material = matFor('#000000', 0.7)
+    casing.material = matFor('#000000', r.dead ? 0.7 : 1)
     shape.geometry = r.dead ? sh.cross : sh.chevron
     shape.material = matFor(r.color, r.dead ? 0.7 : 1)
     ringCase.geometry = sh.ringCase

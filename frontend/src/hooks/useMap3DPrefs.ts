@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 // Map3DStyle is how the 3D view colours the zone: the client's own
 // textures, a height ramp, or plain floors and walls.
@@ -26,6 +26,10 @@ export interface Map3DPrefs {
   // sight, both as the 2D map does.
   seeInvisEyes: boolean
   dashFaint: boolean
+  // cutAbove hides everything more than a head above you while the Top or
+  // Chase camera follows you, so the floors over you in a stacked zone
+  // (Bastion of Thunder, Plane of Knowledge) don't block the view down.
+  cutAbove: boolean
 }
 
 const KEY = 'map3d.prefs'
@@ -34,6 +38,7 @@ const DEFAULTS: Map3DPrefs = {
   labels: 'group',
   seeInvisEyes: true,
   dashFaint: true,
+  cutAbove: true,
 }
 const STYLES: readonly Map3DStyle[] = ['textured', 'height', 'plain']
 const LABELS: readonly Map3DLabels[] = ['off', 'group', 'all']
@@ -52,26 +57,41 @@ function load(): Map3DPrefs {
       labels: LABELS.includes(p.labels as Map3DLabels) ? (p.labels as Map3DLabels) : DEFAULTS.labels,
       seeInvisEyes: typeof p.seeInvisEyes === 'boolean' ? p.seeInvisEyes : DEFAULTS.seeInvisEyes,
       dashFaint: typeof p.dashFaint === 'boolean' ? p.dashFaint : DEFAULTS.dashFaint,
+      cutAbove: typeof p.cutAbove === 'boolean' ? p.cutAbove : DEFAULTS.cutAbove,
     }
   } catch {
     return DEFAULTS
   }
 }
 
+// Same-window listeners keep every mounted 3D view in step; the storage
+// event carries a change to the map overlay's window, which has no options
+// of its own and so follows the Live Map's.
+const listeners = new Set<(p: Map3DPrefs) => void>()
+
 // useMap3DPrefs is the 3D map's look, shared by every 3D surface (Maps,
-// Live Map, Raid Replay) and kept across restarts.
+// Live Map, Raid Replay, the map overlay) and kept across restarts.
 export function useMap3DPrefs(): [Map3DPrefs, (patch: Partial<Map3DPrefs>) => void] {
   const [prefs, setPrefs] = useState<Map3DPrefs>(load)
+  useEffect(() => {
+    listeners.add(setPrefs)
+    const onStorage = (e: StorageEvent): void => {
+      if (e.key === KEY) setPrefs(load())
+    }
+    window.addEventListener('storage', onStorage)
+    return () => {
+      listeners.delete(setPrefs)
+      window.removeEventListener('storage', onStorage)
+    }
+  }, [])
   const update = useCallback((patch: Partial<Map3DPrefs>) => {
-    setPrefs((prev) => {
-      const next = { ...prev, ...patch }
-      try {
-        localStorage.setItem(KEY, JSON.stringify(next))
-      } catch {
-        /* noop */
-      }
-      return next
-    })
+    const next = { ...load(), ...patch }
+    try {
+      localStorage.setItem(KEY, JSON.stringify(next))
+    } catch {
+      /* noop */
+    }
+    listeners.forEach((fn) => fn(next))
   }, [])
   return [prefs, update]
 }
