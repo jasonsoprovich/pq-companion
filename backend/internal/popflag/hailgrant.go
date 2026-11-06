@@ -5,8 +5,9 @@ import (
 	"time"
 )
 
-// Hail-grant detection: the always-up PoP hail NPCs annotated with
-// GrantLines all set their qglobal in the same Lua shape —
+// Hail-grant detection: the PoP hail NPCs annotated with GrantLines — the
+// always-up ones and the PoTactics Planar Projections that spawn on a Zek
+// kill — all set their qglobal in the same Lua shape —
 //
 //	e.other:Message(0, "<NPC line>")
 //	eq.set_global("<qglobal>", "<value>", 5, "F")
@@ -20,6 +21,8 @@ import (
 // while a groupmate does the step never matches on its own. Each GrantLine
 // prints only in qglobal states at or above the step's own value, so a repeat
 // hail (which re-prints both lines) can never mark anything that isn't done.
+// The Zek projections print theirs only in the state they grant from, so a
+// repeat hail prints nothing at all.
 //
 // NOT every progression step prints the flag line, which is why grant lines
 // are opt-in per step rather than inferred. Audited against SecretsOTheP/quests

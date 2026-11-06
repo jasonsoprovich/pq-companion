@@ -102,9 +102,11 @@ func TestGrantLinesDisjointFromReadings(t *testing.T) {
 	}
 }
 
-// Every annotated step must be grantable: an always-up required hail with a
-// scalar qglobal (ApplyHailGrant floors it) and a reminder zone + NPC. Grant
-// lines must also be unambiguous across the dataset.
+// Every annotated step must be grantable: a required hail with a scalar
+// qglobal (ApplyHailGrant floors it). Always-up hails also need a reminder
+// zone + NPC; timed hails (a projection that spawns on the kill) must not
+// carry one, or the zone-in reminder would point at an NPC that isn't up.
+// Grant lines must also be unambiguous across the dataset.
 func TestGrantDatasetInvariants(t *testing.T) {
 	seen := map[string]string{}
 	n := 0
@@ -116,14 +118,15 @@ func TestGrantDatasetInvariants(t *testing.T) {
 			continue
 		}
 		n++
-		if f.StepKind != "hail" || f.Optional {
+		if (f.StepKind != "hail" && f.StepKind != "timed_hail") || f.Optional {
 			t.Errorf("%s: grant lines on a non-required or non-hail step (kind=%q optional=%v)", f.ID, f.StepKind, f.Optional)
 		}
 		if f.Qglobal == "" || f.BitPosition > 0 || atoi(f.QglobalValue) < 1 {
 			t.Errorf("%s: needs a scalar qglobal value, got %q=%q bit=%d", f.ID, f.Qglobal, f.QglobalValue, f.BitPosition)
 		}
-		if f.HailZone == "" || f.HailNPC == "" {
-			t.Errorf("%s: missing hail_zone/hail_npc", f.ID)
+		timed := f.StepKind == "timed_hail"
+		if hasHail := f.HailZone != "" && f.HailNPC != ""; hasHail == timed {
+			t.Errorf("%s (kind=%q): hail_zone=%q hail_npc=%q", f.ID, f.StepKind, f.HailZone, f.HailNPC)
 		}
 		for _, gl := range f.GrantLines {
 			if prev, dup := seen[collapseSpaces(gl)]; dup {
@@ -135,8 +138,8 @@ func TestGrantDatasetInvariants(t *testing.T) {
 			}
 		}
 	}
-	if n != 14 {
-		t.Errorf("annotated grant steps = %d, want 14", n)
+	if n != 17 {
+		t.Errorf("annotated grant steps = %d, want 17", n)
 	}
 }
 
@@ -358,5 +361,68 @@ func TestPopFlagsReportRetractionScopedToReportedQglobals(t *testing.T) {
 	}
 	if !rows["ponb_hedge"].Done {
 		t.Error("ponb_hedge should be done at thelin=2")
+	}
+}
+
+// The PoTactics projections' grant lines (copied from potactics/214322-214324
+// Lua) pair like the always-up hails, and the Vallon/Tallon branches merge
+// at zeks=5 in either order — a plain floor would turn Vallon's 3 into
+// Tallon's 4 and un-mark Vallon.
+func TestConsumerZekProjectionGrants(t *testing.T) {
+	const (
+		flagLine = "You have received a character flag!"
+		vallon   = "You realize that the image is a projection of Maelin Starpyre's thoughts.  His thoughts enter into your own.  'The pack of notes you now possess from Vallon, bring them to me.  I would like to more closely study them'"
+		tallon   = "You realize that the image is a projection of Maelin Starpyre's thoughts.  His thoughts enter into your own.  'The pack of notes you now possess from Tallon, bring them to me.  I would like to more closely study them'"
+		rallos   = "Maelin Starpyre's thoughts enter into your own.  'The singed parchment of Rallos lies in his dead hand.  Bring it back to me I will translate them using the Cipher of Druzzil.'"
+	)
+	for _, order := range [][2]string{{vallon, tallon}, {tallon, vallon}} {
+		s := openTempStore(t)
+		const char = "Osui"
+		c := NewConsumer(s, func() string { return char })
+		ts := time.Unix(8000, 0)
+		for _, npc := range order {
+			c.HandleEvent("zone", "Drunder, the Fortress of Zek")
+			c.HandleLine(ts, npc)
+			c.HandleLine(ts, flagLine)
+			ts = ts.Add(time.Minute)
+		}
+		snap, err := s.GetSnapshot(char)
+		if err != nil || snap == nil {
+			t.Fatalf("GetSnapshot = %v, %v", snap, err)
+		}
+		if got := snap.Qglobals["zeks"]; got != "5" {
+			t.Errorf("zeks = %q after both projections, want 5", got)
+		}
+		rows := doneByID(t, s, char)
+		for _, id := range []string{"potac_vallon", "potac_tallon"} {
+			if !rows[id].Done {
+				t.Errorf("%s not done after both projections", id)
+			}
+		}
+	}
+
+	if id, ok := MatchGrantLine(rallos); !ok || id != "potac_rallos" {
+		t.Errorf("MatchGrantLine(rallos) = %q,%v, want potac_rallos", id, ok)
+	}
+}
+
+func TestGrantedValueZekBranches(t *testing.T) {
+	cases := []struct {
+		flag             string
+		cur, floor, want int
+	}{
+		{"potac_vallon", 2, 3, 3},
+		{"potac_vallon", 4, 3, 5},
+		{"potac_vallon", 6, 3, 6},
+		{"potac_tallon", 2, 4, 4},
+		{"potac_tallon", 3, 4, 5},
+		{"potac_tallon", 5, 4, 5},
+		{"potac_rallos", 6, 7, 7},
+		{"pok_librarian", 2, 1, 2},
+	}
+	for _, tc := range cases {
+		if got := grantedValue(tc.flag, tc.cur, tc.floor); got != tc.want {
+			t.Errorf("grantedValue(%s, %d, %d) = %d, want %d", tc.flag, tc.cur, tc.floor, got, tc.want)
+		}
 	}
 }

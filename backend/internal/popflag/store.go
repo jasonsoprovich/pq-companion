@@ -479,6 +479,28 @@ func (s *Store) ApplyPopFlagsReport(character string, report PopFlagsReport, raw
 	return done, nil
 }
 
+// grantedValue is the qglobal value after a grant of floor onto cur. Most
+// steps are a plain floor, but zeks runs Vallon (3) and Tallon (4) as parallel
+// branches that merge at 5 — mirroring the PoTactics projections' Lua, the
+// second branch's grant on top of the first lands on 5, and neither ever
+// lowers a value at or past the merge.
+func grantedValue(flagID string, cur, floor int) int {
+	switch flagID {
+	case "potac_vallon":
+		if cur == 4 {
+			return 5
+		}
+	case "potac_tallon":
+		if cur == 3 {
+			return 5
+		}
+	}
+	if cur < floor {
+		return floor
+	}
+	return cur
+}
+
 // ApplyHailGrant records a confirmed in-game hail grant (see hailgrant.go) for
 // flagID: the NPC's Lua set the flag's qglobal to at least its QglobalValue,
 // so that floor is merged into the stored qglobal snapshot exactly like a
@@ -524,8 +546,8 @@ func (s *Store) ApplyHailGrant(character, flagID string, observedAt time.Time) (
 		}
 		rawText, takenAt = prev.RawText, prev.TakenAt
 	}
-	if atoi(q[f.Qglobal]) < floor {
-		q[f.Qglobal] = strconv.Itoa(floor)
+	if v := grantedValue(f.ID, atoi(q[f.Qglobal]), floor); v != atoi(q[f.Qglobal]) {
+		q[f.Qglobal] = strconv.Itoa(v)
 	}
 	qjson, err := json.Marshal(q)
 	if err != nil {

@@ -561,7 +561,8 @@
     "step_kind": "timed_hail",
     "qglobal": "zeks",
     "qglobal_value": "3",
-    "events": [{ "kind": "kill", "match": "Vallon Zek" }]
+    "events": [{ "kind": "kill", "match": "Vallon Zek" }],
+    "grant_lines": ["You realize that the image is a projection of Maelin Starpyre's thoughts.  His thoughts enter into your own.  'The pack of notes you now possess from Vallon"]
   },
   {
     "id": "potac_tallon",
@@ -574,7 +575,8 @@
     "step_kind": "timed_hail",
     "qglobal": "zeks",
     "qglobal_value": "4",
-    "events": [{ "kind": "kill", "match": "Tallon Zek" }]
+    "events": [{ "kind": "kill", "match": "Tallon Zek" }],
+    "grant_lines": ["You realize that the image is a projection of Maelin Starpyre's thoughts.  His thoughts enter into your own.  'The pack of notes you now possess from Tallon"]
   },
   {
     "id": "potac_rallos",
@@ -588,7 +590,8 @@
     "qglobal": "zeks",
     "qglobal_value": "7",
     "counter": true,
-    "events": [{ "kind": "kill", "match": "Rallos Zek the Warlord" }]
+    "events": [{ "kind": "kill", "match": "Rallos Zek the Warlord" }],
+    "grant_lines": ["Maelin Starpyre's thoughts enter into your own.  'The singed parchment of Rallos lies in his dead hand."]
   },
   {
     "id": "bot_torden_key",
