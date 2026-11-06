@@ -4,10 +4,10 @@
  *
  * Deliberately leaner than the Live Map tab. An overlay sits on top of the game
  * while you play, so it answers one question — "where am I and what is near me"
- * — and everything that needs reading or typing (POI search, the inspector, the
- * layer toggles, mode switching) stays in the main window where there is room
- * for it. Layer choices made there are honoured here, since they share the same
- * cached preference.
+ * — and everything that needs reading or typing (POI search, the inspector)
+ * stays in the main window where there is room for it. What it draws (2D or
+ * 3D, group, raid, rings, spawns, names) is set from a row of toggles shown
+ * while unlocked, or from Settings → Maps once it's locked.
  */
 import React from 'react'
 import { Navigation } from 'lucide-react'
@@ -15,22 +15,12 @@ import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
-import { useCachedState } from '../hooks/useCachedState'
 import OverlayLockButton from '../components/OverlayLockButton'
 import { useLiveZone } from '../hooks/useLiveZone'
 import { useMapStyle } from '../hooks/useMapStyle'
-import { usePlayerPosition } from '../hooks/usePlayerPosition'
-import { useGroupPositions } from '../hooks/useGroupPositions'
-import { useZoneMap } from '../hooks/useZoneMap'
-import { ZoneMap } from '../components/maps/ZoneMap'
-import { ErrorBoundary } from '../components/ErrorBoundary'
-import type { MapPOICategory } from '../types/map'
-
-// Mirrors the main panel's default set so the overlay does not look like a
-// different app, and reads the same key so a change in either follows.
-const DEFAULT_LAYERS: MapPOICategory[] = [
-  'vendor', 'raid_target', 'zone_line', 'trap', 'locked', 'teleport', 'switch',
-]
+import { useLiveMapOverlayPrefs } from '../hooks/useLiveMapOverlayPrefs'
+import LiveMapView from '../components/maps/LiveMapView'
+import LiveMapOverlayControls from '../components/maps/LiveMapOverlayControls'
 
 export default function LiveMapWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity('liveMap')
@@ -40,17 +30,8 @@ export default function LiveMapWindowPage(): React.ReactElement {
   const onDragMouseDown = useWindowDrag()
 
   const { zone: zoneName, live } = useLiveZone()
-  const playerPos = usePlayerPosition()
-  const groupMembers = useGroupPositions()
-  const { poiIgnoreZFade, showGroup } = useMapStyle()
-  const [enabled] = useCachedState<MapPOICategory[]>('maps.layers', DEFAULT_LAYERS)
-  // Outline mode only. At overlay size the detailed layers are illegible, and
-  // this is the surface where legibility at a glance matters most.
-  const { zone, outline, pois } = useZoneMap(zoneName, 'outline')
-  const visible = React.useMemo(() => new Set(enabled), [enabled])
-  // Not cached: an overlay should come back following you, whatever you last
-  // dragged it to. Panning is for a look around, not a setting.
-  const [follow, setFollow] = React.useState(true)
+  const { showGroup } = useMapStyle()
+  const [prefs, setPrefs] = useLiveMapOverlayPrefs()
 
   return (
     <div
@@ -119,33 +100,29 @@ export default function LiveMapWindowPage(): React.ReactElement {
         </div>
       </div>
 
+      {/* The toggles, while unlocked, fading with the header. They keep
+          their row so the map doesn't jump on every hover, and sit off the
+          map so they never cover its follow button. Locked, clicks go
+          through to the game, so the same toggles are in Settings → Maps. */}
+      {!locked && (
+        <div
+          className="no-drag"
+          style={{
+            padding: '4px 6px',
+            borderBottom: '1px solid rgba(255,255,255,0.08)',
+            flexShrink: 0,
+            opacity: chrome ? 1 : 0,
+            pointerEvents: chrome ? 'auto' : 'none',
+            transition: 'opacity 0.4s ease',
+          }}
+        >
+          <LiveMapOverlayControls prefs={prefs} onChange={setPrefs} groupDefault={showGroup} />
+        </div>
+      )}
+
       <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
-        {zone ? (
-          <ErrorBoundary label="Live map">
-            <ZoneMap
-              zone={zone}
-              geometry={null}
-              outline={outline}
-              mode="outline"
-              pois={pois}
-              visibleCategories={visible}
-              poiIgnoreZFade={poiIgnoreZFade}
-              playerPos={playerPos}
-              groupMembers={showGroup ? groupMembers : []}
-              // Follow starts on — an overlay you have to pan by hand every time
-              // you move is worse than no overlay — but it is not forced. The
-              // in-game map pans, so this one has to as well; dragging releases
-              // follow and the reticle button puts it back.
-              followPlayer={follow}
-              onUserPan={() => setFollow(false)}
-              onFollowRequest={() => setFollow(true)}
-              followDepth
-              height="fill"
-              showLabels={false}
-              chromeless
-              transparent
-            />
-          </ErrorBoundary>
+        {zoneName ? (
+          <LiveMapView zone={zoneName} prefs={prefs} />
         ) : (
           <div
             style={{

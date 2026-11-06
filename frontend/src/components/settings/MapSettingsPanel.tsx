@@ -3,6 +3,8 @@ import { Check, Map as MapIcon, RefreshCw } from 'lucide-react'
 import { getConfig, getExternalMapStatus, saveConfigChanges } from '../../services/api'
 import type { Config } from '../../types/config'
 import type { ExternalMapStatus, MapRenderMode } from '../../types/map'
+import { useLiveMapOverlayPrefs } from '../../hooks/useLiveMapOverlayPrefs'
+import LiveMapOverlayControls from '../maps/LiveMapOverlayControls'
 
 // The three drawings a zone can be rendered from, with what each is actually
 // good for — the tradeoffs are not guessable from the names.
@@ -33,6 +35,7 @@ export default function MapSettingsPanel(): React.ReactElement {
   const [style, setStyle] = useState<MapRenderMode>('detailed')
   const [poiIgnoreZFade, setPoiIgnoreZFade] = useState(false)
   const [showGroup, setShowGroup] = useState(true)
+  const [overlayPrefs, setOverlayPrefs] = useLiveMapOverlayPrefs()
   const [pack, setPack] = useState<ExternalMapStatus | null>(null)
   const [saved, setSaved] = useState(false)
   const [checking, setChecking] = useState(false)
@@ -272,6 +275,27 @@ export default function MapSettingsPanel(): React.ReactElement {
           />
         </div>
       </label>
+
+      <h3
+        className="mb-2 text-xs font-semibold uppercase tracking-widest"
+        style={{ color: 'var(--color-muted)' }}
+      >
+        Map overlay
+      </h3>
+      <div className="mb-6 max-w-3xl">
+        <p className="mb-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+          What the Live Map overlay draws. The same toggles show along the top of
+          the overlay while it's unlocked; set them here once it's locked and
+          clicks go through to the game. Changes apply to an open overlay right
+          away.
+        </p>
+        <LiveMapOverlayControls
+          prefs={overlayPrefs}
+          onChange={setOverlayPrefs}
+          groupDefault={showGroup}
+          full
+        />
+      </div>
 
       <div className="flex items-center gap-2">
         <h3

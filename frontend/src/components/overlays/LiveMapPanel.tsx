@@ -1,15 +1,11 @@
-import React, { useMemo, useState } from 'react'
+import React from 'react'
 import { ExternalLink, Navigation } from 'lucide-react'
 import OverlayWindow from '../OverlayWindow'
-import { useCachedState } from '../../hooks/useCachedState'
 import { useLiveZone } from '../../hooks/useLiveZone'
 import { useMapStyle } from '../../hooks/useMapStyle'
-import { usePlayerPosition } from '../../hooks/usePlayerPosition'
-import { useGroupPositions } from '../../hooks/useGroupPositions'
-import { useZoneMap } from '../../hooks/useZoneMap'
-import { ZoneMap } from '../maps/ZoneMap'
-import { ErrorBoundary } from '../ErrorBoundary'
-import type { MapPOICategory } from '../../types/map'
+import { useLiveMapOverlayPrefs } from '../../hooks/useLiveMapOverlayPrefs'
+import LiveMapView from '../maps/LiveMapView'
+import LiveMapOverlayControls from '../maps/LiveMapOverlayControls'
 
 interface LiveMapPanelProps {
   defaultX?: number
@@ -20,16 +16,10 @@ interface LiveMapPanelProps {
   onLayoutChange?: (b: { x: number; y: number; width: number; height: number }) => void
 }
 
-// Same default set as the full map panel, read from the same key, so layer
-// choices follow between surfaces instead of each one having its own idea.
-const DEFAULT_LAYERS: MapPOICategory[] = [
-  'vendor', 'raid_target', 'zone_line', 'trap', 'locked', 'teleport', 'switch',
-]
-
 // LiveMapPanel — dashboard-docked twin of the Live Map overlay window.
 //
 // Kept minimal on purpose, matching the popout: follow and auto-depth on, no
-// search, no inspector, no mode switch. Anything that needs reading or typing
+// search, no inspector. It shares the popout's toggles and settings. Anything that needs reading or typing
 // belongs on the Live Map tab, which has room for it. This exists so the overlay
 // appears in "Manage overlays" with working Dash/Pop/Move/Reset like every other
 // one (feedback_overlay_dashboard_pattern) — and because the dashboard is where
@@ -43,15 +33,8 @@ export default function LiveMapPanel({
   onLayoutChange,
 }: LiveMapPanelProps): React.ReactElement {
   const { zone: zoneName, live } = useLiveZone()
-  const playerPos = usePlayerPosition()
-  const groupMembers = useGroupPositions()
-  const { poiIgnoreZFade, showGroup } = useMapStyle()
-  const [enabled] = useCachedState<MapPOICategory[]>('maps.layers', DEFAULT_LAYERS)
-  const { zone, outline, pois } = useZoneMap(zoneName, 'outline')
-  const visible = useMemo(() => new Set(enabled), [enabled])
-  // Same as the popped-out window: follows by default, pans when you drag it,
-  // and the reticle puts it back.
-  const [follow, setFollow] = useState(true)
+  const { showGroup } = useMapStyle()
+  const [prefs, setPrefs] = useLiveMapOverlayPrefs()
 
   return (
     <OverlayWindow
@@ -87,28 +70,15 @@ export default function LiveMapPanel({
       snapGridSize={snapGridSize}
       onLayoutChange={onLayoutChange}
     >
-      {zone ? (
-        <ErrorBoundary label="Live map">
-          <ZoneMap
-            zone={zone}
-            geometry={null}
-            outline={outline}
-            mode="outline"
-            pois={pois}
-            visibleCategories={visible}
-            poiIgnoreZFade={poiIgnoreZFade}
-            playerPos={playerPos}
-            groupMembers={showGroup ? groupMembers : []}
-            followPlayer={follow}
-            onUserPan={() => setFollow(false)}
-            onFollowRequest={() => setFollow(true)}
-            followDepth
-            height="fill"
-            showLabels={false}
-            chromeless
-            transparent
-          />
-        </ErrorBoundary>
+      {zoneName ? (
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+          <div style={{ padding: '4px 6px', borderBottom: '1px solid rgba(255,255,255,0.08)', flexShrink: 0 }}>
+            <LiveMapOverlayControls prefs={prefs} onChange={setPrefs} groupDefault={showGroup} />
+          </div>
+          <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+            <LiveMapView zone={zoneName} prefs={prefs} />
+          </div>
+        </div>
       ) : (
         <div
           style={{

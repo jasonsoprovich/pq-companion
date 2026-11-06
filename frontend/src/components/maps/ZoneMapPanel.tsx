@@ -9,7 +9,7 @@ import { useDPSClassColors } from '../../hooks/useDPSClassColors'
 import { classColor, groupColor } from '../../lib/raidColors'
 import { useMapStyle } from '../../hooks/useMapStyle'
 import { useZoneMap } from '../../hooks/useZoneMap'
-import { CATEGORY_STYLE, ZoneMap, type AggroRing, type MapHighlight, type RaiderMarker, type ReplayTarget, type SpawnDot } from './ZoneMap'
+import { CATEGORY_STYLE, ZoneMap, type MapHighlight, type RaiderMarker, type ReplayTarget } from './ZoneMap'
 import type { Pin3D } from './ZoneMap3D'
 
 // three.js is large; it loads only when the 3D view is opened.
@@ -19,12 +19,9 @@ const ZoneMap3D = lazy(() => import('./ZoneMap3D'))
 // groupmates.
 const PLAYER_3D = '#f8fafc'
 const GROUP_3D = '#7dd3fc'
-import { useWebSocket } from '../../hooks/useWebSocket'
-import { WSEvent } from '../../lib/wsEvents'
-import type { RespawnState } from '../../types/respawn'
 import { useActiveCharacterLevel } from '../../hooks/useActiveCharacterLevel'
-import { CON_HEX, levelCon } from '../../lib/conColor'
 import { ErrorBoundary } from '../ErrorBoundary'
+import { AGGRO_SCOPES, DotLegend, useSpawnOverlays, type AggroScope } from './spawnOverlays'
 import {
   mapMarkerCommand,
   mapRestoreZoneCommand,
@@ -36,13 +33,11 @@ import {
   deleteMapAnnotation,
   getMapAnnotationExport,
   getZoneNPCLocations,
-  getRespawnState,
-  getZoneSpawnPoints,
   listMapAnnotations,
   updateMapAnnotation,
 } from '../../services/api'
 import type {
-  MapPOI, MapPOICategory, MapRenderMode, UserAnnotation, ZoneNPCLocation, ZoneSpawnPoint,
+  MapPOI, MapPOICategory, MapRenderMode, UserAnnotation, ZoneNPCLocation,
 } from '../../types/map'
 
 // USER_SOURCE marks a pin as the user's own, so the inspector can offer edit and
@@ -192,91 +187,6 @@ export interface ZoneMapPanelProps {
   replayTarget?: ReplayTarget | null
 }
 
-// Rings drawn when the active character's level is unknown.
-const UNKNOWN_CON_HEX = '#94a3b8'
-
-// spawnRing turns a spawn point into its aggro ring, judged by the most
-// dangerous NPC it can roll: the widest radius, the highest level, and any
-// see-invis.
-//
-// faint follows the server's aggro check (EQMacEmu Mob::CheckWillAggro): an
-// NPC below level 18 that cons green to you won't attack on sight unless it
-// is undead or flagged aggro_pc. Sitting overrides that, which the map can't
-// know, so these are dimmed rather than hidden.
-function spawnRing(p: ZoneSpawnPoint, playerLevel: number | null): AggroRing {
-  let radius = 0
-  let top = 0
-  let seeInvis = false
-  let faint = playerLevel != null
-  for (const n of p.npcs) {
-    const lvl = Math.max(n.level, n.max_level ?? 0)
-    radius = Math.max(radius, n.aggro_radius)
-    top = Math.max(top, lvl)
-    if (n.see_invis > 0 || n.see_invis_undead > 0) seeInvis = true
-    const passive =
-      playerLevel != null && lvl < 18 && !n.undead && !n.aggro_pc &&
-      levelCon(playerLevel, lvl) === 'green'
-    if (!passive) faint = false
-  }
-  return {
-    x: p.x,
-    y: p.y,
-    z: p.z,
-    radius,
-    color: playerLevel != null ? CON_HEX[levelCon(playerLevel, top)] : UNKNOWN_CON_HEX,
-    faint,
-    seeInvis,
-  }
-}
-
-// Respawn dot colours: on cooldown (dim, it's dead), up within
-// RESPAWN_SOON_SECS, popped, and no kill seen this session.
-const DOT_COOLDOWN = '#4b5563'
-const DOT_SOON = '#f59e0b'
-const DOT_UP = '#22c55e'
-const DOT_UNKNOWN = '#94a3b8'
-const RESPAWN_SOON_SECS = 120
-
-// AggroScope is which aggro rings are drawn: none, those within the chosen
-// distance of you (fading out toward it), or every spawn point's.
-type AggroScope = 'off' | 'near' | 'all'
-const AGGRO_SCOPES: [AggroScope, string, string][] = [
-  ['off', 'Off', 'No aggro rings'],
-  ['near', 'Near', 'Only rings near you, fading out with distance'],
-  ['all', 'All', 'Every spawn point’s ring'],
-]
-
-// spawnNames is who can spawn at a point, for the 3D map's hover.
-function spawnNames(p: ZoneSpawnPoint): string {
-  const names = [...new Set(p.npcs.map((n) => n.name.replace(/_/g, ' ')))]
-  return names.length > 3 ? `${names.slice(0, 3).join(', ')} +${names.length - 3}` : names.join(', ')
-}
-
-function fmtRemaining(secs: number): string {
-  const s = Math.ceil(secs)
-  if (s >= 3600) return `${Math.floor(s / 3600)}h${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}`
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
-}
-
-function DotLegend(): React.ReactElement {
-  const rows: [string, string][] = [
-    [DOT_COOLDOWN, 'Dead, on cooldown'],
-    [DOT_SOON, 'Up within 2 min'],
-    [DOT_UP, 'Popped'],
-    [DOT_UNKNOWN, 'No kill seen'],
-  ]
-  return (
-    <div className="mt-1 space-y-0.5 text-[9px]" style={{ color: 'var(--color-muted)' }}>
-      {rows.map(([c, label]) => (
-        <div key={label} className="flex items-center gap-1">
-          <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ backgroundColor: c }} />
-          {label}
-        </div>
-      ))}
-    </div>
-  )
-}
-
 export function ZoneMapPanel({
   zoneShortName,
   height = 'fill',
@@ -413,77 +323,12 @@ export function ZoneMapPanel({
   const [dotsOn, setDotsOn] = useCachedState('maps.respawnDots', false)
   const [hideKilled, setHideKilled] = useCachedState('maps.hideKilled', false)
   const playerLevel = useActiveCharacterLevel()
-  const [spawnPoints, setSpawnPoints] = useState<ZoneSpawnPoint[]>([])
-  const wantSpawns = aggroOn || dotsOn
-  useEffect(() => {
-    if (!wantSpawns || !zoneShortName) {
-      setSpawnPoints([])
-      return
-    }
-    let cancelled = false
-    getZoneSpawnPoints(zoneShortName)
-      .then((r) => { if (!cancelled) setSpawnPoints(r) })
-      .catch(() => { if (!cancelled) setSpawnPoints([]) })
-    return () => { cancelled = true }
-  }, [wantSpawns, zoneShortName])
-  const [respawns, setRespawns] = useState<RespawnState | null>(null)
-  const wsReady = useWebSocket((msg) => {
-    // Rings want it too: a spawn that's dead has no ring.
-    if (wantSpawns && msg.type === WSEvent.OverlayRespawns) setRespawns(msg.data as RespawnState)
-  })
-  useEffect(() => {
-    if (!wantSpawns || wsReady !== 'open') return
-    getRespawnState().then(setRespawns).catch(() => {})
-  }, [wantSpawns, wsReady])
-  // Seconds until each spawn point's mob is back, by spawn id; 0 or less
-  // means up.
-  const respawnLeft = useMemo(() => {
-    const bySpawn = new Map<number, number>()
-    for (const t of respawns?.timers ?? []) {
-      if (t.zone !== zoneShortName || !t.spawn_id || t.other_copy) continue
-      const prev = bySpawn.get(t.spawn_id)
-      if (prev === undefined || t.remaining_seconds < prev) bySpawn.set(t.spawn_id, t.remaining_seconds)
-    }
-    return bySpawn
-  }, [respawns, zoneShortName])
-  const spawnDots = useMemo((): SpawnDot[] => {
-    const out: SpawnDot[] = []
-    for (const p of spawnPoints) {
-      const left = respawnLeft.get(p.spawn_id)
-      const name = spawnNames(p)
-      if (left === undefined) {
-        out.push({ x: p.x, y: p.y, z: p.z, color: DOT_UNKNOWN, known: false, name })
-        continue
-      }
-      if (hideKilled && left > RESPAWN_SOON_SECS) continue
-      const color = left <= 0 ? DOT_UP : left <= RESPAWN_SOON_SECS ? DOT_SOON : DOT_COOLDOWN
-      out.push({
-        x: p.x, y: p.y, z: p.z, color, known: true, name,
-        label: left > 0 ? fmtRemaining(left) : 'up',
-      })
-    }
-    return out
-  }, [spawnPoints, respawnLeft, hideKilled])
-  // Rings leave out spawns that are dead, and under Near me the ones beyond
-  // the chosen distance; the rest fade out toward it. Without a position
-  // here, Near me shows them all.
+  // Rings leave out spawns that are dead, and under Near the ones beyond the
+  // chosen distance. Without a position here, Near shows them all.
   const here = playerPos && zone && playerPos.zone === zone.zone ? playerPos : null
-  const aggroRings = useMemo((): AggroRing[] => {
-    const out: AggroRing[] = []
-    for (const p of spawnPoints) {
-      const left = respawnLeft.get(p.spawn_id)
-      if (left !== undefined && left > 0) continue
-      const ring = spawnRing(p, playerLevel)
-      if (aggroScope === 'near' && here) {
-        // Height counts double, so floors above and below drop out sooner.
-        const d = Math.hypot(p.x - here.x, p.y - here.y, (p.z - here.z) * 2)
-        if (d > aggroNear) continue
-        ring.alpha = 1 - 0.75 * (d / aggroNear) ** 2
-      }
-      out.push(ring)
-    }
-    return out
-  }, [spawnPoints, respawnLeft, playerLevel, aggroScope, aggroNear, here])
+  const { aggroRings, spawnDots } = useSpawnOverlays(zoneShortName, {
+    aggroScope, aggroNear, dots: dotsOn, hideKilled, here,
+  })
 
   const allPois = useMemo(
     () => [...pois, ...annotations.map(annotationToPOI)],

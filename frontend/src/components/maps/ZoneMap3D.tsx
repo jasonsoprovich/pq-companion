@@ -44,6 +44,12 @@ export interface ZoneMap3DProps {
   // spawnDots the spawn points themselves; both as the 2D map has them.
   rings?: AggroRing[]
   spawnDots?: SpawnDot[]
+  // For the map overlay: chromeless drops the buttons and hints, labels
+  // overrides the shared Labels setting, and transparent lets the window
+  // behind show through.
+  chromeless?: boolean
+  labels?: Map3DLabels
+  transparent?: boolean
   // onUnavailable fires when 3D can't be shown (no WebGL, no s3d), so the
   // caller can fall back to 2D.
   onUnavailable?: (reason: string) => void
@@ -164,7 +170,7 @@ interface Scene3D {
 }
 
 export default function ZoneMap3D({
-  zone, markers, target, pins, rings, spawnDots, onUnavailable,
+  zone, markers, target, pins, rings, spawnDots, chromeless, labels, transparent, onUnavailable,
 }: ZoneMap3DProps): React.ReactElement {
   const host = useRef<HTMLDivElement>(null)
   const labelCanvas = useRef<HTMLCanvasElement>(null)
@@ -182,6 +188,11 @@ export default function ZoneMap3D({
   const [prefs, setPrefs] = useMap3DPrefs()
   const prefsRef = useRef(prefs)
   prefsRef.current = prefs
+  const labelMode = labels ?? prefs.labels
+  const labelsRef = useRef(labelMode)
+  labelsRef.current = labelMode
+  const transparentRef = useRef(transparent)
+  transparentRef.current = transparent
   const [showOptions, setShowOptions] = useState(false)
 
   // Build the scene once per zone.
@@ -191,14 +202,14 @@ export default function ZoneMap3D({
     let cancelled = false
     let renderer: THREE.WebGLRenderer
     try {
-      renderer = new THREE.WebGLRenderer({ antialias: true })
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
     } catch {
       setStatus('3D needs WebGL, which isn’t available here.')
       onUnavailable?.('webgl')
       return
     }
     renderer.setPixelRatio(window.devicePixelRatio)
-    renderer.setClearColor(0x0b0d12)
+    renderer.setClearColor(0x0b0d12, transparentRef.current ? 0 : 1)
     el.appendChild(renderer.domElement)
     renderer.domElement.style.display = 'block'
 
@@ -273,7 +284,7 @@ export default function ZoneMap3D({
             markers: markersRef.current,
             pins: pinsRef.current ?? [],
             dots: dotsRef.current ?? [],
-            labels: prefsRef.current.labels,
+            labels: labelsRef.current,
           })
         })
       },
@@ -522,7 +533,7 @@ export default function ZoneMap3D({
   // Names are drawn each frame from the current setting.
   useEffect(() => {
     scene.current?.render()
-  }, [prefs.labels])
+  }, [labelMode])
 
   // A new style or culling needs new materials; opacity and what's shown
   // only adjust the ones there, so dragging the slider stays cheap.
@@ -542,7 +553,10 @@ export default function ZoneMap3D({
   }, [prefs.wallOpacity, prefs.hideCeilings, prefs.showObjects, status])
 
   return (
-    <div className="relative h-full w-full overflow-hidden rounded" style={{ backgroundColor: '#0b0d12' }}>
+    <div
+      className="relative h-full w-full overflow-hidden rounded"
+      style={{ backgroundColor: transparent ? 'transparent' : '#0b0d12' }}
+    >
       <div ref={host} className="absolute inset-0" />
       <canvas ref={labelCanvas} className="pointer-events-none absolute inset-0 h-full w-full" />
       {status !== 'ready' && (
@@ -550,7 +564,7 @@ export default function ZoneMap3D({
           {status === 'loading' ? 'Loading 3D zone…' : status}
         </div>
       )}
-      {status === 'ready' && (
+      {status === 'ready' && !chromeless && (
         <>
           <div className="absolute right-2 top-2 flex items-center gap-1">
             <button
