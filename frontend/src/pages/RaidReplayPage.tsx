@@ -7,6 +7,7 @@ import type { LucideIcon } from 'lucide-react'
 import { ZoneMapPanel } from '../components/maps/ZoneMapPanel'
 import type { RaiderMarker, ReplayTarget } from '../components/maps/ZoneMap'
 import { useCachedState } from '../hooks/useCachedState'
+import { useStoredState } from '../hooks/useStoredState'
 import { useDPSClassColors } from '../hooks/useDPSClassColors'
 import { classColor } from '../lib/raidColors'
 import {
@@ -234,7 +235,7 @@ export default function RaidReplayPage(): React.ReactElement {
   const [playing, setPlaying] = useState(false)
   const [speed, setSpeed] = useCachedState('raidReplay.speed', 16)
   const [focus, setFocus] = useState<number | null>(null)
-  const [view3D, setView3D] = useCachedState('raidReplay.view3D', false)
+  const [view3D, setView3D] = useStoredState('raidReplay.view3D', true)
   const [side, setSide] = useCachedState<'list' | 'groups'>('raidReplay.side', 'list')
   // Which event groups (EVENT_GROUPS keys) the timeline and list show.
   const [shownGroups, setShownGroups] = useCachedState<string[]>(

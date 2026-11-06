@@ -24,7 +24,7 @@ export interface LiveMapOverlayPrefs {
 }
 
 export const LIVE_MAP_OVERLAY_DEFAULTS: LiveMapOverlayPrefs = {
-  view3D: false,
+  view3D: true,
   camera3D: 'free',
   headingUp: false,
   group: null,

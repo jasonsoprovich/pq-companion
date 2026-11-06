@@ -2,6 +2,7 @@ import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, Check, Copy, Plus, X } from 'lucide-react'
 import { useCachedState } from '../../hooks/useCachedState'
+import { useStoredState } from '../../hooks/useStoredState'
 import { usePlayerPosition } from '../../hooks/usePlayerPosition'
 import { useSmoothPosition } from '../../hooks/useSmoothPosition'
 import { useMapLayers } from '../../hooks/useMapLayers'
@@ -228,11 +229,11 @@ export function ZoneMapPanel({
   const selectedNPC = selectedNPCs[0] ?? null
   // "Show all" from the search box.
   const [searchGroup, setSearchGroup] = useState<SearchGroup | null>(null)
-  const [showDetail, setShowDetail] = useCachedState('maps.detail', true)
+  const [showDetail, setShowDetail] = useStoredState('maps.detail', true)
   // On by default: in a multi-level zone it is the difference between two lines
   // crossing and two lines at different heights, which a flat rendering cannot
   // express at all.
-  const [heightColor, setHeightColor] = useCachedState('maps.heightColor', true)
+  const [heightColor, setHeightColor] = useStoredState('maps.heightColor', true)
   // Live position from Zeal. Null whenever we don't know — Zeal not running,
   // pipe stalled, not on Windows — so every consumer has one thing to check.
   const playerPos = usePlayerPosition()
@@ -242,24 +243,28 @@ export function ZoneMapPanel({
   const raidMembers = useRaidPositions()
   const targetPos = useTargetPosition()
   // Your target where it stands, with a line to it and its aggro ring.
-  const [targetOn, setTargetOn] = useCachedState(live ? 'liveMap.showTarget' : 'maps.showTarget', true)
-  const [headingUp, setHeadingUp] = useCachedState(live ? 'liveMap.headingUp' : 'maps.headingUp', false)
+  const [targetOn, setTargetOn] = useStoredState(live ? 'liveMap.showTarget' : 'maps.showTarget', true)
+  const [headingUp, setHeadingUp] = useStoredState(live ? 'liveMap.headingUp' : 'maps.headingUp', false)
   // Bumped by Fit group; the map frames everyone drawn each time it changes.
   const [fitSeq, setFitSeq] = useState(0)
   const palette = useDPSClassColors()
   // Group and Raid toggles, per surface. Group starts from the Settings
   // default until it's flipped here; Raid starts on. Raiders are coloured by
   // raid group or by class.
-  const [groupToggle, setGroupToggle] = useCachedState<boolean | null>(
+  const [groupToggle, setGroupToggle] = useStoredState<boolean | null>(
     live ? 'liveMap.showGroup' : 'maps.showGroup',
     null,
   )
   const groupOn = groupToggle ?? showGroup
-  const [raidOn, setRaidOn] = useCachedState(live ? 'liveMap.showRaid' : 'maps.showRaid', true)
-  const [raidColor, setRaidColor] = useCachedState<'group' | 'class'>('maps.raidColor', 'group')
+  const [raidOn, setRaidOn] = useStoredState(live ? 'liveMap.showRaid' : 'maps.showRaid', true)
+  const [raidColor, setRaidColor] = useStoredState<'group' | 'class'>(
+    'maps.raidColor',
+    'group',
+    (v): v is 'group' | 'class' => v === 'group' || v === 'class',
+  )
   // Follow the view to the player. Off by default: it takes pan away from you,
   // which is the wrong default while browsing a map you are not standing in.
-  const [followPlayer, setFollowPlayer] = useCachedState(
+  const [followPlayer, setFollowPlayer] = useStoredState(
     live ? 'liveMap.followPlayer' : 'maps.followPlayer',
     live,
   )
@@ -316,13 +321,17 @@ export function ZoneMapPanel({
   // Aggro rings: each spawn point's aggro radius, con-coloured against the
   // active character. Off by default — a busy zone is hundreds of circles,
   // which Near me cuts to the ones around you.
-  const [aggroScope, setAggroScope] = useCachedState<AggroScope>('maps.aggroScope', 'off')
-  const [aggroNear, setAggroNear] = useCachedState('maps.aggroNear', 400)
+  const [aggroScope, setAggroScope] = useStoredState<AggroScope>(
+    'maps.aggroScope',
+    'off',
+    (v): v is AggroScope => v === 'off' || v === 'near' || v === 'all',
+  )
+  const [aggroNear, setAggroNear] = useStoredState('maps.aggroNear', 400)
   const aggroOn = aggroScope !== 'off'
   // Respawn dots: every spawn point, coloured by the respawn timer of the
   // kill placed on it. hideKilled leaves out the ones on cooldown.
-  const [dotsOn, setDotsOn] = useCachedState('maps.respawnDots', false)
-  const [hideKilled, setHideKilled] = useCachedState('maps.hideKilled', false)
+  const [dotsOn, setDotsOn] = useStoredState('maps.respawnDots', false)
+  const [hideKilled, setHideKilled] = useStoredState('maps.hideKilled', false)
   const playerLevel = useActiveCharacterLevel()
   // Rings leave out spawns that are dead, and under Near the ones beyond the
   // chosen distance. Without a position here, Near shows them all.
@@ -477,9 +486,10 @@ export function ZoneMapPanel({
   // Wait for the saved style before drawing. Without this the panel mounts in
   // the built-in default, then switches when the preference lands — a visible
   // flicker plus a wasted geometry fetch for a layer nobody asked for.
-  // 3D view, from the client's own zone file. Kept per surface like follow-me.
-  // Not offered in a replay, which has its own switch.
-  const [view3D, setView3D] = useCachedState(live ? 'liveMap.view3D' : 'maps.view3D', false)
+  // 3D view, from the client's own zone file, the default wherever there's
+  // an s3d to draw. Kept per surface like follow-me. Not offered in a
+  // replay, which has its own switch.
+  const [view3D, setView3D] = useStoredState(live ? 'liveMap.view3D' : 'maps.view3D', true)
   // Why 3D fell back to 2D for this zone, if it did.
   const [no3D, setNo3D] = useState<string | null>(null)
   useEffect(() => setNo3D(null), [zoneShortName])

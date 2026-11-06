@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react'
-import { useCachedState } from '../../hooks/useCachedState'
+import { useStoredState } from '../../hooks/useStoredState'
 import { ChevronDown, ChevronRight, Map as MapIcon } from 'lucide-react'
 import { useMapStyle } from '../../hooks/useMapStyle'
 import { useMapZones } from '../../hooks/useMapZones'
@@ -43,7 +43,7 @@ export function NPCSpawnMap({
   height = 300,
   collapsible = true,
 }: NPCSpawnMapProps): React.ReactElement | null {
-  const [open, setOpen] = useCachedState('npcs.mapOpen', true)
+  const [open, setOpen] = useStoredState('npcs.mapOpen', true)
 
   // An NPC can spawn in several zones; each needs its own map.
   //
@@ -154,7 +154,7 @@ function SpawnMapBody({
   // not (about 17% of named NPCs have a grid), so a permanently visible control
   // would mostly advertise something that is not there.
   const [routes, setRoutes] = useState<PatrolRoute[]>([])
-  const [showPatrol, setShowPatrol] = useCachedState('npcs.showPatrol', false)
+  const [showPatrol, setShowPatrol] = useStoredState('npcs.showPatrol', false)
   useEffect(() => {
     let cancelled = false
     getNPCPatrols(npcId)
@@ -169,7 +169,7 @@ function SpawnMapBody({
   )
 
   // 3D view, as on the other maps. Kept per surface like theirs.
-  const [view3D, setView3D] = useCachedState('npcs.view3D', false)
+  const [view3D, setView3D] = useStoredState('npcs.view3D', true)
   // Why 3D fell back to 2D for this zone, if it did.
   const [no3D, setNo3D] = useState<string | null>(null)
   useEffect(() => setNo3D(null), [active])
