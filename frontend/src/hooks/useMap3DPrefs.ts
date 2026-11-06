@@ -21,12 +21,19 @@ export interface Map3DPrefs {
   // furniture) and its doors.
   showObjects: boolean
   labels: Map3DLabels
+  // seeInvisEyes marks aggro rings whose mob can see invisible with an eye,
+  // and dashFaint dashes the rings of green mobs that won't attack on
+  // sight, both as the 2D map does.
+  seeInvisEyes: boolean
+  dashFaint: boolean
 }
 
 const KEY = 'map3d.prefs'
 const DEFAULTS: Map3DPrefs = {
   style: 'textured', wallOpacity: 1, seeThroughOuter: true, hideCeilings: false, showObjects: true,
   labels: 'group',
+  seeInvisEyes: true,
+  dashFaint: true,
 }
 const STYLES: readonly Map3DStyle[] = ['textured', 'height', 'plain']
 const LABELS: readonly Map3DLabels[] = ['off', 'group', 'all']
@@ -43,6 +50,8 @@ function load(): Map3DPrefs {
       hideCeilings: typeof p.hideCeilings === 'boolean' ? p.hideCeilings : DEFAULTS.hideCeilings,
       showObjects: typeof p.showObjects === 'boolean' ? p.showObjects : DEFAULTS.showObjects,
       labels: LABELS.includes(p.labels as Map3DLabels) ? (p.labels as Map3DLabels) : DEFAULTS.labels,
+      seeInvisEyes: typeof p.seeInvisEyes === 'boolean' ? p.seeInvisEyes : DEFAULTS.seeInvisEyes,
+      dashFaint: typeof p.dashFaint === 'boolean' ? p.dashFaint : DEFAULTS.dashFaint,
     }
   } catch {
     return DEFAULTS

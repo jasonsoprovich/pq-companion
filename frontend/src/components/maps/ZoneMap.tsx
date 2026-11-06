@@ -779,25 +779,7 @@ export function ZoneMap({
         ctx.beginPath()
         ctx.arc(px, py, 2, 0, Math.PI * 2)
         ctx.fill()
-        if (r.seeInvis && view.zoom > 1.2) {
-          // An eye: almond outline with a pupil, above-right of the spawn.
-          const ex = px + 7
-          const ey = py - 7
-          ctx.beginPath()
-          ctx.moveTo(ex - 5, ey)
-          ctx.quadraticCurveTo(ex, ey - 4.5, ex + 5, ey)
-          ctx.quadraticCurveTo(ex, ey + 4.5, ex - 5, ey)
-          ctx.lineWidth = 2.6
-          ctx.strokeStyle = 'rgba(0,0,0,0.75)'
-          ctx.stroke()
-          ctx.lineWidth = 1.2
-          ctx.strokeStyle = '#e2e8f0'
-          ctx.stroke()
-          ctx.beginPath()
-          ctx.arc(ex, ey, 1.4, 0, Math.PI * 2)
-          ctx.fillStyle = '#e2e8f0'
-          ctx.fill()
-        }
+        if (r.seeInvis && view.zoom > 1.2) drawEye(ctx, px + 7, py - 7)
       }
       ctx.restore()
     }
@@ -1611,6 +1593,25 @@ function DepthControl({
       </button>
     </div>
   )
+}
+
+// drawEye draws the see-invisible marker centred at (x, y): an almond
+// outline with a pupil. Shared with the 3D view.
+export function drawEye(ctx: CanvasRenderingContext2D, x: number, y: number): void {
+  ctx.beginPath()
+  ctx.moveTo(x - 5, y)
+  ctx.quadraticCurveTo(x, y - 4.5, x + 5, y)
+  ctx.quadraticCurveTo(x, y + 4.5, x - 5, y)
+  ctx.lineWidth = 2.6
+  ctx.strokeStyle = 'rgba(0,0,0,0.75)'
+  ctx.stroke()
+  ctx.lineWidth = 1.2
+  ctx.strokeStyle = '#e2e8f0'
+  ctx.stroke()
+  ctx.beginPath()
+  ctx.arc(x, y, 1.4, 0, Math.PI * 2)
+  ctx.fillStyle = '#e2e8f0'
+  ctx.fill()
 }
 
 // drawCompass draws a small compass rose centred at (x, y) whose N points

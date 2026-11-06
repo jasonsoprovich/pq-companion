@@ -7,7 +7,7 @@ import { getZoneMesh3D, getZoneTextureUrl } from '../../services/api'
 import type { ZoneMesh3D } from '../../services/api'
 import { useMap3DPrefs } from '../../hooks/useMap3DPrefs'
 import type { Map3DLabels, Map3DPrefs, Map3DStyle } from '../../hooks/useMap3DPrefs'
-import { drawCompass, type AggroRing, type RaiderMarker, type ReplayTarget, type SpawnDot } from './ZoneMap'
+import { drawCompass, drawEye, type AggroRing, type RaiderMarker, type ReplayTarget, type SpawnDot } from './ZoneMap'
 
 // ZoneMap3D draws a zone in 3D from the user's own installed client files
 // (<eq_path>/<zone>.s3d, read by the backend): the zone's geometry with its
@@ -308,6 +308,7 @@ export default function ZoneMap3D({
             dots: dotsRef.current ?? [],
             labels: labelsRef.current,
           })
+          if (prefsRef.current.seeInvisEyes) drawEyes(s, labelCanvas.current, h, ringsRef.current ?? [])
           drawNorth(s, labelCanvas.current, w, h)
         })
       },
@@ -488,7 +489,7 @@ export default function ZoneMap3D({
         setStatus('ready')
         updateMarkers(s, markersRef.current)
         updatePins(s, pinsRef.current ?? [])
-        updateRings(s, ringsRef.current ?? [])
+        updateRings(s, ringsRef.current ?? [], prefsRef.current.dashFaint)
         updateDots(s, dotsRef.current ?? [])
         s.render()
       })
@@ -588,9 +589,14 @@ export default function ZoneMap3D({
   useEffect(() => {
     const s = scene.current
     if (!s || status !== 'ready') return
-    updateRings(s, rings ?? [])
+    updateRings(s, rings ?? [], prefs.dashFaint)
     s.render()
-  }, [rings, status])
+  }, [rings, prefs.dashFaint, status])
+
+  // The eyes are drawn each frame from the current setting.
+  useEffect(() => {
+    scene.current?.render()
+  }, [prefs.seeInvisEyes])
 
   useEffect(() => {
     const s = scene.current
@@ -791,6 +797,27 @@ function ViewOptions({ prefs, onChange }: {
           onChange={(e) => onChange({ hideCeilings: e.target.checked })}
         />
         <span>Hide ceilings</span>
+      </label>
+      <label className="flex items-start gap-1.5" title="An eye beside each aggro ring whose mob can see invisible">
+        <input
+          type="checkbox"
+          className="mt-0.5"
+          checked={prefs.seeInvisEyes}
+          onChange={(e) => onChange({ seeInvisEyes: e.target.checked })}
+        />
+        <span>See-invis eyes</span>
+      </label>
+      <label
+        className="flex items-start gap-1.5"
+        title="Dash the rings of green mobs under level 18 that won't attack on sight (unless you sit)"
+      >
+        <input
+          type="checkbox"
+          className="mt-0.5"
+          checked={prefs.dashFaint}
+          onChange={(e) => onChange({ dashFaint: e.target.checked })}
+        />
+        <span>Dash passive greens</span>
       </label>
     </div>
   )
@@ -1043,6 +1070,31 @@ function flyTo(s: Scene3D, at: THREE.Vector3, dist: number): void {
   requestAnimationFrame(step)
 }
 
+// EYE_MIN_PX is how wide a ring has to be on screen before its eye shows:
+// from far away a zone's worth of eyes is noise.
+const EYE_MIN_PX = 40
+
+// drawEyes draws the see-invisible eye above-right of each such ring's
+// spawn point, once the ring is big enough on screen to tell apart.
+function drawEyes(s: Scene3D, canvas: HTMLCanvasElement | null, h: number, rings: AggroRing[]): void {
+  const ctx = canvas?.getContext('2d')
+  if (!ctx || !s.home) return
+  const pxPerUnit = 1 / worldPerPx(s, h)
+  const cam = s.camera.position
+  const v = new THREE.Vector3()
+  const w = ctx.canvas.width / (window.devicePixelRatio || 1)
+  for (const r of rings) {
+    if (!r.seeInvis) continue
+    v.set(r.x, -r.y, r.z + 1)
+    if ((r.radius * 2 * pxPerUnit) / Math.max(1, cam.distanceTo(v)) < EYE_MIN_PX) continue
+    v.project(s.camera)
+    if (v.z > 1 || v.x < -1.1 || v.x > 1.1 || v.y < -1.1 || v.y > 1.1) continue
+    ctx.globalAlpha = (r.faint ? 0.45 : 1) * (r.alpha ?? 1)
+    drawEye(ctx, (v.x + 1) * 0.5 * w + 7, (1 - v.y) * 0.5 * h - 7)
+  }
+  ctx.globalAlpha = 1
+}
+
 // drawNorth draws the compass in the bottom-right corner, its needle on
 // north (+y) as the camera sees it.
 function drawNorth(s: Scene3D, canvas: HTMLCanvasElement | null, w: number, h: number): void {
@@ -1185,7 +1237,10 @@ const RING_SEGMENTS = 40
 // updateRings draws every aggro ring as one mesh of faint discs and one set
 // of outlines, coloured per vertex with alpha, matching the 2D map's light
 // fill and stronger edge. Rebuilt whenever the rings change.
-function updateRings(s: Scene3D, rings: AggroRing[]): void {
+//
+// dashFaint dashes faint rings (greens that won't attack on sight) by
+// leaving out every other side, as the 2D map dashes them.
+function updateRings(s: Scene3D, rings: AggroRing[], dashFaint: boolean): void {
   const n = rings.length
   const seg = RING_SEGMENTS
   const fillPos = new Float32Array(n * (seg + 1) * 3)
@@ -1214,7 +1269,9 @@ function updateRings(s: Scene3D, rings: AggroRing[]): void {
       const lv = i * seg + k
       linePos.set([px, py, z], lv * 3)
       lineCol.set([c.r, c.g, c.b, a * 0.75], lv * 4)
-      lineIdx.set([lv, i * seg + ((k + 1) % seg)], lv * 2)
+      // A skipped side becomes a zero-length segment, so indices stay put.
+      const gap = dashFaint && r.faint && k % 2 === 1
+      lineIdx.set([lv, gap ? lv : i * seg + ((k + 1) % seg)], lv * 2)
     }
   })
   const build = (pos: Float32Array, col: Float32Array, idx: Uint32Array): THREE.BufferGeometry => {
