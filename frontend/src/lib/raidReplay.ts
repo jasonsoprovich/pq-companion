@@ -1,9 +1,9 @@
 // Raid replay playback: where every raider is at a moment between two
-// recorded frames. Frames are ~3 s apart (backend raidtrack.frameInterval);
-// positions in between are interpolated so playback glides instead of
-// jumping a body-length every sample.
+// recorded frames. Frames are 1 s apart (backend raidtrack.frameInterval;
+// recordings made before that are 3 s); positions in between are
+// interpolated so playback glides instead of jumping every sample.
 
-import type { RaidEvent, RaidFrame, RaidFrameTarget } from '../types/raidReplay'
+import type { RaidEvent, RaidEventKind, RaidFrame, RaidFrameTarget, RaidMemberInfo } from '../types/raidReplay'
 
 // RETENTION_CHOICES are the "keep recordings for" options in days; -1 (keep
 // forever) is offered alongside.
@@ -105,9 +105,9 @@ export function groupsAt(present: RaiderAt[]): { group: number; indexes: number[
     .map(([group, indexes]) => ({ group, indexes }))
 }
 
-// KILL_LOOKBACK is how many frames before a kill are searched for the dead
-// mob's position (it was the recorder's target with a known position).
-const KILL_LOOKBACK = 20
+// KILL_LOOKBACK_MS is how long before a kill is searched for the dead mob's
+// position (it was the recorder's target with a known position).
+const KILL_LOOKBACK_MS = 60_000
 
 // recentKills returns the kills in the DEAD_SHOW_MS before t that can be
 // placed: the dead mob was the recorder's target shortly before, with its
@@ -122,7 +122,7 @@ export function recentKills(
     if (e.kind !== 'kill' || e.t > t || t - e.t > DEAD_SHOW_MS) continue
     const name = e.name.toLowerCase()
     const i = frameIndexAt(frames, e.t)
-    for (let j = i; j >= 0 && j > i - KILL_LOOKBACK; j--) {
+    for (let j = i; j >= 0 && frames[j].t >= e.t - KILL_LOOKBACK_MS; j--) {
       const tg = frames[j].tg
       if (tg?.l && tg.n.toLowerCase() === name) {
         out.push({ name: e.name, x: tg.l[0], y: tg.l[1], z: tg.l[2] })
@@ -137,3 +137,39 @@ export function recentKills(
 export function recentDeaths(events: RaidEvent[], t: number): RaidEvent[] {
   return events.filter((e) => e.kind === 'death' && e.t <= t && t - e.t <= DEAD_SHOW_MS)
 }
+
+// LOW_HP_PCT is the health a raider has to drop under for a low-HP mark.
+const LOW_HP_PCT = 20
+
+// lowHPEvents marks each time a raider drops under LOW_HP_PCT, from the
+// health sampled in every frame, so a death can be traced back. A raider
+// missing from a frame starts over when they're back.
+export function lowHPEvents(frames: RaidFrame[], members: RaidMemberInfo[]): RaidEvent[] {
+  const names = new Map(members.map((m) => [m.index, m.name]))
+  const out: RaidEvent[] = []
+  let prev = new Map<number, number>()
+  for (const f of frames) {
+    const next = new Map<number, number>()
+    for (const row of f.m) {
+      const [idx, , , , , , hp] = row
+      next.set(idx, hp)
+      if (hp < 0 || hp >= LOW_HP_PCT) continue
+      const was = prev.get(idx)
+      if (was === undefined || was < 0 || was >= LOW_HP_PCT) {
+        out.push({ t: f.t, kind: 'low_hp', name: names.get(idx) ?? '?', other: `${hp}%` })
+      }
+    }
+    prev = next
+  }
+  return out
+}
+
+// EVENT_GROUPS are the event filters in Raid Replay, each a set of kinds.
+export const EVENT_GROUPS: { key: string; label: string; kinds: RaidEventKind[] }[] = [
+  { key: 'deaths', label: 'Kills & deaths', kinds: ['kill', 'death'] },
+  { key: 'ch', label: 'CH', kinds: ['ch', 'ch_land'] },
+  { key: 'mech', label: 'Mob mechanics', kinds: ['enrage', 'rampage', 'flurry', 'cast', 'npc_shout'] },
+  { key: 'hp', label: 'Low HP & rez', kinds: ['low_hp', 'rez'] },
+  { key: 'calls', label: 'Raid calls', kinds: ['call'] },
+  { key: 'loot', label: 'Loot', kinds: ['loot'] },
+]

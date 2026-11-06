@@ -1,5 +1,9 @@
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Crosshair, Film, HeartPulse, Pause, Play, Skull, Swords, Trash2 } from 'lucide-react'
+import {
+  Activity, Crosshair, Film, Flame, Gem, HeartPulse, Megaphone, MessageSquare, Pause, Play, Skull,
+  Sparkles, Sunrise, Swords, Trash2, Zap,
+} from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { ZoneMapPanel } from '../components/maps/ZoneMapPanel'
 import type { RaiderMarker, ReplayTarget } from '../components/maps/ZoneMap'
 import { useCachedState } from '../hooks/useCachedState'
@@ -12,9 +16,12 @@ import {
   listRaidSessions,
   saveConfigChanges,
 } from '../services/api'
-import { RETENTION_CHOICES, groupsAt, lastSeenAt, raidersAt, recentDeaths, recentKills, targetAt } from '../lib/raidReplay'
+import {
+  EVENT_GROUPS, RETENTION_CHOICES, groupsAt, lastSeenAt, lowHPEvents, raidersAt, recentDeaths, recentKills,
+  targetAt,
+} from '../lib/raidReplay'
 import type { Config } from '../types/config'
-import type { RaidEvent, RaidRecording, RaidSession } from '../types/raidReplay'
+import type { RaidEvent, RaidEventKind, RaidRecording, RaidSession } from '../types/raidReplay'
 
 // RaidReplayPage plays back raids recorded from Zeal's raid frames (backend
 // package raidtrack) on the zone map: a session list, the map with every
@@ -139,42 +146,71 @@ function SessionRow({ s, selected, onSelect, onDelete }: {
   )
 }
 
-const CH_COLOR = '#60a5fa'
-
-function eventColor(kind: RaidEvent['kind']): string {
-  if (kind === 'death') return '#ef4444'
-  if (kind === 'ch' || kind === 'ch_land') return CH_COLOR
-  return '#c9a84c'
+// How each kind of event looks: its colour and icon in the list, and its
+// lane on the timeline: tall for kills, deaths and rezzes, short for
+// mechanics, low health and loot, and a faint strip along the top for CH
+// calls and raid calls, which come all night and would bury the rest.
+const EVENT_STYLE: Record<RaidEventKind, { color: string; icon: LucideIcon; lane: 'tall' | 'short' | 'faint' | 'none' }> = {
+  kill: { color: '#c9a84c', icon: Swords, lane: 'tall' },
+  death: { color: '#ef4444', icon: Skull, lane: 'tall' },
+  ch: { color: '#60a5fa', icon: HeartPulse, lane: 'faint' },
+  // Lands aren't drawn: each sits right after its call.
+  ch_land: { color: '#60a5fa', icon: HeartPulse, lane: 'none' },
+  enrage: { color: '#f97316', icon: Flame, lane: 'short' },
+  rampage: { color: '#f59e0b', icon: Zap, lane: 'short' },
+  flurry: { color: '#f59e0b', icon: Zap, lane: 'short' },
+  cast: { color: '#c084fc', icon: Sparkles, lane: 'short' },
+  npc_shout: { color: '#f472b6', icon: Megaphone, lane: 'short' },
+  call: { color: '#94a3b8', icon: MessageSquare, lane: 'faint' },
+  loot: { color: '#34d399', icon: Gem, lane: 'short' },
+  rez: { color: '#a3e635', icon: Sunrise, lane: 'tall' },
+  low_hp: { color: '#fb7185', icon: Activity, lane: 'short' },
 }
 
-function Scrubber({ rec, t, onSeek }: {
+// eventText is an event's line in the list: what happened, then detail.
+function eventText(e: RaidEvent): [string, string] {
+  const o = e.other ?? ''
+  switch (e.kind) {
+    case 'kill': return [e.name, o && `by ${o}`]
+    case 'death': return [e.name, o && `by ${o}`]
+    case 'ch': return [`CH ${e.name}`, o && `from ${o}`]
+    case 'ch_land': return [`CH landed on ${e.name}`, '']
+    case 'enrage': return [`${e.name} enraged`, '']
+    case 'rampage': return [`${e.name} rampage`, o && `on ${o}`]
+    case 'flurry': return [`${e.name} flurry`, o && `on ${o}`]
+    case 'cast': return [`${e.name} begins casting`, '']
+    case 'npc_shout': return [`${e.name}:`, `“${o}”`]
+    case 'call': return [`${e.name}:`, o]
+    case 'loot': return [`${e.name} looted`, o]
+    case 'rez': return [`${e.name} rezzed`, '']
+    case 'low_hp': return [`${e.name} low health`, o]
+  }
+}
+
+function Scrubber({ rec, events, t, onSeek }: {
   rec: RaidRecording
+  events: RaidEvent[]
   t: number
   onSeek: (t: number) => void
 }): React.ReactElement {
   const start = rec.frames[0]?.t ?? 0
   const end = rec.frames[rec.frames.length - 1]?.t ?? start
   const span = Math.max(1, end - start)
-  // CH calls come every few seconds all night, so they get their own faint
-  // lane above the kills and deaths instead of burying them. Lands aren't
-  // drawn: each sits right after its call.
+  const lanes = { tall: [3, 7, 1], short: [5, 4, 0.7], faint: [0, 2, 0.35] } as const
   return (
     <div className="relative h-7">
-      {rec.events.map((e, i) =>
-        e.kind === 'ch_land' ? null : (
+      {events.map((e, i) => {
+        const { lane, color } = EVENT_STYLE[e.kind]
+        if (lane === 'none') return null
+        const [top, height, opacity] = lanes[lane]
+        return (
           <div
             key={i}
             className="pointer-events-none absolute w-px"
-            style={{
-              left: `${((e.t - start) / span) * 100}%`,
-              top: e.kind === 'ch' ? 0 : 3,
-              height: e.kind === 'ch' ? 2 : 7,
-              opacity: e.kind === 'ch' ? 0.35 : 1,
-              backgroundColor: eventColor(e.kind),
-            }}
+            style={{ left: `${((e.t - start) / span) * 100}%`, top, height, opacity, backgroundColor: color }}
           />
-        ),
-      )}
+        )
+      })}
       <input
         type="range"
         className="absolute inset-x-0 bottom-0 w-full"
@@ -200,7 +236,11 @@ export default function RaidReplayPage(): React.ReactElement {
   const [focus, setFocus] = useState<number | null>(null)
   const [view3D, setView3D] = useCachedState('raidReplay.view3D', false)
   const [side, setSide] = useCachedState<'list' | 'groups'>('raidReplay.side', 'list')
-  const [showCH, setShowCH] = useCachedState('raidReplay.showCH', true)
+  // Which event groups (EVENT_GROUPS keys) the timeline and list show.
+  const [shownGroups, setShownGroups] = useCachedState<string[]>(
+    'raidReplay.eventGroups',
+    EVENT_GROUPS.map((g) => g.key),
+  )
   // Why 3D fell back to 2D for this session, if it did.
   const [no3D, setNo3D] = useState<string | null>(null)
   useEffect(() => setNo3D(null), [selectedId])
@@ -346,13 +386,20 @@ export default function RaidReplayPage(): React.ReactElement {
     return rows
   }, [present, byIndex])
 
-  const nearEvents = useMemo(() => {
+  // The recording's events plus low-health marks made from its frames, in
+  // time order, cut to the groups shown.
+  const events = useMemo(() => {
     if (!rec) return []
-    return rec.events
-      .filter((e) => e.t <= t && (showCH || (e.kind !== 'ch' && e.kind !== 'ch_land')))
-      .slice(-12)
-      .reverse()
-  }, [rec, t, showCH])
+    const kinds = new Set(EVENT_GROUPS.filter((g) => shownGroups.includes(g.key)).flatMap((g) => g.kinds))
+    return [...rec.events, ...lowHPEvents(rec.frames, rec.members)]
+      .filter((e) => kinds.has(e.kind))
+      .sort((a, b) => a.t - b.t)
+  }, [rec, shownGroups])
+
+  const nearEvents = useMemo(
+    () => events.filter((e) => e.t <= t).slice(-40).reverse(),
+    [events, t],
+  )
 
   const remove = (id: number): void => {
     deleteRaidSession(id)
@@ -494,7 +541,7 @@ export default function RaidReplayPage(): React.ReactElement {
                 {fmtClock(t)}
               </span>
               <div className="min-w-0 flex-1">
-                <Scrubber rec={rec} t={t} onSeek={setT} />
+                <Scrubber rec={rec} events={events} t={t} onSeek={setT} />
               </div>
               <span className="text-[11px] tabular-nums" style={{ color: 'var(--color-muted)' }}>
                 {fmtDuration(end - start)}
@@ -572,10 +619,26 @@ export default function RaidReplayPage(): React.ReactElement {
           </div>
           <div className="flex items-center border-y px-3 py-2 text-xs font-semibold" style={{ borderColor: 'var(--color-border)' }}>
             Events
-            <label className="ml-auto flex items-center gap-1 text-[10px] font-normal" style={{ color: 'var(--color-muted)' }}>
-              <input type="checkbox" checked={showCH} onChange={(e) => setShowCH(e.target.checked)} />
-              CH calls
-            </label>
+          </div>
+          <div className="flex flex-wrap gap-1 px-3 pt-1.5">
+            {EVENT_GROUPS.map((g) => {
+              const on = shownGroups.includes(g.key)
+              return (
+                <button
+                  key={g.key}
+                  onClick={() =>
+                    setShownGroups(on ? shownGroups.filter((k) => k !== g.key) : [...shownGroups, g.key])
+                  }
+                  className="rounded border px-1.5 py-0.5 text-[10px]"
+                  style={{
+                    borderColor: on ? 'var(--color-primary)' : 'var(--color-border)',
+                    color: on ? 'var(--color-primary)' : 'var(--color-muted)',
+                  }}
+                >
+                  {g.label}
+                </button>
+              )
+            })}
           </div>
           <div className="max-h-56 overflow-y-auto py-1">
             {nearEvents.length === 0 ? (
@@ -588,14 +651,10 @@ export default function RaidReplayPage(): React.ReactElement {
                   onClick={() => setT(e.t)}
                   title="Jump here"
                 >
-                  {e.kind === 'death'
-                    ? <Skull size={11} className="mt-0.5 shrink-0" style={{ color: eventColor(e.kind) }} />
-                    : e.kind === 'kill'
-                      ? <Swords size={11} className="mt-0.5 shrink-0" style={{ color: eventColor(e.kind) }} />
-                      : <HeartPulse size={11} className="mt-0.5 shrink-0" style={{ color: eventColor(e.kind) }} />}
+                  <EventIcon kind={e.kind} />
                   <span className="min-w-0 flex-1">
-                    {e.kind === 'ch' ? `CH ${e.name}` : e.kind === 'ch_land' ? `CH landed on ${e.name}` : e.name}
-                    {e.other && <span style={{ color: 'var(--color-muted)' }}> {e.kind === 'ch' ? 'from' : 'by'} {e.other}</span>}
+                    {eventText(e)[0]}
+                    {eventText(e)[1] && <span style={{ color: 'var(--color-muted)' }}> {eventText(e)[1]}</span>}
                   </span>
                   <span className="tabular-nums" style={{ color: 'var(--color-muted)' }}>{fmtClock(e.t).slice(0, 5)}</span>
                 </button>
@@ -606,4 +665,9 @@ export default function RaidReplayPage(): React.ReactElement {
       )}
     </div>
   )
+}
+
+function EventIcon({ kind }: { kind: RaidEventKind }): React.ReactElement {
+  const { icon: Icon, color } = EVENT_STYLE[kind]
+  return <Icon size={11} className="mt-0.5 shrink-0" style={{ color }} />
 }

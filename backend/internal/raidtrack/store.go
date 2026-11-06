@@ -66,9 +66,18 @@ const (
 	EventDeath  = "death"   // a raider died
 	EventCH     = "ch"      // a CH chain call: Name the target, Other the caster
 	EventCHLand = "ch_land" // a Complete Heal landed on Name
+
+	EventEnrage   = "enrage"    // Name became enraged
+	EventRampage  = "rampage"   // Name rampaged, against Other when logged
+	EventFlurry   = "flurry"    // Name flurried, on Other when logged
+	EventCast     = "cast"      // the observer's target, Name, began a cast
+	EventNPCShout = "npc_shout" // Name, an NPC, shouted Other
+	EventCall     = "call"      // raider Name said Other to the raid, or shouted it
+	EventLoot     = "loot"      // Name looted Other
+	EventRez      = "rez"       // Name (the observer) was resurrected
 )
 
-// Event is a kill, death or CH chain mark during a session.
+// Event is a mark on a session's timeline.
 type Event struct {
 	T     int64  `json:"t"` // unix ms
 	Kind  string `json:"kind"`

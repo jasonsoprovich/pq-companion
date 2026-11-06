@@ -14,8 +14,11 @@ import (
 )
 
 const (
-	// frameInterval is how often a frame is sampled.
-	frameInterval = 3 * time.Second
+	// frameInterval is how often a frame is sampled. frameSlack lets a tick
+	// that lands a little early still record, so ticker jitter doesn't drop
+	// every other frame.
+	frameInterval = time.Second
+	frameSlack    = 250 * time.Millisecond
 
 	// rosterFresh is how long the last raid roster stands in for the live
 	// one. Zeal sends it ~10 times a second while in a raid.
@@ -30,7 +33,10 @@ const (
 
 	// minFrames is the shortest session worth keeping (one minute). A
 	// shorter one, such as passing through a raid zone, is dropped.
-	minFrames = 20
+	minFrames = 60
+
+	// maxEventText caps the text kept from a raid call or an NPC shout.
+	maxEventText = 160
 
 	// targetFresh is how long the last target name and position stand in
 	// for the live ones. Zeal sends both several times a second.
@@ -41,6 +47,23 @@ const (
 var (
 	reCHLandOther = regexp.MustCompile(`^([A-Z][a-zA-Z]{2,14}) is completely healed\.$`)
 	reCHLandSelf  = regexp.MustCompile(`^You are completely healed\.$`)
+)
+
+// Mob mechanics, raid calls, loot and your own rez, as the client logs them.
+var (
+	reEnraged   = regexp.MustCompile(`^(.+) has become ENRAGED\.$`)
+	reRampage   = regexp.MustCompile(`^(.+?) goes on a RAMPAGE(?: against (.+?))?!$`)
+	reFlurry    = regexp.MustCompile(`^(.+?) executes a FLURRY of attacks(?: on (.+?))?!$`)
+	reBeginCast = regexp.MustCompile("^([A-Za-z][A-Za-z`' ]*?) begins to cast a spell\\.$")
+	reShout     = regexp.MustCompile("^([A-Za-z][A-Za-z`' ]*?) shouts, '(.*)'$")
+	reRaidSay   = regexp.MustCompile(`^([A-Za-z]+) tells the raid,\s+'(.*)'$`)
+	reCallSelf  = regexp.MustCompile(`^You (?:tell the raid|shout),\s+'(.*)'$`)
+	reLootOther = regexp.MustCompile(`^--(\w+) has looted (?:an? |the )?(.+)\.--$`)
+	reLootSelf  = regexp.MustCompile(`^--You have looted (?:an? |the )?(.+)\.--$`)
+	reRezSelf   = regexp.MustCompile(`^You regain some experience from resurrection\.$`)
+	// rePlayerName is a player's name: one capitalised word. NPCs have
+	// spaces or start lower case ("a gnoll", "Zun Va Liako").
+	rePlayerName = regexp.MustCompile(`^[A-Z][a-z]+$`)
 )
 
 // Member is one raider from a Zeal raid frame. HasLoc is false for raiders
@@ -145,13 +168,69 @@ func (r *Recorder) HandleCHCall(ts time.Time, caster, target string) {
 	r.addEvent(Event{T: ts.UnixMilli(), Kind: EventCH, Name: target, Other: caster})
 }
 
-// HandleLine records Complete Heal landings from raw log lines.
+// HandleLine records marks from raw log lines: Complete Heal landings, mob
+// mechanics, the observer's target starting a cast, raid calls, loot and
+// the observer's rez.
 func (r *Recorder) HandleLine(ts time.Time, msg string) {
-	if m := reCHLandOther.FindStringSubmatch(msg); m != nil {
-		r.addEvent(Event{T: ts.UnixMilli(), Kind: EventCHLand, Name: m[1]})
-	} else if reCHLandSelf.MatchString(msg) {
-		r.addEvent(Event{T: ts.UnixMilli(), Kind: EventCHLand, Name: "You"})
+	t := ts.UnixMilli()
+	switch {
+	case reCHLandSelf.MatchString(msg):
+		r.addEvent(Event{T: t, Kind: EventCHLand, Name: "You"})
+	case reRezSelf.MatchString(msg):
+		r.addEvent(Event{T: t, Kind: EventRez, Name: "You"})
 	}
+	if m := reCHLandOther.FindStringSubmatch(msg); m != nil {
+		r.addEvent(Event{T: t, Kind: EventCHLand, Name: m[1]})
+	} else if m := reEnraged.FindStringSubmatch(msg); m != nil {
+		r.addEvent(Event{T: t, Kind: EventEnrage, Name: m[1]})
+	} else if m := reRampage.FindStringSubmatch(msg); m != nil {
+		r.addEvent(Event{T: t, Kind: EventRampage, Name: m[1], Other: m[2]})
+	} else if m := reFlurry.FindStringSubmatch(msg); m != nil {
+		r.addEvent(Event{T: t, Kind: EventFlurry, Name: m[1], Other: m[2]})
+	} else if m := reBeginCast.FindStringSubmatch(msg); m != nil {
+		// Every mob and raider casting would bury the timeline; only the one
+		// the observer has targeted (the fight they're in) is kept.
+		if r.isTargetNPC(m[1]) {
+			r.addEvent(Event{T: t, Kind: EventCast, Name: m[1]})
+		}
+	} else if m := reCallSelf.FindStringSubmatch(msg); m != nil {
+		r.addEvent(Event{T: t, Kind: EventCall, Name: "You", Other: clip(m[1])})
+	} else if m := reRaidSay.FindStringSubmatch(msg); m != nil {
+		r.addEvent(Event{T: t, Kind: EventCall, Name: m[1], Other: clip(m[2])})
+	} else if m := reShout.FindStringSubmatch(msg); m != nil {
+		kind := EventNPCShout
+		if rePlayerName.MatchString(m[1]) {
+			kind = EventCall
+		}
+		r.addEvent(Event{T: t, Kind: kind, Name: m[1], Other: clip(m[2])})
+	} else if m := reLootOther.FindStringSubmatch(msg); m != nil {
+		r.addEvent(Event{T: t, Kind: EventLoot, Name: m[1], Other: m[2]})
+	} else if m := reLootSelf.FindStringSubmatch(msg); m != nil {
+		r.addEvent(Event{T: t, Kind: EventLoot, Name: "You", Other: m[1]})
+	}
+}
+
+// isTargetNPC reports whether name is the observer's current target and not
+// a raider.
+func (r *Recorder) isTargetNPC(name string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.targetName == "" || r.now().Sub(r.targetNameAt) > targetFresh || !strings.EqualFold(name, r.targetName) {
+		return false
+	}
+	if s := r.sess; s != nil {
+		if _, ok := s.index[strings.ToLower(name)]; ok {
+			return false
+		}
+	}
+	return true
+}
+
+func clip(text string) string {
+	if len(text) <= maxEventText {
+		return text
+	}
+	return text[:maxEventText] + "…"
 }
 
 // addEvent writes ev to the running session, naming "You" after the log's
@@ -264,7 +343,7 @@ func (r *Recorder) tick() {
 	if !live {
 		return
 	}
-	if s := r.sess; s != nil && now.Sub(s.lastFrameAt) < frameInterval {
+	if s := r.sess; s != nil && now.Sub(s.lastFrameAt) < frameInterval-frameSlack {
 		return
 	}
 	r.recordLocked(now)

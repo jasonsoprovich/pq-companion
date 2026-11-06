@@ -77,8 +77,8 @@ func TestRecorderSessionAndPlayback(t *testing.T) {
 		t.Fatalf("sessions = %d, want 1", len(ss))
 	}
 	s := ss[0]
-	// 180 s at one frame per 3 s.
-	if s.Zone != "templeveeshan" || s.Frames != 60 || s.PeakMembers != 2 || s.Kills != 1 || s.Deaths != 2 {
+	// 180 s at one frame a second.
+	if s.Zone != "templeveeshan" || s.Frames != 180 || s.PeakMembers != 2 || s.Kills != 1 || s.Deaths != 2 {
 		t.Fatalf("session = %+v", s)
 	}
 
@@ -86,7 +86,7 @@ func TestRecorderSessionAndPlayback(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("get: ok=%v err=%v", ok, err)
 	}
-	if len(rec.Frames) != 60 || len(rec.Members) != 3 {
+	if len(rec.Frames) != 180 || len(rec.Members) != 3 {
 		t.Fatalf("frames %d members %d", len(rec.Frames), len(rec.Members))
 	}
 	for i := 1; i < len(rec.Frames); i++ {
@@ -178,7 +178,7 @@ func TestRecorderTargetAndCHMarks(t *testing.T) {
 			t.Fatalf("frame target = %+v", f.Tg)
 		}
 	}
-	if none != 20 || withLoc != 20 || nameOnly != 20 {
+	if none != 60 || withLoc != 60 || nameOnly != 60 {
 		t.Fatalf("frames none/loc/name = %d/%d/%d", none, withLoc, nameOnly)
 	}
 	if len(rec.Events) != 3 ||
@@ -230,5 +230,82 @@ func TestStorePrune(t *testing.T) {
 	h.store.db.QueryRow(`SELECT (SELECT COUNT(*) FROM raid_track_chunks) + (SELECT COUNT(*) FROM raid_track_members)`).Scan(&left) //nolint:errcheck
 	if left != 0 || len(h.sessions()) != 0 {
 		t.Fatalf("rows left after prune: %d", left)
+	}
+}
+
+// Ticks a little early still record: the ticker isn't exact.
+func TestRecorderFrameSlack(t *testing.T) {
+	h := newHarness(t)
+	for i := 0; i < 90; i++ {
+		h.rec.SetRaid("Osui", "templeveeshan", raid(float64(i)))
+		h.rec.tick()
+		h.now = h.now.Add(900 * time.Millisecond)
+	}
+	h.rec.mu.Lock()
+	frames := h.rec.sess.frames
+	h.rec.mu.Unlock()
+	if frames != 90 {
+		t.Fatalf("frames = %d, want 90", frames)
+	}
+}
+
+func TestRecorderLineMarks(t *testing.T) {
+	h := newHarness(t)
+	h.rec.SetLogCharacter(func() string { return "Osui" })
+	h.run("potactics", time.Minute)
+	h.rec.SetTargetName("Zun Va Liako")
+	lines := []string{
+		"Zun Va Liako has become ENRAGED.",
+		"Eom Va Dyn goes on a RAMPAGE against Sandrian!",
+		"Zun Va Liako executes a FLURRY of attacks on Erruh!",
+		"Zun Va Liako begins to cast a spell.",
+		"a gnoll begins to cast a spell.", // not the target: dropped
+		"Larcen begins to cast a spell.",  // a raider: dropped
+		"Tippy shouts, 'ASSIST TIPPY ON < Qua Thall >'",
+		"Zun Va Liako shouts, 'You will all perish!'",
+		"Takkisina tells the raid,  'ASSIST ME | a scareling  |'",
+		"You tell the raid,  'rampage on me'",
+		"--Kess has looted a Nilitim's Grimoire Pg. 450.--",
+		"--You have looted a Bone Chips.--",
+		"You regain some experience from resurrection.",
+		"Larcen says, 'hello'", // ordinary chat: dropped
+	}
+	for _, l := range lines {
+		h.rec.HandleLine(h.now, l)
+	}
+	h.run("potactics", 5*time.Second)
+	h.rec.mu.Lock()
+	h.rec.endLocked()
+	h.rec.mu.Unlock()
+
+	ss := h.sessions()
+	if len(ss) != 1 {
+		t.Fatalf("sessions = %d", len(ss))
+	}
+	rec, _, err := h.store.GetRecording(ss[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Event{
+		{Kind: EventEnrage, Name: "Zun Va Liako"},
+		{Kind: EventRampage, Name: "Eom Va Dyn", Other: "Sandrian"},
+		{Kind: EventFlurry, Name: "Zun Va Liako", Other: "Erruh"},
+		{Kind: EventCast, Name: "Zun Va Liako"},
+		{Kind: EventCall, Name: "Tippy", Other: "ASSIST TIPPY ON < Qua Thall >"},
+		{Kind: EventNPCShout, Name: "Zun Va Liako", Other: "You will all perish!"},
+		{Kind: EventCall, Name: "Takkisina", Other: "ASSIST ME | a scareling  |"},
+		{Kind: EventCall, Name: "Osui", Other: "rampage on me"},
+		{Kind: EventLoot, Name: "Kess", Other: "Nilitim's Grimoire Pg. 450"},
+		{Kind: EventLoot, Name: "Osui", Other: "Bone Chips"},
+		{Kind: EventRez, Name: "Osui"},
+	}
+	if len(rec.Events) != len(want) {
+		t.Fatalf("events = %+v", rec.Events)
+	}
+	for i, w := range want {
+		w.T = rec.Events[i].T
+		if rec.Events[i] != w {
+			t.Errorf("event %d = %+v, want %+v", i, rec.Events[i], w)
+		}
 	}
 }

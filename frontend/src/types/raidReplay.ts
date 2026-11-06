@@ -46,10 +46,21 @@ export interface RaidFrameTarget {
 /**
  * A timeline mark. kill: an NPC died. death: a raider died. ch: a CH chain
  * call on `name` by `other`. ch_land: a Complete Heal landed on `name`.
+ * enrage / rampage / flurry: mob `name`'s mechanic, on `other` when logged.
+ * cast: the recorder's target, `name`, began casting. npc_shout: mob `name`
+ * shouted `other`. call: raider `name` said `other` to the raid or shouted
+ * it. loot: `name` looted `other`. rez: `name` (the recorder) was
+ * resurrected. low_hp is made in the app from the frames' health: `name`
+ * dropped to `other`.
  */
+export type RaidEventKind =
+  | 'kill' | 'death' | 'ch' | 'ch_land'
+  | 'enrage' | 'rampage' | 'flurry' | 'cast' | 'npc_shout'
+  | 'call' | 'loot' | 'rez' | 'low_hp'
+
 export interface RaidEvent {
   t: number
-  kind: 'kill' | 'death' | 'ch' | 'ch_land'
+  kind: RaidEventKind
   name: string
   other?: string
 }
