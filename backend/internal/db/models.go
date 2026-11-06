@@ -232,6 +232,10 @@ type NPCVariant struct {
 	// (GetVariantTraits) for matching against the live target's appearance.
 	Texture int `json:"-"`
 	Gender  int `json:"-"`
+	// ScriptSpawned marks a row with no spawn2 placement that joined the
+	// candidate set as a quest-script spawn (an override or a shell's real
+	// body), so it has no coordinates to position-filter by.
+	ScriptSpawned bool `json:"-"`
 }
 
 // FactionHit represents a single faction's standing change when an NPC is killed.

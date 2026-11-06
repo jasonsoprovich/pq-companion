@@ -1251,11 +1251,10 @@ func (t *NPCTracker) lookupNPCVariants(
 	// of the raid targets them, so "nearest to the player" stops being a
 	// meaningful signal (see the doc comment) and every candidate flows
 	// through as a variant instead of risking a coin-flip pick that hides a
-	// loot table. Always skip when a db.ScriptSpawnedNPCOverrides candidate is
-	// in play — it has no spawn2 coordinates by definition (see
-	// fetchVariants), so filterVariantsByPosition would drop the real
+	// loot table. Always skip when a script-spawned candidate is in play — it
+	// has no spawn2 coordinates by definition (see fetchVariants), so filterVariantsByPosition would drop the real
 	// encounter in favor of a decoy row purely for having spawn coordinates.
-	scriptSpawned := len(db.ScriptSpawnedNPCOverrides[dbName]) > 0
+	scriptSpawned := anyScriptSpawned(candidates)
 	switch {
 	case len(candidates) < 2 || zoneShort == "" || scriptSpawned:
 		// Nothing to separate, or no reliable coordinates to separate by.
@@ -1361,7 +1360,21 @@ func (t *NPCTracker) fetchVariants(dbName, zoneShort string) []db.NPCVariant {
 		}
 		add(vs)
 	}
-	for _, id := range db.ScriptSpawnedNPCOverrides[dbName] {
+	// An encounter whose every placed row is an untargetable shell is fought
+	// as a same-zone script spawn (Rallos Zek's 9k "#Rallos_Zek_" stands in
+	// the room until phase two spawns the 750k fight). The player has the
+	// NPC targeted, so it can't be the shell — pull in the script rows.
+	if zoneShort != "" && allUntargetable(out) {
+		for _, candidate := range db.NPCNameVariantCandidates(dbName) {
+			vs, err := t.db.GetScriptSpawnedNPCsByNameInZone(candidate, zoneShort)
+			if err != nil {
+				slog.Debug("overlay: script-spawned lookup error", "db_name", candidate, "zone", zoneShort, "err", err)
+				continue
+			}
+			add(vs)
+		}
+	}
+	for _, id := range db.ScriptSpawnedNPCOverrides[zoneShort][dbName] {
 		if _, dup := seen[id]; dup {
 			continue
 		}
@@ -1371,7 +1384,7 @@ func (t *NPCTracker) fetchVariants(dbName, zoneShort string) []db.NPCVariant {
 			continue
 		}
 		seen[id] = struct{}{}
-		out = append(out, db.NPCVariant{NPC: *npc})
+		out = append(out, db.NPCVariant{NPC: *npc, ScriptSpawned: true})
 	}
 	if len(out) == 0 {
 		return nil
@@ -1381,22 +1394,66 @@ func (t *NPCTracker) fetchVariants(dbName, zoneShort string) []db.NPCVariant {
 }
 
 // sortVariantsByStrength orders candidates so the most boss-like row comes
-// first: raid_target rows ahead of normal ones, then higher HP, then lower id
-// as a stable tiebreak. This drives the overlay's primary (headline) pick. It
+// first: targetable rows ahead of untargetable shells (the player has it
+// targeted), then raid_target rows ahead of normal ones, then placed rows
+// ahead of script-spawned ones, then higher HP, then lower id as a stable
+// tiebreak. This drives the overlay's primary (headline) pick. It
 // deliberately does NOT drop any variant — siblings that share a name and HP
 // (legit RNG spawn pairs) stay in the set and remain reachable behind the
 // frontend's "other versions" disclosure.
+//
+// Placed-before-script keeps an encounter's static phase as the headline
+// when its later phases are script spawns that can't be told apart by name
+// (Vallon Zek's 175k wing body vs its 84k/42k split copies and the 225k
+// Rallos-event copy). Against a shell the script row still wins, because the
+// shell has already sorted last.
 func sortVariantsByStrength(variants []db.NPCVariant) {
 	sort.SliceStable(variants, func(i, j int) bool {
-		a, b := variants[i].NPC, variants[j].NPC
+		va, vb := variants[i], variants[j]
+		a, b := va.NPC, vb.NPC
+		if ua, ub := a.BodyType == bodyTypeNoTarget, b.BodyType == bodyTypeNoTarget; ua != ub {
+			return ub
+		}
 		if a.RaidTarget != b.RaidTarget {
 			return a.RaidTarget > b.RaidTarget
+		}
+		if va.ScriptSpawned != vb.ScriptSpawned {
+			return vb.ScriptSpawned
 		}
 		if a.HP != b.HP {
 			return a.HP > b.HP
 		}
 		return a.ID < b.ID
 	})
+}
+
+// bodyTypeNoTarget is EQMacEmu BodyType::NoTarget (11). Quarm parks it on
+// the placed "shell" row of several scripted encounters; the fight itself is
+// a same-named script spawn. Quest scripts can flip a shell targetable, so a
+// shell is demoted rather than dropped.
+const bodyTypeNoTarget = 11
+
+// allUntargetable reports whether variants is non-empty and every row is an
+// untargetable shell.
+func allUntargetable(variants []db.NPCVariant) bool {
+	for _, v := range variants {
+		if v.NPC.BodyType != bodyTypeNoTarget {
+			return false
+		}
+	}
+	return len(variants) > 0
+}
+
+// anyScriptSpawned reports whether any candidate joined as a script spawn
+// with no spawn2 coordinates. Used to skip position-based variant filtering —
+// see lookupNPCVariants.
+func anyScriptSpawned(variants []db.NPCVariant) bool {
+	for _, v := range variants {
+		if v.ScriptSpawned {
+			return true
+		}
+	}
+	return false
 }
 
 // anyRaidTarget reports whether any candidate is flagged raid_target in the

@@ -950,6 +950,37 @@ func (db *DB) GetNPCVariantsByNameInZone(name, zoneShortName string) ([]NPCVaria
 	return variants, nil
 }
 
+// GetScriptSpawnedNPCsByNameInZone returns the npc_types rows named name that
+// have no spawnentry placement anywhere but belong to zoneShortName by
+// Quarm's id-per-zone convention (npc id / 1000 == zone.zoneidnumber). These
+// are quest-script spawns — the phase-two body of an encounter whose placed
+// row is only an untargetable shell — which GetNPCVariantsByNameInZone can
+// never return because it joins through spawn2. Ordered by id.
+func (db *DB) GetScriptSpawnedNPCsByNameInZone(name, zoneShortName string) ([]NPCVariant, error) {
+	q := fmt.Sprintf(`
+		SELECT %s FROM npc_types n %s
+		JOIN zone z ON z.short_name = ? AND n.id / 1000 = z.zoneidnumber
+		WHERE n.name = ? COLLATE NOCASE
+		  AND n.race != 127
+		  AND NOT EXISTS (SELECT 1 FROM spawnentry se WHERE se.npcID = n.id)
+		ORDER BY n.id`,
+		npcColumns, npcJoin)
+	rows, err := db.Query(q, zoneShortName, name)
+	if err != nil {
+		return nil, fmt.Errorf("get script-spawned npcs %q in zone %q: %w", name, zoneShortName, err)
+	}
+	defer rows.Close()
+	npcs, err := collectNPCs(rows)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]NPCVariant, len(npcs))
+	for i := range npcs {
+		out[i] = NPCVariant{NPC: npcs[i], ScriptSpawned: true}
+	}
+	return out, nil
+}
+
 // PlaceholderPrefixes are the leading tokens Project Quarm uses on
 // "placeholder"/unique npc_types rows (templates and name-conflict-avoidance
 // rows that share base stats with the named version, e.g. "#Foo", "##_Foo").
@@ -991,25 +1022,39 @@ func NPCNameVariantCandidates(name string) []string {
 // ScriptSpawnedNPCOverrides names encounters whose "real" npc_types row has
 // zero spawnentry placements anywhere in the game — Project Quarm spawns
 // them purely from a quest script rather than a static spawn2 point — while
-// a same-named decorated row *does* have a spawn2 placement. Since
-// GetNPCVariantsByNameInZone requires a spawn2 join, the decorated row wins
+// a same-named row *does* have a spawn2 placement. Since
+// GetNPCVariantsByNameInZone requires a spawn2 join, the placed row wins
 // (and masks) the zone-scoped lookup on its own before the script-spawned
 // row is ever considered, regardless of how many placeholder-affix forms
-// NPCNameVariantCandidates tries. Keyed by the db-name form used in the
-// log/pipe target text (spaces→underscores, no placeholder decoration);
-// values are the npc_types ids of the script-spawned row(s) to always
-// include as candidates, bypassing the spawn2 requirement, and to exempt
-// from position-based filtering (see lookupNPCVariants in
-// backend/internal/overlay/npc.go — it has no coordinates to filter by).
+// NPCNameVariantCandidates tries. Keyed by zone short name, then by the
+// db-name form used in the log/pipe target text (spaces→underscores, no
+// placeholder decoration); values are the npc_types ids of the
+// script-spawned row(s) to always include as candidates in that zone,
+// bypassing the spawn2 requirement, and to exempt from position-based
+// filtering (see lookupNPCVariants in backend/internal/overlay/npc.go — they
+// have no coordinates to filter by).
+//
+// The common shape — every placed row is an untargetable bodytype-11 shell
+// and the fight is a same-zone script spawn (Rallos Zek, Emperor Ssraeshza,
+// Jeplak) — is handled generically by fetchVariants via
+// GetScriptSpawnedNPCsByNameInZone. This map is for the rest: encounters
+// whose placed row is a real, targetable phase of the fight.
 //
 // Emperor Ssraeshza (reported 2026-07): npc 162065 "#Emperor_Ssraeshza" has
 // a spawn2 row in ssratemple but loottable_id=0 (a decoy/leftover row); npc
 // 162491 "Emperor_Ssraeshza_" carries the real loottable (12791) and higher
-// HP (1,250,000 vs 1,000,000) but has no spawn2 row at all. Add future
-// script-spawned collisions (e.g. other quest-summoned raid bosses) to this
-// map once confirmed via the same spawnentry-emptiness check.
-var ScriptSpawnedNPCOverrides = map[string][]int{
-	"Emperor_Ssraeshza": {162491},
+// HP (1,250,000 vs 1,000,000) but has no spawn2 row at all.
+//
+// Vallon Zek (reported 2026-11): the placed north-wing row (214316, 175k)
+// splits at 50% into five level-64 copies — one real (214317, 84k, carries
+// the loot) and four fakes (214318/214319, 42k) — and the Rallos Zek event
+// spawns its own level-73 Vallon (214320, 225k). None of them have spawn2
+// rows. The placed row stays the headline (see sortVariantsByStrength); the
+// script rows ride along as variants, and Zeal's live level narrows to the
+// split copies once it is reported.
+var ScriptSpawnedNPCOverrides = map[string]map[string][]int{
+	"ssratemple": {"Emperor_Ssraeshza": {162491}},
+	"potactics":  {"Vallon_Zek": {214317, 214318, 214319, 214320}},
 }
 
 // nonPlayerNPCClause filters out rows in npc_types that do not reference

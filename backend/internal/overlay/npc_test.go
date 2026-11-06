@@ -490,6 +490,72 @@ func TestNPCTracker_EmperorSsraeshzaSurfacesScriptSpawnedEncounter(t *testing.T)
 	}
 }
 
+// Integration: the "upstairs" Rallos Zek fight in Plane of Tactics showed 9,036
+// HP (reported 2026-11). The only placed "Rallos Zek" row is the untargetable
+// bodytype-11 shell 214052 ("#Rallos_Zek_") that stands in the room until the
+// Rallos event's phase two script-spawns the real fight (214311, 750k) at the
+// shell's position. No override is listed — the shell alone must pull the
+// same-zone script row in and lose the headline to it.
+func TestNPCTracker_RallosZekShellYieldsToScriptSpawnedFight(t *testing.T) {
+	tr := newRealDBTracker(t)
+	tr.SetPipePlayerSnapshot(214, 0, 0, 0)
+	tr.SetPipeTarget("Rallos Zek")
+	st := tr.GetState()
+	if st.NPCData == nil {
+		t.Fatal("NPCData = nil, want a primary pick")
+	}
+	if st.NPCData.ID != 214311 {
+		t.Errorf("Picked npc_id %d (hp %d), want 214311 (750k script-spawned fight, not the 214052 shell)",
+			st.NPCData.ID, st.NPCData.HP)
+	}
+	for _, v := range st.Variants {
+		if v.NPC.ID == 223006 {
+			t.Error("Plane of Time's Rallos Zek (223006) leaked into the potactics variant set")
+		}
+	}
+}
+
+// Integration: Vallon Zek's north-wing fight splits at 50% into five
+// script-spawned level-64 copies (214317 real 84k, 214318/214319 fakes 42k),
+// all named "Vallon Zek"; the overlay kept showing the 175k placed row. Name
+// alone can't tell the phases apart, so the placed row stays the headline
+// with every phase listed as a variant — and Zeal's live level narrows to
+// the split copies, headlining the real one.
+func TestNPCTracker_VallonZekSplitCopiesSurface(t *testing.T) {
+	tr := newRealDBTracker(t)
+	tr.SetPipePlayerSnapshot(214, -605, 1980, 204)
+	tr.SetPipeTarget("Vallon Zek")
+	st := tr.GetState()
+	if st.NPCData == nil {
+		t.Fatal("NPCData = nil, want a primary pick")
+	}
+	if st.NPCData.ID != 214316 {
+		t.Errorf("Picked npc_id %d, want 214316 (placed wing body stays headline)", st.NPCData.ID)
+	}
+	got := map[int]bool{}
+	for _, v := range st.Variants {
+		got[v.NPC.ID] = true
+	}
+	for _, id := range []int{214316, 214317, 214318, 214319, 214320} {
+		if !got[id] {
+			t.Errorf("Variants missing npc %d", id)
+		}
+	}
+	if got[223000] || got[223144] {
+		t.Error("Plane of Time's Vallon Zek rows leaked into the potactics variant set")
+	}
+
+	tr2 := newRealDBTracker(t)
+	tr2.SetPipePlayerSnapshot(214, -605, 1980, 204)
+	split := targetWithDesc(tr2, 4242, descAt("Vallon Zek", 64, 1, 289, false, 0, 0))
+	if ids := variantIDs(split); !sameIDs(ids, []int{214317, 214318, 214319}) {
+		t.Errorf("level-64 descriptors kept %v, want the 3 split copies", ids)
+	}
+	if split.NPCData == nil || split.NPCData.ID != 214317 {
+		t.Errorf("split headline = %+v, want 214317 (the real copy, highest HP)", split.NPCData)
+	}
+}
+
 // Integration: when no player position is available but zone is, the variant
 // set still surfaces — we can't pick by position so the user sees the
 // alternatives honestly. (The kaas thox case with zone-only.)
