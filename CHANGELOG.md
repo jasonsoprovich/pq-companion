@@ -11,7 +11,7 @@ section automatically.
 
 ## v0.33.0 — 2026-11-06
 
-The maps go 3D, with the zone's own textures, objects and doors. The Live Map overlay becomes a full live map with your raid and target on it. Raid Replay plays a raid night back on the zone map. Also new: a Pet overlay, death recaps, per-file history for your EQ settings files, and buff timers synced to Zeal's tick counts. Fixes cover finishing-blow hits in parses, bard song timers, phantom timers and Zek fight readings.
+The maps go 3D, with the zone's own textures, objects and doors. The Live Map overlay becomes a full live map with your raid and target on it. Raid Replay plays a raid night back on the zone map. Also new: a Pet overlay, an Item Info overlay, death recaps, per-file history for your EQ settings files, and buff timers synced to Zeal's tick counts. Fixes cover finishing-blow hits in parses, bard song timers, phantom timers and Zek fight readings.
 
 ### Highlights
 - **3D maps** — a 2D/3D switch on the Maps page, Live Map, NPC spawn map and Raid Replay. The 3D view draws the zone from your own EQ client files with its textures, trees, buildings, furniture, animated objects and doors. View options cover textured, height or plain style, see-through walls, hiding ceilings, cutting away the levels above you in stacked zones like Bastion of Thunder, and a "Slice from top" height slider. Cameras include Top, Chase and free-fly, plus Fit group.
@@ -20,6 +20,7 @@ The maps go 3D, with the zone's own textures, objects and doors. The Live Map ov
 - **Live Map overlay** — the map overlay now draws everything the Live Map page does, in 2D or 3D, with a toggle row while it's unlocked (also in Settings → Maps). Layers you turn on in the Live Map show on the overlay too. Map toggles are now kept across restarts.
 - **Raid Replay** — Parsing → Raid Replay records raider positions while Zeal sends raid frames, then plays the night back on the zone map. It has a scrubber marked with kills, deaths, CH calls, enrages, rampages, shouts and loot, a groups panel, and your target line. Recording controls and retention are in Settings → Logs.
 - **Pet overlay** — now open to everyone (no developer flag). It shows your charmed or summoned pet's stats, buffs and debuffs, charm time left, live pet DPS, and alerts for charm break, low HP and missing buffs. Charm timers now work without the Enchanter pack.
+- **Item Info overlay** — open an item's display window in game and the overlay shows that item: key stats and effects, which of your characters hold it, its gear-upgrade score, tradeskill uses, quests, vendors and drops, with sources in your current zone listed first. Its own Settings tab picks what shows on the dashboard and the pop-out, and the pop-out can open by itself when you click an item. It needs Zeal 1.5 (see below) and appears in the Overlays list the first time Zeal reports an item.
 - **Death recap** — every death records the 20 seconds before it: hits taken, heals and CHs received, the biggest hit, the killer and the time since the last CH. You can browse recaps by night or see them on an overlay.
 - **Backup & Restore page** — the EQ Config Backups tab is now Backup & Restore. Each character's settings files (spellsets, bandolier, hotkeys and macros, UI layout, bazaar, plus eqclient/zeal/quarmclient.ini) keep their last 30 versions. You can preview and restore any version on its own. A restore first saves the current file as a version, so it can be undone.
 - **Buff timers synced to Zeal** — your own buff timers snap to Zeal's remaining-tick counts, which fixes durations of buffs cast by others. Fades now line up with your server tick.
@@ -28,6 +29,7 @@ The maps go 3D, with the zone's own textures, objects and doors. The Live Map ov
 - **Measured regen** — Character Info shows the HP and mana regen per tick actually seen in game (needs Zeal) next to the computed values.
 - **Upgrade scores on loot** — the NPC overlay's loot list and the Item Info card show the gear-upgrade score for your active character.
 - **Open source** — the source code is now MIT-licensed. Game data, map geometry and EverQuest artwork keep their owners' terms.
+- **Some features need Zeal 1.5** — the Item Info overlay, telling a magician's four elementals apart on the Pet overlay, telling same-named NPCs apart by their look, and catching deaths your log doesn't show (for kill counts and clearing timers) use pipe data added in the Zeal v1.5.0-alpha0 test build (https://github.com/CoastalRedwood/Zeal/releases/tag/v1.5.0-alpha0). They switch on by themselves when you run that alpha, or the official Zeal 1.5 release once it's out. There's nothing to change in PQ Companion.
 
 ### Fixes
 - **Finishing blows inflated DPS** — instant-kill specials (finishing blow, slay, assassinate) log about 32,000 damage, and one could double a player's total. They now count as finishing blows in the row tooltip. They're also left out of the threat meter.
