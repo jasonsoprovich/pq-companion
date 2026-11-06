@@ -1,15 +1,19 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { useCachedState } from '../../hooks/useCachedState'
 import { ChevronDown, ChevronRight, Map as MapIcon } from 'lucide-react'
 import { useMapStyle } from '../../hooks/useMapStyle'
 import { useMapZones } from '../../hooks/useMapZones'
 import { useZoneMap } from '../../hooks/useZoneMap'
-import { ZoneMap } from './ZoneMap'
+import { CATEGORY_STYLE, ZoneMap } from './ZoneMap'
 import { ErrorBoundary } from '../ErrorBoundary'
 import type { MapHighlight } from './ZoneMap'
+import type { Pin3D } from './ZoneMap3D'
 import type { MapPOICategory } from '../../types/map'
 import { getNPCPatrols } from '../../services/api'
 import type { NPCSpawnPoint, PatrolRoute } from '../../types/npc'
+
+// three.js is large; it loads only when the 3D view is opened.
+const ZoneMap3D = lazy(() => import('./ZoneMap3D'))
 
 // NPCSpawnMap shows where an NPC spawns, closing the loop from the item page:
 // purchased from -> vendor -> here.
@@ -164,6 +168,27 @@ function SpawnMapBody({
     [routes, active],
   )
 
+  // 3D view, as on the other maps. Kept per surface like theirs.
+  const [view3D, setView3D] = useCachedState('npcs.view3D', false)
+  // Why 3D fell back to 2D for this zone, if it did.
+  const [no3D, setNo3D] = useState<string | null>(null)
+  useEffect(() => setNo3D(null), [active])
+  const show3D = view3D && !no3D
+
+  // The spawn points picked out over the context layers. A lone spawn is
+  // flown to; several are left in the whole-zone view so none is off screen.
+  const pins3D = useMemo((): Pin3D[] => {
+    if (!show3D) return []
+    const out: Pin3D[] = pois
+      .filter((p) => visible.has(p.category))
+      .map((p) => ({ x: p.x, y: p.y, z: p.z, color: CATEGORY_STYLE[p.category]?.color ?? '#94a3b8', label: p.label }))
+    const label = npcName.replace(/_/g, ' ')
+    highlights.forEach((h) =>
+      out.push({ x: h.x, y: h.y, z: h.z ?? 0, color: '#ff4fd8', label, picked: true, focus: highlights.length === 1 }),
+    )
+    return out
+  }, [show3D, pois, visible, highlights, npcName])
+
   if (error) {
     return (
       <p className="py-2 text-xs" style={{ color: 'var(--color-muted)' }}>
@@ -174,23 +199,43 @@ function SpawnMapBody({
 
   return (
     <div className="flex flex-col gap-1.5 pb-1">
-      {zones.length > 1 && (
-        <div className="flex flex-wrap gap-1">
-          {zones.map((z) => (
+      <div className="flex flex-wrap items-center gap-1">
+        {zones.length > 1 && zones.map((z) => (
+          <button
+            key={z.zone}
+            onClick={() => onZone(z.zone)}
+            className="rounded border px-1.5 py-0.5 text-[10px]"
+            style={{
+              backgroundColor: z.zone === active ? 'var(--color-surface-2)' : 'transparent',
+              borderColor: z.zone === active ? 'var(--color-primary)' : 'var(--color-border)',
+              color: z.zone === active ? 'var(--color-primary)' : 'var(--color-muted)',
+            }}
+          >
+            {z.label}
+          </button>
+        ))}
+        <div className="ml-auto flex overflow-hidden rounded border" style={{ borderColor: 'var(--color-border)' }}>
+          {([false, true] as const).map((v) => (
             <button
-              key={z.zone}
-              onClick={() => onZone(z.zone)}
-              className="rounded border px-1.5 py-0.5 text-[10px]"
+              key={String(v)}
+              onClick={() => {
+                setNo3D(null)
+                setView3D(v)
+              }}
+              title={v ? 'Solid 3D view from your own EverQuest zone files' : 'Flat map'}
+              className="px-2 py-0.5 text-[10px] font-medium"
               style={{
-                backgroundColor: z.zone === active ? 'var(--color-surface-2)' : 'transparent',
-                borderColor: z.zone === active ? 'var(--color-primary)' : 'var(--color-border)',
-                color: z.zone === active ? 'var(--color-primary)' : 'var(--color-muted)',
+                backgroundColor: view3D === v ? 'var(--color-primary)' : 'transparent',
+                color: view3D === v ? 'var(--color-background)' : 'var(--color-muted)',
               }}
             >
-              {z.label}
+              {v ? '3D' : '2D'}
             </button>
           ))}
         </div>
+      </div>
+      {view3D && no3D && (
+        <span className="text-[10px]" style={{ color: 'var(--color-muted)' }}>{no3D} Showing the 2D map.</span>
       )}
 
       {loading && !zone && (
@@ -200,6 +245,27 @@ function SpawnMapBody({
       {zone && (
         <>
           <ErrorBoundary label="Spawn map">
+            {show3D ? (
+              <div style={{ height }}>
+                <Suspense fallback={<p className="py-2 text-xs" style={{ color: 'var(--color-muted)' }}>Loading 3D…</p>}>
+                  <ZoneMap3D
+                    key={active}
+                    zone={active}
+                    markers={[]}
+                    pins={pins3D}
+                    onUnavailable={(why) =>
+                      setNo3D(
+                        why === 'webgl'
+                          ? '3D needs WebGL, which isn’t available here.'
+                          : why === 'no-mesh'
+                            ? `No ${active}.s3d in your EverQuest folder.`
+                            : 'The 3D zone couldn’t be loaded.',
+                      )
+                    }
+                  />
+                </Suspense>
+              </div>
+            ) : (
             <ZoneMap
               zone={zone}
               geometry={null}
@@ -213,8 +279,10 @@ function SpawnMapBody({
               height={height}
               showLabels={false}
             />
+            )}
           </ErrorBoundary>
-          {zoneRoutes.length > 0 && (
+          {/* The 3D view has no path layer, so the toggle would do nothing. */}
+          {zoneRoutes.length > 0 && !show3D && (
             <button
               onClick={() => setShowPatrol((v) => !v)}
               title="This NPC walks a fixed waypoint path. Patrol grids are server data — no downloaded map pack has them."
