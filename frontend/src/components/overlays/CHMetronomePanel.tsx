@@ -280,9 +280,11 @@ export default function CHMetronomePanel({
     return () => clearInterval(id)
   }, [])
 
-  const watch = watchPosition(cfg)
   const now = Date.now()
   const anchorResult = anchorRef.current
+  // The anchor carries the slot actually followed, which steps back one while
+  // the usual one has dropped out of the chain (lib/chMetronome.droppedOut).
+  const watch = anchorResult?.watch ?? watchPosition(cfg)
   const anchor = anchorResult?.anchorMs ?? null
   const predicted = anchorResult?.predicted ?? false
   const active = anchor != null && now - anchor <= (CH_CAST + ANCHOR_GRACE_SECS) * 1000
@@ -301,14 +303,17 @@ export default function CHMetronomePanel({
     // countdown is projected from another slot's real callout, not a
     // confirmed one (lib/chMetronome.computeAnchorMs).
     const predictedNote = predicted ? ` (${posLabel(watch, activeChain)} predicted — may have missed)` : ''
+    const skipped = anchorResult?.skipped
+    const skippedNote = skipped ? ` · ${posLabel(skipped, activeChain)} out, skipped` : ''
+    const note = predictedNote + skippedNote
     if (flashing) {
       bigText = 'CAST NOW'
       bigColor = '#22c55e'
-      subText = `heal lands ~${cfg.delay}s into the chain${predictedNote}`
+      subText = `heal lands ~${cfg.delay}s into the chain${note}`
     } else if (castIn > 0.15) {
       bigText = `${castIn.toFixed(1)}s`
       bigColor = castIn <= 1 ? '#fbbf24' : '#60a5fa'
-      subText = `until your cast${predictedNote}`
+      subText = `until your cast${note}`
     } else {
       // A confirmed self-cast (see lib/chMetronome.selfCastConfirmsAnchor)
       // upgrades the assumed "CAST SENT" to a verified one — the local

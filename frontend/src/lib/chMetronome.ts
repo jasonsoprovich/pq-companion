@@ -54,24 +54,47 @@ export function learnWindowMs(c: MetronomeCfg): number {
   return Math.max(60_000, c.chainSize * c.delay * 1000 * 2)
 }
 
+// resumeGapMs is how long the feed has to go without a single live callout
+// before the chain counts as stopped (between pulls, after a wipe) rather than
+// merely missing a slot. A running chain always has a callout bar up — each
+// lasts the full 10s cast and the next cleric calls well inside that — so even
+// one dropped slot on a slow chain leaves the feed empty for only a few
+// seconds.
+const resumeGapMs = 15_000
+
 // recordPositions refreshes the learned set of distinct chain-call numbers for
-// the active chain from the current timer feed, then prunes numbers not seen
-// within windowMs. Accumulating across snapshots matters because a CH cast only
-// lasts ~10s while a full chain cycle is longer, so the live feed never holds
-// all of a chain's distinct numbers at once. `seen` maps call-number → last-seen
-// ms and is owned by the caller (a ref) so it survives between renders.
+// the active chain from the current timer feed. Accumulating across snapshots
+// matters because a CH cast only lasts ~10s while a full chain cycle is longer,
+// so the live feed never holds all of a chain's distinct numbers at once.
+// `seen` maps call-number → last-seen ms and is owned by the caller (a ref) so
+// it survives between renders.
+//
+// A number not seen within the learn window is only forgotten once more
+// numbers are learned than the chain has slots (a renumbered chain, or a
+// smaller chainSize). A cleric who drops out mid-fight keeps their slot, both
+// so a coded 111/222/333 ranking doesn't collapse and so their last-seen time
+// keeps measuring the dropout (see droppedOut). When the chain resumes after
+// stopping, every age restarts from the resume so the gap isn't mistaken for
+// dropouts; a stop longer than the learn window relearns from scratch.
 export function recordPositions(
   seen: Map<number, number>,
   timers: ActiveTimer[],
   category: string,
   nowMs: number,
-  windowMs: number,
+  c: MetronomeCfg,
 ): void {
-  for (const t of timers) {
-    if (t.category !== category) continue
-    const p = parsePosition(t.spell_name)
-    if (p > 0) seen.set(p, nowMs)
+  const windowMs = learnWindowMs(c)
+  const calls = timers.filter((t) => t.category === category && parsePosition(t.spell_name) > 0)
+  if (calls.length > 0 && seen.size > 0) {
+    const idleMs = nowMs - Math.max(...seen.values())
+    if (idleMs > windowMs) {
+      seen.clear()
+    } else if (idleMs > resumeGapMs) {
+      for (const num of seen.keys()) seen.set(num, nowMs)
+    }
   }
+  for (const t of calls) seen.set(parsePosition(t.spell_name), nowMs)
+  if (seen.size <= c.chainSize) return
   for (const [num, ts] of seen) {
     if (nowMs - ts > windowMs) seen.delete(num)
   }
@@ -113,6 +136,38 @@ function positionForNumber(seen: Map<number, number>, chainSize: number, num: nu
 function forwardDistance(from: number, to: number, chainSize: number): number {
   const d = to - from
   return d > 0 ? d : d + chainSize
+}
+
+function prevSlot(slot: number, chainSize: number): number {
+  return slot <= 1 ? chainSize : slot - 1
+}
+
+function nextSlot(slot: number, chainSize: number): number {
+  return slot >= chainSize ? 1 : slot + 1
+}
+
+// droppedOut reports whether a slot's cleric has stopped calling while the
+// chain carries on without them (died, zoned, OOM, linkdead). The raid
+// compresses around a missing cleric — the next healer moves up instead of
+// waiting a beat for someone who isn't coming — so the metronome has to stop
+// projecting their turn or it cues everyone behind them a full beat late.
+//
+// A slot is out once the clerics on both sides of it have kept calling for
+// 1.5 cycles past its last call, i.e. it has missed about two turns. Requiring
+// both neighbours to be fresh keeps a chain that is only just resuming from
+// reading as a run of dropouts. Two adjacent dropouts are left to the
+// per-cycle projection (neither has a fresh neighbour on that side), the
+// player's own slot is never dropped, and a 2-cleric chain never compresses.
+// The slot comes straight back the moment its cleric calls again.
+function droppedOut(seen: Map<number, number>, c: MetronomeCfg, slot: number, cycle: number): boolean {
+  if (c.chainSize < 3 || slot === c.position || slot < 1 || slot > c.chainSize) return false
+  const lastSeen = (p: number): number | undefined => seen.get(watchNumberFor(seen, c, p))
+  const ts = lastSeen(slot)
+  const before = lastSeen(prevSlot(slot, c.chainSize))
+  const after = lastSeen(nextSlot(slot, c.chainSize))
+  if (ts === undefined || before === undefined || after === undefined) return false
+  const missedMs = cycle * 1.5
+  return before - ts > missedMs && after - ts > missedMs
 }
 
 // anchorRemaining returns the remaining_seconds value to derive an anchor
@@ -261,10 +316,14 @@ function latestRealAnchor(
 // the cleric ahead of them was actually heard casting. cadenceSecs is the beat
 // spacing this anchor was derived under, carried along so acceptNewAnchor and
 // the alert hooks can reason in whole chain cycles without re-measuring.
+// watch is the slot actually being followed — normally the one before the
+// player's, or the one before that while skipped has dropped out.
 export interface AnchorResult {
   anchorMs: number
   predicted: boolean
   cadenceSecs: number
+  watch: number
+  skipped?: number
 }
 
 // cycleMs is how long one full pass around the chain takes at the given
@@ -287,6 +346,11 @@ export function cycleMs(chainSize: number, cadenceSecs: number): number {
 // advancing when a cleric misses their cast instead of stalling forever on
 // the one slot immediately ahead: e.g. in a 5-cleric chain, if 003 never
 // calls, 004 still gets a predicted cast time derived from 002's real call.
+//
+// That projection still counts the missing slot as a beat, which is right for
+// a one-off miss but a beat late once a cleric has left the rotation, so a
+// slot that has droppedOut is skipped: as the watched slot (follow the one
+// before it) and as a beat between the freshest callout and the watched slot.
 export function computeAnchorMs(
   timers: ActiveTimer[],
   c: MetronomeCfg,
@@ -301,10 +365,16 @@ export function computeAnchorMs(
   const chainTarget = resolveChainTarget(timers, category, chain)
   const scoped = chainTarget ? timers.filter((t) => t.target_name === chainTarget) : timers
 
-  recordPositions(seen, scoped, category, nowMs, learnWindowMs(c))
-  const watch = watchPosition(c)
-  const watchNum = watchNumberFor(seen, c, watch)
+  recordPositions(seen, scoped, category, nowMs, c)
   const cadenceSecs = measureCadence(scoped, category) ?? c.delay
+  const cycle = cycleMs(c.chainSize, cadenceSecs)
+  let watch = watchPosition(c)
+  let skipped: number | undefined
+  if (droppedOut(seen, c, watch, cycle)) {
+    skipped = watch
+    watch = prevSlot(watch, c.chainSize)
+  }
+  const watchNum = watchNumberFor(seen, c, watch)
   let best: ActiveTimer | null = null
   for (const t of scoped) {
     if (t.category !== category) continue
@@ -312,13 +382,20 @@ export function computeAnchorMs(
     if (!best || Date.parse(t.starts_at) > Date.parse(best.starts_at)) best = t
   }
   if (best) {
-    return { anchorMs: nowMs - (CH_CAST - anchorRemaining(best)) * 1000, predicted: false, cadenceSecs }
+    const anchorMs = nowMs - (CH_CAST - anchorRemaining(best)) * 1000
+    return { anchorMs, predicted: false, cadenceSecs, watch, skipped }
   }
 
   const latest = latestRealAnchor(scoped, category, seen, c.chainSize, nowMs)
   if (!latest || latest.position === watch) return null
-  const gap = forwardDistance(latest.position, watch, c.chainSize)
-  return { anchorMs: latest.anchorMs + gap * cadenceSecs * 1000, predicted: true, cadenceSecs }
+  const span = forwardDistance(latest.position, watch, c.chainSize)
+  let gap = span
+  for (let i = 1, p = latest.position; i < span; i++) {
+    p = nextSlot(p, c.chainSize)
+    if (droppedOut(seen, c, p, cycle)) gap--
+  }
+  const anchorMs = latest.anchorMs + gap * cadenceSecs * 1000
+  return { anchorMs, predicted: true, cadenceSecs, watch, skipped }
 }
 
 // acceptNewAnchor decides whether a freshly computed anchor should replace the
