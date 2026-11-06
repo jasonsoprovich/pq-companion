@@ -2014,6 +2014,49 @@ name-based path when a field is nil, so older Zeal is unaffected.
   the `wornHere` (same-Location) and `wornLore` (any-slot LORE) sets in
   the same canonical id space the candidate list already uses.
 
+## v0.33.0 — 3D Maps, Raid Replay, Pet Overlay, Death Recap
+
+- **3D maps** — 2D/3D switch on Maps, Live Map, NPC spawn map and Raid
+  Replay; zone `.wld` read from the client s3d at request time, with
+  textures, placed and skeletal objects, era-filtered doors, see-through
+  walls, ceiling hiding, cut-away above the followed marker, Slice from
+  top, and Top / Chase / free-fly cameras. Toggles persist across restarts.
+- **Live map** — `player:raid_positions` and `player:target` feeds (Zeal);
+  Group/Raid toggles, target line + aggro ring, Fit group, Heading up with
+  compass, eased player arrow. The map overlay now mirrors the full page.
+- **Aggro rings & respawn dots** — con-coloured rings with see-invis eyes
+  and dashed passive greens; respawn-state dots. Respawn timers and zone
+  kill counters are keyed to the zone copy from `dbg.txt`.
+- **Raid Replay** — 1 s raid frames recorded to user.db (gzipped minute
+  chunks, retention in Settings → Logs); scrubber with kills, deaths, CH
+  marks, enrage/rampage/flurry, shouts and loot; groups panel; target line.
+- **Pet overlay** — released from the `pet_overlay_enabled` dev flag;
+  native charm timer armed from the cast line.
+- **Death recap** — 20 s pre-death window saved to `combat_deaths`, per-night
+  history and overlay.
+- **Backup & Restore** — per-file last-30 version history for character
+  and shared `.ini` files, gzipped into user.db; selective restore saves
+  the current file first.
+- **Timers** — own buff timers synced to Zeal's remaining ticks and placed
+  on the server tick (gauge 24); spawn-aware NPC overlay timers and
+  Filtered Timers "Target debuffs" with debuff strip and Clear.
+- **NPC overlay** — live `/con` border (pipe consider or log fallback);
+  dims with a Zeal-stale badge when the target feed goes quiet; gear-upgrade
+  scores on loot and Item Info.
+- **Triggers** — target HP filters (name, special ability) + Enrage Soon
+  alert; buff/debuff-stripped conditions; regexp2 fallback for lookaround
+  and backreference patterns.
+- **Measured regen** — per-tick HP/mana regen observed via Zeal on
+  Character Info.
+- Source licensed under MIT (with NOTICE scoping game data and assets).
+- Fixes: finishing-blow hits (≥32000) excluded from damage and threat;
+  third-party ranged hits parsed; song-window buffs +1 tick (24 s pack
+  default); Howl of Tashan twin absorb; pet buffs survive namesake kills;
+  script-spawned Zek phases; Planar Projection hail grants; CH metronome
+  dropout compression (#151); trigger import deadlock (#166); wishlist
+  character leak (#164); periodic overlay re-raise; stray log copies
+  ignored; second launch no longer rotates the live log.
+
 ## v0.32.0 — PoP Hail Grants, Slow Mitigation, Encounter Timer Options
 
 - **PoP hail grants** — NPC grant line + "You have received a
