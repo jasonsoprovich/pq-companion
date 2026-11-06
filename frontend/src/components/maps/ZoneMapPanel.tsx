@@ -249,6 +249,9 @@ export function ZoneMapPanel({
   const targetPos = useTargetPosition()
   // Your target where it stands, with a line to it and its aggro ring.
   const [targetOn, setTargetOn] = useCachedState(live ? 'liveMap.showTarget' : 'maps.showTarget', true)
+  const [headingUp, setHeadingUp] = useCachedState(live ? 'liveMap.headingUp' : 'maps.headingUp', false)
+  // Bumped by Fit group; the map frames everyone drawn each time it changes.
+  const [fitSeq, setFitSeq] = useState(0)
   const palette = useDPSClassColors()
   // Group and Raid toggles, per surface. Group starts from the Settings
   // default until it's flipped here; Raid starts on. Raiders are coloured by
@@ -516,6 +519,19 @@ export function ZoneMapPanel({
       onRaider: drawn.has(liveTarget.name),
     }
   }, [liveTarget, here, groupOn, groupMembers, liveRaiders])
+  // Who Fit group frames: everyone drawn.
+  const fitTo = useMemo(
+    () =>
+      fitSeq > 0 && here
+        ? {
+            seq: fitSeq,
+            points: [here, ...(groupOn ? groupMembers : []), ...liveRaiders].map((p) => ({ x: p.x, y: p.y })),
+          }
+        : null,
+    // Only a new press refits, so the points are read when it's pressed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [fitSeq],
+  )
   const shownRings = useMemo(
     () => [...(aggroOn ? aggroRings : []), ...(targetRing ? [targetRing] : [])],
     [aggroOn, aggroRings, targetRing],
@@ -546,7 +562,9 @@ export function ZoneMapPanel({
       .filter((p) => visible.has(p.category))
       .map((p) => ({ x: p.x, y: p.y, z: p.z, color: CATEGORY_STYLE[p.category]?.color ?? '#94a3b8', label: p.label }))
     const picked = searchGroup ? searchGroup.spots : inspect ? inspect.spots : []
-    for (const h of picked) out.push({ x: h.x, y: h.y, z: h.z ?? 0, color: '#ff4fd8', label: h.label ?? '', picked: true })
+    picked.forEach((h, i) =>
+      out.push({ x: h.x, y: h.y, z: h.z ?? 0, color: '#ff4fd8', label: h.label ?? '', picked: true, focus: i === 0 }),
+    )
     return out
   }, [show3D, allPois, visible, searchGroup, inspect])
 
@@ -698,6 +716,34 @@ export function ZoneMapPanel({
             }}
           >
             Follow me
+          </button>
+        )}
+        {!replay && here && (
+          <button
+            onClick={() => {
+              // Framing everyone is a look around, like panning: stop following.
+              setFollowPlayer(false)
+              setFitSeq((n) => n + 1)
+            }}
+            title="Frame you, your group and the raid"
+            className="rounded border px-1.5 py-0.5 text-[10px] font-medium"
+            style={{ borderColor: 'var(--color-border)', color: 'var(--color-muted)' }}
+          >
+            Fit group
+          </button>
+        )}
+        {!replay && here && !show3D && (
+          <button
+            onClick={() => setHeadingUp((v) => !v)}
+            title="Turn the map so the way you face is up (a compass shows north)"
+            className="rounded border px-1.5 py-0.5 text-[10px] font-medium"
+            style={{
+              backgroundColor: headingUp ? 'var(--color-surface-2)' : 'transparent',
+              borderColor: headingUp ? 'var(--color-primary)' : 'var(--color-border)',
+              color: headingUp ? 'var(--color-primary)' : 'var(--color-muted)',
+            }}
+          >
+            Heading up
           </button>
         )}
         {onJumpToZone && playerPos && playerPos.zone !== zone.zone && (
@@ -1096,6 +1142,7 @@ export function ZoneMapPanel({
                 }
                 target={liveTargetLine}
                 rings={shownRings}
+                fitSeq={fitSeq > 0 ? fitSeq : undefined}
                 spawnDots={dotsOn ? spawnDots : undefined}
                 onUnavailable={(why) =>
                   setNo3D(
@@ -1123,6 +1170,8 @@ export function ZoneMapPanel({
             followPlayer={followPlayer && !replay}
             raiders={replay ? raiders : liveRaiders}
             replayTarget={replay ? replayTarget : liveTargetLine}
+            headingUp={headingUp && !replay}
+            fitTo={fitTo}
             // Panning is a deliberate act; treat it as "I want to look
             // somewhere else" and stop following. The Follow me toggle above is
             // right there to turn it back on.

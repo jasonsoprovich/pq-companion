@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { Map3DLabels } from './useMap3DPrefs'
 import type { AggroScope } from '../components/maps/spawnOverlays'
+import type { Camera3D } from '../components/maps/ZoneMap3D'
 
 // LiveMapOverlayPrefs is what the map overlay draws. It's set from the
 // overlay's own toolbar while unlocked, or from Settings → Maps, which
 // matters once the overlay is locked and clicks go through it.
 export interface LiveMapOverlayPrefs {
   view3D: boolean
+  // camera3D is the 3D camera; headingUp turns the 2D map with you.
+  camera3D: Camera3D
+  headingUp: boolean
   // group null follows the Settings default for showing groupmates.
   group: boolean | null
   raid: boolean
@@ -21,6 +25,8 @@ export interface LiveMapOverlayPrefs {
 
 export const LIVE_MAP_OVERLAY_DEFAULTS: LiveMapOverlayPrefs = {
   view3D: false,
+  camera3D: 'free',
+  headingUp: false,
   group: null,
   raid: true,
   raidColor: 'group',
@@ -47,6 +53,8 @@ function load(): LiveMapOverlayPrefs {
     const bool = (v: unknown, def: boolean): boolean => (typeof v === 'boolean' ? v : def)
     return {
       view3D: bool(p.view3D, d.view3D),
+      camera3D: p.camera3D === 'top' || p.camera3D === 'chase' ? p.camera3D : 'free',
+      headingUp: bool(p.headingUp, d.headingUp),
       group: typeof p.group === 'boolean' ? p.group : null,
       raid: bool(p.raid, d.raid),
       raidColor: p.raidColor === 'class' ? 'class' : 'group',

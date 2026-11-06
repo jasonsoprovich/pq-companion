@@ -7,7 +7,7 @@ import { getZoneMesh3D, getZoneTextureUrl } from '../../services/api'
 import type { ZoneMesh3D } from '../../services/api'
 import { useMap3DPrefs } from '../../hooks/useMap3DPrefs'
 import type { Map3DLabels, Map3DPrefs, Map3DStyle } from '../../hooks/useMap3DPrefs'
-import type { AggroRing, RaiderMarker, ReplayTarget, SpawnDot } from './ZoneMap'
+import { drawCompass, type AggroRing, type RaiderMarker, type ReplayTarget, type SpawnDot } from './ZoneMap'
 
 // ZoneMap3D draws a zone in 3D from the user's own installed client files
 // (<eq_path>/<zone>.s3d, read by the backend): the zone's geometry with its
@@ -30,7 +30,14 @@ export interface Pin3D {
   color: string
   label: string
   picked?: boolean
+  // focus flies the camera to this pin when it first appears: a search
+  // result or a clicked pin.
+  focus?: boolean
 }
+
+// Camera3D is how the camera moves: freely, looking straight down, or
+// riding behind whoever it follows, facing their way.
+export type Camera3D = 'free' | 'top' | 'chase'
 
 export interface ZoneMap3DProps {
   zone: string
@@ -50,6 +57,10 @@ export interface ZoneMap3DProps {
   chromeless?: boolean
   labels?: Map3DLabels
   transparent?: boolean
+  // camera sets the camera mode from outside (the overlay); otherwise the
+  // view's own buttons do. fitSeq frames every marker each time it changes.
+  camera?: Camera3D
+  fitSeq?: number
   // onUnavailable fires when 3D can't be shown (no WebGL, no s3d), so the
   // caller can fall back to 2D.
   onUnavailable?: (reason: string) => void
@@ -170,7 +181,8 @@ interface Scene3D {
 }
 
 export default function ZoneMap3D({
-  zone, markers, target, pins, rings, spawnDots, chromeless, labels, transparent, onUnavailable,
+  zone, markers, target, pins, rings, spawnDots, chromeless, labels, transparent, camera, fitSeq,
+  onUnavailable,
 }: ZoneMap3DProps): React.ReactElement {
   const host = useRef<HTMLDivElement>(null)
   const labelCanvas = useRef<HTMLCanvasElement>(null)
@@ -194,6 +206,16 @@ export default function ZoneMap3D({
   const transparentRef = useRef(transparent)
   transparentRef.current = transparent
   const [showOptions, setShowOptions] = useState(false)
+  const [camOwn, setCamOwn] = useState<Camera3D>('free')
+  const cam = camera ?? camOwn
+  const camRef = useRef(cam)
+  camRef.current = cam
+  // Moving the camera by hand (dragging, flying) leaves Chase, unless the
+  // mode is set from outside.
+  const leaveChase = useRef<() => void>(() => {})
+  leaveChase.current = () => {
+    if (camera === undefined && camRef.current === 'chase') setCamOwn('free')
+  }
 
   // Build the scene once per zone.
   useEffect(() => {
@@ -286,6 +308,7 @@ export default function ZoneMap3D({
             dots: dotsRef.current ?? [],
             labels: labelsRef.current,
           })
+          drawNorth(s, labelCanvas.current, w, h)
         })
       },
       dispose: () => {
@@ -385,6 +408,7 @@ export default function ZoneMap3D({
       if (!FLY_KEYS.has(e.code) || e.ctrlKey || e.metaKey || e.altKey) return
       // Arrows would otherwise scroll the page.
       e.preventDefault()
+      leaveChase.current()
       keys.add(e.code)
       if (!flying) flying = requestAnimationFrame(fly)
     }
@@ -401,6 +425,7 @@ export default function ZoneMap3D({
 
     // Hovering names the marker, pin or spawn dot under the mouse.
     const onPointerMove = (e: PointerEvent): void => {
+      if (e.buttons !== 0) leaveChase.current()
       if (e.buttons !== 0 || !s.home) return
       const r = el.getBoundingClientRect()
       const next = pick(s, r.width, r.height, e.clientX - r.left, e.clientY - r.top, {
@@ -502,12 +527,56 @@ export default function ZoneMap3D({
         s.controls.target.copy(at)
       }
       lastFocus.current = at
+      if (camRef.current === 'chase') chaseBehind(s, f)
       s.controls.update()
     } else {
       lastFocus.current = null
     }
     s.render()
   }, [markers, target, status])
+
+  // Top looks straight down from where the camera is; Chase swings it
+  // behind whoever it follows on the next marker update, and now.
+  useEffect(() => {
+    const s = scene.current
+    if (!s || status !== 'ready') return
+    if (cam === 'top') lookDown(s)
+    if (cam === 'chase') {
+      const f = markersRef.current.find((r) => r.focus)
+      if (f) chaseBehind(s, f)
+    }
+    s.controls.update()
+    s.render()
+  }, [cam, status])
+
+  // Fit: frame every marker, keeping the direction the camera looks from.
+  useEffect(() => {
+    const s = scene.current
+    if (!s || status !== 'ready' || fitSeq === undefined) return
+    const ms = markersRef.current
+    if (ms.length === 0) return
+    const box = new THREE.Box3()
+    for (const r of ms) box.expandByPoint(new THREE.Vector3(r.x, -r.y, r.z))
+    const centre = box.getCenter(new THREE.Vector3())
+    const size = box.getSize(new THREE.Vector3()).length()
+    const fov = THREE.MathUtils.degToRad(s.camera.fov / 2)
+    const dist = Math.max(s.radius / 40, (size / 2 / Math.tan(fov)) * 1.4)
+    flyTo(s, centre, dist)
+    lastFocus.current = null
+  }, [fitSeq, status])
+
+  // A new search result or clicked pin: fly over to it.
+  const focusPin = pins?.find((p) => p.focus)
+  const focusKey = focusPin ? `${focusPin.x},${focusPin.y},${focusPin.z},${focusPin.label}` : ''
+  useEffect(() => {
+    const s = scene.current
+    if (!s || status !== 'ready' || !focusPin) return
+    const dist = Math.min(s.camera.position.distanceTo(s.controls.target), s.radius / 6)
+    flyTo(s, new THREE.Vector3(focusPin.x, -focusPin.y, focusPin.z), dist)
+    leaveChase.current()
+    // focusKey stands for the pin, whose object changes every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusKey, status])
 
   useEffect(() => {
     const s = scene.current
@@ -567,6 +636,36 @@ export default function ZoneMap3D({
       {status === 'ready' && !chromeless && (
         <>
           <div className="absolute right-2 top-2 flex items-center gap-1">
+            <button
+              className="rounded border px-1.5 py-0.5 text-[10px]"
+              style={{ backgroundColor: 'rgba(11,13,18,0.8)', borderColor: 'var(--color-border)', color: 'var(--color-muted-foreground)' }}
+              title="Look straight down from here"
+              onClick={() => {
+                const s = scene.current
+                if (!s) return
+                setCamOwn('free')
+                lookDown(s)
+                s.controls.update()
+                s.render()
+              }}
+            >
+              Top
+            </button>
+            <button
+              className="rounded border px-1.5 py-0.5 text-[10px]"
+              style={{
+                backgroundColor: cam === 'chase' ? 'var(--color-primary)' : 'rgba(11,13,18,0.8)',
+                borderColor: cam === 'chase' ? 'var(--color-primary)' : 'var(--color-border)',
+                color: cam === 'chase' ? 'var(--color-background)' : 'var(--color-muted-foreground)',
+              }}
+              title={
+                'Ride behind you, facing the way you face (needs Follow me). ' +
+                'Dragging or flying the camera turns it off.'
+              }
+              onClick={() => setCamOwn(cam === 'chase' ? 'free' : 'chase')}
+            >
+              Chase
+            </button>
             <button
               className="flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px]"
               style={{ backgroundColor: 'rgba(11,13,18,0.8)', borderColor: 'var(--color-border)', color: 'var(--color-muted-foreground)' }}
@@ -902,6 +1001,61 @@ function adjustLook(L: ZoneLayers, prefs: Map3DPrefs): void {
   L.objects.floor.visible = prefs.showObjects
   L.objects.wall.visible = prefs.showObjects
   L.objects.ceiling.visible = prefs.showObjects && !prefs.hideCeilings
+}
+
+// lookDown puts the camera straight above what it orbits, as far away as
+// it is now. A hair off vertical, where the orbit controls are steady.
+function lookDown(s: Scene3D): void {
+  const d = s.camera.position.distanceTo(s.controls.target)
+  s.camera.position.copy(s.controls.target).add(new THREE.Vector3(0, -d * 0.001, d))
+}
+
+// CHASE_PITCH is how far above the follow's back Chase sits.
+const CHASE_PITCH = THREE.MathUtils.degToRad(35)
+
+// chaseBehind orbits the camera to sit behind marker r, looking the way it
+// faces, keeping the current distance. EQ's heading turns counter-clockwise
+// from north (+y here), so facing is (-sin, cos).
+function chaseBehind(s: Scene3D, r: RaiderMarker): void {
+  const a = ((r.heading ?? 0) / 512) * Math.PI * 2
+  const d = s.camera.position.distanceTo(s.controls.target)
+  const back = new THREE.Vector3(Math.sin(a), -Math.cos(a), 0).multiplyScalar(d * Math.cos(CHASE_PITCH))
+  s.controls.target.set(r.x, -r.y, r.z)
+  s.camera.position.copy(s.controls.target).add(back).add(new THREE.Vector3(0, 0, d * Math.sin(CHASE_PITCH)))
+}
+
+// flyTo glides the camera over half a second to orbit at, dist away,
+// looking from the direction it looks from now.
+function flyTo(s: Scene3D, at: THREE.Vector3, dist: number): void {
+  const fromTarget = s.controls.target.clone()
+  const fromPos = s.camera.position.clone()
+  const dir = fromPos.clone().sub(fromTarget).normalize()
+  const toPos = at.clone().addScaledVector(dir, dist)
+  const start = performance.now()
+  const step = (now: number): void => {
+    const k = Math.min(1, (now - start) / 500)
+    const e = k * k * (3 - 2 * k)
+    s.controls.target.lerpVectors(fromTarget, at, e)
+    s.camera.position.lerpVectors(fromPos, toPos, e)
+    s.controls.update()
+    if (k < 1) requestAnimationFrame(step)
+  }
+  requestAnimationFrame(step)
+}
+
+// drawNorth draws the compass in the bottom-right corner, its needle on
+// north (+y) as the camera sees it.
+function drawNorth(s: Scene3D, canvas: HTMLCanvasElement | null, w: number, h: number): void {
+  const ctx = canvas?.getContext('2d')
+  if (!ctx || !s.home) return
+  const t = s.controls.target
+  const a = t.clone().project(s.camera)
+  const b = t.clone().add(new THREE.Vector3(0, s.radius / 50, 0)).project(s.camera)
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  // Looking straight along north there's no direction to show.
+  if (Math.hypot(dx * w, dy * h) < 1e-3) return
+  drawCompass(ctx, w - 24, h - 28, Math.atan2(dx * w, dy * h))
 }
 
 function resetView(s: Scene3D): void {

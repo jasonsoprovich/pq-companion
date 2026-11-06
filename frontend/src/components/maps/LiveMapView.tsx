@@ -138,6 +138,7 @@ export default function LiveMapView({ zone: zoneName, prefs }: LiveMapViewProps)
             rings={rings}
             spawnDots={prefs.dots ? spawnDots : undefined}
             labels={prefs.labels}
+            camera={prefs.camera3D}
             chromeless
             transparent
             onUnavailable={() => setNo3D(true)}
@@ -166,6 +167,7 @@ export default function LiveMapView({ zone: zoneName, prefs }: LiveMapViewProps)
           onUserPan={() => setFollow(false)}
           onFollowRequest={() => setFollow(true)}
           followDepth
+          headingUp={prefs.headingUp}
           height="fill"
           // 2D names cover POIs as well as people, so only under All.
           showLabels={prefs.labels === 'all'}

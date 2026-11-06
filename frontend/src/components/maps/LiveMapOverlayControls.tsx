@@ -2,9 +2,12 @@ import React from 'react'
 import type { LiveMapOverlayPrefs } from '../../hooks/useLiveMapOverlayPrefs'
 import type { Map3DLabels } from '../../hooks/useMap3DPrefs'
 import type { AggroScope } from './spawnOverlays'
+import type { Camera3D } from './ZoneMap3D'
 
 const RINGS_NEXT: Record<AggroScope, AggroScope> = { off: 'near', near: 'all', all: 'off' }
 const RINGS_NAME: Record<AggroScope, string> = { off: 'Off', near: 'Near', all: 'All' }
+const CAMERA_NEXT: Record<Camera3D, Camera3D> = { free: 'top', top: 'chase', chase: 'free' }
+const CAMERA_NAME: Record<Camera3D, string> = { free: 'Free', top: 'Top', chase: 'Chase' }
 const LABELS_NEXT: Record<Map3DLabels, Map3DLabels> = { off: 'group', group: 'all', all: 'off' }
 const LABELS_NAME: Record<Map3DLabels, string> = { off: 'Off', group: 'Group', all: 'All' }
 
@@ -31,6 +34,23 @@ export default function LiveMapOverlayControls({ prefs, onChange, groupDefault, 
       >
         3D
       </Chip>
+      {prefs.view3D ? (
+        <Chip
+          on={prefs.camera3D !== 'free'}
+          onClick={() => onChange({ camera3D: CAMERA_NEXT[prefs.camera3D] })}
+          title="Camera: free to orbit, looking straight down, or riding behind you facing your way"
+        >
+          Camera: {CAMERA_NAME[prefs.camera3D]}
+        </Chip>
+      ) : (
+        <Chip
+          on={prefs.headingUp}
+          onClick={() => onChange({ headingUp: !prefs.headingUp })}
+          title="Turn the map so the way you face is up (a compass shows north)"
+        >
+          Heading up
+        </Chip>
+      )}
       <Sep />
       <Chip on={groupOn} onClick={() => onChange({ group: !groupOn })} title="Your groupmates in this zone">
         Group

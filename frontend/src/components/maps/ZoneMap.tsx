@@ -151,6 +151,12 @@ export interface ZoneMapProps {
   // reticle button. Paired with onUserPan: one releases follow, the other
   // restores it, so panning is never a one-way door.
   onFollowRequest?: () => void
+  // headingUp turns the map so your heading points up, with a compass to
+  // show where north went.
+  headingUp?: boolean
+  // fitTo frames the points given (you and your group, say) each time seq
+  // changes.
+  fitTo?: { points: { x: number; y: number }[]; seq: number } | null
   // paths are ordered polylines drawn over the map — an NPC's patrol route.
   paths?: {
     points: { x: number; y: number; z: number }[]
@@ -368,6 +374,8 @@ export function ZoneMap({
   followPlayer = false,
   onUserPan,
   onFollowRequest,
+  headingUp = false,
+  fitTo,
   paths,
   onPOIClick,
   onEmptyClick,
@@ -538,22 +546,90 @@ export function ZoneMap({
     centreOnPlayer()
   }, [followPlayer, centreOnPlayer])
 
+  // rot turns the whole map about you, clockwise on screen, for Heading up:
+  // by your heading, which EQ counts counter-clockwise, so your arrow ends
+  // up pointing at the top and stays where it is while you turn. Because
+  // the pivot moves with pan and zoom just as you do, dragging and wheel
+  // zoom need no turning of their own: they work in screen space as is.
+  const rot = headingUp && onThisMap ? ((onThisMap.heading ?? 0) / 512) * Math.PI * 2 : 0
+  const pivot = useMemo((): [number, number] => {
+    if (!rot || !onThisMap) return [size.w / 2, size.h / 2]
+    return [
+      (onThisMap.x * base.scale + base.offX) * view.zoom + view.panX,
+      (onThisMap.y * base.scale + base.offY) * view.zoom + view.panY,
+    ]
+  }, [rot, onThisMap, base, view, size.w, size.h])
+
+  // turn rotates a canvas point about the pivot by angle (clockwise).
+  const turn = useCallback(
+    (px: number, py: number, angle: number): [number, number] => {
+      if (!angle) return [px, py]
+      const [cx, cy] = pivot
+      const c = Math.cos(angle)
+      const sn = Math.sin(angle)
+      const dx = px - cx
+      const dy = py - cy
+      return [cx + dx * c - dy * sn, cy + dx * sn + dy * c]
+    },
+    [pivot],
+  )
+
   const toScreen = useCallback(
-    (x: number, y: number): [number, number] => [
-      (x * base.scale + base.offX) * view.zoom + view.panX,
-      (y * base.scale + base.offY) * view.zoom + view.panY,
-    ],
-    [base, view],
+    (x: number, y: number): [number, number] =>
+      turn(
+        (x * base.scale + base.offX) * view.zoom + view.panX,
+        (y * base.scale + base.offY) * view.zoom + view.panY,
+        rot,
+      ),
+    [base, view, rot, turn],
   )
 
   // The exact inverse of toScreen: canvas pixels back to map space.
   const toMap = useCallback(
-    (px: number, py: number): { x: number; y: number } => ({
-      x: ((px - view.panX) / view.zoom - base.offX) / base.scale,
-      y: ((py - view.panY) / view.zoom - base.offY) / base.scale,
-    }),
-    [base, view],
+    (px: number, py: number): { x: number; y: number } => {
+      const [ux, uy] = turn(px, py, -rot)
+      return {
+        x: ((ux - view.panX) / view.zoom - base.offX) / base.scale,
+        y: ((uy - view.panY) / view.zoom - base.offY) / base.scale,
+      }
+    },
+    [base, view, rot, turn],
   )
+
+  // Fit: frame the points given, leaving a margin, whenever seq changes.
+  // One point (you alone) zooms in on it instead. On a turned map the
+  // points are framed as turned about you: with b a point before zoom and
+  // pan, and bp you, a point lands at (bp + R(b - bp)) * zoom + pan.
+  const fitSeq = fitTo?.seq
+  useEffect(() => {
+    if (!fitTo || fitTo.points.length === 0 || size.w < 2) return
+    const bx = (x: number): number => x * base.scale + base.offX
+    const by = (y: number): number => y * base.scale + base.offY
+    const [px, py] = onThisMap && rot ? [bx(onThisMap.x), by(onThisMap.y)] : [0, 0]
+    const c = Math.cos(rot)
+    const sn = Math.sin(rot)
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
+    for (const p of fitTo.points) {
+      const dx = bx(p.x) - px
+      const dy = by(p.y) - py
+      const qx = dx * c - dy * sn
+      const qy = dx * sn + dy * c
+      x0 = Math.min(x0, qx); x1 = Math.max(x1, qx)
+      y0 = Math.min(y0, qy); y1 = Math.max(y1, qy)
+    }
+    const pad = 60
+    const zoom = Math.min(
+      12,
+      Math.max(0.5, Math.min((size.w - pad * 2) / Math.max(1, x1 - x0), (size.h - pad * 2) / Math.max(1, y1 - y0))),
+    )
+    setView({
+      zoom,
+      panX: size.w / 2 - (px + (x0 + x1) / 2) * zoom,
+      panY: size.h / 2 - (py + (y0 + y1) / 2) * zoom,
+    })
+    // Only a new seq refits; the points move every frame.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fitSeq])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -676,9 +752,10 @@ export function ZoneMap({
     // vendor. Fill is very light: overlapping rings should read as "deeper
     // trouble" without turning a camp into a solid blob.
     if (aggroRings && aggroRings.length > 0) {
-      const [ox] = toScreen(0, 0)
-      const [ux] = toScreen(1, 0)
-      const pxPerUnit = Math.abs(ux - ox)
+      const [ox, oy] = toScreen(0, 0)
+      const [ux, uy] = toScreen(1, 0)
+      // A distance, not an x difference, so a turned map scales the same.
+      const pxPerUnit = Math.hypot(ux - ox, uy - oy)
       ctx.save()
       for (const r of aggroRings) {
         const [px, py] = toScreen(r.x, r.y)
@@ -895,7 +972,7 @@ export function ZoneMap({
         ctx.strokeStyle = r.color
         ctx.stroke()
       } else {
-        ctx.rotate(-((r.heading ?? 0) / 512) * Math.PI * 2)
+        ctx.rotate(rot - ((r.heading ?? 0) / 512) * Math.PI * 2)
         ctx.beginPath()
         ctx.moveTo(0, -6)
         ctx.lineTo(4, 5)
@@ -974,7 +1051,7 @@ export function ZoneMap({
         const [gx, gy] = toScreen(gm.x, gm.y)
         ctx.save()
         ctx.translate(gx, gy)
-        ctx.rotate(-((gm.heading ?? 0) / 512) * Math.PI * 2)
+        ctx.rotate(rot - ((gm.heading ?? 0) / 512) * Math.PI * 2)
         ctx.beginPath()
         ctx.moveTo(0, -5.5)
         ctx.lineTo(3.5, 4.5)
@@ -1006,8 +1083,9 @@ export function ZoneMap({
       const [px, py] = toScreen(playerPos.x, playerPos.y)
       ctx.save()
       ctx.translate(px, py)
-      // EQ heading is 0-512 counter-clockwise with 0 = north.
-      ctx.rotate(-((playerPos.heading ?? 0) / 512) * Math.PI * 2)
+      // EQ heading is 0-512 counter-clockwise with 0 = north; rot is the
+      // map's own turn.
+      ctx.rotate(rot - ((playerPos.heading ?? 0) / 512) * Math.PI * 2)
       ctx.beginPath()
       ctx.moveTo(0, -7)
       ctx.lineTo(4.5, 6)
@@ -1023,7 +1101,10 @@ export function ZoneMap({
       ctx.fill()
       ctx.restore()
     }
-  }, [geometry, shown, zone, size, toScreen, view.zoom, depth, highlights, aggroRings, spawnDots, raiders, replayTarget, playerPos, groupMembers, showLabels, detail, showDetail, outline, external, mode, zScale, paths])
+
+    // ── compass ── only on a turned map, where north isn't up.
+    if (rot) drawCompass(ctx, 24, 60, rot)
+  }, [geometry, shown, zone, size, toScreen, rot, view.zoom, depth, highlights, aggroRings, spawnDots, raiders, replayTarget, playerPos, groupMembers, showLabels, detail, showDetail, outline, external, mode, zScale, paths])
 
   // Wheel zoom is attached natively with passive:false. React registers wheel
   // as a passive listener, so preventDefault() there is ignored — it never
@@ -1530,4 +1611,47 @@ function DepthControl({
       </button>
     </div>
   )
+}
+
+// drawCompass draws a small compass rose centred at (x, y) whose N points
+// angle radians clockwise from straight up. Shared with the 3D view.
+export function drawCompass(ctx: CanvasRenderingContext2D, x: number, y: number, angle: number): void {
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.beginPath()
+  ctx.arc(0, 0, 13, 0, Math.PI * 2)
+  ctx.fillStyle = 'rgba(10,10,12,0.7)'
+  ctx.fill()
+  ctx.lineWidth = 1
+  ctx.strokeStyle = 'rgba(255,255,255,0.25)'
+  ctx.stroke()
+  ctx.rotate(angle)
+  ctx.beginPath()
+  ctx.moveTo(0, -10)
+  ctx.lineTo(3.5, 0)
+  ctx.lineTo(-3.5, 0)
+  ctx.closePath()
+  ctx.fillStyle = '#ef4444'
+  ctx.fill()
+  ctx.beginPath()
+  ctx.moveTo(0, 10)
+  ctx.lineTo(3.5, 0)
+  ctx.lineTo(-3.5, 0)
+  ctx.closePath()
+  ctx.fillStyle = 'rgba(255,255,255,0.6)'
+  ctx.fill()
+  ctx.restore()
+  // N stays upright, just outside the rose where the needle points.
+  ctx.save()
+  ctx.font = '600 9px system-ui, sans-serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.lineWidth = 3
+  ctx.strokeStyle = 'rgba(0,0,0,0.75)'
+  const nx = x + Math.sin(angle) * 19
+  const ny = y - Math.cos(angle) * 19
+  ctx.strokeText('N', nx, ny)
+  ctx.fillStyle = '#fca5a5'
+  ctx.fillText('N', nx, ny)
+  ctx.restore()
 }
