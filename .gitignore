@@ -47,6 +47,9 @@ secrets.*
 # ── Go ────────────────────────────────────────────────────────────────────────
 backend/bin/
 /bin/
+# What a bare `go build ./cmd/server` leaves in backend/; real builds go to
+# backend/bin/.
+/backend/server
 *.exe
 *.exe~
 
