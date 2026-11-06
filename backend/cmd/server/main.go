@@ -1265,12 +1265,18 @@ func main() {
 	factionEngine.SetFactionIDResolver(database.GetFactionIDByName)
 	factionEngine.SetQuestDialogueResolver(factionDialogueResolver)
 	// A /con reading is unreliable while the player is illusioned — check
-	// every currently active buff timer's spell effects for SPA 58
-	// (Illusion), the same check buffmod already uses for the Permanent
-	// Illusion AA override.
+	// the player's own running buff timers for SPA 58 (Illusion), the same
+	// check buffmod already uses for the Permanent Illusion AA override.
+	// Timers on anyone else (an illusion cast on a groupmate) or expired
+	// ones lingering as reminders don't count. Only the faction tracker uses
+	// this, as a fallback for when the pipe's buff slots aren't available.
 	timerIllusioned := func() bool {
+		self := activeChar()
 		for _, t := range timerEngine.GetState().Timers {
-			if t.Category != spelltimer.CategoryBuff || t.SpellID == 0 {
+			if t.Category != spelltimer.CategoryBuff || t.SpellID == 0 || t.Expired {
+				continue
+			}
+			if t.TargetName != "You" && (self == "" || !strings.EqualFold(t.TargetName, self)) {
 				continue
 			}
 			sp, err := database.GetSpell(t.SpellID)
@@ -1288,7 +1294,9 @@ func main() {
 	// buffs, feign death, engagement — everything the server folds into a
 	// /con answer (see internal/selfstate). Buffs come from the pipe's buff
 	// slots; the log covers the rest. A change drops the NPC overlay's /con
-	// reading, since it no longer says what the NPC would do now.
+	// reading, since it no longer says what the NPC would do now. The overlay
+	// tag only trusts those live buff slots, never the spell timers, which
+	// can outlive the buff they track.
 	selfState := selfstate.New(func(name string) ([]int, bool) {
 		sp, err := database.GetSpellByExactName(name)
 		if err != nil || sp == nil {
@@ -1298,13 +1306,7 @@ func main() {
 	})
 	selfState.OnChange(npcTracker.InvalidateConsider)
 	npcTracker.SetConsiderStateProvider(func() string {
-		if r := selfState.State().Reason(); r != "" {
-			return r
-		}
-		if timerIllusioned() {
-			return "illusioned"
-		}
-		return ""
+		return selfState.State().Reason()
 	})
 	const npcClassMerchant = 41 // npc_types.class
 	// pipePetID is the player's pet spawn id from Zeal (0 = none / unknown).
