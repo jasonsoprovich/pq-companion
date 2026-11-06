@@ -14,8 +14,11 @@ func TestMatchEvent(t *testing.T) {
 		{"kill", "terris thule", "ponb_terris"},           // case-insensitive
 		{"kill", "the Keeper of Sorrows", "potor_keeper"}, // article-insensitive (rule has "the")
 		{"kill", "Keeper of Sorrows", "potor_keeper"},     // and without the article
-		{"kill", "Vallon Zek", "potac_vallon"},
-		{"kill", "Tallon Zek", "potac_tallon"},
+		// The Zeks are detected from their projection's grant pair instead:
+		// Vallon's split copies print "has been slain" long before the real
+		// kill, and Tallon/the Warlord die without one (2026-11-04 raid log).
+		{"kill", "Vallon Zek", ""},
+		{"kill", "Tallon Zek", ""},
 		{"kill", "a gnoll pup", ""},      // random mob → no match
 		{"zone", "Plane of Justice", ""}, // not a key-ring zone
 		// Key-ring zone-ins: zoning in IS the key-ring grant, and #popflags
