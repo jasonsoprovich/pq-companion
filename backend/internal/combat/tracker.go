@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
@@ -984,6 +986,39 @@ func isEyeOfXPet(name string) string {
 	return owner
 }
 
+// activeFightNameLocked folds name onto the key of an already-active fight
+// that differs only in the case of its first letter. Article-less NPCs are
+// logged lowercase mid-sentence ("You pierce froglok krup shaman") but
+// capitalised when they open the line ("Froglok krup shaman hits YOU"), and
+// canonicalNPCName only folds the "A "/"An " article forms. Without this the
+// two spellings key separate fights: the capitalised one holds only incoming
+// damage, outlives the kill, and keeps re-arming on every later pull of the
+// same mob type, stretching the merged live view's raid span across the whole
+// chain. Returns name unchanged when no such fight is active. Caller must hold
+// t.mu.
+func (t *Tracker) activeFightNameLocked(name string) string {
+	if name == "" {
+		return name
+	}
+	if _, ok := t.activeFights[name]; ok {
+		return name
+	}
+	r, size := utf8.DecodeRuneInString(name)
+	var alt string
+	switch {
+	case unicode.IsUpper(r):
+		alt = string(unicode.ToLower(r)) + name[size:]
+	case unicode.IsLower(r):
+		alt = string(unicode.ToUpper(r)) + name[size:]
+	default:
+		return name
+	}
+	if _, ok := t.activeFights[alt]; ok {
+		return alt
+	}
+	return name
+}
+
 // findOrCreateFightLocked returns the Fight for npcName, creating it if not
 // already active. Caller must hold t.mu.
 func (t *Tracker) findOrCreateFightLocked(npcName string, ts time.Time) *Fight {
@@ -1096,6 +1131,8 @@ func (t *Tracker) recordHit(ts time.Time, data logparser.CombatHitData) {
 	data.Actor = canonicalNPCName(data.Actor)
 	data.Target = canonicalNPCName(data.Target)
 	t.mu.Lock()
+	data.Actor = t.activeFightNameLocked(data.Actor)
+	data.Target = t.activeFightNameLocked(data.Target)
 
 	wasInCombat := len(t.activeFights) > 0
 
@@ -1231,6 +1268,7 @@ func (t *Tracker) recordDamageShield(target string) {
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	target = t.activeFightNameLocked(target)
 	c := t.lastSpellHit
 	if c == nil || c.fight.npcName != target {
 		return
@@ -1312,7 +1350,7 @@ func (t *Tracker) recordMiss(ts time.Time, data logparser.CombatMissData) {
 func (t *Tracker) resolveNPCForMiss(actor, target string) string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.resolveNPC(actor, target)
+	return t.resolveNPC(t.activeFightNameLocked(actor), t.activeFightNameLocked(target))
 }
 
 // extendMostRecentActivity pushes the most-recently-touched active fight's
@@ -1657,7 +1695,7 @@ func (t *Tracker) endFightByNPC(npcName string, ts time.Time) {
 		return
 	}
 	t.mu.Lock()
-	f, ok := t.activeFights[npcName]
+	f, ok := t.activeFights[t.activeFightNameLocked(npcName)]
 	if !ok {
 		t.mu.Unlock()
 		return

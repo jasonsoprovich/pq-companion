@@ -270,6 +270,37 @@ func TestIncomingDamageTracked(t *testing.T) {
 	}
 }
 
+// TestSentenceCaseNPCNameSharesFight verifies an article-less lowercase NPC
+// ("froglok krup shaman") and its sentence-initial capitalised form
+// ("Froglok krup shaman hits YOU") land in ONE fight. Split, the capitalised
+// fight held only incoming damage, survived the kill, and on back-to-back
+// pulls of the same mob stretched the live raid span (and so Raid-mode DPS)
+// across the whole chain.
+func TestSentenceCaseNPCNameSharesFight(t *testing.T) {
+	tr := newTestTracker(t)
+	start := time.Now()
+
+	tr.Handle(hitEvent("You", "froglok krup shaman", 100, start))
+	tr.Handle(hitEvent("Froglok krup shaman", "You", 80, start.Add(time.Second)))
+	tr.Handle(hitEvent("You", "froglok krup shaman", 100, start.Add(2*time.Second)))
+
+	tr.mu.Lock()
+	n := len(tr.activeFights)
+	tr.mu.Unlock()
+	if n != 1 {
+		t.Fatalf("expected 1 active fight, got %d", n)
+	}
+
+	tr.Handle(killEvent("You", "Froglok krup shaman", start.Add(3*time.Second)))
+	st := tr.GetState()
+	if st.InCombat {
+		t.Fatal("expected InCombat=false after kill (no stale capitalised fight)")
+	}
+	if len(st.RecentFights) != 1 || st.RecentFights[0].TotalDamage != 200 {
+		t.Fatalf("expected 1 archived fight with 200 damage, got %+v", st.RecentFights)
+	}
+}
+
 // TestZoneKeepsFightActive verifies a zone change no longer force-ends the
 // fight: a wizard who zones to drop aggro keeps their parse, which continues
 // accumulating when they return (same NPC key) and only archives on kill /
