@@ -8,8 +8,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/logparser"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
@@ -987,36 +985,18 @@ func isEyeOfXPet(name string) string {
 }
 
 // activeFightNameLocked folds name onto the key of an already-active fight
-// that differs only in the case of its first letter. Article-less NPCs are
-// logged lowercase mid-sentence ("You pierce froglok krup shaman") but
-// capitalised when they open the line ("Froglok krup shaman hits YOU"), and
-// canonicalNPCName only folds the "A "/"An " article forms. Without this the
-// two spellings key separate fights: the capitalised one holds only incoming
-// damage, outlives the kill, and keeps re-arming on every later pull of the
-// same mob type, stretching the merged live view's raid span across the whole
-// chain. Returns name unchanged when no such fight is active. Caller must hold
-// t.mu.
+// that differs only in the case of its first letter (see
+// logparser.MatchNPCNameCase). Without this the sentence-initial capitalised
+// spelling of an article-less NPC keys a separate fight that holds only
+// incoming damage, outlives the kill, and keeps re-arming on every later pull
+// of the same mob type, stretching the merged live view's raid span across the
+// whole chain. Returns name unchanged when no such fight is active. Caller
+// must hold t.mu.
 func (t *Tracker) activeFightNameLocked(name string) string {
-	if name == "" {
-		return name
-	}
-	if _, ok := t.activeFights[name]; ok {
-		return name
-	}
-	r, size := utf8.DecodeRuneInString(name)
-	var alt string
-	switch {
-	case unicode.IsUpper(r):
-		alt = string(unicode.ToLower(r)) + name[size:]
-	case unicode.IsLower(r):
-		alt = string(unicode.ToUpper(r)) + name[size:]
-	default:
-		return name
-	}
-	if _, ok := t.activeFights[alt]; ok {
-		return alt
-	}
-	return name
+	return logparser.MatchNPCNameCase(name, func(n string) bool {
+		_, ok := t.activeFights[n]
+		return ok
+	})
 }
 
 // findOrCreateFightLocked returns the Fight for npcName, creating it if not

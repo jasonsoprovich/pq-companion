@@ -230,6 +230,33 @@ func TestTauntCasingMismatchStillApplies(t *testing.T) {
 	}
 }
 
+// TestSentenceCaseMobNameMerges covers an article-less NPC whose combat fight
+// key and personal-meter key differ only in first-letter case, plus a taunt
+// emote that opens with the capitalised name. All must land on one mob card.
+func TestSentenceCaseMobNameMerges(t *testing.T) {
+	a := newAsm(fakeDmg{mob("froglok krup shaman",
+		combat.AttackerDamage{Name: "Narya", Class: "Wizard", Damage: 2000},
+		combat.AttackerDamage{Name: "Borg", Class: "Warrior", Damage: 500},
+	)}, fakePersonal{"Froglok krup shaman": 300}, nil, nil)
+	a.SetPipeTarget("Froglok krup shaman")
+	a.Handle(tauntEv("Froglok krup shaman", "Borg"))
+
+	s := a.GetState()
+	if len(s.Mobs) != 1 {
+		t.Fatalf("mobs = %d, want 1 merged card", len(s.Mobs))
+	}
+	m := &s.Mobs[0]
+	if findPlayer(m, "You") == nil {
+		t.Errorf("personal You row not merged into the combat card")
+	}
+	if got := findPlayer(m, "Borg"); got == nil || got.Hate != 2010 {
+		t.Errorf("Borg after capitalised taunt = %v, want 2010", got)
+	}
+	if !m.IsTarget {
+		t.Errorf("IsTarget = false, want true (pipe target differs in case)")
+	}
+}
+
 func TestTauntNoOpWhenAlreadyTop(t *testing.T) {
 	a := newAsm(fakeDmg{mob("a dragon",
 		combat.AttackerDamage{Name: "Borg", Class: "Warrior", Damage: 3000},

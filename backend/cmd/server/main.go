@@ -599,7 +599,18 @@ func main() {
 	// meter regardless of whether the raid threat feature is enabled.
 	threatTracker.SetTopHateFn(func(mob string) int64 {
 		var top int64
-		for _, md := range combatTracker.RaidThreatDamage() {
+		mobs := combatTracker.RaidThreatDamage()
+		// The fight key may differ from the threat key in first-letter case
+		// for an article-less NPC (see logparser.MatchNPCNameCase).
+		mob = logparser.MatchNPCNameCase(mob, func(n string) bool {
+			for _, md := range mobs {
+				if md.Mob == n {
+					return true
+				}
+			}
+			return false
+		})
+		for _, md := range mobs {
 			if md.Mob != mob {
 				continue
 			}

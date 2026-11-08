@@ -636,9 +636,30 @@ func (t *Tracker) applyPendingLocked(p *pendingCast, ts time.Time, mode commitMo
 // Caller must hold t.mu.
 func (t *Tracker) castTargetLocked() string {
 	if t.pipeTarget != "" {
-		return t.pipeTarget
+		return t.mobNameLocked(t.pipeTarget)
 	}
 	return t.lastEngaged
+}
+
+// canonicalMob normalises a mob name from a log line and folds it onto an
+// already-tracked mob whose name differs only in the case of its first letter
+// (see logparser.MatchNPCNameCase), so an article-less NPC's sentence-initial
+// capitalised spelling ("Froglok krup shaman ...") doesn't open a second hate
+// entry beside its lowercase one. Takes t.mu briefly; events are handled
+// serially, so nothing can create the other spelling before the caller locks.
+func (t *Tracker) canonicalMob(name string) string {
+	name = logparser.CanonicalNPCName(name)
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.mobNameLocked(name)
+}
+
+// mobNameLocked is canonicalMob's fold step for callers already holding t.mu.
+func (t *Tracker) mobNameLocked(name string) string {
+	return logparser.MatchNPCNameCase(name, func(n string) bool {
+		_, ok := t.mobs[n]
+		return ok
+	})
 }
 
 // ensureMobLocked returns the mob's state, creating it on first contact. Caller
@@ -705,7 +726,7 @@ func (t *Tracker) addHateLocked(mob string, amount float64, ts time.Time, applyH
 // matching how EQ always emits the flavor line directly after the hit it
 // explains.
 func (t *Tracker) recordSpellDamage(mob string, dmg int, ts time.Time) {
-	mob = logparser.CanonicalNPCName(mob)
+	mob = t.canonicalMob(mob)
 	if mob == "" || mob == "You" {
 		return
 	}
@@ -745,7 +766,7 @@ func (t *Tracker) recordSpellDamage(mob string, dmg int, ts time.Time) {
 // (e.g. a raid-mate's own damage shield producing an unrelated flavor line
 // that happens to arrive right after one of our credits on a different mob).
 func (t *Tracker) retractDamageShield(target string, ts time.Time) {
-	target = logparser.CanonicalNPCName(target)
+	target = t.canonicalMob(target)
 	if target == "" {
 		return
 	}
@@ -782,7 +803,7 @@ func (t *Tracker) retractDamageShield(target string, ts time.Time) {
 // per-tick damage. The observed damage feeds the per-mob melee average that backs
 // the miss-hate fallback. Direct spell damage goes through recordSpellDamage.
 func (t *Tracker) recordDamage(mob string, dmg int, melee bool, ts time.Time) {
-	mob = logparser.CanonicalNPCName(mob)
+	mob = t.canonicalMob(mob)
 	if mob == "" || mob == "You" {
 		return
 	}
@@ -817,7 +838,7 @@ func (t *Tracker) recordDamage(mob string, dmg int, melee bool, ts time.Time) {
 // weapon's swing value when known; otherwise it estimates the miss as this
 // character's average landed swing on that mob (a no-op until one has landed).
 func (t *Tracker) recordMiss(mob string, ts time.Time) {
-	mob = logparser.CanonicalNPCName(mob)
+	mob = t.canonicalMob(mob)
 	if mob == "" || mob == "You" {
 		return
 	}
@@ -848,7 +869,7 @@ func (t *Tracker) recordMiss(mob string, ts time.Time) {
 // observed damage when the weapon isn't a known piercer. Melee-type hate, so the
 // hate modifier never applies.
 func (t *Tracker) recordBackstab(mob string, dmg int, ts time.Time) {
-	mob = logparser.CanonicalNPCName(mob)
+	mob = t.canonicalMob(mob)
 	if mob == "" || mob == "You" {
 		return
 	}
@@ -975,7 +996,7 @@ func (t *Tracker) expireMod(spellName string, gen uint64) {
 // endMob drops a single mob (kill or staleness) and broadcasts the change.
 // Returns false if no mob with that name is tracked.
 func (t *Tracker) endMob(mob string, ts time.Time) bool {
-	mob = logparser.CanonicalNPCName(mob)
+	mob = t.canonicalMob(mob)
 	if mob == "" {
 		return false
 	}
@@ -1128,7 +1149,7 @@ func (t *Tracker) recordRogueEvade(ts time.Time) {
 // over our own prior hate rather than landing as a no-op, which would make a
 // successful taunt read as if it had done nothing.
 func (t *Tracker) recordTaunt(mob string, ts time.Time) {
-	mob = logparser.CanonicalNPCName(mob)
+	mob = t.canonicalMob(mob)
 	if mob == "" {
 		return
 	}
@@ -1289,8 +1310,9 @@ func liveTPSLocked(m *mobState, now time.Time) float64 {
 // highest-hate mob. Caller must hold t.mu.
 func (t *Tracker) highlightLocked() string {
 	if t.pipeTarget != "" {
-		if _, ok := t.mobs[t.pipeTarget]; ok {
-			return t.pipeTarget
+		pipe := t.mobNameLocked(t.pipeTarget)
+		if _, ok := t.mobs[pipe]; ok {
+			return pipe
 		}
 	}
 	if t.lastEngaged != "" {

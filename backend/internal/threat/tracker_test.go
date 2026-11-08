@@ -333,6 +333,38 @@ func TestPipeTargetHighlightCasingMismatch(t *testing.T) {
 	}
 }
 
+// TestSentenceCaseMobNameSharesEntry covers an article-less NPC logged
+// lowercase mid-sentence ("You pierce froglok krup shaman") but capitalised
+// when it opens the line ("Froglok krup shaman has been slain by ..."). Both
+// spellings must hit one hate entry, so the capitalised kill clears it.
+func TestSentenceCaseMobNameSharesEntry(t *testing.T) {
+	tr := NewTracker(nil, nil, nil)
+	t0 := time.Now()
+	tr.Handle(hit("froglok krup shaman", 100, t0))
+	tr.Handle(hit("Froglok krup shaman", 50, t0.Add(time.Second)))
+	s := tr.GetState()
+	if got := hateFor(s, "froglok krup shaman"); got != 150 {
+		t.Fatalf("hate = %d, want 150 on the first-seen spelling", got)
+	}
+	if got := hateFor(s, "Froglok krup shaman"); got != -1 {
+		t.Fatalf("capitalised spelling tracked separately (hate=%d)", got)
+	}
+
+	tr.SetPipeTarget("Froglok krup shaman")
+	if s := tr.GetState(); s.Target == nil || !s.Target.IsTarget {
+		t.Fatalf("highlight = %v, want froglok krup shaman targeted", s.Target)
+	}
+
+	tr.Handle(logparser.LogEvent{
+		Type:      logparser.EventKill,
+		Timestamp: t0.Add(2 * time.Second),
+		Data:      logparser.KillData{Killer: "You", Target: "Froglok krup shaman"},
+	})
+	if got := hateFor(tr.GetState(), "froglok krup shaman"); got != -1 {
+		t.Errorf("mob still tracked after capitalised kill (hate=%d)", got)
+	}
+}
+
 // ── Phase 3: standard hate, hate-mod buffs, heal, miss, feign ───────────────
 
 // spellDetrimentalUtility is a no-damage control spell (mez/charm/stun-like):

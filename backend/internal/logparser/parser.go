@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // tsLayout is the Go time layout for EQ log timestamps.
@@ -1084,6 +1086,34 @@ func CanonicalNPCName(name string) string {
 	default:
 		return name
 	}
+}
+
+// MatchNPCNameCase returns the spelling of name that known already holds when
+// the two differ only in the case of the first letter, else name unchanged.
+// Article-less NPCs ("froglok krup shaman") are logged lowercase mid-sentence
+// but capitalised when they open the line ("Froglok krup shaman hits YOU"),
+// and CanonicalNPCName can't fold that without context: a lowercase first
+// letter is only right for those NPCs, never for "Lord Nagafen" or a player.
+// Matching against the keys a caller is already tracking keeps one mob on one
+// key whichever spelling arrived first. known is called at most twice.
+func MatchNPCNameCase(name string, known func(string) bool) string {
+	if name == "" || known(name) {
+		return name
+	}
+	r, size := utf8.DecodeRuneInString(name)
+	var alt string
+	switch {
+	case unicode.IsUpper(r):
+		alt = string(unicode.ToLower(r)) + name[size:]
+	case unicode.IsLower(r):
+		alt = string(unicode.ToUpper(r)) + name[size:]
+	default:
+		return name
+	}
+	if known(alt) {
+		return alt
+	}
+	return name
 }
 
 // classifyConsiderBucket maps a /con disposition clause (reConsider's group 2)

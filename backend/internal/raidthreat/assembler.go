@@ -147,6 +147,10 @@ func (a *Assembler) collectBase() map[string]map[string]*RaidEntry {
 
 	out := make(map[string]map[string]*RaidEntry)
 	ensure := func(mob string) map[string]*RaidEntry {
+		// The combat fight key and the personal meter's mob key can differ
+		// in first-letter case for an article-less NPC (whichever spelling
+		// each saw first) — fold so one mob gets one card.
+		mob = matchMobKey(mob, out)
 		m := out[mob]
 		if m == nil {
 			m = make(map[string]*RaidEntry)
@@ -201,7 +205,7 @@ func (a *Assembler) GetState() RaidThreatState {
 	base := a.collectBase()
 
 	a.mu.Lock()
-	pipe := a.pipeTarget
+	pipe := matchMobKey(a.pipeTarget, base)
 	// Snapshot the dismissed set so we can drop those mobs after releasing the
 	// lock (the final assembly loop runs unlocked).
 	var dismissed map[string]bool
@@ -214,6 +218,7 @@ func (a *Assembler) GetState() RaidThreatState {
 	// Layer taunt offsets on top of base, materialising a taunt-only player
 	// (one who taunted but hasn't been seen doing damage yet) as a bare row.
 	for mob, offs := range a.taunt {
+		mob = matchMobKey(mob, base)
 		m := base[mob]
 		if m == nil {
 			m = make(map[string]*RaidEntry)
@@ -235,7 +240,7 @@ func (a *Assembler) GetState() RaidThreatState {
 	// leaving the zone (see applyDeparture) — their cumulative damage keeps
 	// climbing in the combat tracker, but their real hate is gone.
 	for mob, offs := range a.left {
-		m := base[mob]
+		m := base[matchMobKey(mob, base)]
 		if m == nil {
 			continue
 		}
@@ -254,7 +259,7 @@ func (a *Assembler) GetState() RaidThreatState {
 
 	state := RaidThreatState{Mobs: make([]RaidMob, 0, len(base)), LastUpdated: now}
 	for mob, players := range base {
-		if len(players) == 0 || dismissed[mob] {
+		if len(players) == 0 || dismissed[matchMobKey(mob, dismissed)] {
 			continue
 		}
 		rows := make([]RaidEntry, 0, len(players))
@@ -314,6 +319,15 @@ func (a *Assembler) applyTaunt(mob, taunter string) {
 
 	a.mu.Lock()
 	defer a.mu.Unlock()
+
+	// An article-less NPC opens the emote capitalised ("Froglok krup shaman
+	// says ...") while the damage keys usually hold it lowercase, which
+	// CanonicalNPCName can't fold. Match the live base keys first, then any
+	// taunt-only mob from an earlier emote.
+	mob = matchMobKey(mob, base)
+	if _, ok := base[mob]; !ok {
+		mob = matchMobKey(mob, a.taunt)
+	}
 
 	// Current displayed hate (base + existing offset) for every player on the
 	// mob, including earlier taunt-only players.
@@ -439,13 +453,12 @@ func (a *Assembler) DismissMob(name string) bool {
 	if name == "" {
 		return false
 	}
-	present := false
+	shown := make(map[string]bool)
 	for _, m := range a.GetState().Mobs {
-		if m.Name == name {
-			present = true
-			break
-		}
+		shown[m.Name] = true
 	}
+	name = matchMobKey(name, shown)
+	present := shown[name]
 	if !present {
 		return false
 	}
@@ -509,10 +522,11 @@ func (a *Assembler) Handle(ev logparser.LogEvent) {
 
 	case logparser.EventKill:
 		if data, ok := ev.Data.(logparser.KillData); ok {
+			mob := logparser.CanonicalNPCName(data.Target)
 			a.mu.Lock()
-			delete(a.taunt, logparser.CanonicalNPCName(data.Target))
-			delete(a.left, logparser.CanonicalNPCName(data.Target))
-			delete(a.dismissed, logparser.CanonicalNPCName(data.Target))
+			delete(a.taunt, matchMobKey(mob, a.taunt))
+			delete(a.left, matchMobKey(mob, a.left))
+			delete(a.dismissed, matchMobKey(mob, a.dismissed))
 			a.mu.Unlock()
 		}
 
@@ -586,4 +600,13 @@ func (a *Assembler) RunTicker(ctx context.Context, interval time.Duration) {
 			}
 		}
 	}
+}
+
+// matchMobKey folds name onto a key of m that differs only in the case of its
+// first letter (see logparser.MatchNPCNameCase), else returns name unchanged.
+func matchMobKey[V any](name string, m map[string]V) string {
+	return logparser.MatchNPCNameCase(name, func(n string) bool {
+		_, ok := m[n]
+		return ok
+	})
 }

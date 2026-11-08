@@ -1300,3 +1300,25 @@ func TestRealOsuiLogPhase1Coverage(t *testing.T) {
 		t.Errorf("EventCritHit events: got %d, want %d", critCount, wantCritEvents)
 	}
 }
+
+func TestMatchNPCNameCase(t *testing.T) {
+	known := map[string]bool{"froglok krup shaman": true, "Lord Nagafen": true}
+	has := func(n string) bool { return known[n] }
+	tests := []struct {
+		name, in, want string
+	}{
+		{"exact", "froglok krup shaman", "froglok krup shaman"},
+		{"capitalised folds to known lowercase", "Froglok krup shaman", "froglok krup shaman"},
+		{"lowercase folds to known capitalised", "lord Nagafen", "Lord Nagafen"},
+		{"unknown unchanged", "Orc pawn", "Orc pawn"},
+		{"non-letter unchanged", "#Overseer", "#Overseer"},
+		{"empty", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := MatchNPCNameCase(tt.in, has); got != tt.want {
+				t.Errorf("MatchNPCNameCase(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
