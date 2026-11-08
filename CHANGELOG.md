@@ -9,6 +9,14 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.33.2 — 2026-11-08
+
+A fix for the DPS meter reading far too low in Raid mode when soloing mobs whose names have no "a" or "an", with the same fix for the threat meters.
+
+### Fixes
+- **Raid-mode DPS far too low when soloing** — Mobs whose names have no "a" or "an" (like froglok krup shaman) are written in lowercase mid-sentence but capitalised when a line starts with them ("Froglok krup shaman hits YOU"). The app treated the two spellings as separate fights. The leftover one held only the hits you took and kept running from one pull to the next, so in Raid mode the live meter's fight length stretched across the whole chain and DPS showed a fraction of the real number. Combat History and Personal mode weren't affected. Both spellings now count as one fight.
+- **Threat meters split the same mobs** — the Threat Meter and Raid Threat could show such a mob twice, keep its hate showing after it died, miss it as your Zeal target, or lose a taunt's hate jump. They now treat both spellings as one mob too.
+
 ## v0.33.1 — 2026-11-06
 
 A fix for deaths going unrecorded on Project Quarm, which kept the new Death Recap and several other death-driven features from working.
