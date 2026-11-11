@@ -60,7 +60,12 @@ export default function PetView({ state, interactive = true }: PetViewProps): Re
   const finder = useCharmFinder(state.zone, showFinder || state.mode === 'broken')
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 8, height: '100%', overflowY: 'auto' }}>
+    // The scroller and the flex column are separate elements on purpose: in a
+    // fixed-height flex column, children with overflow:hidden (the charm bar)
+    // get a min-height of 0 and shrink to a sliver as the timer list grows,
+    // instead of the column overflowing and scrolling.
+    <div style={{ height: '100%', overflowY: 'auto' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 8 }}>
       {showFinder ? (
         <>
           {peekFinder && interactive && (
@@ -75,6 +80,7 @@ export default function PetView({ state, interactive = true }: PetViewProps): Re
       ) : (
         <PetCard state={state} interactive={interactive} onFinder={() => setPeekFinder(true)} />
       )}
+    </div>
     </div>
   )
 }
