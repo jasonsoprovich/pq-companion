@@ -157,9 +157,13 @@ function OverlaysManager({
   onToggleGroupPopout,
   onResetGroupPosition,
   onMoveGroupPanel,
+  lockedHints = {},
 }: {
   panelKeys: DashboardPanelKey[]
   labels: Record<DashboardPanelKey, string>
+  // Panels listed but not yet usable — shown greyed with this hint in place
+  // of the row's controls (e.g. Item Info before Zeal support is detected).
+  lockedHints?: Partial<Record<DashboardPanelKey, string>>
   layout: DashboardLayout
   onToggleVisible: (key: DashboardPanelKey) => void
   popoutStates: Record<string, boolean>
@@ -323,6 +327,32 @@ function OverlaysManager({
             <span className="text-[10px] uppercase tracking-wide" style={headerCell} title="Move — drag to position">Move</span>
             <span className="text-[10px] uppercase tracking-wide" style={headerCell} title="Reset position">Res</span>
             {panelKeys.map((key) => {
+              const lockedHint = lockedHints[key]
+              if (lockedHint) {
+                return (
+                  <React.Fragment key={key}>
+                    <span
+                      className="min-w-0"
+                      style={{ paddingTop: 5, paddingBottom: 5, opacity: 0.6 }}
+                      title={lockedHint}
+                    >
+                      <span
+                        className="block truncate text-xs"
+                        style={{ color: 'var(--color-muted)' }}
+                      >
+                        {labels[key]}
+                      </span>
+                      <span
+                        className="block text-[10px] leading-tight"
+                        style={{ color: 'var(--color-muted)' }}
+                      >
+                        {lockedHint}
+                      </span>
+                    </span>
+                    <span style={{ gridColumn: 'span 4' }} />
+                  </React.Fragment>
+                )
+              }
               const dashOn = layout[key].visible
               const popOn = !!popoutStates[PANEL_POPOUT[key].name]
               return (
@@ -459,6 +489,22 @@ export default function OverlaysDashboard(): React.ReactElement {
     if (!itemInfoOffered) keys = keys.filter((k) => k !== 'itemInfo')
     return keys
   }, [discordVoiceEnabled, itemInfoOffered])
+
+  // The Manage overlays menu still lists Item Info before Zeal support is
+  // detected, greyed with a hint, so users know the feature exists and how
+  // to unlock it.
+  const menuPanelKeys = useMemo(
+    () => VISIBLE_DASHBOARD_PANEL_KEYS.filter(
+      (k) => k !== 'discordVoice' || discordVoiceEnabled,
+    ),
+    [discordVoiceEnabled],
+  )
+  const menuLockedHints = useMemo<Partial<Record<DashboardPanelKey, string>>>(
+    () => (itemInfoOffered ? {} : {
+      itemInfo: 'Needs Zeal 1.5.0+ — open any item in game to enable',
+    }),
+    [itemInfoOffered],
+  )
 
   useEffect(() => {
     saveDashboardLayout(layout)
@@ -758,7 +804,8 @@ export default function OverlaysDashboard(): React.ReactElement {
             Custom Timers
           </button>
           <OverlaysManager
-            panelKeys={visiblePanelKeys}
+            panelKeys={menuPanelKeys}
+            lockedHints={menuLockedHints}
             labels={DASHBOARD_PANEL_LABELS}
             layout={layout}
             onToggleVisible={toggleVisible}
