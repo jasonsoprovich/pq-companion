@@ -18,6 +18,7 @@ import { useNPCTargetDistance, type NPCTargetDistance } from '../hooks/useNPCTar
 import { useLiveValue } from '../hooks/useLiveValue'
 import { LIVE_TTL, STALE_OPACITY, fmtLiveAge } from '../lib/live'
 import { useWishlistItemIds } from '../hooks/useWishlistItemIds'
+import { useUpgradeScores } from '../hooks/useUpgradeScores'
 import { useActiveCharacterLevel } from '../hooks/useActiveCharacterLevel'
 import { useOverlayEntityLinks } from '../hooks/useOverlayEntityLinks'
 import { openEntityInMain } from '../lib/overlayNav'
@@ -182,6 +183,13 @@ function LootContent({
       .finally(() => setLoading(false))
   }, [npcId])
 
+  // Gear Upgrade Finder scores for the active character, matching the
+  // in-app NPC panel and the Item Info overlay.
+  const upgrades = useUpgradeScores(
+    [...(loot?.drops ?? []), ...(loot?.zone_wide_drops ?? [])]
+      .flatMap((d) => d.items.map((i) => i.item_id)),
+  )
+
   if (loading) {
     return <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', margin: 0, padding: '4px 2px' }}>Loading loot…</p>
   }
@@ -206,6 +214,7 @@ function LootContent({
       {drop.items.map((item) => {
         const eff = effectiveDropPct(drop, item)
         const wished = wishlistItemIds.has(item.item_id)
+        const upgrade = upgrades.get(item.item_id)
         return (
           <div
             key={`${drop.id}-${item.item_id}`}
@@ -250,6 +259,14 @@ function LootContent({
             >
               {item.item_name}
             </span>
+            {upgrade && (
+              <span
+                title={`Gear upgrade for your active character (${upgrade.slot_label})`}
+                style={{ fontSize: 10, fontWeight: 600, color: '#22c55e', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}
+              >
+                +{upgrade.score.toFixed(0)}
+              </span>
+            )}
             <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
               {item.chance.toFixed(1)}%
               {item.multiplier > 1 && ` ×${item.multiplier}`}
