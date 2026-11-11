@@ -118,13 +118,16 @@ func TestGrantDatasetInvariants(t *testing.T) {
 			continue
 		}
 		n++
-		if (f.StepKind != "hail" && f.StepKind != "timed_hail") || f.Optional {
+		kind := f.StepKind
+		if (kind != "hail" && kind != "timed_hail" && kind != "kill") || f.Optional {
 			t.Errorf("%s: grant lines on a non-required or non-hail step (kind=%q optional=%v)", f.ID, f.StepKind, f.Optional)
 		}
 		if f.Qglobal == "" || f.BitPosition > 0 || atoi(f.QglobalValue) < 1 {
 			t.Errorf("%s: needs a scalar qglobal value, got %q=%q bit=%d", f.ID, f.Qglobal, f.QglobalValue, f.BitPosition)
 		}
-		timed := f.StepKind == "timed_hail"
+		// A kill step (granted only via the Seer's unlock) has no NPC to
+		// remind about, same as a timed hail.
+		timed := kind == "timed_hail" || kind == "kill"
 		if hasHail := f.HailZone != "" && f.HailNPC != ""; hasHail == timed {
 			t.Errorf("%s (kind=%q): hail_zone=%q hail_npc=%q", f.ID, f.StepKind, f.HailZone, f.HailNPC)
 		}
@@ -138,8 +141,8 @@ func TestGrantDatasetInvariants(t *testing.T) {
 			}
 		}
 	}
-	if n != 19 {
-		t.Errorf("annotated grant steps = %d, want 19", n)
+	if n != 26 {
+		t.Errorf("annotated grant steps = %d, want 26", n)
 	}
 }
 
@@ -447,6 +450,42 @@ func TestConsumerTormentGrants(t *testing.T) {
 	} {
 		if id, ok := MatchGrantLine(line); ok {
 			t.Errorf("MatchGrantLine(%.40q) = %q, want no match", line, id)
+		}
+	}
+}
+
+// Grant pairs from a live Quarm log (Osui, 2026-10/11). Raid boss deaths
+// often never reach the log (no "has been slain" line for the Keeper,
+// Saryrn, or Mithaniel), so these hails are the only signal. The Seer
+// lines come from "unlock memories" (poknowledge/Seer_Mal_Nae-Shi.lua).
+func TestMatchGrantLineLiveRaidAndSeer(t *testing.T) {
+	cases := []struct{ flagID, npc string }{
+		{"ponb_terris", "You recognize the voice in your mind to be Thelin Poxbourne's.  The words echo, 'The cruel hand of Terris no longer shall torment my dreams.  Thank you friends, you are my savior.  Please return to me in the Plane of Tranquility.  I would like to express to you my gratitude.'"},
+		{"bot_agnarr", "Karana begins to laugh quietly.  You seem to notice a great storm cloud brewing once more above him.  A sudden arching bolt hits you, but you are unharmed.  Instead a tome written in the language of the gods appears in your hands.  'Then let what I know be yours to know as well.  Your path leads you onward Osui.  The path to power or ruin, the choice is up to you.  Speak the words and I will send you on your way.'"},
+		{"hoh_mithaniel", "The Planar Projection's thoughts enter your own.  'You have done well, now receive the knowledge that Mithaniel Marr once held!'  You look down at your arms to see a set of unintelligible runes being burnt into your arms.  The pain is terrible and searing.  Suddenly the sensation is gone and the runes slowly fade.  Also among your possessions you find a small tattered book as old as the ages.  You recognize it as something that Maelin might be able to translate."},
+		{"potac_rallos", "The Cipher on your arm glows for a moment, the booming voice of the Warlord rings through your ears, 'You have finally earned the right to claim you have 'defeated' me.'"},
+		{"potor_keeper", "Tylis voice rings in your ears, 'Now I remember you.  Thank you for saving me, your spirit now may access places in my prison where it could not.  Beware Sorrowsong.'"},
+		{"potor_saryrn", "You feel the searing pain of torment as half of the Cipher of the Gods glows on your arm."},
+		{"potac_vallon", "Giwin's invitation to Drunder reminds you of some notes you found around Vallon's body."},
+		{"potac_tallon", "Giwin's invitation to Drunder reminds you of some notes you found around Tallon's body."},
+		{"pov_aerindar", "You have learned the meaning of both Justice and Honor.  You may now pass into the Halls of Honor."},
+		{"hoh_mithaniel", "An Image of Mithaniel flashes before you, 'You have finally earned a place of Honor.  Wear this Cipher with pride.'"},
+	}
+	for _, c := range cases {
+		if id, ok := MatchGrantLine(c.npc); !ok || id != c.flagID {
+			t.Errorf("MatchGrantLine(%.50q) = %q,%v, want %q", c.npc, id, ok, c.flagID)
+		}
+	}
+	// Seer "locked" texts and the no-preflag projection branches print no
+	// character flag and must not match.
+	for _, line := range []string{
+		"Your heart beat speeds as you recall the Warlord's flaming axe, behind the dark sockets of his helm you sense darker intentions.",
+		"An Image of Mithaniel flashes before you, 'You have yet to earn a place of Honor.  When you have, we will speak again.'",
+		"Karana begins to laugh quietly.  You seem to notice a great storm cloud brewing once more above him.  'Your path leads you onward mortals.  The path to power or ruin, the choice is up to you.'",
+		"The Planar Projection's thoughts enter your own.  'You have done well, however you are not ready to understand the Knowledge gained for defeating Mithaniel Marr.  Once you have learned more this knowledge will be revealed to you.'",
+	} {
+		if id, ok := MatchGrantLine(line); ok {
+			t.Errorf("MatchGrantLine(%.50q) = %q, want no match", line, id)
 		}
 	}
 }
