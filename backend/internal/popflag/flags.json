@@ -470,7 +470,8 @@
     "qglobal": "tylis",
     "qglobal_value": "2",
     "counter": true,
-    "events": [{ "kind": "kill", "match": "the Keeper of Sorrows" }]
+    "events": [{ "kind": "kill", "match": "the Keeper of Sorrows" }],
+    "grant_lines": ["Tylis Newleaf tells you, 'I must thank you for your kind efforts friends."]
   },
   {
     "id": "potor_saryrn",
@@ -484,7 +485,8 @@
     "qglobal": "saryrn",
     "qglobal_value": "1",
     "satisfied_by": [{ "qglobal": "cipher", "value": "1" }],
-    "events": [{ "kind": "kill", "match": "Saryrn" }]
+    "events": [{ "kind": "kill", "match": "Saryrn" }],
+    "grant_lines": ["The Planar Projection's thoughts enter your own.  'You have done well, now receive the knowledge that Saryrn once held!'"]
   },
   {
     "id": "potor_postflag",

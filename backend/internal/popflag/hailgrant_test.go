@@ -138,8 +138,8 @@ func TestGrantDatasetInvariants(t *testing.T) {
 			}
 		}
 	}
-	if n != 17 {
-		t.Errorf("annotated grant steps = %d, want 17", n)
+	if n != 19 {
+		t.Errorf("annotated grant steps = %d, want 19", n)
 	}
 }
 
@@ -403,6 +403,51 @@ func TestConsumerZekProjectionGrants(t *testing.T) {
 
 	if id, ok := MatchGrantLine(rallos); !ok || id != "potac_rallos" {
 		t.Errorf("MatchGrantLine(rallos) = %q,%v, want potac_rallos", id, ok)
+	}
+}
+
+// The PoTorment flaggers (potorment/#Tylis_Newleaf and A_Planar_Projection
+// Lua) grant tylis=2 and saryrn=1 with the same NPC-line + flag-line pair.
+// The flavor hails that print without a grant (a repeat #Tylis hail, the
+// no-preflag checklist branch, the sick-bay Tylis) must not match.
+func TestConsumerTormentGrants(t *testing.T) {
+	const (
+		flagLine = "You have received a character flag!"
+		keeper   = "Tylis Newleaf tells you, 'I must thank you for your kind efforts friends.  This place has laid claim to me for far too long.  Please take care and offer the dark wench my best.  I am off... and I suggest you not stray to far from that route yourselves.  Please tell me when you are ready to return and may your blades strike true!'"
+		saryrn   = "The Planar Projection's thoughts enter your own.  'You have done well, now receive the knowledge that Saryrn once held!'  You look down at your arms to see a set of unintelligible runes being burnt into your arms.  The pain is terrible and searing.  Suddenly the sensation is gone and the runes slowly fade."
+	)
+	s := openTempStore(t)
+	const char = "Osui"
+	c := NewConsumer(s, func() string { return char })
+	ts := time.Unix(9000, 0)
+	c.HandleEvent("zone", "Plane of Torment")
+	for _, npc := range []string{keeper, saryrn} {
+		c.HandleLine(ts, npc)
+		c.HandleLine(ts, flagLine)
+		ts = ts.Add(time.Minute)
+	}
+	snap, err := s.GetSnapshot(char)
+	if err != nil || snap == nil {
+		t.Fatalf("GetSnapshot = %v, %v", snap, err)
+	}
+	if snap.Qglobals["tylis"] != "2" || snap.Qglobals["saryrn"] != "1" {
+		t.Errorf("qglobals = %v, want tylis=2 saryrn=1", snap.Qglobals)
+	}
+	rows := doneByID(t, s, char)
+	for _, id := range []string{"potor_keeper", "potor_saryrn"} {
+		if !rows[id].Done {
+			t.Errorf("%s not done after its grant", id)
+		}
+	}
+
+	for _, line := range []string{
+		"Tylis Newleaf tells you, 'I don't recognize you, stranger. Thank you so much for your kind efforts.  This place has claimed me for far too long.  I will leave now that I have been freed of my torment. However, before I go, please tell me when you're [ready to return] and I will send you out first.'",
+		"The Planar Projection seems to flicker in and out of existence.  It seems to be impressed and grateful for the death of Saryrn.",
+		"Tylis Newleaf tells you, 'I wanted to thank you once again for your kind efforts, friend. That place had laid claim to me for far too long. So long that I have seen what Saryrn carries. I believe it to be a cipher between the language of the gods and common tongue. If it is real ultimate power that you seek, you should obtain it from her.'",
+	} {
+		if id, ok := MatchGrantLine(line); ok {
+			t.Errorf("MatchGrantLine(%.40q) = %q, want no match", line, id)
+		}
 	}
 }
 
