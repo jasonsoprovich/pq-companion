@@ -5,19 +5,7 @@ PQ Companion is a desktop companion app for the EverQuest emulated server
 "Project Quarm." The app is feature-complete and currently in a
 fine-tuning, bug-fixing, and maintenance phase — most ongoing work is
 polish, regressions, and incorporating periodic Project Quarm database
-updates.
-
-Capabilities (see `FEATURES.md` for the full implementation log):
-- Database explorer (items, spells, NPCs, zones) with global Cmd/Ctrl+K search
-- Combat log parser, DPS/HPS meter, and combat history with per-combatant breakdowns
-- Spell timer engine with separate buff and detrimental overlays
-- NPC info overlay (level, class, HP, resists, special abilities) keyed off the active target
-- Spell checklist cross-referenced against the Zeal spellbook export
-- Inventory tracker and key tracker (raid key components) across all characters
-- Character info pages (stats, AAs, spell modifiers)
-- Config backup manager for EQ `.ini` files
-- GINA-style custom trigger system with regex patterns, on-screen alerts, audio alerts, and importable trigger packs
-- Auto-updating Windows installer
+updates. See `FEATURES.md` for the full feature log.
 
 ## Architecture
 - **Go backend** (`backend/`): API server, log parser, timer engine, database
@@ -33,38 +21,9 @@ Capabilities (see `FEATURES.md` for the full implementation log):
 - **Marketing site** (separate repo `pq-companion-site/`): Astro + Tailwind
   static site that mirrors the app's theme tokens. Lives outside this repo.
 
-## Tech Stack
-- Go 1.22+ with `modernc.org/sqlite`, `go-chi/chi`, `gorilla/websocket`
-- Node.js 20+ with Electron 33, React 18, TypeScript, Vite (electron-vite), Tailwind CSS v4
-- SQLite for all data storage (no external DB dependency for end users)
-- electron-builder for packaging, electron-updater for auto-updates
-
 ## Key Conventions
-
-### Go Backend
-- Use standard library where possible, minimize dependencies
-- Database queries live under `internal/db/` (and feature-specific subpackages where appropriate)
-- Models with JSON struct tags
-- API handlers in `internal/api/` — one file per resource
-- Feature packages under `internal/`: `logparser`, `combat`, `spelltimer`, `trigger`, `buffmod`, `character`, `backup`, `keys`, `overlay`, `zeal`, `converter`, `config`, `ws`
-- Use structured logging (slog)
-- Error handling: wrap errors with context, never panic in library code
-- Tests: table-driven tests, test against real SQLite DB with test fixtures from `testdata/`
-
-### Frontend (React + TypeScript)
-- Functional components only, hooks for state management
-- Use shadcn/ui components where applicable
-- WebSocket hook in `hooks/useWebSocket.ts` — singleton connection
-- API client in `services/api.ts` — typed fetch wrappers
-- Types mirror Go structs in `types/`
-- Dark theme only
-- Tailwind for all styling, no CSS modules
-
-### Electron
-- Main process is thin — just window management and sidecar lifecycle
-- All business logic lives in Go, not in Electron main process
-- Overlay windows: `transparent: true`, `alwaysOnTop: true`, frameless
-- IPC only for window management commands (show/hide/resize overlays)
+Area-specific conventions live in `backend/CLAUDE.md`, `frontend/CLAUDE.md`,
+and `electron/CLAUDE.md`. All business logic belongs in Go, not Electron.
 
 ### Database
 - Never modify the EQ game database at runtime
@@ -75,7 +34,6 @@ Capabilities (see `FEATURES.md` for the full implementation log):
   Actions workflow — never hand-edit the file
 
 ### General
-- Format Go with `gofmt`
 - TypeScript: no formatter is configured in this repo — do not run Prettier
   or other formatters/linters. Match the surrounding code style by hand
   (roughly 80 char width).
@@ -135,5 +93,5 @@ See-invis flags are stored on dedicated `npc_types.see_invis` and
 
 ### Zeal Integration
 - Zeal exports inventory/spellbook as files in the EQ directory on logout
-- ZealPipes provides real-time data via Windows named pipes (future feature)
+- ZealPipes provides real-time data via Windows named pipes
 - Zeal log extensions add extra info to the standard EQ log format
