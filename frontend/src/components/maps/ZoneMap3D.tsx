@@ -674,6 +674,22 @@ export default function ZoneMap3D({
     >
       <div ref={host} className="absolute inset-0" />
       <canvas ref={labelCanvas} className="pointer-events-none absolute inset-0 h-full w-full" />
+      {status === 'ready' && (
+        // Over the compass drawNorth paints in the bottom-right corner.
+        <button
+          type="button"
+          aria-label="Turn north up"
+          title="Turn north up"
+          className="absolute rounded-full"
+          style={{ right: 11, bottom: 15, width: 26, height: 26, cursor: 'pointer' }}
+          onClick={() => {
+            const s = scene.current
+            if (!s) return
+            leaveChase.current()
+            northUp(s)
+          }}
+        />
+      )}
       {status !== 'ready' && (
         <div className="absolute inset-0 flex items-center justify-center p-6 text-center text-sm" style={{ color: 'var(--color-muted)' }}>
           {status === 'loading' ? 'Loading 3D zone…' : status}
@@ -1266,6 +1282,36 @@ function drawNorth(s: Scene3D, canvas: HTMLCanvasElement | null, w: number, h: n
   // Looking straight along north there's no direction to show.
   if (Math.hypot(dx * w, dy * h) < 1e-3) return
   drawCompass(ctx, w - 24, h - 28, Math.atan2(dx * w, dy * h))
+}
+
+// northUp swings the camera round what it orbits until north is at the
+// top of the screen, keeping its distance and how steeply it looks down.
+function northUp(s: Scene3D): void {
+  const t = s.controls.target
+  const off = s.camera.position.clone().sub(t)
+  const r = Math.hypot(off.x, off.y)
+  // Straight down there's no heading to turn from; tip a hair south, as
+  // lookDown does.
+  if (r < 1e-6) {
+    s.camera.position.copy(t).add(new THREE.Vector3(0, -off.length() * 0.001, off.z))
+    s.controls.update()
+    return
+  }
+  // Looking north the camera sits due south of the target.
+  const from = Math.atan2(off.y, off.x)
+  let turn = -Math.PI / 2 - from
+  turn = Math.atan2(Math.sin(turn), Math.cos(turn))
+  if (Math.abs(turn) < 1e-4) return
+  const start = performance.now()
+  const step = (now: number): void => {
+    const k = Math.min(1, (now - start) / 300)
+    const a = from + turn * k * k * (3 - 2 * k)
+    const c = s.controls.target
+    s.camera.position.set(c.x + Math.cos(a) * r, c.y + Math.sin(a) * r, c.z + off.z)
+    s.controls.update()
+    if (k < 1) requestAnimationFrame(step)
+  }
+  requestAnimationFrame(step)
 }
 
 function resetView(s: Scene3D): void {
