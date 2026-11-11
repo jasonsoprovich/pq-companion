@@ -95,11 +95,17 @@ const HIGHLIGHT = '#ff4fd8'
 const CLOSEST = 25
 const FLY_SPEED = 1 / 8
 
-// CUT_ABOVE is how far over the followed marker the zone is cut away when
-// cutAbove is on: clear of your head and the ceiling just over it, under
-// the floor of the level above. NO_CUT keeps everything.
+// With cutAbove on, the zone is cut away just under the ceiling over the
+// followed marker, which drops the level above and keeps the room or
+// cavern you're in whole, however high its floor climbs. Under open sky
+// nothing is cut. CUT_ABOVE is the lowest the cut goes over the marker,
+// clear of your head; HEAD is how far over the marker a surface has to be
+// to count as overhead. NO_CUT keeps everything.
 const CUT_ABOVE = 20
+const HEAD = 2
 const NO_CUT = 1e9
+// CEIL_CELL is the size of the ceiling lookup grid's cells, world units.
+const CEIL_CELL = 64
 
 const LABEL_NAMES: Record<Map3DLabels, string> = { off: 'Off', group: 'Group', all: 'All' }
 const LABEL_NEXT: Record<Map3DLabels, Map3DLabels> = { off: 'group', group: 'all', all: 'off' }
@@ -160,6 +166,18 @@ interface ZoneLayers {
   // the walls' and ceilings' array, whose opacity follows the slider.
   materials: THREE.Material[]
   faded: THREE.Material[]
+  // ceilings indexes the zone's own ceiling faces by where they sit on the
+  // ground, to find what's over the followed marker; built when first
+  // needed.
+  ceilings: CeilingGrid | null
+}
+
+// CeilingGrid buckets ceiling triangles (as offsets into idx) by the grid
+// cells their footprints cover.
+interface CeilingGrid {
+  pos: ArrayLike<number>
+  idx: ArrayLike<number>
+  cells: Map<number, number[]>
 }
 
 interface Scene3D {
@@ -848,7 +866,7 @@ function ViewOptions({ prefs, onChange, zRange, slice, onSlice }: {
       </label>
       <label
         className="flex items-start gap-1.5"
-        title="While the Top or Chase camera follows you, hide everything above head height, so the levels over you don't block the view"
+        title="While the Top or Chase camera follows you, cut the zone away just under the ceiling over you, so the levels above don't block the view. Nothing is cut under open sky"
       >
         <input
           type="checkbox"
@@ -944,7 +962,65 @@ function buildLayers(zone: string, data: ZoneMesh3D): ZoneLayers {
     textures: new Map(),
     materials: [],
     faded: [],
+    ceilings: null,
   }
+}
+
+function cellKey(cx: number, cy: number): number {
+  return (cx + 32768) * 65536 + (cy + 32768)
+}
+
+function ceilingGrid(L: ZoneLayers): CeilingGrid {
+  if (L.ceilings) return L.ceilings
+  const geo = L.own.ceiling.geometry
+  const pos = geo.getAttribute('position').array
+  const idx = geo.getIndex()?.array ?? []
+  const cells = new Map<number, number[]>()
+  for (let i = 0; i + 2 < idx.length; i += 3) {
+    const a = idx[i] * 3
+    const b = idx[i + 1] * 3
+    const c = idx[i + 2] * 3
+    const x0 = Math.floor(Math.min(pos[a], pos[b], pos[c]) / CEIL_CELL)
+    const x1 = Math.floor(Math.max(pos[a], pos[b], pos[c]) / CEIL_CELL)
+    const y0 = Math.floor(Math.min(pos[a + 1], pos[b + 1], pos[c + 1]) / CEIL_CELL)
+    const y1 = Math.floor(Math.max(pos[a + 1], pos[b + 1], pos[c + 1]) / CEIL_CELL)
+    for (let cx = x0; cx <= x1; cx++) {
+      for (let cy = y0; cy <= y1; cy++) {
+        const k = cellKey(cx, cy)
+        const list = cells.get(k)
+        if (list) list.push(i)
+        else cells.set(k, [i])
+      }
+    }
+  }
+  L.ceilings = { pos, idx, cells }
+  return L.ceilings
+}
+
+// ceilingOver returns the height of the lowest ceiling face over world
+// point (x, y) higher than z, or null under open sky.
+function ceilingOver(L: ZoneLayers, x: number, y: number, z: number): number | null {
+  const { pos, idx, cells } = ceilingGrid(L)
+  const list = cells.get(cellKey(Math.floor(x / CEIL_CELL), Math.floor(y / CEIL_CELL)))
+  if (!list) return null
+  let best = Infinity
+  for (const i of list) {
+    const a = idx[i] * 3
+    const b = idx[i + 1] * 3
+    const c = idx[i + 2] * 3
+    const x1 = pos[a], y1 = pos[a + 1]
+    const x2 = pos[b], y2 = pos[b + 1]
+    const x3 = pos[c], y3 = pos[c + 1]
+    const d = (y2 - y3) * (x1 - x3) + (x3 - x2) * (y1 - y3)
+    if (d === 0) continue
+    const l1 = ((y2 - y3) * (x - x3) + (x3 - x2) * (y - y3)) / d
+    const l2 = ((y3 - y1) * (x - x3) + (x1 - x3) * (y - y3)) / d
+    const l3 = 1 - l1 - l2
+    if (l1 < -1e-4 || l2 < -1e-4 || l3 < -1e-4) continue
+    const hz = l1 * pos[a + 2] + l2 * pos[b + 2] + l3 * pos[c + 2]
+    if (hz > z && hz < best) best = hz
+  }
+  return best === Infinity ? null : best
 }
 
 function layerMeshes(L: ZoneLayers): THREE.Mesh[] {
@@ -1103,15 +1179,22 @@ function lookDown(s: Scene3D): void {
 // CHASE_PITCH is how far above the follow's back Chase sits.
 const CHASE_PITCH = THREE.MathUtils.degToRad(35)
 
-// cutAbove clips the zone a little over the marker the camera follows,
-// while Top or Chase does, so the levels overhead in a stacked zone don't
-// hide the one you're on. A free camera is for looking round the whole
+// cutAbove clips the zone just under the ceiling over the marker the
+// camera follows, while Top or Chase does, so the levels overhead in a
+// stacked zone don't hide the one you're on. Cutting at a fixed height
+// over the marker instead hid the rising ground of hilly caverns (Plane of
+// Torment, Plane of Tranquility), leaving you on an island; with open sky
+// overhead nothing is cut. A free camera is for looking round the whole
 // zone, hills above you included, so it never cuts. slice, when set, cuts
 // at that height whatever the camera, and the lower of the two wins.
 function cutAbove(
   s: Scene3D, f: RaiderMarker | undefined, cam: Camera3D, on: boolean, slice: number | null,
 ): void {
-  const follow = on && f && cam !== 'free' ? f.z + CUT_ABOVE : NO_CUT
+  let follow = NO_CUT
+  if (on && f && cam !== 'free' && s.layers) {
+    const ceil = ceilingOver(s.layers, f.x, -f.y, f.z + HEAD)
+    if (ceil !== null) follow = Math.max(f.z + CUT_ABOVE, ceil - 1)
+  }
   s.cut.constant = Math.min(follow, slice ?? NO_CUT)
 }
 

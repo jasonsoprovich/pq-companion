@@ -26,8 +26,8 @@ export interface Map3DPrefs {
   // sight, both as the 2D map does.
   seeInvisEyes: boolean
   dashFaint: boolean
-  // cutAbove hides everything more than a head above you while the Top or
-  // Chase camera follows you, so the floors over you in a stacked zone
+  // cutAbove hides everything from the ceiling over you up while the Top
+  // or Chase camera follows you, so the floors over you in a stacked zone
   // (Bastion of Thunder, Plane of Knowledge) don't block the view down.
   cutAbove: boolean
 }
