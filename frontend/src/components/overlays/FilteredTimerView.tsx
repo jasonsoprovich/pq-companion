@@ -49,7 +49,7 @@ const PALETTES: Record<FilteredTimerTheme, Palette> = {
     muted: 'rgba(255,255,255,0.55)',
     border: 'rgba(255,255,255,0.1)',
     surface: 'rgba(255,255,255,0.04)',
-    input: 'rgba(20,20,24,0.9)',
+    input: 'rgba(255,255,255,0.06)',
   },
 }
 

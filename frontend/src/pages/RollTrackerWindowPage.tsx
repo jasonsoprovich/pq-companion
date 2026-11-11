@@ -656,7 +656,7 @@ export default function RollTrackerWindowPage(): React.ReactElement {
             disabled={presetId === 'custom'}
             title="Grouping — edit Custom on the Roll Tracker page"
             style={{
-              background: 'rgba(20,20,24,0.9)',
+              background: 'rgba(255,255,255,0.06)',
               color: 'rgba(255,255,255,0.85)',
               border: '1px solid rgba(255,255,255,0.15)',
               borderRadius: 3,
