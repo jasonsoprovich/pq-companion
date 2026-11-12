@@ -1,7 +1,11 @@
 // Audio output device helpers for the "Alert output device" preference.
 // Chromium lists output devices via enumerateDevices; 'default' (whatever
 // Windows currently uses) is dropped since the app's own "System default"
-// option already means that.
+// option already means that. 'communications' is dropped too: playing to it
+// opens a communications-role stream, which makes Windows duck every other
+// app (Spotify, Discord) by 80% for a few seconds on each alert. The same
+// physical device is still listed under its own id.
+const ALIAS_IDS = new Set(['default', 'communications'])
 
 export interface OutputDevice {
   deviceId: string
@@ -15,7 +19,10 @@ export async function listOutputDevices(): Promise<OutputDevice[]> {
   try {
     const all = await md.enumerateDevices()
     return all
-      .filter((d) => d.kind === 'audiooutput' && d.deviceId && d.deviceId !== 'default')
+      .filter(
+        (d) =>
+          d.kind === 'audiooutput' && d.deviceId && !ALIAS_IDS.has(d.deviceId),
+      )
       .map((d, i) => ({ deviceId: d.deviceId, label: d.label || `Output device ${i + 1}` }))
   } catch {
     return []
