@@ -9,10 +9,10 @@ import { listTimerGroups } from '../services/api'
 import type { TimerGroup } from '../types/trigger'
 
 // Sidebar quick-toggle for overlays, next to the character switcher — that
-// area of the sidebar is always visible. One click shows hidden overlays,
-// hides open ones (they stay alive and in place; trigger alerts keep
-// showing), or pops out the active layout when nothing is open. Same action
-// as the global show/hide hotkey (see useOverlayPopouts).
+// area of the sidebar is always visible. One click shows overlays hidden by
+// the show/hide-all hotkey, closes open ones (they stay in the layout;
+// trigger alerts keep showing), or pops out the active layout when nothing
+// is open (see useOverlayPopouts).
 //
 // The caret beside it opens the quick switcher: the layouts, and the windows
 // in the active one with a pop out / show / close each.
@@ -23,7 +23,7 @@ const POLL_MS = 1000
 const GROUP_PREFIX = 'customTimer:'
 
 // Pops out, shows or closes one window. Main's per-window toggle brings back
-// a window hidden by Hide All rather than closing it.
+// a window hidden by the hotkey rather than closing it.
 function toggleWindow(key: string, groups: TimerGroup[]): void {
   if (key.startsWith(GROUP_PREFIX)) {
     const id = key.slice(GROUP_PREFIX.length)
@@ -159,7 +159,7 @@ function QuickSwitcher({
                   backgroundColor:
                     st === 'open' ? 'var(--color-success)' : st === 'hidden' ? 'var(--color-primary)' : 'var(--color-border)',
                 }}
-                title={st === 'open' ? 'Open' : st === 'hidden' ? 'Hidden by Hide All' : 'Closed'}
+                title={st === 'open' ? 'Open' : st === 'hidden' ? 'Hidden by the hotkey' : 'Closed'}
               />
               <span
                 className="flex-1 truncate"
@@ -222,9 +222,9 @@ export default function OverlayPopoutToggle(): React.ReactElement | null {
   const showing = anyPopoutOpen && !anyHidden
   const activeName = state?.layouts.find((l) => l.id === state.activeId)?.name
   const action = anyHidden
-    ? 'Overlays hidden — click to show them again'
+    ? 'Overlays hidden by the hotkey — click to show them again'
     : anyPopoutOpen
-      ? 'Hide all overlays (they stay in place; trigger alerts keep showing)'
+      ? 'Close all overlays (they reopen in place; trigger alerts keep showing)'
       : 'Pop out your overlays'
   const borderColor = anyHidden ? 'var(--color-primary)' : 'var(--color-border)'
   const bg = showing ? 'var(--color-primary)' : 'var(--color-surface-2)'

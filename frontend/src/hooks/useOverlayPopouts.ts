@@ -1,11 +1,12 @@
 /**
- * useOverlayPopouts — shared popout visibility state and the hide/show-all
+ * useOverlayPopouts — shared popout visibility state and the open/close-all
  * toggle used by the sidebar quick-toggle button and the Overlays hub's
- * ⋯ menu (and, via the main process, the global show/hide hotkey).
+ * ⋯ menu.
  *
- * The toggle shows overlays hidden by "hide all" if there are any, otherwise
- * hides the open ones (they stay alive and in place), otherwise — nothing
- * open — opens the active overlay layout.
+ * The toggle shows overlays hidden by the show/hide-all hotkey if there are
+ * any, otherwise closes the open ones (they stay in the layout), otherwise —
+ * nothing open — opens the active overlay layout. The hotkey itself hides
+ * rather than closes; see toggleAllPopoutsVisibility in main.
  */
 import { useCallback, useEffect, useState } from 'react'
 
@@ -26,7 +27,7 @@ export function useOverlayPopouts(): {
   refresh: () => void
 } {
   const [visibility, setVisibility] = useState<PopoutVisibility>({ open: 0, hidden: 0 })
-  const supported = typeof window.electron?.overlay?.togglePopoutVisibility === 'function'
+  const supported = typeof window.electron?.overlay?.togglePopoutsOpen === 'function'
 
   const refresh = useCallback(() => {
     window.electron?.overlay?.popoutVisibility?.().then(setVisibility).catch(() => {})
@@ -48,7 +49,7 @@ export function useOverlayPopouts(): {
 
   const toggle = useCallback(() => {
     window.electron?.overlay
-      ?.togglePopoutVisibility()
+      ?.togglePopoutsOpen()
       // Re-read shortly after: an open-selection round trip creates windows
       // asynchronously.
       .then(() => { refresh(); setTimeout(refresh, 400) })

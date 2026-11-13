@@ -1,7 +1,7 @@
 /**
  * OverlayProcessesPanel — Developer tab: memory and CPU for every app
  * process, matched to the window it renders. Each overlay window is its own
- * renderer process, so this shows what an open, hidden (Hide All) or closed
+ * renderer process, so this shows what an open, hidden (by the hotkey) or closed
  * overlay costs. Polls main every 2s; CPU is the average since the last poll.
  * Memory is the working set (RAM in use); Windows also reports private bytes
  * (memory only that process holds), the better measure of what closing a
@@ -93,7 +93,7 @@ export default function OverlayProcessesPanel(): React.ReactElement {
         Each overlay window runs in its own process. Memory is RAM in use
         {hasPrivate ? '; private is memory only that process holds' : ''}. CPU
         is the average over the last {POLL_MS / 1000} seconds. Hidden overlays
-        are ones put away with Hide All; closed ones don&rsquo;t appear.
+        are ones put away with the show/hide-all hotkey; closed ones don&rsquo;t appear.
       </p>
 
       <div className="mb-3 flex flex-wrap gap-2">

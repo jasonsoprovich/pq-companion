@@ -167,6 +167,9 @@ contextBridge.exposeInMainWorld('electron', {
     // the active layout.
     togglePopoutVisibility: (): Promise<void> =>
       ipcRenderer.invoke('overlay:popouts:toggle-visibility'),
+    // Sidebar button: show hidden overlays, else close open ones, else open
+    // the active layout.
+    togglePopoutsOpen: (): Promise<void> => ipcRenderer.invoke('overlay:popouts:toggle-open'),
     // Global overlay hotkeys (Settings → Hotkeys). Action ids: 'toggleAll',
     // 'overlay:<name>' or 'layout:<id>'. Accelerators use Electron's syntax (Ctrl+Alt+H).
     hotkeysGet: (): Promise<HotkeyState> => ipcRenderer.invoke('hotkeys:get'),

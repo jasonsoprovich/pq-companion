@@ -2383,6 +2383,23 @@ function toggleAllPopoutsVisibility(): void {
   else openLayoutWindows(activeLayout())
 }
 
+// The sidebar button closes and reopens instead: a hidden window only beats
+// a closed one on how fast it comes back, which matters for a hotkey tapped
+// mid-fight, not for an occasional click. Windows hidden by the hotkey are
+// shown first, since you can't see what a click would close.
+function toggleAllPopoutsOpen(): void {
+  const { open, hidden } = popoutVisibility()
+  if (hidden > 0) showAllPopouts()
+  else if (open > 0) closeAllPopouts()
+  else openLayoutWindows(activeLayout())
+}
+
+// Close All: the windows stay in the active layout, so it reopens them.
+function closeAllPopouts(): void {
+  closedWhileHidden.clear()
+  closePopoutsInBulk(userPopoutWindows())
+}
+
 // Per-overlay toggle: an overlay hidden by "hide all" comes back rather than
 // closing, so toggling one overlay never closes something you can't see.
 function toggleOverlayWindow(win: BrowserWindow | null, create: () => void): void {
@@ -2649,6 +2666,7 @@ ipcMain.handle('hotkeys:suspend', (_event, suspend: boolean) => {
   applyHotkeys()
 })
 ipcMain.handle('overlay:popouts:toggle-visibility', () => toggleAllPopoutsVisibility())
+ipcMain.handle('overlay:popouts:toggle-open', () => toggleAllPopoutsOpen())
 
 // ── Overlay layouts ──────────────────────────────────────────────────────────
 // A layout is a named set of popout windows with each one's position, size and
@@ -3192,8 +3210,7 @@ ipcMain.handle('overlay:popouts:close-all', () => {
   // bounds. The always-on trigger overlay is intentionally left open so trigger
   // alerts keep rendering after a bulk close. A bulk close leaves the active
   // layout's window set alone, so toggling back on reopens the same windows.
-  closedWhileHidden.clear()
-  closePopoutsInBulk(userPopoutWindows())
+  closeAllPopouts()
 })
 
 // Per-overlay popout open state, keyed by canonical overlay name (excludes the

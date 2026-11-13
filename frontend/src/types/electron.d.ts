@@ -170,6 +170,7 @@ export interface ElectronAPI {
     closeAllPopouts: () => Promise<void>
     popoutVisibility: () => Promise<{ open: number; hidden: number }>
     togglePopoutVisibility: () => Promise<void>
+    togglePopoutsOpen: () => Promise<void>
     collapseGet: () => Promise<boolean>
     collapseSet: (collapsed: boolean, headerFraction: number) => Promise<boolean>
     onCollapseChanged: (cb: (collapsed: boolean) => void) => () => void

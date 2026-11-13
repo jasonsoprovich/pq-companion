@@ -228,7 +228,7 @@ export const TRIGGER_ALERTS_INFO = {
   label: 'Trigger Alerts',
   blurb: 'Alert text from your triggers, drawn over the game.',
   details:
-    'Always on, and never hidden by Hide All. Set where alert text appears and how it ' +
+    'Always on, and never hidden by the show/hide-all hotkey. Set where alert text appears and how it ' +
     'looks in the overlay settings; make and edit triggers on the Triggers page.',
 }
 

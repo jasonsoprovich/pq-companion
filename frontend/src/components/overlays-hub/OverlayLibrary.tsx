@@ -113,7 +113,7 @@ function PopButton({
         state === 'open'
           ? 'Close this overlay window'
           : state === 'hidden'
-            ? 'Hidden by Hide All or a hotkey · click to show it'
+            ? 'Hidden by a hotkey · click to show it'
             : 'Open this overlay as a window over the game'
       }
     >
