@@ -59,6 +59,16 @@ export interface ProcessMetricRow {
   cpu: number
 }
 
+// A stack window's tabs (member window keys), the one showing, and the
+// display names of named timer windows among them.
+export interface StackInfo {
+  id: string
+  key: string
+  tabs: string[]
+  active: string
+  groupNames: Record<string, string>
+}
+
 export interface ElectronAPI {
   app: {
     getVersion: () => Promise<string>
@@ -176,6 +186,12 @@ export interface ElectronAPI {
     onCollapseChanged: (cb: (collapsed: boolean) => void) => () => void
     // Hidden windows are paused (content unmounted) until shown again.
     onPausedChanged: (cb: (paused: boolean) => void) => () => void
+    stackGet: () => Promise<StackInfo | null>
+    stackSelect: (tab: string) => Promise<void>
+    stackMerge: (target: string, source: string) => Promise<boolean>
+    stackRemove: (key: string, popOut: boolean) => Promise<boolean>
+    stackClose: () => Promise<void>
+    onStackChanged: (cb: (info: StackInfo) => void) => () => void
     hotkeysGet: () => Promise<HotkeyState>
     hotkeysSet: (action: string, accelerator: string | null) => Promise<HotkeyState>
     hotkeysSetMany: (bindings: Record<string, string>) => Promise<HotkeyState>

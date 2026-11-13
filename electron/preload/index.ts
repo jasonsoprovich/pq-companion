@@ -8,6 +8,7 @@ type LayoutState = {
 type DashboardPanel = { x: number; y: number; width: number; height: number; visible: boolean }
 type LayoutDashboard = { panels: Record<string, DashboardPanel>; groups: Record<string, DashboardPanel> }
 type LayoutDashboardState = { id: string; dashboard: LayoutDashboard | null; migrated: boolean }
+type StackInfo = { id: string; key: string; tabs: string[]; active: string; groupNames: Record<string, string> }
 type ProcessRow = {
   pid: number
   role: 'overlay' | 'main' | 'trigger' | 'streamkit' | 'helper'
@@ -190,6 +191,20 @@ contextBridge.exposeInMainWorld('electron', {
     },
     // Main pauses a window it hides (Hide All, the hotkey) and resumes it on
     // show: a hidden overlay drops its content and data feed until then.
+    // Stacks: several overlays as tabs in one window. A stack window reads
+    // its tabs and picks one; anyone can merge windows or take one out.
+    stackGet: (): Promise<StackInfo | null> => ipcRenderer.invoke('overlay:stack:get'),
+    stackSelect: (tab: string): Promise<void> => ipcRenderer.invoke('overlay:stack:select', tab),
+    stackMerge: (target: string, source: string): Promise<boolean> =>
+      ipcRenderer.invoke('overlay:stack:merge', target, source),
+    stackRemove: (key: string, popOut: boolean): Promise<boolean> =>
+      ipcRenderer.invoke('overlay:stack:remove', key, popOut),
+    stackClose: (): Promise<void> => ipcRenderer.invoke('overlay:stack:close'),
+    onStackChanged: (cb: (info: StackInfo) => void): (() => void) => {
+      const listener = (_e: unknown, v: StackInfo): void => cb(v)
+      ipcRenderer.on('overlay:stack:changed', listener)
+      return () => ipcRenderer.removeListener('overlay:stack:changed', listener)
+    },
     onPausedChanged: (cb: (paused: boolean) => void): (() => void) => {
       const listener = (_e: unknown, v: boolean): void => cb(v)
       ipcRenderer.on('overlay:paused', listener)

@@ -369,7 +369,10 @@ type Bounds = { x: number; y: number; width: number; height: number }
 // lock state carry over untouched. Named-group windows are additive and
 // deliberately excluded from the OverlayName-keyed systems below (auto-open
 // on launch, move-to-display, reset-position) — see createCustomTimerGroupOverlay.
-type WindowKey = OverlayName | `customTimer:${string}`
+//
+// A stack (several overlays as tabs in one window) is keyed `stack:<id>`. Its
+// member overlays have no windows of their own while stacked.
+type WindowKey = OverlayName | `customTimer:${string}` | `stack:${string}`
 
 type BoundsStore = Partial<Record<WindowKey, Bounds>>
 type LockStore = Partial<Record<WindowKey, boolean>>
@@ -994,6 +997,7 @@ function loadOverlayRoute(win: BrowserWindow, route: string): void {
 // and stealing focus mid-fight is worse than any blank-frame flash.
 // showInactive()/moveTop() raise the window without activating it.
 function createStandardOverlay(name: StandardOverlay): void {
+  if (openStackFor(name)) return
   const existing = stdWin(name)
   if (existing) {
     showOverlayWindow(existing)
@@ -1605,6 +1609,7 @@ function customTimerWindowKey(groupId: string): `customTimer:${string}` {
 function createCustomTimerGroupOverlay(groupId: string, groupName: string): void {
   if (!groupId) return
   customTimerGroupNames.set(groupId, groupName)
+  if (openStackFor(customTimerWindowKey(groupId))) return
   const existing = customTimerGroupWindows.get(groupId)
   if (existing && !existing.isDestroyed()) {
     // Bring forward without taking focus (see createStandardOverlay).
@@ -2060,9 +2065,11 @@ for (const [name, spec] of Object.entries(STANDARD_OVERLAYS) as Array<[StandardO
     createStandardOverlay(name)
   })
   ipcMain.handle(`overlay:${spec.ipc}:close`, () => {
+    if (removeFromStack(name)) return
     stdWin(name)?.close()
   })
   ipcMain.handle(`overlay:${spec.ipc}:toggle`, () => {
+    if (toggleStacked(name)) return
     toggleOverlayWindow(stdWin(name), () => createStandardOverlay(name))
   })
 }
@@ -2082,11 +2089,14 @@ ipcMain.handle('overlay:customtimer:group:open', (_event, groupId: string, group
 })
 
 ipcMain.handle('overlay:customtimer:group:close', (_event, groupId: string) => {
+  if (removeFromStack(customTimerWindowKey(groupId))) return
   const win = customTimerGroupWindows.get(groupId)
   if (win && !win.isDestroyed()) win.close()
 })
 
 ipcMain.handle('overlay:customtimer:group:toggle', (_event, groupId: string, groupName: string) => {
+  customTimerGroupNames.set(groupId, groupName)
+  if (toggleStacked(customTimerWindowKey(groupId))) return
   toggleOverlayWindow(customTimerGroupWindows.get(groupId) ?? null, () =>
     createCustomTimerGroupOverlay(groupId, groupName),
   )
@@ -2287,7 +2297,7 @@ function userPopoutWindows(): BrowserWindow[] {
     ...standardWindows.values(),
     discordVoiceOverlayWindow,
   ].filter((w): w is BrowserWindow => !!w && !w.isDestroyed())
-  return [...fixed, ...customTimerGroupWindows.values()].filter((w) => !w.isDestroyed())
+  return [...fixed, ...customTimerGroupWindows.values(), ...stackWindows.values()].filter((w) => !w.isDestroyed())
 }
 
 ipcMain.handle('overlay:popouts:any-open', () => userPopoutWindows().length > 0)
@@ -2451,6 +2461,7 @@ function collapsedEntry(name: WindowKey): CollapseEntry | null {
 }
 
 function minSizeFor(name: WindowKey): { minWidth: number; minHeight: number } {
+  if (isStackKey(name)) return stackMinSize(stackSpec(name.slice(STACK_PREFIX.length))?.tabs ?? [])
   const base = name.startsWith('customTimer:') ? 'customTimer' : name
   return isStandardOverlay(base) ? STANDARD_OVERLAYS[base] : { minWidth: 180, minHeight: 120 }
 }
@@ -2687,7 +2698,16 @@ ipcMain.handle('overlay:popouts:toggle-open', () => toggleAllPopoutsOpen())
 // logged in on one, it switches to that character's layout. A character is
 // linked to at most one layout; names compare case-insensitively.
 
-type LayoutWindow = { key: WindowKey; groupName?: string; bounds?: Bounds; collapse?: CollapseEntry }
+// stack: for a `stack:<id>` entry, its tabs (member window keys), the tab
+// showing, and the display names of named timer windows among them.
+type StackSpec = { tabs: WindowKey[]; active: WindowKey; groupNames?: Record<string, string> }
+type LayoutWindow = {
+  key: WindowKey
+  groupName?: string
+  bounds?: Bounds
+  collapse?: CollapseEntry
+  stack?: StackSpec
+}
 type DashboardPanel = { x: number; y: number; width: number; height: number; visible: boolean }
 type LayoutDashboard = { panels: Record<string, DashboardPanel>; groups: Record<string, DashboardPanel> }
 type OverlayLayout = {
@@ -2847,9 +2867,14 @@ function parseLayoutStore(raw: unknown): LayoutStore | null {
   const layouts: OverlayLayout[] = []
   for (const l of o.layouts) {
     if (!l || typeof l.id !== 'string' || !l.id || layouts.some((x) => x.id === l.id)) continue
-    const windows = (Array.isArray(l.windows) ? l.windows : []).filter(
-      (w): w is LayoutWindow => !!w && typeof w.key === 'string' && isValidWindowKey(w.key) && w.key !== 'trigger',
-    )
+    const windows = (Array.isArray(l.windows) ? l.windows : [])
+      .filter((w): w is LayoutWindow => !!w && typeof w.key === 'string' && isValidWindowKey(w.key) && w.key !== 'trigger')
+      .map((w) => {
+        if (!isStackKey(w.key)) return { ...w, stack: undefined }
+        const stack = cleanStackSpec(w.stack)
+        return stack ? { ...w, stack } : null
+      })
+      .filter((w): w is LayoutWindow => w !== null)
     const dashboard = cleanDashboard(l.dashboard)
     // A character linked twice (hand-edited file) stays with the first layout.
     const characters = cleanCharacters(l.characters).filter(
@@ -2908,7 +2933,7 @@ function layoutSummary(): LayoutSummary {
     layouts: store.layouts.map((l) => ({
       id: l.id,
       name: l.name,
-      windows: l.windows.map((w) => w.key),
+      windows: l.windows.flatMap((w) => w.stack?.tabs ?? [w.key]),
       characters: l.characters ?? [],
     })),
   }
@@ -2998,14 +3023,383 @@ function openLayoutWindows(layout: OverlayLayout, place = false): void {
     if (win && !win.isDestroyed()) {
       if (place) placeWindowForLayout(win, w)
       else showOverlayWindow(win)
+    } else if (isStackKey(w.key)) {
+      createStackWindow(w.key.slice(STACK_PREFIX.length))
     } else if (w.key.startsWith('customTimer:')) {
       createCustomTimerGroupOverlay(w.key.slice('customTimer:'.length), w.groupName ?? '')
     } else {
       createOverlayByName(w.key as OverlayName)
     }
   }
+  // A stack id kept across layouts can have different tabs in each.
+  for (const id of stackWindows.keys()) notifyStackChanged(id)
   if (!triggerOverlayWindow || triggerOverlayWindow.isDestroyed()) createTriggerOverlay()
 }
+
+// ── Stacks ───────────────────────────────────────────────────────────────────
+// A stack shows several overlays as tabs in one window (one process). It lives
+// in the active layout as a `stack:<id>` entry with its tabs; the member
+// overlays have no entries or windows of their own while stacked. Opening a
+// stacked overlay (its card, hotkey or toggle) shows the stack on its tab.
+// A stack has its own bounds, lock and collapse state, keyed by its window
+// key; opacity and fade fall back to its first tab's until set for it.
+// A stack left with one tab turns back into that overlay's own window.
+
+const STACK_PREFIX = 'stack:'
+// Discord Voice embeds an external page; trigger alerts span the screen.
+const UNSTACKABLE = new Set<string>(['discordVoice', 'trigger'])
+const stackWindows = new Map<string, BrowserWindow>()
+
+function isStackKey(key: string): key is `stack:${string}` {
+  return key.startsWith(STACK_PREFIX)
+}
+
+function isStackable(key: string): key is WindowKey {
+  return isValidWindowKey(key) && !isStackKey(key) && !UNSTACKABLE.has(key)
+}
+
+function copyStackSpec(s: StackSpec): StackSpec {
+  return { tabs: [...s.tabs], active: s.active, ...(s.groupNames ? { groupNames: { ...s.groupNames } } : {}) }
+}
+
+// A stack spec from the layouts file, or null when it isn't a usable one.
+function cleanStackSpec(v: unknown): StackSpec | null {
+  if (!v || typeof v !== 'object') return null
+  const o = v as Record<string, unknown>
+  const tabs: WindowKey[] = []
+  for (const t of Array.isArray(o.tabs) ? o.tabs : []) {
+    if (typeof t === 'string' && isStackable(t) && !tabs.includes(t)) tabs.push(t)
+  }
+  if (tabs.length < 2) return null
+  const active = typeof o.active === 'string' && tabs.includes(o.active as WindowKey) ? (o.active as WindowKey) : tabs[0]
+  const groupNames: Record<string, string> = {}
+  if (o.groupNames && typeof o.groupNames === 'object') {
+    for (const [k, n] of Object.entries(o.groupNames as Record<string, unknown>)) {
+      if (tabs.includes(k as WindowKey) && typeof n === 'string') groupNames[k] = n
+    }
+  }
+  return { tabs, active, ...(Object.keys(groupNames).length > 0 ? { groupNames } : {}) }
+}
+
+function stackEntry(id: string): LayoutWindow | undefined {
+  return activeLayout().windows.find((w) => w.key === `${STACK_PREFIX}${id}` && w.stack)
+}
+
+function stackSpec(id: string): StackSpec | undefined {
+  return stackEntry(id)?.stack
+}
+
+// The id of the active layout's stack holding this overlay.
+function stackIdOf(key: WindowKey): string | undefined {
+  const entry = activeLayout().windows.find((w) => w.stack?.tabs.includes(key))
+  return entry ? entry.key.slice(STACK_PREFIX.length) : undefined
+}
+
+// Big enough for every tab, plus the tab strip.
+function stackMinSize(tabs: WindowKey[]): { minWidth: number; minHeight: number } {
+  let minWidth = 180
+  let minHeight = 120
+  for (const t of tabs) {
+    const m = minSizeFor(t)
+    minWidth = Math.max(minWidth, m.minWidth)
+    minHeight = Math.max(minHeight, m.minHeight)
+  }
+  return { minWidth, minHeight }
+}
+
+function newStackId(): string {
+  return Math.random().toString(16).slice(2, 10)
+}
+
+type StackInfo = { id: string; key: WindowKey; tabs: WindowKey[]; active: WindowKey; groupNames: Record<string, string> }
+
+function stackInfo(id: string): StackInfo | null {
+  const s = stackSpec(id)
+  if (!s) return null
+  return { id, key: `${STACK_PREFIX}${id}`, tabs: [...s.tabs], active: s.active, groupNames: { ...(s.groupNames ?? {}) } }
+}
+
+function notifyStackChanged(id: string): void {
+  const win = stackWindows.get(id)
+  if (!win || win.isDestroyed()) return
+  const info = stackInfo(id)
+  if (!info) return
+  const min = stackMinSize(info.tabs)
+  if (!collapsedEntry(info.key)) win.setMinimumSize(min.minWidth, min.minHeight)
+  win.webContents.send('overlay:stack:changed', info)
+}
+
+function createStackWindow(id: string, tab?: WindowKey): void {
+  const spec = stackSpec(id)
+  if (!spec) return
+  if (tab && spec.tabs.includes(tab) && spec.active !== tab) {
+    spec.active = tab
+    saveLayoutStore()
+    notifyStackChanged(id)
+  }
+  const existing = stackWindows.get(id)
+  if (existing && !existing.isDestroyed()) {
+    showOverlayWindow(existing)
+    return
+  }
+  const key: WindowKey = `${STACK_PREFIX}${id}`
+  const { x, y, width, height } = getRestoredBounds(key, defaultBoundsFor(key))
+  const min = stackMinSize(spec.tabs)
+  const win = new BrowserWindow({
+    x,
+    y,
+    width,
+    height,
+    minWidth: min.minWidth,
+    minHeight: min.minHeight,
+    transparent: true,
+    backgroundColor: '#00000000',
+    frame: false,
+    resizable: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    hasShadow: false,
+    show: false,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    },
+  })
+  stackWindows.set(id, win)
+  win.once('ready-to-show', () => {
+    if (!win.isDestroyed()) win.showInactive()
+  })
+  win.setAlwaysOnTop(true, 'screen-saver')
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  windowToOverlayName.set(win, key)
+  applyInitialOverlayInput(win, key)
+  trackOverlayBounds(key, win)
+  restoreCollapsedState(win, key)
+  loadOverlayRoute(win, `stack-window?id=${encodeURIComponent(id)}`)
+  win.on('closed', () => {
+    if (stackWindows.get(id) === win) stackWindows.delete(id)
+  })
+}
+
+// Opening a stacked overlay shows its stack on that tab. False when the
+// overlay isn't stacked.
+function openStackFor(key: WindowKey): boolean {
+  const id = stackIdOf(key)
+  if (!id) return false
+  createStackWindow(id, key)
+  return true
+}
+
+// Per-overlay toggle for a stacked overlay: with its stack on screen, it
+// leaves the stack (closing it); otherwise the stack opens on its tab.
+function toggleStacked(key: WindowKey): boolean {
+  const id = stackIdOf(key)
+  if (!id) return false
+  const win = stackWindows.get(id)
+  if (win && !win.isDestroyed() && win.isVisible()) removeFromStack(key)
+  else createStackWindow(id, key)
+  return true
+}
+
+function liveBounds(key: WindowKey): Bounds | undefined {
+  const win = overlayWindowByName(key)
+  if (win && !win.isDestroyed()) {
+    const b = win.getBounds()
+    return { ...b, height: collapsedEntry(key)?.expandedHeight ?? b.height }
+  }
+  return activeLayout().windows.find((w) => w.key === key)?.bounds ?? loadBoundsStore()[key]
+}
+
+function openWindowFor(key: WindowKey, groupName?: string): void {
+  if (key.startsWith('customTimer:')) createCustomTimerGroupOverlay(key.slice('customTimer:'.length), groupName ?? '')
+  else createOverlayByName(key as OverlayName)
+}
+
+// Drops `source` (an overlay, or a whole stack) onto `target` (an overlay or
+// a stack). A target that isn't stacked becomes a new stack in its place,
+// with its lock state; the dropped overlay becomes the tab showing.
+function mergeIntoStack(target: WindowKey, source: WindowKey): boolean {
+  if (target === source) return false
+  if (!(isStackKey(target) || isStackable(target)) || !(isStackKey(source) || isStackable(source))) return false
+  const layout = activeLayout()
+  const targetId = isStackKey(target) ? target.slice(STACK_PREFIX.length) : stackIdOf(target)
+  if (isStackKey(target) && !stackSpec(targetId as string)) return false
+  const sourceId = isStackKey(source) ? source.slice(STACK_PREFIX.length) : undefined
+  if (sourceId && sourceId === targetId) return false
+  if (sourceId && !stackSpec(sourceId)) return false
+
+  const names: Record<string, string> = {}
+  const nameOf = (k: WindowKey): void => {
+    if (!k.startsWith('customTimer:')) return
+    const n = groupNameFor(k) ?? layout.windows.find((w) => w.key === k)?.groupName
+      ?? layout.windows.find((w) => w.stack?.groupNames?.[k])?.stack?.groupNames?.[k]
+    if (n !== undefined) names[k] = n
+  }
+
+  // Take the dropped overlays out of wherever they are now.
+  let moving: WindowKey[]
+  const closing: BrowserWindow[] = []
+  if (sourceId) {
+    moving = [...(stackSpec(sourceId)?.tabs ?? [])]
+    moving.forEach(nameOf)
+    layout.windows = layout.windows.filter((w) => w.key !== source)
+    const sw = stackWindows.get(sourceId)
+    if (sw && !sw.isDestroyed()) closing.push(sw)
+  } else {
+    moving = [source]
+    nameOf(source)
+    const from = stackIdOf(source)
+    if (from && from !== targetId) {
+      const s = stackSpec(from)
+      if (s) {
+        s.tabs = s.tabs.filter((t) => t !== source)
+        if (s.active === source) s.active = s.tabs[0]
+      }
+    }
+    layout.windows = layout.windows.filter((w) => w.key !== source)
+    const sw = overlayWindowByName(source)
+    if (sw && !sw.isDestroyed()) closing.push(sw)
+  }
+
+  let id = targetId
+  if (id) {
+    const s = stackSpec(id) as StackSpec
+    for (const k of moving) if (!s.tabs.includes(k)) s.tabs.push(k)
+    s.active = moving[0]
+    s.groupNames = { ...(s.groupNames ?? {}), ...names }
+  } else {
+    nameOf(target)
+    id = newStackId()
+    const key: WindowKey = `${STACK_PREFIX}${id}`
+    const bounds = liveBounds(target)
+    const idx = layout.windows.findIndex((w) => w.key === target)
+    const entry: LayoutWindow = {
+      key,
+      ...(bounds ? { bounds } : {}),
+      stack: {
+        tabs: [target, ...moving.filter((k) => k !== target)],
+        active: moving[0],
+        ...(Object.keys(names).length > 0 ? { groupNames: names } : {}),
+      },
+    }
+    if (idx >= 0) layout.windows.splice(idx, 1, entry)
+    else layout.windows.push(entry)
+    if (bounds) {
+      const store = loadBoundsStore()
+      store[key] = { ...bounds }
+      saveBoundsStore(store)
+    }
+    setOverlayLocked(key, getOverlayLocked(target))
+    const tw = overlayWindowByName(target)
+    if (tw && !tw.isDestroyed()) closing.push(tw)
+  }
+  // Single-tab leftovers of the stack the overlay came from dissolve.
+  for (const w of [...layout.windows]) if (w.stack && w.stack.tabs.length < 2) dissolveStack(w.key.slice(STACK_PREFIX.length))
+
+  closePopoutsInBulk(closing)
+  saveLayoutStore()
+  createStackWindow(id)
+  notifyStackChanged(id)
+  broadcastLayouts()
+  return true
+}
+
+// A stack down to one tab becomes that overlay's own window, in place.
+function dissolveStack(id: string): void {
+  const layout = activeLayout()
+  const key: WindowKey = `${STACK_PREFIX}${id}`
+  const entry = stackEntry(id)
+  if (!entry?.stack) return
+  const bounds = liveBounds(key)
+  const rest = entry.stack.tabs
+  const groupNames = entry.stack.groupNames ?? {}
+  const idx = layout.windows.indexOf(entry)
+  const replacements: LayoutWindow[] = rest.map((k) => ({
+    key: k,
+    ...(groupNames[k] !== undefined ? { groupName: groupNames[k] } : {}),
+    ...(bounds ? { bounds: { ...bounds } } : {}),
+  }))
+  layout.windows.splice(idx, 1, ...replacements)
+  if (bounds) {
+    const store = loadBoundsStore()
+    for (const k of rest) store[k] = { ...bounds }
+    saveBoundsStore(store)
+  }
+  const win = stackWindows.get(id)
+  const wasOpen = !!win && !win.isDestroyed()
+  if (wasOpen) closePopoutsInBulk([win as BrowserWindow])
+  saveLayoutStore()
+  if (wasOpen) for (const r of replacements) openWindowFor(r.key, r.groupName)
+}
+
+// Takes an overlay out of its stack. popOut opens it in its own window beside
+// the stack; otherwise it's closed (and leaves the layout). False when it
+// wasn't stacked.
+function removeFromStack(key: WindowKey, popOut = false): boolean {
+  const id = stackIdOf(key)
+  if (!id) return false
+  const layout = activeLayout()
+  const s = stackSpec(id) as StackSpec
+  const groupName = s.groupNames?.[key]
+  s.tabs = s.tabs.filter((t) => t !== key)
+  if (s.groupNames) delete s.groupNames[key]
+  if (s.active === key) s.active = s.tabs[0]
+  if (popOut) {
+    const b = liveBounds(`${STACK_PREFIX}${id}`)
+    const bounds = b ? { ...b, x: b.x + 24, y: b.y + 24 } : undefined
+    layout.windows.push({ key, ...(groupName !== undefined ? { groupName } : {}), ...(bounds ? { bounds } : {}) })
+    if (bounds) {
+      const store = loadBoundsStore()
+      store[key] = bounds
+      saveBoundsStore(store)
+    }
+  }
+  if (s.tabs.length < 2) dissolveStack(id)
+  else notifyStackChanged(id)
+  saveLayoutStore()
+  if (popOut) openWindowFor(key, groupName)
+  broadcastLayouts()
+  return true
+}
+
+function stackIdForSender(sender: Electron.WebContents): string | undefined {
+  const win = BrowserWindow.fromWebContents(sender)
+  const key = win ? windowToOverlayName.get(win) : undefined
+  return key && isStackKey(key) ? key.slice(STACK_PREFIX.length) : undefined
+}
+
+ipcMain.handle('overlay:stack:get', (event) => {
+  const id = stackIdForSender(event.sender)
+  return id ? stackInfo(id) : null
+})
+
+ipcMain.handle('overlay:stack:select', (event, tab: string) => {
+  const id = stackIdForSender(event.sender)
+  const s = id ? stackSpec(id) : undefined
+  if (!id || !s || !s.tabs.includes(tab as WindowKey) || s.active === tab) return
+  s.active = tab as WindowKey
+  saveLayoutStore()
+  notifyStackChanged(id)
+})
+
+ipcMain.handle('overlay:stack:merge', (_event, target: string, source: string) => {
+  if (!isValidWindowKey(target) || !isValidWindowKey(source)) return false
+  return mergeIntoStack(target, source)
+})
+
+ipcMain.handle('overlay:stack:remove', (_event, key: string, popOut: boolean) => {
+  if (!isValidWindowKey(key)) return false
+  return removeFromStack(key, !!popOut)
+})
+
+// Closing a stack's window (its × button) closes all its tabs: the stack
+// leaves the layout like any closed window.
+ipcMain.handle('overlay:stack:close', (event) => {
+  const id = stackIdForSender(event.sender)
+  const win = id ? stackWindows.get(id) : undefined
+  if (win && !win.isDestroyed()) win.close()
+})
 
 // flush=false when the outgoing layout no longer exists (it was deleted):
 // pending moves are dropped instead of saved into whichever layout is next.
@@ -3074,7 +3468,11 @@ ipcMain.handle('layouts:create', (_event, name: string) => {
   const copy: OverlayLayout = {
     id: newLayoutId(),
     name: cleanLayoutName(name),
-    windows: activeLayout().windows.map((w) => withLiveState({ key: w.key, ...(w.groupName !== undefined ? { groupName: w.groupName } : {}) })),
+    windows: activeLayout().windows.map((w) => withLiveState({
+      key: w.key,
+      ...(w.groupName !== undefined ? { groupName: w.groupName } : {}),
+      ...(w.stack ? { stack: copyStackSpec(w.stack) } : {}),
+    })),
   }
   const dashboard = copyDashboard(activeLayout().dashboard)
   if (dashboard) copy.dashboard = dashboard
@@ -3238,9 +3636,16 @@ ipcMain.handle('overlay:popouts:window-states', () => {
   const states: Record<string, 'open' | 'hidden'> = {}
   for (const win of userPopoutWindows()) {
     const key = windowToOverlayName.get(win)
-    if (key) states[key] = userHiddenOverlays.has(win) && !win.isVisible() ? 'hidden' : 'open'
+    if (!key) continue
+    const state = userHiddenOverlays.has(win) && !win.isVisible() ? 'hidden' : 'open'
+    states[key] = state
+    // A stacked overlay is as open as its stack.
+    if (isStackKey(key)) for (const tab of stackSpec(key.slice(STACK_PREFIX.length))?.tabs ?? []) states[tab] = state
   }
-  for (const key of closedWhileHidden.keys()) states[key] = 'hidden'
+  for (const key of closedWhileHidden.keys()) {
+    states[key] = 'hidden'
+    if (isStackKey(key)) for (const tab of stackSpec(key.slice(STACK_PREFIX.length))?.tabs ?? []) states[tab] = 'hidden'
+  }
   return states
 })
 
@@ -3327,17 +3732,22 @@ const RESETTABLE_OVERLAYS = Object.keys(OVERLAY_DEFAULTS) as Array<Exclude<Overl
 // below (reset-position, move-to-display, placing mode) so a bogus/unrelated
 // name string can't reach overlayWindowByName.
 function isValidWindowKey(name: string): name is WindowKey {
-  return (RESETTABLE_OVERLAYS as string[]).includes(name) || name.startsWith('customTimer:')
+  return (RESETTABLE_OVERLAYS as string[]).includes(name) || name.startsWith('customTimer:') || isStackKey(name)
 }
 
 // Default bounds for a fresh/reset window. Named groups all share the plain
 // 'customTimer' default size — there's no per-group default to look up.
 function defaultBoundsFor(name: WindowKey): Bounds {
+  if (isStackKey(name)) {
+    const first = stackSpec(name.slice(STACK_PREFIX.length))?.tabs[0]
+    return first && !isStackKey(first) ? defaultBoundsFor(first) : OVERLAY_DEFAULTS.buffTimer
+  }
   if (name.startsWith('customTimer:')) return OVERLAY_DEFAULTS.customTimer
   return OVERLAY_DEFAULTS[name as Exclude<OverlayName, 'trigger'>]
 }
 
 function overlayWindowByName(name: WindowKey): BrowserWindow | null {
+  if (isStackKey(name)) return stackWindows.get(name.slice(STACK_PREFIX.length)) ?? null
   if (name.startsWith('customTimer:')) {
     return customTimerGroupWindows.get(name.slice('customTimer:'.length)) ?? null
   }

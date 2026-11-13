@@ -3,6 +3,7 @@ import { getConfig } from '../services/api'
 import { useOverlayPositionMode } from './useOverlayPositionMode'
 import { resolveFadeEnabled } from '../lib/overlays'
 import type { OverlayName } from '../lib/overlays'
+import { useOverlayStack } from './overlayStackContext'
 
 const POLL_INTERVAL = 3000
 
@@ -51,6 +52,13 @@ const DEFAULT_FADE_DELAY_MS = 2500
  * stays visible and grabbable while the user is repositioning it.
  */
 export function useOverlayChromeFade(name: OverlayName, displayOnly = false): boolean {
+  // Inside a stack, the stack's fade.
+  const stack = useOverlayStack()
+  if (stack) return stack.chrome
+  return useWindowChromeFade(name, displayOnly)
+}
+
+function useWindowChromeFade(name: OverlayName, displayOnly: boolean): boolean {
   const [enabled, setEnabled] = useState(false)
   const [delayMs, setDelayMs] = useState(DEFAULT_FADE_DELAY_MS)
   const [chromeVisible, setChromeVisible] = useState(true)

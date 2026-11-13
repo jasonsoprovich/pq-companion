@@ -90,6 +90,7 @@ const TriggerOverlayWindowPage = lazy(() => import('./pages/TriggerOverlayWindow
 const NPCOverlayWindowPage = lazy(() => import('./pages/NPCOverlayWindowPage'))
 const DiscordVoiceOverlayWindowPage = lazy(() => import('./pages/DiscordVoiceOverlayWindowPage'))
 const ThreatOverlayWindowPage = lazy(() => import('./pages/ThreatOverlayWindowPage'))
+const StackWindowPage = lazy(() => import('./pages/StackWindowPage'))
 const CharactersPage = lazy(() => import('./pages/CharactersPage'))
 const CharacterProgressPage = lazy(() => import('./pages/CharacterProgressPage'))
 const CharacterTasksPage = lazy(() => import('./pages/CharacterTasksPage'))
@@ -351,6 +352,7 @@ export default function App(): React.ReactElement {
         <Route path="live-map-window" element={<OverlayPage overlayKey="liveMap"><LiveMapWindowPage /></OverlayPage>} />
         <Route path="ch-chain-window" element={<OverlayPage overlayKey="chChain"><CHChainOverlayWindowPage /></OverlayPage>} />
         <Route path="ch-metronome-window" element={<OverlayPage overlayKey="chMetronome"><CHMetronomeOverlayWindowPage /></OverlayPage>} />
+        <Route path="stack-window" element={<OverlayPage><StackWindowPage /></OverlayPage>} />
 
         {/* Main app routes — wrapped in full Layout with audio/alert hooks */}
         <Route path="/" element={<MainWindowLayout />}>

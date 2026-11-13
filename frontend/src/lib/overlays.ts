@@ -125,11 +125,25 @@ export function isValidStreamKitVoiceUrl(url: string): boolean {
  * defaulting missing keys to "interactive" so an unset/nil map preserves the
  * original behaviour.
  */
+// A stack window (`stack:<id>`) uses its own window settings once they're
+// set, and its first tab's until then. The stack page registers that tab.
+const stackPrefFallback = new Map<string, string>()
+
+export function setStackPrefFallback(stackKey: string, tab: string): void {
+  stackPrefFallback.set(stackKey, tab)
+}
+
+function prefKey(map: Partial<Record<string, unknown>> | undefined, name: string): string {
+  if (map?.[name] !== undefined) return name
+  return stackPrefFallback.get(name) ?? name
+}
+
 export function resolveLockedMode(
   modes: Partial<Record<string, LockedMode>> | undefined,
   name: OverlayName,
 ): LockedMode {
-  return modes?.[name] ?? OVERLAY_DEFAULT_LOCKED_MODE[name] ?? DEFAULT_LOCKED_MODE
+  const key = prefKey(modes, name) as OverlayName
+  return modes?.[key] ?? OVERLAY_DEFAULT_LOCKED_MODE[key] ?? DEFAULT_LOCKED_MODE
 }
 
 /**
@@ -141,7 +155,7 @@ export function resolveFadeEnabled(
   name: OverlayName,
   globalEnabled: boolean,
 ): boolean {
-  const mode = modes?.[name]
+  const mode = modes?.[prefKey(modes, name)]
   if (mode === 'on') return true
   if (mode === 'off') return false
   return globalEnabled
@@ -157,6 +171,6 @@ export function resolveOverlayOpacity(
   name: OverlayName,
   globalOpacity: number,
 ): number {
-  const v = overrides?.[name]
+  const v = overrides?.[prefKey(overrides, name)]
   return typeof v === 'number' && v >= 0 && v <= 1 ? v : globalOpacity
 }

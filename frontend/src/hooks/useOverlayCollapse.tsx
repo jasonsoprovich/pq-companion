@@ -18,14 +18,25 @@
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
+import { useOverlayStack } from './overlayStackContext'
 
-export function useOverlayCollapse(enabled = true): {
+type OverlayCollapseResult = {
   collapsed: boolean
   toggleCollapsed: () => void
   setCollapsed: (collapse: boolean) => void
   headerRef: React.RefObject<HTMLDivElement>
   ready: boolean
-} {
+}
+
+// Inside a stack the stack collapses as a whole; a tab's own collapse does
+// nothing (and never reports ready, so idle collapse stays out of it).
+export function useOverlayCollapse(enabled = true): OverlayCollapseResult {
+  const stack = useOverlayStack()
+  if (stack) return stack.collapse
+  return useWindowOverlayCollapse(enabled)
+}
+
+function useWindowOverlayCollapse(enabled: boolean): OverlayCollapseResult {
   const headerRef = useRef<HTMLDivElement>(null)
   const [stored, setStored] = useState(false)
   const [ready, setReady] = useState(false)

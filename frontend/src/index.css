@@ -257,6 +257,17 @@ body {
   display: none !important;
 }
 
+/* A tab inside a stack window (StackWindowPage): the stack draws the title
+   bar, background and border, so the page's own are dropped. */
+.overlay-stack-tab .overlay-header {
+  display: none !important;
+}
+.overlay-stack-tab > * {
+  background-color: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+}
+
 /* Per-overlay "Move" (placing) mode, toggled on <html> by useOverlayLock.
    A dashed accent outline marks which overlay is being placed, and a small
    draggable banner (injected imperatively by the hook) sits at the top with a

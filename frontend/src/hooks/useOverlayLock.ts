@@ -4,6 +4,7 @@ import { getConfig } from '../services/api'
 import { resolveLockedMode } from '../lib/overlays'
 import type { OverlayName, LockedMode } from '../lib/overlays'
 import { useOverlayPositionMode } from './useOverlayPositionMode'
+import { useOverlayStack } from './overlayStackContext'
 
 const MODE_POLL_INTERVAL = 3000
 
@@ -49,14 +50,25 @@ type InteractionProps = {
  * Lock state is persisted per overlay in the main process; the mode is polled
  * from the app config (same cadence as overlay opacity).
  */
-export function useOverlayLock(name: OverlayName): {
+type OverlayLockResult = {
   locked: boolean
   mode: LockedMode
   toggleLocked: () => void
   rootInteractionProps: InteractionProps
   headerInteractionProps: InteractionProps
   rowsInteractive: boolean
-} {
+}
+
+// Inside a stack the stack window owns the lock and click-through; the page
+// gets its values with no hover handlers of its own. (Stack membership never
+// changes for a mounted page, so the hook order is stable.)
+export function useOverlayLock(name: OverlayName): OverlayLockResult {
+  const stack = useOverlayStack()
+  if (stack) return { ...stack.lock, rootInteractionProps: {}, headerInteractionProps: {} }
+  return useWindowOverlayLock(name)
+}
+
+function useWindowOverlayLock(name: OverlayName): OverlayLockResult {
   const [locked, setLocked] = useState(false)
   const [mode, setMode] = useState<LockedMode>('interactive')
   const positionMode = useOverlayPositionMode()

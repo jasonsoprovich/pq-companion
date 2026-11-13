@@ -1,5 +1,6 @@
 import { useCallback } from 'react'
 import { useOverlayPositionMode } from './useOverlayPositionMode'
+import { useOverlayStack } from './overlayStackContext'
 
 /**
  * useWindowDrag — drives a cross-monitor window drag from a title-bar
@@ -20,7 +21,16 @@ import { useOverlayPositionMode } from './useOverlayPositionMode'
  * `.no-drag` guard so even locked / display-only overlays can be repositioned;
  * buttons and inputs are still skipped so their controls keep working.
  */
+const noDrag = (): void => {}
+
 export function useWindowDrag(): (e: React.MouseEvent) => void {
+  // A page inside a stack has no title bar of its own; the stack's drags.
+  const stack = useOverlayStack()
+  if (stack) return noDrag
+  return useWindowDragHandler()
+}
+
+function useWindowDragHandler(): (e: React.MouseEvent) => void {
   const positionMode = useOverlayPositionMode()
   return useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return // left button only

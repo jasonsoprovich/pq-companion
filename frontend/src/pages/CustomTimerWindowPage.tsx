@@ -202,14 +202,16 @@ function TimerRow({
 
 // ── Page ───────────────────────────────────────────────────────────────────────
 
-export default function CustomTimerWindowPage(): React.ReactElement {
+// groupId: the timer group this window shows, when it isn't in the URL (a
+// tab in a stack window). Empty = the default Custom Timers window.
+export default function CustomTimerWindowPage({ groupId: groupProp }: { groupId?: string } = {}): React.ReactElement {
   // Present (non-empty) only when the main process opened this window for a
   // named TimerGroup (see createCustomTimerGroupOverlay) — the default/
   // original window loads with no query string at all. Locked-mode
   // preference still resolves via the shared 'customTimer' key (a single
   // per-type setting, not per-window — see useOverlayLock).
   const [searchParams] = useSearchParams()
-  const groupId = searchParams.get('group') ?? ''
+  const groupId = groupProp ?? searchParams.get('group') ?? ''
   const groupName = searchParams.get('name') ?? ''
 
   const opacity = useOverlayOpacity('customTimer')
