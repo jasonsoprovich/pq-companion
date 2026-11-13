@@ -909,21 +909,122 @@ function trackMainWindowBounds(win: BrowserWindow): void {
 }
 
 let mainWindow: BrowserWindow | null = null
-let dpsOverlayWindow: BrowserWindow | null = null
-let hpsOverlayWindow: BrowserWindow | null = null
-let buffTimerWindow: BrowserWindow | null = null
-let filteredTimerWindow: BrowserWindow | null = null
-let killCounterWindow: BrowserWindow | null = null
-let petWindow: BrowserWindow | null = null
-let deathRecapWindow: BrowserWindow | null = null
-let itemInfoWindow: BrowserWindow | null = null
-let chChainWindow: BrowserWindow | null = null
-let chMetronomeWindow: BrowserWindow | null = null
-let liveMapWindow: BrowserWindow | null = null
-let detrimTimerWindow: BrowserWindow | null = null
-let customTimerWindow: BrowserWindow | null = null
+
+// ── Standard popout overlays ─────────────────────────────────────────────────
+// Every popout except the screen-spanning trigger alert overlay and Discord
+// Voice (which hosts a child web view) is the same frameless, transparent,
+// always-on-top window with its own route and minimum size, so one table and
+// one create function cover them all.
+
+type StandardOverlay = Exclude<OverlayName, 'trigger' | 'discordVoice'>
+type StandardOverlaySpec = {
+  route: string // renderer hash route
+  minWidth: number
+  minHeight: number
+  ipc: string // slug in the overlay:<slug>:open|close|toggle channels
+}
+
+const STANDARD_OVERLAYS: Record<StandardOverlay, StandardOverlaySpec> = {
+  dps: { route: 'dps-overlay-window', minWidth: 260, minHeight: 180, ipc: 'dps' },
+  hps: { route: 'hps-overlay-window', minWidth: 260, minHeight: 180, ipc: 'hps' },
+  buffTimer: { route: 'buff-timer-window', minWidth: 200, minHeight: 140, ipc: 'bufftimer' },
+  filteredTimer: { route: 'filtered-timer-window', minWidth: 240, minHeight: 140, ipc: 'filteredtimer' },
+  killCounter: { route: 'kill-counter-window', minWidth: 200, minHeight: 100, ipc: 'killcounter' },
+  pet: { route: 'pet-window', minWidth: 220, minHeight: 140, ipc: 'pet' },
+  deathRecap: { route: 'death-recap-window', minWidth: 240, minHeight: 120, ipc: 'deathrecap' },
+  itemInfo: { route: 'item-info-window', minWidth: 260, minHeight: 160, ipc: 'iteminfo' },
+  chChain: { route: 'ch-chain-window', minWidth: 180, minHeight: 120, ipc: 'chchain' },
+  chMetronome: { route: 'ch-metronome-window', minWidth: 180, minHeight: 180, ipc: 'chmetronome' },
+  detrimTimer: { route: 'detrim-timer-window', minWidth: 200, minHeight: 140, ipc: 'detrimtimer' },
+  customTimer: { route: 'custom-timer-window', minWidth: 200, minHeight: 140, ipc: 'customtimer' },
+  // Higher floor than the list overlays: below roughly this size the zone
+  // outline stops being recognisable and the window is just noise.
+  liveMap: { route: 'live-map-window', minWidth: 220, minHeight: 220, ipc: 'livemap' },
+  respawnTimer: { route: 'respawn-timer-window', minWidth: 200, minHeight: 140, ipc: 'respawntimer' },
+  zoneLockouts: { route: 'zone-lockouts-window', minWidth: 200, minHeight: 140, ipc: 'zonelockouts' },
+  raidReadiness: { route: 'raid-readiness-window', minWidth: 200, minHeight: 140, ipc: 'raidreadiness' },
+  npc: { route: 'npc-overlay-window', minWidth: 280, minHeight: 200, ipc: 'npc' },
+  threat: { route: 'threat-overlay-window', minWidth: 200, minHeight: 150, ipc: 'threat' },
+  rollTracker: { route: 'roll-tracker-window', minWidth: 240, minHeight: 160, ipc: 'rolltracker' },
+}
+
+const standardWindows = new Map<StandardOverlay, BrowserWindow>()
+
+function isStandardOverlay(name: string): name is StandardOverlay {
+  return Object.prototype.hasOwnProperty.call(STANDARD_OVERLAYS, name)
+}
+
+// The live window for a standard overlay, or null when it isn't open.
+function stdWin(name: StandardOverlay): BrowserWindow | null {
+  const win = standardWindows.get(name)
+  return win && !win.isDestroyed() ? win : null
+}
+
+function loadOverlayRoute(win: BrowserWindow, route: string): void {
+  if (isDev) {
+    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
+    win.loadURL(`${rendererUrl}/#/${route}`)
+  } else {
+    win.loadFile(join(__dirname, '../renderer/index.html'), { hash: `/${route}` })
+  }
+}
+
+// Opens a standard overlay, or brings an open one forward. Never takes focus:
+// these open from hotkeys and in-game events while EQ is the active window,
+// and stealing focus mid-fight is worse than any blank-frame flash.
+// showInactive()/moveTop() raise the window without activating it.
+function createStandardOverlay(name: StandardOverlay): void {
+  const existing = stdWin(name)
+  if (existing) {
+    if (!existing.isVisible()) existing.showInactive()
+    existing.moveTop()
+    return
+  }
+
+  const spec = STANDARD_OVERLAYS[name]
+  const { x, y, width, height } = getRestoredBounds(name, OVERLAY_DEFAULTS[name])
+  const win = new BrowserWindow({
+    x,
+    y,
+    width,
+    height,
+    minWidth: spec.minWidth,
+    minHeight: spec.minHeight,
+    transparent: true,
+    backgroundColor: '#00000000',
+    frame: false,
+    resizable: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    hasShadow: false,
+    show: false, // show after ready-to-show to avoid blank-frame flash
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    },
+  })
+  standardWindows.set(name, win)
+
+  win.once('ready-to-show', () => {
+    if (!win.isDestroyed()) win.showInactive()
+  })
+
+  // Keep it above fullscreen apps on macOS/Windows.
+  win.setAlwaysOnTop(true, 'screen-saver')
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  windowToOverlayName.set(win, name)
+  applyInitialOverlayInput(win, name)
+  trackOverlayBounds(name, win)
+  loadOverlayRoute(win, spec.route)
+
+  win.on('closed', () => {
+    if (standardWindows.get(name) === win) standardWindows.delete(name)
+  })
+}
+
 // Named Custom Timers windows (one per user-created timer group), keyed by
-// TimerGroup.id. Separate from customTimerWindow (the original/default
+// TimerGroup.id. Separate from the standard 'customTimer' window (the original/default
 // window) so its own behavior stays untouched by this additive feature.
 // Named windows get full parity with every other overlay — auto-open on
 // launch, move-to-display, reset-position — via the WindowKey-aware
@@ -946,12 +1047,6 @@ let triggerOverlayWindow: BrowserWindow | null = null
 // #150): setAlwaysOnTop's relativeLevel only affects macOS, so a plain
 // moveTop() interval is what actually holds topmost on Windows.
 let triggerOverlayTopInterval: ReturnType<typeof setInterval> | null = null
-let npcOverlayWindow: BrowserWindow | null = null
-let threatOverlayWindow: BrowserWindow | null = null
-let rollTrackerWindow: BrowserWindow | null = null
-let respawnTimerWindow: BrowserWindow | null = null
-let zoneLockoutsWindow: BrowserWindow | null = null
-let raidReadinessWindow: BrowserWindow | null = null
 let discordVoiceOverlayWindow: BrowserWindow | null = null
 // The Discord StreamKit page embedded inside discordVoiceOverlayWindow, added
 // as a child view above the window's own React chrome (see createDiscordVoiceOverlay
@@ -1473,668 +1568,15 @@ function createMainWindow(): void {
   })
 }
 
-// ── DPS Overlay window ────────────────────────────────────────────────────────
-
-function createDPSOverlay(): void {
-  if (dpsOverlayWindow && !dpsOverlayWindow.isDestroyed()) {
-    dpsOverlayWindow.focus()
-    return
-  }
-
-  const { x, y, width, height } = getRestoredBounds('dps', OVERLAY_DEFAULTS.dps)
-  dpsOverlayWindow = new BrowserWindow({
-    x,
-    y,
-    width,
-    height,
-    minWidth: 260,
-    minHeight: 180,
-    transparent: true,
-    backgroundColor: '#00000000',
-    frame: false,
-    resizable: true,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    hasShadow: false,
-    show: false, // show after ready-to-show to avoid blank-frame flash
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false
-    },
-  })
-
-  dpsOverlayWindow.once('ready-to-show', () => {
-    dpsOverlayWindow?.show()
-  })
-
-  // Keep it above fullscreen apps on macOS/Windows.
-  dpsOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
-  dpsOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  windowToOverlayName.set(dpsOverlayWindow, 'dps')
-  applyInitialOverlayInput(dpsOverlayWindow, 'dps')
-  trackOverlayBounds('dps', dpsOverlayWindow)
-
-  if (isDev) {
-    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
-    dpsOverlayWindow.loadURL(`${rendererUrl}/#/dps-overlay-window`)
-  } else {
-    dpsOverlayWindow.loadFile(join(__dirname, '../renderer/index.html'), {
-      hash: '/dps-overlay-window',
-    })
-  }
-
-  dpsOverlayWindow.on('closed', () => {
-    dpsOverlayWindow = null
-  })
-}
-
-// ── HPS Overlay window ────────────────────────────────────────────────────────
-
-function createHPSOverlay(): void {
-  if (hpsOverlayWindow && !hpsOverlayWindow.isDestroyed()) {
-    hpsOverlayWindow.focus()
-    return
-  }
-
-  const { x, y, width, height } = getRestoredBounds('hps', OVERLAY_DEFAULTS.hps)
-  hpsOverlayWindow = new BrowserWindow({
-    x,
-    y,
-    width,
-    height,
-    minWidth: 260,
-    minHeight: 180,
-    transparent: true,
-    backgroundColor: '#00000000',
-    frame: false,
-    resizable: true,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    hasShadow: false,
-    show: false, // show after ready-to-show to avoid blank-frame flash
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false
-    },
-  })
-
-  hpsOverlayWindow.once('ready-to-show', () => {
-    hpsOverlayWindow?.show()
-  })
-
-  hpsOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
-  hpsOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  windowToOverlayName.set(hpsOverlayWindow, 'hps')
-  applyInitialOverlayInput(hpsOverlayWindow, 'hps')
-  trackOverlayBounds('hps', hpsOverlayWindow)
-
-  if (isDev) {
-    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
-    hpsOverlayWindow.loadURL(`${rendererUrl}/#/hps-overlay-window`)
-  } else {
-    hpsOverlayWindow.loadFile(join(__dirname, '../renderer/index.html'), {
-      hash: '/hps-overlay-window',
-    })
-  }
-
-  hpsOverlayWindow.on('closed', () => {
-    hpsOverlayWindow = null
-  })
-}
-
-// ── Buff Timer overlay window ─────────────────────────────────────────────────
-
-function createBuffTimerOverlay(): void {
-  if (buffTimerWindow && !buffTimerWindow.isDestroyed()) {
-    buffTimerWindow.focus()
-    return
-  }
-
-  const { x, y, width, height } = getRestoredBounds('buffTimer', OVERLAY_DEFAULTS.buffTimer)
-  buffTimerWindow = new BrowserWindow({
-    x,
-    y,
-    width,
-    height,
-    minWidth: 200,
-    minHeight: 140,
-    transparent: true,
-    backgroundColor: '#00000000',
-    frame: false,
-    resizable: true,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    hasShadow: false,
-    show: false, // show after ready-to-show to avoid blank-frame flash
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false
-    },
-  })
-
-  buffTimerWindow.once('ready-to-show', () => {
-    buffTimerWindow?.show()
-  })
-
-  buffTimerWindow.setAlwaysOnTop(true, 'screen-saver')
-  buffTimerWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  windowToOverlayName.set(buffTimerWindow, 'buffTimer')
-  applyInitialOverlayInput(buffTimerWindow, 'buffTimer')
-  trackOverlayBounds('buffTimer', buffTimerWindow)
-
-  if (isDev) {
-    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
-    buffTimerWindow.loadURL(`${rendererUrl}/#/buff-timer-window`)
-  } else {
-    buffTimerWindow.loadFile(join(__dirname, '../renderer/index.html'), {
-      hash: '/buff-timer-window',
-    })
-  }
-
-  buffTimerWindow.on('closed', () => {
-    buffTimerWindow = null
-  })
-}
-
-// ── Filtered Timers overlay window ────────────────────────────────────────────
-
-function createFilteredTimerOverlay(): void {
-  if (filteredTimerWindow && !filteredTimerWindow.isDestroyed()) {
-    filteredTimerWindow.focus()
-    return
-  }
-
-  const { x, y, width, height } = getRestoredBounds('filteredTimer', OVERLAY_DEFAULTS.filteredTimer)
-  filteredTimerWindow = new BrowserWindow({
-    x,
-    y,
-    width,
-    height,
-    minWidth: 240,
-    minHeight: 140,
-    transparent: true,
-    backgroundColor: '#00000000',
-    frame: false,
-    resizable: true,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    hasShadow: false,
-    show: false, // show after ready-to-show to avoid blank-frame flash
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false
-    },
-  })
-
-  filteredTimerWindow.once('ready-to-show', () => {
-    filteredTimerWindow?.show()
-  })
-
-  filteredTimerWindow.setAlwaysOnTop(true, 'screen-saver')
-  filteredTimerWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  windowToOverlayName.set(filteredTimerWindow, 'filteredTimer')
-  applyInitialOverlayInput(filteredTimerWindow, 'filteredTimer')
-  trackOverlayBounds('filteredTimer', filteredTimerWindow)
-
-  if (isDev) {
-    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
-    filteredTimerWindow.loadURL(`${rendererUrl}/#/filtered-timer-window`)
-  } else {
-    filteredTimerWindow.loadFile(join(__dirname, '../renderer/index.html'), {
-      hash: '/filtered-timer-window',
-    })
-  }
-
-  filteredTimerWindow.on('closed', () => {
-    filteredTimerWindow = null
-  })
-}
-
-function createKillCounterOverlay(): void {
-  if (killCounterWindow && !killCounterWindow.isDestroyed()) {
-    killCounterWindow.focus()
-    return
-  }
-
-  const { x, y, width, height } = getRestoredBounds('killCounter', OVERLAY_DEFAULTS.killCounter)
-  killCounterWindow = new BrowserWindow({
-    x,
-    y,
-    width,
-    height,
-    minWidth: 200,
-    minHeight: 100,
-    transparent: true,
-    backgroundColor: '#00000000',
-    frame: false,
-    resizable: true,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    hasShadow: false,
-    show: false, // show after ready-to-show to avoid blank-frame flash
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false
-    },
-  })
-
-  killCounterWindow.once('ready-to-show', () => {
-    killCounterWindow?.show()
-  })
-
-  killCounterWindow.setAlwaysOnTop(true, 'screen-saver')
-  killCounterWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  windowToOverlayName.set(killCounterWindow, 'killCounter')
-  applyInitialOverlayInput(killCounterWindow, 'killCounter')
-  trackOverlayBounds('killCounter', killCounterWindow)
-
-  if (isDev) {
-    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
-    killCounterWindow.loadURL(`${rendererUrl}/#/kill-counter-window`)
-  } else {
-    killCounterWindow.loadFile(join(__dirname, '../renderer/index.html'), {
-      hash: '/kill-counter-window',
-    })
-  }
-
-  killCounterWindow.on('closed', () => {
-    killCounterWindow = null
-  })
-}
-
-function createPetOverlay(): void {
-  if (petWindow && !petWindow.isDestroyed()) {
-    petWindow.focus()
-    return
-  }
-
-  const { x, y, width, height } = getRestoredBounds('pet', OVERLAY_DEFAULTS.pet)
-  petWindow = new BrowserWindow({
-    x,
-    y,
-    width,
-    height,
-    minWidth: 220,
-    minHeight: 140,
-    transparent: true,
-    backgroundColor: '#00000000',
-    frame: false,
-    resizable: true,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    hasShadow: false,
-    show: false, // show after ready-to-show to avoid blank-frame flash
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false
-    },
-  })
-
-  petWindow.once('ready-to-show', () => {
-    petWindow?.show()
-  })
-
-  petWindow.setAlwaysOnTop(true, 'screen-saver')
-  petWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  windowToOverlayName.set(petWindow, 'pet')
-  applyInitialOverlayInput(petWindow, 'pet')
-  trackOverlayBounds('pet', petWindow)
-
-  if (isDev) {
-    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
-    petWindow.loadURL(`${rendererUrl}/#/pet-window`)
-  } else {
-    petWindow.loadFile(join(__dirname, '../renderer/index.html'), {
-      hash: '/pet-window',
-    })
-  }
-
-  petWindow.on('closed', () => {
-    petWindow = null
-  })
-}
-
-function createDeathRecapOverlay(): void {
-  if (deathRecapWindow && !deathRecapWindow.isDestroyed()) {
-    deathRecapWindow.focus()
-    return
-  }
-
-  const { x, y, width, height } = getRestoredBounds('deathRecap', OVERLAY_DEFAULTS.deathRecap)
-  deathRecapWindow = new BrowserWindow({
-    x,
-    y,
-    width,
-    height,
-    minWidth: 240,
-    minHeight: 120,
-    transparent: true,
-    backgroundColor: '#00000000',
-    frame: false,
-    resizable: true,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    hasShadow: false,
-    show: false, // show after ready-to-show to avoid blank-frame flash
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false
-    },
-  })
-
-  deathRecapWindow.once('ready-to-show', () => {
-    deathRecapWindow?.show()
-  })
-
-  deathRecapWindow.setAlwaysOnTop(true, 'screen-saver')
-  deathRecapWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  windowToOverlayName.set(deathRecapWindow, 'deathRecap')
-  applyInitialOverlayInput(deathRecapWindow, 'deathRecap')
-  trackOverlayBounds('deathRecap', deathRecapWindow)
-
-  if (isDev) {
-    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
-    deathRecapWindow.loadURL(`${rendererUrl}/#/death-recap-window`)
-  } else {
-    deathRecapWindow.loadFile(join(__dirname, '../renderer/index.html'), {
-      hash: '/death-recap-window',
-    })
-  }
-
-  deathRecapWindow.on('closed', () => {
-    deathRecapWindow = null
-  })
-}
-
-// inactive opens the window without taking focus, for the auto-show on an
-// in-game item click: stealing focus from EQ mid-game would be worse than not
-// showing the window at all.
-function createItemInfoOverlay(inactive = false): void {
-  if (itemInfoWindow && !itemInfoWindow.isDestroyed()) {
-    if (!inactive) itemInfoWindow.focus()
-    return
-  }
-
-  const { x, y, width, height } = getRestoredBounds('itemInfo', OVERLAY_DEFAULTS.itemInfo)
-  itemInfoWindow = new BrowserWindow({
-    x,
-    y,
-    width,
-    height,
-    minWidth: 260,
-    minHeight: 160,
-    transparent: true,
-    backgroundColor: '#00000000',
-    frame: false,
-    resizable: true,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    hasShadow: false,
-    show: false, // show after ready-to-show to avoid blank-frame flash
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false
-    },
-  })
-
-  itemInfoWindow.once('ready-to-show', () => {
-    if (inactive) itemInfoWindow?.showInactive()
-    else itemInfoWindow?.show()
-  })
-
-  itemInfoWindow.setAlwaysOnTop(true, 'screen-saver')
-  itemInfoWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  windowToOverlayName.set(itemInfoWindow, 'itemInfo')
-  applyInitialOverlayInput(itemInfoWindow, 'itemInfo')
-  trackOverlayBounds('itemInfo', itemInfoWindow)
-
-  if (isDev) {
-    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
-    itemInfoWindow.loadURL(`${rendererUrl}/#/item-info-window`)
-  } else {
-    itemInfoWindow.loadFile(join(__dirname, '../renderer/index.html'), {
-      hash: '/item-info-window',
-    })
-  }
-
-  itemInfoWindow.on('closed', () => {
-    itemInfoWindow = null
-  })
-}
-
-function createCHChainOverlay(): void {
-  if (chChainWindow && !chChainWindow.isDestroyed()) {
-    chChainWindow.focus()
-    return
-  }
-
-  const { x, y, width, height } = getRestoredBounds('chChain', OVERLAY_DEFAULTS.chChain)
-  chChainWindow = new BrowserWindow({
-    x,
-    y,
-    width,
-    height,
-    minWidth: 180,
-    minHeight: 120,
-    transparent: true,
-    backgroundColor: '#00000000',
-    frame: false,
-    resizable: true,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    hasShadow: false,
-    show: false, // show after ready-to-show to avoid blank-frame flash
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false
-    },
-  })
-
-  chChainWindow.once('ready-to-show', () => {
-    chChainWindow?.show()
-  })
-
-  chChainWindow.setAlwaysOnTop(true, 'screen-saver')
-  chChainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  windowToOverlayName.set(chChainWindow, 'chChain')
-  applyInitialOverlayInput(chChainWindow, 'chChain')
-  trackOverlayBounds('chChain', chChainWindow)
-
-  if (isDev) {
-    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
-    chChainWindow.loadURL(`${rendererUrl}/#/ch-chain-window`)
-  } else {
-    chChainWindow.loadFile(join(__dirname, '../renderer/index.html'), {
-      hash: '/ch-chain-window',
-    })
-  }
-
-  chChainWindow.on('closed', () => {
-    chChainWindow = null
-  })
-}
-
-function createCHMetronomeOverlay(): void {
-  if (chMetronomeWindow && !chMetronomeWindow.isDestroyed()) {
-    chMetronomeWindow.focus()
-    return
-  }
-
-  const { x, y, width, height } = getRestoredBounds('chMetronome', OVERLAY_DEFAULTS.chMetronome)
-  chMetronomeWindow = new BrowserWindow({
-    x,
-    y,
-    width,
-    height,
-    minWidth: 180,
-    minHeight: 180,
-    transparent: true,
-    backgroundColor: '#00000000',
-    frame: false,
-    resizable: true,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    hasShadow: false,
-    show: false, // show after ready-to-show to avoid blank-frame flash
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false
-    },
-  })
-
-  chMetronomeWindow.once('ready-to-show', () => {
-    chMetronomeWindow?.show()
-  })
-
-  chMetronomeWindow.setAlwaysOnTop(true, 'screen-saver')
-  chMetronomeWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  windowToOverlayName.set(chMetronomeWindow, 'chMetronome')
-  applyInitialOverlayInput(chMetronomeWindow, 'chMetronome')
-  trackOverlayBounds('chMetronome', chMetronomeWindow)
-
-  if (isDev) {
-    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
-    chMetronomeWindow.loadURL(`${rendererUrl}/#/ch-metronome-window`)
-  } else {
-    chMetronomeWindow.loadFile(join(__dirname, '../renderer/index.html'), {
-      hash: '/ch-metronome-window',
-    })
-  }
-
-  chMetronomeWindow.on('closed', () => {
-    chMetronomeWindow = null
-  })
-}
-
-// ── Detrimental Timer overlay window ─────────────────────────────────────────
-
-function createDetrimTimerOverlay(): void {
-  if (detrimTimerWindow && !detrimTimerWindow.isDestroyed()) {
-    detrimTimerWindow.focus()
-    return
-  }
-
-  const { x, y, width, height } = getRestoredBounds('detrimTimer', OVERLAY_DEFAULTS.detrimTimer)
-  detrimTimerWindow = new BrowserWindow({
-    x,
-    y,
-    width,
-    height,
-    minWidth: 200,
-    minHeight: 140,
-    transparent: true,
-    backgroundColor: '#00000000',
-    frame: false,
-    resizable: true,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    hasShadow: false,
-    show: false, // show after ready-to-show to avoid blank-frame flash
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false
-    },
-  })
-
-  detrimTimerWindow.once('ready-to-show', () => {
-    detrimTimerWindow?.show()
-  })
-
-  detrimTimerWindow.setAlwaysOnTop(true, 'screen-saver')
-  detrimTimerWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  windowToOverlayName.set(detrimTimerWindow, 'detrimTimer')
-  applyInitialOverlayInput(detrimTimerWindow, 'detrimTimer')
-  trackOverlayBounds('detrimTimer', detrimTimerWindow)
-
-  if (isDev) {
-    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
-    detrimTimerWindow.loadURL(`${rendererUrl}/#/detrim-timer-window`)
-  } else {
-    detrimTimerWindow.loadFile(join(__dirname, '../renderer/index.html'), {
-      hash: '/detrim-timer-window',
-    })
-  }
-
-  detrimTimerWindow.on('closed', () => {
-    detrimTimerWindow = null
-  })
-}
-
-// ── Custom Timer overlay window ──────────────────────────────────────────────
-
-function createCustomTimerOverlay(): void {
-  if (customTimerWindow && !customTimerWindow.isDestroyed()) {
-    customTimerWindow.focus()
-    return
-  }
-
-  const { x, y, width, height } = getRestoredBounds('customTimer', OVERLAY_DEFAULTS.customTimer)
-  customTimerWindow = new BrowserWindow({
-    x,
-    y,
-    width,
-    height,
-    minWidth: 200,
-    minHeight: 140,
-    transparent: true,
-    backgroundColor: '#00000000',
-    frame: false,
-    resizable: true,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    hasShadow: false,
-    show: false, // show after ready-to-show to avoid blank-frame flash
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false
-    },
-  })
-
-  customTimerWindow.once('ready-to-show', () => {
-    customTimerWindow?.show()
-  })
-
-  customTimerWindow.setAlwaysOnTop(true, 'screen-saver')
-  customTimerWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  windowToOverlayName.set(customTimerWindow, 'customTimer')
-  applyInitialOverlayInput(customTimerWindow, 'customTimer')
-  trackOverlayBounds('customTimer', customTimerWindow)
-
-  if (isDev) {
-    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
-    customTimerWindow.loadURL(`${rendererUrl}/#/custom-timer-window`)
-  } else {
-    customTimerWindow.loadFile(join(__dirname, '../renderer/index.html'), {
-      hash: '/custom-timer-window',
-    })
-  }
-
-  customTimerWindow.on('closed', () => {
-    customTimerWindow = null
-  })
-}
-
 // customTimerWindowKey returns the bounds/lock persistence key for a named
 // timer group's window. Empty groupId is intentionally not routed here —
-// callers use createCustomTimerOverlay()/'customTimer' for the default window.
+// callers use createStandardOverlay('customTimer')/'customTimer' for the default window.
 function customTimerWindowKey(groupId: string): `customTimer:${string}` {
   return `customTimer:${groupId}`
 }
 
 // Opens (or focuses) a named Custom Timers window for the given TimerGroup.
-// Mirrors createCustomTimerOverlay() but keyed by groupId so multiple can
+// Mirrors createStandardOverlay('customTimer') but keyed by groupId so multiple can
 // coexist alongside the original/default window. groupName is passed through
 // to the renderer via the URL only for a window-title-ish display; the
 // renderer fetches the authoritative group list itself.
@@ -2143,7 +1585,9 @@ function createCustomTimerGroupOverlay(groupId: string, groupName: string): void
   customTimerGroupNames.set(groupId, groupName)
   const existing = customTimerGroupWindows.get(groupId)
   if (existing && !existing.isDestroyed()) {
-    existing.focus()
+    // Bring forward without taking focus (see createStandardOverlay).
+    if (!existing.isVisible()) existing.showInactive()
+    existing.moveTop()
     return
   }
 
@@ -2173,7 +1617,7 @@ function createCustomTimerGroupOverlay(groupId: string, groupName: string): void
   customTimerGroupWindows.set(groupId, win)
 
   win.once('ready-to-show', () => {
-    win.show()
+    if (!win.isDestroyed()) win.showInactive()
   })
 
   win.setAlwaysOnTop(true, 'screen-saver')
@@ -2198,228 +1642,6 @@ function createCustomTimerGroupOverlay(groupId: string, groupName: string): void
     // work on closed overlays too (matching every other overlay type), and
     // a closed-but-still-in-the-auto-open-snapshot group needs its name to
     // survive until the next explicit open/snapshot overwrites it.
-  })
-}
-
-// ── Live Map overlay window ──────────────────────────────────────────────────
-
-function createLiveMapOverlay(): void {
-  if (liveMapWindow && !liveMapWindow.isDestroyed()) {
-    liveMapWindow.focus()
-    return
-  }
-
-  const { x, y, width, height } = getRestoredBounds('liveMap', OVERLAY_DEFAULTS.liveMap)
-  liveMapWindow = new BrowserWindow({
-    x,
-    y,
-    width,
-    height,
-    // Higher floor than the list overlays: below roughly this size the zone
-    // outline stops being recognisable and the window is just noise.
-    minWidth: 220,
-    minHeight: 220,
-    transparent: true,
-    backgroundColor: '#00000000',
-    frame: false,
-    resizable: true,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    hasShadow: false,
-    show: false, // show after ready-to-show to avoid blank-frame flash
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false
-    },
-  })
-
-  liveMapWindow.once('ready-to-show', () => {
-    liveMapWindow?.show()
-  })
-
-  liveMapWindow.setAlwaysOnTop(true, 'screen-saver')
-  liveMapWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  windowToOverlayName.set(liveMapWindow, 'liveMap')
-  applyInitialOverlayInput(liveMapWindow, 'liveMap')
-  trackOverlayBounds('liveMap', liveMapWindow)
-
-  if (isDev) {
-    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
-    liveMapWindow.loadURL(`${rendererUrl}/#/live-map-window`)
-  } else {
-    liveMapWindow.loadFile(join(__dirname, '../renderer/index.html'), {
-      hash: '/live-map-window',
-    })
-  }
-
-  liveMapWindow.on('closed', () => {
-    liveMapWindow = null
-  })
-}
-
-// ── Respawn (death) Timer overlay window ─────────────────────────────────────
-
-function createRespawnTimerOverlay(): void {
-  if (respawnTimerWindow && !respawnTimerWindow.isDestroyed()) {
-    respawnTimerWindow.focus()
-    return
-  }
-
-  const { x, y, width, height } = getRestoredBounds('respawnTimer', OVERLAY_DEFAULTS.respawnTimer)
-  respawnTimerWindow = new BrowserWindow({
-    x,
-    y,
-    width,
-    height,
-    minWidth: 200,
-    minHeight: 140,
-    transparent: true,
-    backgroundColor: '#00000000',
-    frame: false,
-    resizable: true,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    hasShadow: false,
-    show: false, // show after ready-to-show to avoid blank-frame flash
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false
-    },
-  })
-
-  respawnTimerWindow.once('ready-to-show', () => {
-    respawnTimerWindow?.show()
-  })
-
-  respawnTimerWindow.setAlwaysOnTop(true, 'screen-saver')
-  respawnTimerWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  windowToOverlayName.set(respawnTimerWindow, 'respawnTimer')
-  applyInitialOverlayInput(respawnTimerWindow, 'respawnTimer')
-  trackOverlayBounds('respawnTimer', respawnTimerWindow)
-
-  if (isDev) {
-    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
-    respawnTimerWindow.loadURL(`${rendererUrl}/#/respawn-timer-window`)
-  } else {
-    respawnTimerWindow.loadFile(join(__dirname, '../renderer/index.html'), {
-      hash: '/respawn-timer-window',
-    })
-  }
-
-  respawnTimerWindow.on('closed', () => {
-    respawnTimerWindow = null
-  })
-}
-
-// ── Zone Lockouts overlay window ─────────────────────────────────────────────
-
-function createZoneLockoutsOverlay(): void {
-  if (zoneLockoutsWindow && !zoneLockoutsWindow.isDestroyed()) {
-    zoneLockoutsWindow.focus()
-    return
-  }
-
-  const { x, y, width, height } = getRestoredBounds('zoneLockouts', OVERLAY_DEFAULTS.zoneLockouts)
-  zoneLockoutsWindow = new BrowserWindow({
-    x,
-    y,
-    width,
-    height,
-    minWidth: 200,
-    minHeight: 140,
-    transparent: true,
-    backgroundColor: '#00000000',
-    frame: false,
-    resizable: true,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    hasShadow: false,
-    show: false, // show after ready-to-show to avoid blank-frame flash
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false
-    },
-  })
-
-  zoneLockoutsWindow.once('ready-to-show', () => {
-    zoneLockoutsWindow?.show()
-  })
-
-  zoneLockoutsWindow.setAlwaysOnTop(true, 'screen-saver')
-  zoneLockoutsWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  windowToOverlayName.set(zoneLockoutsWindow, 'zoneLockouts')
-  applyInitialOverlayInput(zoneLockoutsWindow, 'zoneLockouts')
-  trackOverlayBounds('zoneLockouts', zoneLockoutsWindow)
-
-  if (isDev) {
-    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
-    zoneLockoutsWindow.loadURL(`${rendererUrl}/#/zone-lockouts-window`)
-  } else {
-    zoneLockoutsWindow.loadFile(join(__dirname, '../renderer/index.html'), {
-      hash: '/zone-lockouts-window',
-    })
-  }
-
-  zoneLockoutsWindow.on('closed', () => {
-    zoneLockoutsWindow = null
-  })
-}
-
-// ── Raid Readiness overlay window ────────────────────────────────────────────
-
-function createRaidReadinessOverlay(): void {
-  if (raidReadinessWindow && !raidReadinessWindow.isDestroyed()) {
-    raidReadinessWindow.focus()
-    return
-  }
-
-  const { x, y, width, height } = getRestoredBounds('raidReadiness', OVERLAY_DEFAULTS.raidReadiness)
-  raidReadinessWindow = new BrowserWindow({
-    x,
-    y,
-    width,
-    height,
-    minWidth: 200,
-    minHeight: 140,
-    transparent: true,
-    backgroundColor: '#00000000',
-    frame: false,
-    resizable: true,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    hasShadow: false,
-    show: false, // show after ready-to-show to avoid blank-frame flash
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false
-    },
-  })
-
-  raidReadinessWindow.once('ready-to-show', () => {
-    raidReadinessWindow?.show()
-  })
-
-  raidReadinessWindow.setAlwaysOnTop(true, 'screen-saver')
-  raidReadinessWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  windowToOverlayName.set(raidReadinessWindow, 'raidReadiness')
-  applyInitialOverlayInput(raidReadinessWindow, 'raidReadiness')
-  trackOverlayBounds('raidReadiness', raidReadinessWindow)
-
-  if (isDev) {
-    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
-    raidReadinessWindow.loadURL(`${rendererUrl}/#/raid-readiness-window`)
-  } else {
-    raidReadinessWindow.loadFile(join(__dirname, '../renderer/index.html'), {
-      hash: '/raid-readiness-window',
-    })
-  }
-
-  raidReadinessWindow.on('closed', () => {
-    raidReadinessWindow = null
   })
 }
 
@@ -2509,61 +1731,6 @@ function createTriggerOverlay(): void {
   })
 }
 
-// ── NPC Overlay window ────────────────────────────────────────────────────────
-
-function createNPCOverlay(): void {
-  if (npcOverlayWindow && !npcOverlayWindow.isDestroyed()) {
-    npcOverlayWindow.focus()
-    return
-  }
-
-  const { x, y, width, height } = getRestoredBounds('npc', OVERLAY_DEFAULTS.npc)
-  npcOverlayWindow = new BrowserWindow({
-    x,
-    y,
-    width,
-    height,
-    minWidth: 280,
-    minHeight: 200,
-    transparent: true,
-    backgroundColor: '#00000000',
-    frame: false,
-    resizable: true,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    hasShadow: false,
-    show: false, // show after ready-to-show to avoid blank-frame flash
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false
-    },
-  })
-
-  npcOverlayWindow.once('ready-to-show', () => {
-    npcOverlayWindow?.show()
-  })
-
-  npcOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
-  npcOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  windowToOverlayName.set(npcOverlayWindow, 'npc')
-  applyInitialOverlayInput(npcOverlayWindow, 'npc')
-  trackOverlayBounds('npc', npcOverlayWindow)
-
-  if (isDev) {
-    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
-    npcOverlayWindow.loadURL(`${rendererUrl}/#/npc-overlay-window`)
-  } else {
-    npcOverlayWindow.loadFile(join(__dirname, '../renderer/index.html'), {
-      hash: '/npc-overlay-window',
-    })
-  }
-
-  npcOverlayWindow.on('closed', () => {
-    npcOverlayWindow = null
-  })
-}
-
 // ── Discord Voice overlay window ─────────────────────────────────────────────
 // Embeds Discord's own hosted StreamKit Overlay page instead of talking to
 // Discord's API ourselves — see issue #150. The renderer
@@ -2631,7 +1798,9 @@ function clearDiscordVoiceContent(win: BrowserWindow): void {
 
 function createDiscordVoiceOverlay(): void {
   if (discordVoiceOverlayWindow && !discordVoiceOverlayWindow.isDestroyed()) {
-    discordVoiceOverlayWindow.focus()
+    // Bring forward without taking focus (see createStandardOverlay).
+    if (!discordVoiceOverlayWindow.isVisible()) discordVoiceOverlayWindow.showInactive()
+    discordVoiceOverlayWindow.moveTop()
     return
   }
 
@@ -2659,7 +1828,7 @@ function createDiscordVoiceOverlay(): void {
   })
 
   discordVoiceOverlayWindow.once('ready-to-show', () => {
-    discordVoiceOverlayWindow?.show()
+    discordVoiceOverlayWindow?.showInactive()
     discordVoiceOverlayWindow?.moveTop()
   })
 
@@ -2697,116 +1866,6 @@ function createDiscordVoiceOverlay(): void {
     discordVoiceOverlayWindow = null
     discordVoiceChildView = null
     lastDiscordVoiceUrl = null
-  })
-}
-
-// ── Threat meter overlay window ──────────────────────────────────────────────
-
-function createThreatOverlay(): void {
-  if (threatOverlayWindow && !threatOverlayWindow.isDestroyed()) {
-    threatOverlayWindow.focus()
-    return
-  }
-
-  const { x, y, width, height } = getRestoredBounds('threat', OVERLAY_DEFAULTS.threat)
-  threatOverlayWindow = new BrowserWindow({
-    x,
-    y,
-    width,
-    height,
-    minWidth: 200,
-    minHeight: 150,
-    transparent: true,
-    backgroundColor: '#00000000',
-    frame: false,
-    resizable: true,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    hasShadow: false,
-    show: false, // show after ready-to-show to avoid blank-frame flash
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false
-    },
-  })
-
-  threatOverlayWindow.once('ready-to-show', () => {
-    threatOverlayWindow?.show()
-  })
-
-  threatOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
-  threatOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  windowToOverlayName.set(threatOverlayWindow, 'threat')
-  applyInitialOverlayInput(threatOverlayWindow, 'threat')
-  trackOverlayBounds('threat', threatOverlayWindow)
-
-  if (isDev) {
-    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
-    threatOverlayWindow.loadURL(`${rendererUrl}/#/threat-overlay-window`)
-  } else {
-    threatOverlayWindow.loadFile(join(__dirname, '../renderer/index.html'), {
-      hash: '/threat-overlay-window',
-    })
-  }
-
-  threatOverlayWindow.on('closed', () => {
-    threatOverlayWindow = null
-  })
-}
-
-// ── Roll Tracker overlay window ──────────────────────────────────────────────
-
-function createRollTrackerOverlay(): void {
-  if (rollTrackerWindow && !rollTrackerWindow.isDestroyed()) {
-    rollTrackerWindow.focus()
-    return
-  }
-
-  const { x, y, width, height } = getRestoredBounds('rollTracker', OVERLAY_DEFAULTS.rollTracker)
-  rollTrackerWindow = new BrowserWindow({
-    x,
-    y,
-    width,
-    height,
-    minWidth: 240,
-    minHeight: 160,
-    transparent: true,
-    backgroundColor: '#00000000',
-    frame: false,
-    resizable: true,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    hasShadow: false,
-    show: false, // show after ready-to-show to avoid blank-frame flash
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false
-    },
-  })
-
-  rollTrackerWindow.once('ready-to-show', () => {
-    rollTrackerWindow?.show()
-  })
-
-  rollTrackerWindow.setAlwaysOnTop(true, 'screen-saver')
-  rollTrackerWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  windowToOverlayName.set(rollTrackerWindow, 'rollTracker')
-  applyInitialOverlayInput(rollTrackerWindow, 'rollTracker')
-  trackOverlayBounds('rollTracker', rollTrackerWindow)
-
-  if (isDev) {
-    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
-    rollTrackerWindow.loadURL(`${rendererUrl}/#/roll-tracker-window`)
-  } else {
-    rollTrackerWindow.loadFile(join(__dirname, '../renderer/index.html'), {
-      hash: '/roll-tracker-window',
-    })
-  }
-
-  rollTrackerWindow.on('closed', () => {
-    rollTrackerWindow = null
   })
 }
 
@@ -2972,242 +2031,26 @@ ipcMain.handle('overlay:set-display', (_event, id: number) => {
 
 // ── IPC handlers — overlay windows ───────────────────────────────────────────
 
-ipcMain.handle('overlay:dps:open', () => {
-  createDPSOverlay()
-})
+// Open/close/toggle channels for every standard overlay
+// (overlay:<slug>:open|close|toggle), generated from STANDARD_OVERLAYS.
+for (const [name, spec] of Object.entries(STANDARD_OVERLAYS) as Array<[StandardOverlay, StandardOverlaySpec]>) {
+  ipcMain.handle(`overlay:${spec.ipc}:open`, () => {
+    createStandardOverlay(name)
+  })
+  ipcMain.handle(`overlay:${spec.ipc}:close`, () => {
+    stdWin(name)?.close()
+  })
+  ipcMain.handle(`overlay:${spec.ipc}:toggle`, () => {
+    const win = stdWin(name)
+    if (win) win.close()
+    else createStandardOverlay(name)
+  })
+}
 
-ipcMain.handle('overlay:dps:close', () => {
-  if (dpsOverlayWindow && !dpsOverlayWindow.isDestroyed()) {
-    dpsOverlayWindow.close()
-  }
-})
-
-ipcMain.handle('overlay:dps:toggle', () => {
-  if (dpsOverlayWindow && !dpsOverlayWindow.isDestroyed()) {
-    dpsOverlayWindow.close()
-  } else {
-    createDPSOverlay()
-  }
-})
-
-ipcMain.handle('overlay:hps:open', () => {
-  createHPSOverlay()
-})
-
-ipcMain.handle('overlay:hps:close', () => {
-  if (hpsOverlayWindow && !hpsOverlayWindow.isDestroyed()) {
-    hpsOverlayWindow.close()
-  }
-})
-
-ipcMain.handle('overlay:hps:toggle', () => {
-  if (hpsOverlayWindow && !hpsOverlayWindow.isDestroyed()) {
-    hpsOverlayWindow.close()
-  } else {
-    createHPSOverlay()
-  }
-})
-
-ipcMain.handle('overlay:bufftimer:open', () => {
-  createBuffTimerOverlay()
-})
-
-ipcMain.handle('overlay:bufftimer:close', () => {
-  if (buffTimerWindow && !buffTimerWindow.isDestroyed()) {
-    buffTimerWindow.close()
-  }
-})
-
-ipcMain.handle('overlay:bufftimer:toggle', () => {
-  if (buffTimerWindow && !buffTimerWindow.isDestroyed()) {
-    buffTimerWindow.close()
-  } else {
-    createBuffTimerOverlay()
-  }
-})
-
-ipcMain.handle('overlay:filteredtimer:open', () => {
-  createFilteredTimerOverlay()
-})
-
-ipcMain.handle('overlay:filteredtimer:close', () => {
-  if (filteredTimerWindow && !filteredTimerWindow.isDestroyed()) {
-    filteredTimerWindow.close()
-  }
-})
-
-ipcMain.handle('overlay:filteredtimer:toggle', () => {
-  if (filteredTimerWindow && !filteredTimerWindow.isDestroyed()) {
-    filteredTimerWindow.close()
-  } else {
-    createFilteredTimerOverlay()
-  }
-})
-
-ipcMain.handle('overlay:killcounter:open', () => {
-  createKillCounterOverlay()
-})
-
-ipcMain.handle('overlay:killcounter:close', () => {
-  if (killCounterWindow && !killCounterWindow.isDestroyed()) {
-    killCounterWindow.close()
-  }
-})
-
-ipcMain.handle('overlay:killcounter:toggle', () => {
-  if (killCounterWindow && !killCounterWindow.isDestroyed()) {
-    killCounterWindow.close()
-  } else {
-    createKillCounterOverlay()
-  }
-})
-
-ipcMain.handle('overlay:pet:open', () => {
-  createPetOverlay()
-})
-
-ipcMain.handle('overlay:pet:close', () => {
-  if (petWindow && !petWindow.isDestroyed()) {
-    petWindow.close()
-  }
-})
-
-ipcMain.handle('overlay:pet:toggle', () => {
-  if (petWindow && !petWindow.isDestroyed()) {
-    petWindow.close()
-  } else {
-    createPetOverlay()
-  }
-})
-
-ipcMain.handle('overlay:deathrecap:open', () => {
-  createDeathRecapOverlay()
-})
-
-ipcMain.handle('overlay:deathrecap:close', () => {
-  if (deathRecapWindow && !deathRecapWindow.isDestroyed()) {
-    deathRecapWindow.close()
-  }
-})
-
-ipcMain.handle('overlay:deathrecap:toggle', () => {
-  if (deathRecapWindow && !deathRecapWindow.isDestroyed()) {
-    deathRecapWindow.close()
-  } else {
-    createDeathRecapOverlay()
-  }
-})
-
-ipcMain.handle('overlay:chchain:open', () => {
-  createCHChainOverlay()
-})
-
-ipcMain.handle('overlay:iteminfo:open', () => {
-  createItemInfoOverlay()
-})
-
+// Item Info's auto-show on an in-game item click. Same as open (which never
+// takes focus either), kept as its own channel for the existing caller.
 ipcMain.handle('overlay:iteminfo:show', () => {
-  createItemInfoOverlay(true)
-})
-
-ipcMain.handle('overlay:iteminfo:close', () => {
-  if (itemInfoWindow && !itemInfoWindow.isDestroyed()) {
-    itemInfoWindow.close()
-  }
-})
-
-ipcMain.handle('overlay:iteminfo:toggle', () => {
-  if (itemInfoWindow && !itemInfoWindow.isDestroyed()) {
-    itemInfoWindow.close()
-  } else {
-    createItemInfoOverlay()
-  }
-})
-
-ipcMain.handle('overlay:chchain:close', () => {
-  if (chChainWindow && !chChainWindow.isDestroyed()) {
-    chChainWindow.close()
-  }
-})
-
-ipcMain.handle('overlay:chchain:toggle', () => {
-  if (chChainWindow && !chChainWindow.isDestroyed()) {
-    chChainWindow.close()
-  } else {
-    createCHChainOverlay()
-  }
-})
-
-ipcMain.handle('overlay:livemap:open', () => {
-  createLiveMapOverlay()
-})
-
-ipcMain.handle('overlay:livemap:close', () => {
-  if (liveMapWindow && !liveMapWindow.isDestroyed()) {
-    liveMapWindow.close()
-  }
-})
-
-ipcMain.handle('overlay:livemap:toggle', () => {
-  if (liveMapWindow && !liveMapWindow.isDestroyed()) {
-    liveMapWindow.close()
-  } else {
-    createLiveMapOverlay()
-  }
-})
-
-ipcMain.handle('overlay:chmetronome:open', () => {
-  createCHMetronomeOverlay()
-})
-
-ipcMain.handle('overlay:chmetronome:close', () => {
-  if (chMetronomeWindow && !chMetronomeWindow.isDestroyed()) {
-    chMetronomeWindow.close()
-  }
-})
-
-ipcMain.handle('overlay:chmetronome:toggle', () => {
-  if (chMetronomeWindow && !chMetronomeWindow.isDestroyed()) {
-    chMetronomeWindow.close()
-  } else {
-    createCHMetronomeOverlay()
-  }
-})
-
-ipcMain.handle('overlay:detrimtimer:open', () => {
-  createDetrimTimerOverlay()
-})
-
-ipcMain.handle('overlay:detrimtimer:close', () => {
-  if (detrimTimerWindow && !detrimTimerWindow.isDestroyed()) {
-    detrimTimerWindow.close()
-  }
-})
-
-ipcMain.handle('overlay:detrimtimer:toggle', () => {
-  if (detrimTimerWindow && !detrimTimerWindow.isDestroyed()) {
-    detrimTimerWindow.close()
-  } else {
-    createDetrimTimerOverlay()
-  }
-})
-
-ipcMain.handle('overlay:customtimer:open', () => {
-  createCustomTimerOverlay()
-})
-
-ipcMain.handle('overlay:customtimer:close', () => {
-  if (customTimerWindow && !customTimerWindow.isDestroyed()) {
-    customTimerWindow.close()
-  }
-})
-
-ipcMain.handle('overlay:customtimer:toggle', () => {
-  if (customTimerWindow && !customTimerWindow.isDestroyed()) {
-    customTimerWindow.close()
-  } else {
-    createCustomTimerOverlay()
-  }
+  createStandardOverlay('itemInfo')
 })
 
 // Named timer-group Custom Timers windows — parameterized by groupId so a
@@ -3229,60 +2072,6 @@ ipcMain.handle('overlay:customtimer:group:toggle', (_event, groupId: string, gro
     win.close()
   } else {
     createCustomTimerGroupOverlay(groupId, groupName)
-  }
-})
-
-ipcMain.handle('overlay:respawntimer:open', () => {
-  createRespawnTimerOverlay()
-})
-
-ipcMain.handle('overlay:respawntimer:close', () => {
-  if (respawnTimerWindow && !respawnTimerWindow.isDestroyed()) {
-    respawnTimerWindow.close()
-  }
-})
-
-ipcMain.handle('overlay:respawntimer:toggle', () => {
-  if (respawnTimerWindow && !respawnTimerWindow.isDestroyed()) {
-    respawnTimerWindow.close()
-  } else {
-    createRespawnTimerOverlay()
-  }
-})
-
-ipcMain.handle('overlay:zonelockouts:open', () => {
-  createZoneLockoutsOverlay()
-})
-
-ipcMain.handle('overlay:zonelockouts:close', () => {
-  if (zoneLockoutsWindow && !zoneLockoutsWindow.isDestroyed()) {
-    zoneLockoutsWindow.close()
-  }
-})
-
-ipcMain.handle('overlay:zonelockouts:toggle', () => {
-  if (zoneLockoutsWindow && !zoneLockoutsWindow.isDestroyed()) {
-    zoneLockoutsWindow.close()
-  } else {
-    createZoneLockoutsOverlay()
-  }
-})
-
-ipcMain.handle('overlay:raidreadiness:open', () => {
-  createRaidReadinessOverlay()
-})
-
-ipcMain.handle('overlay:raidreadiness:close', () => {
-  if (raidReadinessWindow && !raidReadinessWindow.isDestroyed()) {
-    raidReadinessWindow.close()
-  }
-})
-
-ipcMain.handle('overlay:raidreadiness:toggle', () => {
-  if (raidReadinessWindow && !raidReadinessWindow.isDestroyed()) {
-    raidReadinessWindow.close()
-  } else {
-    createRaidReadinessOverlay()
   }
 })
 
@@ -3400,24 +2189,6 @@ ipcMain.handle('overlay:trigger:toggle', () => {
   }
 })
 
-ipcMain.handle('overlay:npc:open', () => {
-  createNPCOverlay()
-})
-
-ipcMain.handle('overlay:npc:close', () => {
-  if (npcOverlayWindow && !npcOverlayWindow.isDestroyed()) {
-    npcOverlayWindow.close()
-  }
-})
-
-ipcMain.handle('overlay:npc:toggle', () => {
-  if (npcOverlayWindow && !npcOverlayWindow.isDestroyed()) {
-    npcOverlayWindow.close()
-  } else {
-    createNPCOverlay()
-  }
-})
-
 ipcMain.handle('overlay:discordvoice:open', () => {
   createDiscordVoiceOverlay()
 })
@@ -3447,42 +2218,6 @@ ipcMain.handle('overlay:discordvoice:set-url', (event, url: string) => {
 ipcMain.handle('overlay:discordvoice:clear', (event) => {
   const win = BrowserWindow.fromWebContents(event.sender)
   if (win) clearDiscordVoiceContent(win)
-})
-
-ipcMain.handle('overlay:threat:open', () => {
-  createThreatOverlay()
-})
-
-ipcMain.handle('overlay:threat:close', () => {
-  if (threatOverlayWindow && !threatOverlayWindow.isDestroyed()) {
-    threatOverlayWindow.close()
-  }
-})
-
-ipcMain.handle('overlay:threat:toggle', () => {
-  if (threatOverlayWindow && !threatOverlayWindow.isDestroyed()) {
-    threatOverlayWindow.close()
-  } else {
-    createThreatOverlay()
-  }
-})
-
-ipcMain.handle('overlay:rolltracker:open', () => {
-  createRollTrackerOverlay()
-})
-
-ipcMain.handle('overlay:rolltracker:close', () => {
-  if (rollTrackerWindow && !rollTrackerWindow.isDestroyed()) {
-    rollTrackerWindow.close()
-  }
-})
-
-ipcMain.handle('overlay:rolltracker:toggle', () => {
-  if (rollTrackerWindow && !rollTrackerWindow.isDestroyed()) {
-    rollTrackerWindow.close()
-  } else {
-    createRollTrackerOverlay()
-  }
 })
 
 // ── IPC handlers — bulk popout control ───────────────────────────────────────
@@ -3536,26 +2271,8 @@ function startOverlayRaiseInterval(): void {
 
 function userPopoutWindows(): BrowserWindow[] {
   const fixed = [
-    dpsOverlayWindow,
-    hpsOverlayWindow,
-    buffTimerWindow,
-    detrimTimerWindow,
-    customTimerWindow,
-    npcOverlayWindow,
-    threatOverlayWindow,
-    rollTrackerWindow,
-    respawnTimerWindow,
-    chChainWindow,
-    chMetronomeWindow,
-    liveMapWindow,
+    ...standardWindows.values(),
     discordVoiceOverlayWindow,
-    zoneLockoutsWindow,
-    raidReadinessWindow,
-    filteredTimerWindow,
-    killCounterWindow,
-    itemInfoWindow,
-    petWindow,
-    deathRecapWindow,
   ].filter((w): w is BrowserWindow => !!w && !w.isDestroyed())
   return [...fixed, ...customTimerGroupWindows.values()].filter((w) => !w.isDestroyed())
 }
@@ -3585,25 +2302,25 @@ ipcMain.handle('overlay:popouts:open-all', (_event, panels?: PopoutRequestEntry[
   }
   const wants = (key: string): boolean => all || want.has(key)
 
-  if (wants('dps') && (!dpsOverlayWindow || dpsOverlayWindow.isDestroyed())) createDPSOverlay()
-  if (wants('buff') && (!buffTimerWindow || buffTimerWindow.isDestroyed())) createBuffTimerOverlay()
-  if (wants('detrim') && (!detrimTimerWindow || detrimTimerWindow.isDestroyed())) createDetrimTimerOverlay()
-  if (wants('custom') && (!customTimerWindow || customTimerWindow.isDestroyed())) createCustomTimerOverlay()
-  if (wants('npc') && (!npcOverlayWindow || npcOverlayWindow.isDestroyed())) createNPCOverlay()
-  if (wants('threat') && (!threatOverlayWindow || threatOverlayWindow.isDestroyed())) createThreatOverlay()
-  if (wants('rolls') && (!rollTrackerWindow || rollTrackerWindow.isDestroyed())) createRollTrackerOverlay()
-  if (wants('respawn') && (!respawnTimerWindow || respawnTimerWindow.isDestroyed())) createRespawnTimerOverlay()
-  if (wants('chChain') && (!chChainWindow || chChainWindow.isDestroyed())) createCHChainOverlay()
-  if (wants('chMetronome') && (!chMetronomeWindow || chMetronomeWindow.isDestroyed())) createCHMetronomeOverlay()
-  if (wants('liveMap') && (!liveMapWindow || liveMapWindow.isDestroyed())) createLiveMapOverlay()
+  if (wants('dps') && !stdWin('dps')) createStandardOverlay('dps')
+  if (wants('buff') && !stdWin('buffTimer')) createStandardOverlay('buffTimer')
+  if (wants('detrim') && !stdWin('detrimTimer')) createStandardOverlay('detrimTimer')
+  if (wants('custom') && !stdWin('customTimer')) createStandardOverlay('customTimer')
+  if (wants('npc') && !stdWin('npc')) createStandardOverlay('npc')
+  if (wants('threat') && !stdWin('threat')) createStandardOverlay('threat')
+  if (wants('rolls') && !stdWin('rollTracker')) createStandardOverlay('rollTracker')
+  if (wants('respawn') && !stdWin('respawnTimer')) createStandardOverlay('respawnTimer')
+  if (wants('chChain') && !stdWin('chChain')) createStandardOverlay('chChain')
+  if (wants('chMetronome') && !stdWin('chMetronome')) createStandardOverlay('chMetronome')
+  if (wants('liveMap') && !stdWin('liveMap')) createStandardOverlay('liveMap')
   if (wants('discordVoice') && (!discordVoiceOverlayWindow || discordVoiceOverlayWindow.isDestroyed())) createDiscordVoiceOverlay()
-  if (wants('zoneLockouts') && (!zoneLockoutsWindow || zoneLockoutsWindow.isDestroyed())) createZoneLockoutsOverlay()
-  if (wants('raidReadiness') && (!raidReadinessWindow || raidReadinessWindow.isDestroyed())) createRaidReadinessOverlay()
-  if (wants('filtered') && (!filteredTimerWindow || filteredTimerWindow.isDestroyed())) createFilteredTimerOverlay()
-  if (wants('kills') && (!killCounterWindow || killCounterWindow.isDestroyed())) createKillCounterOverlay()
-  if (wants('itemInfo') && (!itemInfoWindow || itemInfoWindow.isDestroyed())) createItemInfoOverlay()
-  if (wants('pet') && (!petWindow || petWindow.isDestroyed())) createPetOverlay()
-  if (wants('deathRecap') && (!deathRecapWindow || deathRecapWindow.isDestroyed())) createDeathRecapOverlay()
+  if (wants('zoneLockouts') && !stdWin('zoneLockouts')) createStandardOverlay('zoneLockouts')
+  if (wants('raidReadiness') && !stdWin('raidReadiness')) createStandardOverlay('raidReadiness')
+  if (wants('filtered') && !stdWin('filteredTimer')) createStandardOverlay('filteredTimer')
+  if (wants('kills') && !stdWin('killCounter')) createStandardOverlay('killCounter')
+  if (wants('itemInfo') && !stdWin('itemInfo')) createStandardOverlay('itemInfo')
+  if (wants('pet') && !stdWin('pet')) createStandardOverlay('pet')
+  if (wants('deathRecap') && !stdWin('deathRecap')) createStandardOverlay('deathRecap')
   for (const g of groupWants) {
     const win = customTimerGroupWindows.get(g.id)
     if (!win || win.isDestroyed()) createCustomTimerGroupOverlay(g.id, g.name)
@@ -3682,28 +2399,10 @@ function overlayWindowByName(name: WindowKey): BrowserWindow | null {
   if (name.startsWith('customTimer:')) {
     return customTimerGroupWindows.get(name.slice('customTimer:'.length)) ?? null
   }
+  if (isStandardOverlay(name)) return standardWindows.get(name) ?? null
   switch (name) {
-    case 'dps': return dpsOverlayWindow
-    case 'hps': return hpsOverlayWindow
-    case 'buffTimer': return buffTimerWindow
-    case 'detrimTimer': return detrimTimerWindow
-    case 'customTimer': return customTimerWindow
     case 'trigger': return triggerOverlayWindow
-    case 'npc': return npcOverlayWindow
-    case 'threat': return threatOverlayWindow
-    case 'rollTracker': return rollTrackerWindow
-    case 'respawnTimer': return respawnTimerWindow
-    case 'chChain': return chChainWindow
-    case 'chMetronome': return chMetronomeWindow
-    case 'liveMap': return liveMapWindow
     case 'discordVoice': return discordVoiceOverlayWindow
-    case 'zoneLockouts': return zoneLockoutsWindow
-    case 'raidReadiness': return raidReadinessWindow
-    case 'filteredTimer': return filteredTimerWindow
-    case 'killCounter': return killCounterWindow
-    case 'itemInfo': return itemInfoWindow
-    case 'pet': return petWindow
-    case 'deathRecap': return deathRecapWindow
     default: return null
   }
 }
@@ -3711,27 +2410,12 @@ function overlayWindowByName(name: WindowKey): BrowserWindow | null {
 // Open one overlay's popout window by canonical name (the trigger overlay is
 // created separately at startup and so is intentionally absent here).
 function createOverlayByName(name: OverlayName): void {
+  if (isStandardOverlay(name)) {
+    createStandardOverlay(name)
+    return
+  }
   switch (name) {
-    case 'dps': createDPSOverlay(); break
-    case 'hps': createHPSOverlay(); break
-    case 'buffTimer': createBuffTimerOverlay(); break
-    case 'detrimTimer': createDetrimTimerOverlay(); break
-    case 'customTimer': createCustomTimerOverlay(); break
-    case 'npc': createNPCOverlay(); break
-    case 'threat': createThreatOverlay(); break
-    case 'rollTracker': createRollTrackerOverlay(); break
-    case 'respawnTimer': createRespawnTimerOverlay(); break
-    case 'chChain': createCHChainOverlay(); break
-    case 'chMetronome': createCHMetronomeOverlay(); break
-    case 'liveMap': createLiveMapOverlay(); break
     case 'discordVoice': createDiscordVoiceOverlay(); break
-    case 'zoneLockouts': createZoneLockoutsOverlay(); break
-    case 'raidReadiness': createRaidReadinessOverlay(); break
-    case 'filteredTimer': createFilteredTimerOverlay(); break
-    case 'killCounter': createKillCounterOverlay(); break
-    case 'itemInfo': createItemInfoOverlay(); break
-    case 'pet': createPetOverlay(); break
-    case 'deathRecap': createDeathRecapOverlay(); break
     default: break
   }
 }
@@ -4002,7 +2686,7 @@ let lastRaidSelection = ''
 
 function broadcastRaidSelection(id: string): void {
   lastRaidSelection = id
-  const targets: Array<BrowserWindow | null> = [mainWindow, raidReadinessWindow]
+  const targets: Array<BrowserWindow | null> = [mainWindow, stdWin('raidReadiness')]
   for (const win of customTimerGroupWindows.values()) targets.push(win)
   for (const win of targets) {
     if (win && !win.isDestroyed()) {
