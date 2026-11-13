@@ -3665,6 +3665,80 @@ ipcMain.handle('layouts:create', (_event, name: string) => {
   return layoutSummary()
 })
 
+// ── Overlay setup wizard ─────────────────────────────────────────────────────
+// Lays the picked overlays out around the edges of one monitor, leaving its
+// middle (the game) clear: timers down the left, combat and target overlays
+// down the right, each side wrapping inward into another column when full.
+// An overlay keeps its saved size, else its default.
+
+const SETUP_LEFT: OverlayName[] = [
+  'buffTimer', 'detrimTimer', 'filteredTimer', 'customTimer', 'respawnTimer',
+  'chChain', 'chMetronome', 'zoneLockouts', 'killCounter',
+]
+const SETUP_GAP = 8
+
+function setupPlacement(keys: OverlayName[], displayId: number | null): Record<string, Bounds> {
+  const display = screen.getAllDisplays().find((d) => d.id === displayId) ?? screen.getPrimaryDisplay()
+  const wa = display.workArea
+  const saved = loadBoundsStore()
+  const sizeOf = (k: OverlayName): { width: number; height: number } => {
+    const s = saved[k]
+    const d = OVERLAY_DEFAULTS[k as Exclude<OverlayName, 'trigger'>]
+    const width = s?.width ?? d?.width ?? 300
+    const height = s?.height ?? d?.height ?? 320
+    return { width: Math.min(width, wa.width), height: Math.min(height, wa.height - SETUP_GAP * 2) }
+  }
+  const out: Record<string, Bounds> = {}
+  const flow = (list: OverlayName[], fromRight: boolean): void => {
+    let edge = fromRight ? wa.x + wa.width - SETUP_GAP : wa.x + SETUP_GAP
+    let y = wa.y + SETUP_GAP
+    let colWidth = 0
+    for (const k of list) {
+      const { width, height } = sizeOf(k)
+      if (y > wa.y + SETUP_GAP && y + height > wa.y + wa.height - SETUP_GAP) {
+        // Full: start the next column inward.
+        edge = fromRight ? edge - colWidth - SETUP_GAP : edge + colWidth + SETUP_GAP
+        y = wa.y + SETUP_GAP
+        colWidth = 0
+      }
+      out[k] = { x: fromRight ? edge - width : edge, y, width, height }
+      y += height + SETUP_GAP
+      colWidth = Math.max(colWidth, width)
+    }
+  }
+  flow(keys.filter((k) => SETUP_LEFT.includes(k)), false)
+  flow(keys.filter((k) => !SETUP_LEFT.includes(k)), true)
+  return out
+}
+
+// Builds a layout from the wizard's picks, as a new layout or in place of the
+// active one's windows, and switches to it (closing what's not in it).
+ipcMain.handle('overlay:setup:apply', (_event, opts: { keys: unknown; displayId: unknown; mode: unknown; name: unknown }) => {
+  const keys = (Array.isArray(opts?.keys) ? opts.keys : []).filter(
+    (k): k is OverlayName => typeof k === 'string' && k !== 'trigger' && k in OVERLAY_DEFAULTS,
+  )
+  const displayId = typeof opts?.displayId === 'number' ? opts.displayId : null
+  const placed = setupPlacement(keys, displayId)
+  const windows: LayoutWindow[] = keys.map((k) => ({ key: k, bounds: placed[k] }))
+  const store = loadLayoutStore()
+  let id = store.activeId
+  if (opts?.mode === 'new') {
+    const layout: OverlayLayout = {
+      id: newLayoutId(),
+      name: cleanLayoutName(typeof opts.name === 'string' && opts.name.trim() ? opts.name : 'My overlays'),
+      windows,
+    }
+    store.layouts.push(layout)
+    id = layout.id
+  } else {
+    // Positions in the outgoing arrangement don't matter: it's being replaced.
+    activeLayout().windows = windows
+  }
+  // No collapse state in the entries, so switching opens them expanded.
+  switchLayout(id, false)
+  return layoutSummary()
+})
+
 ipcMain.handle('layouts:rename', (_event, id: string, name: string) => {
   const layout = loadLayoutStore().layouts.find((l) => l.id === id)
   if (layout) {

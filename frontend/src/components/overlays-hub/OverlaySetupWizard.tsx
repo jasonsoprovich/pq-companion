@@ -3,18 +3,20 @@
  * Runs straight after first-launch setup, and again from the Overlays hub.
  *
  * Steps:
+ * 0. Layout: make a new layout or replace the current one's windows (only
+ *    asked when the current layout already has windows).
  * 1. Overlays: every overlay in the Library, with a set pre-ticked for the
  *    character's class (see CLASS_PICKS).
  * 2. Monitor: which screen they go on (skipped with a single monitor).
  * 3. Options: the show/hide-all hotkey and collapse when idle.
- *
- * Finishing saves the options and opens the picked overlays on that monitor.
+ * 4. Arrange: the overlays open around that monitor's edges (main's
+ *    overlay:setup:apply) and the Arrange map lets you move them.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, ArrowRight, CheckCircle2, Keyboard, LayoutGrid, Loader2, Monitor, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, CheckCircle2, Keyboard, Layers, LayoutGrid, Loader2, Monitor, X } from 'lucide-react'
 import { useEscapeToClose } from '../../hooks/useEscapeToClose'
 import { getConfig, listCharacters } from '../../services/api'
-import { OVERLAY_CATALOG, OVERLAY_CATEGORIES, PANEL_POPOUT } from '../../lib/overlayCatalog'
+import { OVERLAY_CATALOG, OVERLAY_CATEGORIES } from '../../lib/overlayCatalog'
 import { CLASS_NAMES } from '../../lib/spellHelpers'
 import {
   SUGGESTED_HOTKEYS,
@@ -24,14 +26,17 @@ import {
   eqConflictWarning,
 } from '../../lib/hotkeys'
 import { setIdleCollapseForAll } from './HubActionsMenu'
+import ArrangeView from './ArrangeView'
 import type { OverlayName } from '../../lib/overlays'
 
-type Step = 'pick' | 'monitor' | 'options'
+type Step = 'layout' | 'pick' | 'monitor' | 'options' | 'arrange'
 
 const STEP_TITLES: Record<Step, string> = {
+  layout: 'Layout',
   pick: 'Overlays',
   monitor: 'Monitor',
   options: 'Options',
+  arrange: 'Arrange',
 }
 
 // Pre-ticked for everyone, then by class (CLASS_NAMES order). HPS and Threat
@@ -206,7 +211,11 @@ export default function OverlaySetupWizard({ onClose }: { onClose: () => void })
   // Other actions' combos, for the conflict check: accelerator → action.
   const [taken, setTaken] = useState<Record<string, string>>({})
   const [idleOn, setIdleOn] = useState(false)
-  const [step, setStep] = useState<Step>('pick')
+  // The active layout, and whether to replace its windows or make a new one.
+  const [current, setCurrent] = useState<{ name: string; windows: number } | null>(null)
+  const [mode, setMode] = useState<'new' | 'replace'>('new')
+  const [newName, setNewName] = useState('')
+  const [step, setStep] = useState<Step | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -214,17 +223,25 @@ export default function OverlaySetupWizard({ onClose }: { onClose: () => void })
 
   useEffect(() => {
     const load = async (): Promise<void> => {
-      const [cfg, chars, arrange, hotkeys, states] = await Promise.all([
+      const [cfg, chars, arrange, hotkeys, states, layouts] = await Promise.all([
         getConfig().catch(() => null),
         listCharacters().catch(() => null),
         api?.arrangeGet?.().catch(() => null),
         api?.hotkeysGet?.().catch(() => null),
         api?.popoutStates?.().catch(() => null),
+        api?.layoutsGet?.().catch(() => null),
       ])
+      const active = layouts?.layouts.find((l) => l.id === layouts.activeId)
+      const hasWindows = !!active && active.windows.length > 0
+      setCurrent(active ? { name: active.name, windows: active.windows.length } : null)
+      setMode(hasWindows ? 'new' : 'replace')
+      setStep(hasWindows ? 'layout' : 'pick')
       // The active character's class, else the one saved in first-launch setup.
       const activeChar = chars?.characters.find((c) => c.name === chars.active)
       const cls = activeChar && activeChar.class >= 0 ? activeChar.class : cfg?.character_class ?? -1
       setClassIndex(cls)
+      const clsName = CLASS_FULL[CLASS_NAMES[cls] ?? '']
+      setNewName(clsName ? `${clsName} setup` : 'My overlays')
       // Already-open overlays stay ticked alongside the class picks.
       const open = Object.entries(states ?? {}).filter(([, on]) => on).map(([k]) => k)
       const known = new Set(OVERLAY_CATALOG.map((e) => e.name as string))
@@ -254,11 +271,19 @@ export default function OverlaySetupWizard({ onClose }: { onClose: () => void })
     void load()
   }, [api])
 
+  const askLayout = !!current && current.windows > 0
   const steps: Step[] = useMemo(
-    () => (displays.length > 1 ? ['pick', 'monitor', 'options'] : ['pick', 'options']),
-    [displays.length],
+    () => [
+      ...(askLayout ? ['layout' as Step] : []),
+      'pick',
+      ...(displays.length > 1 ? ['monitor' as Step] : []),
+      'options',
+      'arrange',
+    ],
+    [askLayout, displays.length],
   )
-  const stepIndex = steps.indexOf(step)
+  const stepIndex = step ? steps.indexOf(step) : 0
+  const placed = step === 'arrange'
   const abbr = CLASS_NAMES[classIndex]
   const suggested = useMemo(() => new Set(classPicks(classIndex)), [classIndex])
 
@@ -270,24 +295,23 @@ export default function OverlaySetupWizard({ onClose }: { onClose: () => void })
       return next
     })
 
-  const finish = async (): Promise<void> => {
+  // Saves the options and opens the picks in place, then shows Arrange.
+  const apply = async (): Promise<void> => {
     if (!api) return
     setSaving(true)
     setError(null)
     try {
       await api.hotkeysSet(TOGGLE_ALL_ACTION, hotkey || null)
       await setIdleCollapseForAll(idleOn)
-      const states = await api.popoutStates()
-      // The Library cards' toggle, only for the ones not open yet.
-      for (const entry of OVERLAY_CATALOG) {
-        if (picked.has(entry.name) && !states[entry.name]) PANEL_POPOUT[entry.panel].toggle()
-      }
-      if (displayId !== null && displays.length > 1) {
-        // Give new windows a moment to exist before moving them.
-        await new Promise((r) => setTimeout(r, 600))
-        for (const name of picked) await api.moveToDisplay(name, displayId).catch(() => {})
-      }
-      onClose()
+      // Trigger alerts go on the game's monitor too.
+      if (displayId !== null && displays.length > 1) await api.setDisplay(displayId)
+      await api.setupApply({
+        keys: OVERLAY_CATALOG.filter((e) => picked.has(e.name)).map((e) => e.name),
+        displayId,
+        mode,
+        name: newName,
+      })
+      setStep('arrange')
     } catch (err) {
       setError((err as Error).message)
     } finally {
@@ -301,7 +325,7 @@ export default function OverlaySetupWizard({ onClose }: { onClose: () => void })
       style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(2px)' }}
     >
       <div
-        className="flex w-full max-w-2xl flex-col rounded-lg shadow-2xl"
+        className={`flex w-full flex-col rounded-lg shadow-2xl ${placed ? 'max-w-5xl' : 'max-w-2xl'}`}
         style={{
           backgroundColor: 'var(--color-surface)',
           border: '1px solid var(--color-border)',
@@ -316,7 +340,7 @@ export default function OverlaySetupWizard({ onClose }: { onClose: () => void })
           <div className="flex items-center gap-3">
             <LayoutGrid size={20} style={{ color: 'var(--color-primary)' }} />
             <h2 className="text-base font-semibold" style={{ color: 'var(--color-foreground)' }}>
-              Overlay Setup — {STEP_TITLES[step]}
+              Overlay Setup{step ? ` — ${STEP_TITLES[step]}` : ''}
             </h2>
           </div>
           <button
@@ -363,11 +387,84 @@ export default function OverlaySetupWizard({ onClose }: { onClose: () => void })
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-5">
-          {loading ? (
+        <div className={placed ? 'flex min-h-0 flex-1 flex-col' : 'flex-1 overflow-y-auto px-6 py-5'}>
+          {loading || !step ? (
             <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
               <Loader2 size={14} className="animate-spin" /> Loading…
             </div>
+          ) : step === 'layout' ? (
+            <div className="space-y-3">
+              <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+                Your current layout, {current?.name}, already has {current?.windows} window
+                {current?.windows === 1 ? '' : 's'}.{' '}
+                <span style={{ color: 'var(--color-muted-foreground)' }}>
+                  Switch between layouts any time from the Overlays page.
+                </span>
+              </p>
+              {([
+                ['new', 'Make a new layout', `Keeps ${current?.name} as it is and switches to the new one.`],
+                ['replace', `Replace ${current?.name}`, 'Closes its windows and puts the new picks in their place.'],
+              ] as const).map(([value, label, hint]) => {
+                const on = mode === value
+                return (
+                  <label
+                    key={value}
+                    className="flex cursor-pointer items-start gap-3 rounded-md px-3 py-2.5"
+                    style={{
+                      backgroundColor: on ? 'var(--color-surface-2)' : 'transparent',
+                      border: `1px solid ${on ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="overlay-setup-mode"
+                      checked={on}
+                      onChange={() => setMode(value)}
+                      className="mt-1"
+                      style={{ accentColor: 'var(--color-primary)' }}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
+                        {label}
+                      </span>
+                      <span className="block text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                        {hint}
+                      </span>
+                      {value === 'new' && on && (
+                        <input
+                          value={newName}
+                          onChange={(e) => setNewName(e.target.value)}
+                          maxLength={40}
+                          placeholder="Layout name"
+                          className="mt-2 w-full max-w-xs rounded px-2 py-1 text-sm"
+                          style={{
+                            backgroundColor: 'var(--color-background)',
+                            border: '1px solid var(--color-border)',
+                            color: 'var(--color-foreground)',
+                          }}
+                        />
+                      )}
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
+          ) : step === 'arrange' ? (
+            <>
+              <p className="flex items-center gap-2 px-6 pt-4 text-sm" style={{ color: 'var(--color-foreground)' }}>
+                <span>
+                  Your overlays are open around the edges of the screen. Drag them here or on screen
+                  to where you want them.
+                </span>
+              </p>
+              <p className="flex items-center gap-1.5 px-6 pt-1 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                <Layers size={12} className="shrink-0" />
+                Tip: drop one overlay on another&rsquo;s title strip to stack them as tabs in one window.
+              </p>
+              <div className="h-[56vh] min-h-[320px]">
+                <ArrangeView compact />
+              </div>
+            </>
           ) : step === 'pick' ? (
             <div className="space-y-4">
               <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
@@ -524,14 +621,15 @@ export default function OverlaySetupWizard({ onClose }: { onClose: () => void })
         >
           <button
             onClick={() => setStep(steps[stepIndex - 1])}
-            disabled={stepIndex === 0 || saving}
+            disabled={stepIndex === 0 || saving || placed}
             className="flex items-center gap-1.5 rounded px-3 py-1.5 text-sm font-medium"
             style={{
               backgroundColor: 'transparent',
               color: 'var(--color-muted-foreground)',
               border: '1px solid var(--color-border)',
-              cursor: stepIndex === 0 ? 'not-allowed' : 'pointer',
-              opacity: stepIndex === 0 ? 0.4 : 1,
+              cursor: stepIndex === 0 || placed ? 'not-allowed' : 'pointer',
+              opacity: stepIndex === 0 || placed ? 0.4 : 1,
+              visibility: placed ? 'hidden' : 'visible',
             }}
           >
             <ArrowLeft size={14} />
@@ -540,10 +638,10 @@ export default function OverlaySetupWizard({ onClose }: { onClose: () => void })
           <span className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
             {picked.size} overlay{picked.size === 1 ? '' : 's'} picked
           </span>
-          {stepIndex < steps.length - 1 ? (
+          {step !== 'options' && step !== 'arrange' ? (
             <button
               onClick={() => setStep(steps[stepIndex + 1])}
-              disabled={loading}
+              disabled={loading || !step || (step === 'pick' && picked.size === 0)}
               className="flex items-center gap-1.5 rounded px-4 py-1.5 text-sm font-semibold"
               style={{
                 backgroundColor: 'var(--color-primary)',
@@ -557,7 +655,7 @@ export default function OverlaySetupWizard({ onClose }: { onClose: () => void })
             </button>
           ) : (
             <button
-              onClick={() => void finish()}
+              onClick={() => (placed ? onClose() : void apply())}
               disabled={saving}
               className="flex items-center gap-1.5 rounded px-4 py-1.5 text-sm font-semibold"
               style={{
@@ -569,7 +667,7 @@ export default function OverlaySetupWizard({ onClose }: { onClose: () => void })
               }}
             >
               {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-              {saving ? 'Opening…' : 'Finish'}
+              {saving ? 'Opening…' : placed ? 'Done' : 'Place overlays'}
             </button>
           )}
         </div>

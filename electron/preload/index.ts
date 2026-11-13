@@ -235,6 +235,9 @@ contextBridge.exposeInMainWorld('electron', {
     layoutsSwitch: (id: string): Promise<LayoutState> => ipcRenderer.invoke('layouts:switch', id),
     // Copies the active layout under a new name and makes the copy active.
     layoutsCreate: (name: string): Promise<LayoutState> => ipcRenderer.invoke('layouts:create', name),
+    // Overlay setup wizard: build a layout from the picks, placed on a monitor.
+    setupApply: (opts: { keys: string[]; displayId: number | null; mode: 'new' | 'replace'; name?: string }): Promise<LayoutState> =>
+      ipcRenderer.invoke('overlay:setup:apply', opts),
     layoutsRename: (id: string, name: string): Promise<LayoutState> =>
       ipcRenderer.invoke('layouts:rename', id, name),
     layoutsDelete: (id: string): Promise<LayoutState> => ipcRenderer.invoke('layouts:delete', id),

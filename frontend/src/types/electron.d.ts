@@ -250,6 +250,7 @@ export interface ElectronAPI {
     hotkeysSetMany: (bindings: Record<string, string>) => Promise<HotkeyState>
     hotkeysSuspend: (suspend: boolean) => Promise<void>
     layoutsGet: () => Promise<LayoutState>
+    setupApply: (opts: { keys: string[]; displayId: number | null; mode: 'new' | 'replace'; name?: string }) => Promise<LayoutState>
     layoutsSwitch: (id: string) => Promise<LayoutState>
     layoutsCreate: (name: string) => Promise<LayoutState>
     layoutsRename: (id: string, name: string) => Promise<LayoutState>

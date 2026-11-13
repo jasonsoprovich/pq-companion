@@ -55,7 +55,9 @@ function desktopBounds(displays: ArrangeState['displays']): ArrangeRect {
 type BoxDrag = { key: string; startX: number; startY: number; origX: number; origY: number; moved: boolean }
 type ChipDrag = { stack: string; tab: string; label: string; x: number; y: number; moved: boolean }
 
-export default function ArrangeView(): React.ReactElement {
+// `compact` drops the how-to line, for hosts that explain it themselves (the
+// overlay setup wizard).
+export default function ArrangeView({ compact = false }: { compact?: boolean }): React.ReactElement {
   const [state, setState] = useState<ArrangeState | null>(null)
   const [size, setSize] = useState({ w: 0, h: 0 })
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -245,10 +247,12 @@ export default function ArrangeView(): React.ReactElement {
   return (
     <div className="flex h-full flex-col gap-3 p-4">
       <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-        <span>
-          Click a window to open it or bring it forward, and drag it to move it. Drop one on another&rsquo;s
-          title strip to stack them; drag a tab out of a stack to unstack it.
-        </span>
+        {!compact && (
+          <span>
+            Click a window to open it or bring it forward, and drag it to move it. Drop one on another&rsquo;s
+            title strip to stack them; drag a tab out of a stack to unstack it.
+          </span>
+        )}
         <span className="flex items-center gap-3">
           <span className="flex items-center gap-1.5">
             <span className="inline-block h-2.5 w-4 rounded-sm" style={{ border: '1.5px solid var(--color-primary)' }} />
