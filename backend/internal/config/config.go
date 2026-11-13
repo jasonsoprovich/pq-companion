@@ -513,6 +513,11 @@ type Preferences struct {
 	// keys / 0 are treated as 1.0 (100%) by the client.
 	OverlayZoomFactors map[string]float64 `yaml:"overlay_zoom_factors,omitempty" json:"overlay_zoom_factors"`
 
+	// OverlayIdleCollapse folds popout overlays to their title bar after they
+	// have had nothing to show for a while. Seconds of idleness, keyed by
+	// window key (overlay name or customTimer:<groupId>); missing or 0 = off.
+	OverlayIdleCollapse map[string]int `yaml:"overlay_idle_collapse,omitempty" json:"overlay_idle_collapse"`
+
 	// ParseCombatLog enables real-time combat log parsing.
 	ParseCombatLog bool `yaml:"parse_combat_log" json:"parse_combat_log"`
 

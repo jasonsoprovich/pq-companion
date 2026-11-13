@@ -1,13 +1,32 @@
 /**
  * HubActionsMenu — the ⋯ menu in the Overlays hub header, for actions on
  * every overlay at once: close all popouts, recenter every window, clear all
- * timers. The last two ask first.
+ * timers (those two ask first), and turn collapse-when-idle on or off for
+ * every overlay that offers it.
  */
 import React, { useEffect, useRef, useState } from 'react'
-import { Crosshair, MoreHorizontal, Trash2, X } from 'lucide-react'
+import { ChevronsDownUp, ChevronsUpDown, Crosshair, MoreHorizontal, Trash2, X } from 'lucide-react'
 import { ConfirmModal } from '../ConfirmModal'
-import { clearTimers } from '../../services/api'
+import { clearTimers, getConfig, listTimerGroups, saveConfigChanges } from '../../services/api'
 import { useOverlayPopouts } from '../../hooks/useOverlayPopouts'
+import { DEFAULT_IDLE_SECS, IDLE_COLLAPSE_OVERLAYS } from '../../lib/idleCollapse'
+
+// On: every supported overlay and timer window collapses when idle, keeping
+// a delay already picked (new ones get the default). Off: none do.
+async function setIdleCollapseForAll(on: boolean): Promise<void> {
+  const base = await getConfig()
+  let next: Record<string, number> = {}
+  if (on) {
+    const groups = await listTimerGroups().catch(() => [])
+    const keys = [...IDLE_COLLAPSE_OVERLAYS, ...groups.map((g) => `customTimer:${g.id}`)]
+    const cur = base.preferences.overlay_idle_collapse ?? {}
+    next = Object.fromEntries(keys.map((k) => [k, cur[k] > 0 ? cur[k] : DEFAULT_IDLE_SECS]))
+  }
+  await saveConfigChanges(
+    { ...base, preferences: { ...base.preferences, overlay_idle_collapse: next } },
+    base,
+  )
+}
 
 type Confirm = 'positions' | 'timers' | null
 
@@ -117,6 +136,18 @@ export default function HubActionsMenu(): React.ReactElement {
             label="Clear all timers"
             hint="Clears every buff, detrimental and custom timer, e.g. after switching characters."
             onClick={() => pick(() => setConfirm('timers'))}
+          />
+          <MenuItem
+            icon={ChevronsDownUp}
+            label="Collapse idle overlays: on for all"
+            hint={`Every overlay that can folds to its title bar after ${DEFAULT_IDLE_SECS}s with nothing to show. Change the delay on each card.`}
+            onClick={() => pick(() => { setIdleCollapseForAll(true).catch(() => {}) })}
+          />
+          <MenuItem
+            icon={ChevronsUpDown}
+            label="Collapse idle overlays: off for all"
+            hint="No overlay folds itself when idle. The chevron still collapses one by hand."
+            onClick={() => pick(() => { setIdleCollapseForAll(false).catch(() => {}) })}
           />
         </div>
       )}

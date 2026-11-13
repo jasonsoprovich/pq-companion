@@ -16,6 +16,7 @@ import TimerRowControls from '../components/overlays/TimerRowControls'
 import { useTimerAppearance, type TimerAppearance } from '../hooks/useTimerAppearance'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { CollapseToggle, useOverlayCollapse } from '../hooks/useOverlayCollapse'
+import { useIdleCollapse } from '../hooks/useIdleCollapse'
 import { timerSummary } from '../lib/overlaySummaries'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
@@ -217,7 +218,8 @@ export default function CustomTimerWindowPage(): React.ReactElement {
   const chromeFade = useOverlayChromeFade('customTimer', mode === 'display-only')
   // Collapse to title bar. A collapsed window is only its title bar, so keep
   // that visible through the inactive fade.
-  const { collapsed, toggleCollapsed, headerRef } = useOverlayCollapse(mode !== 'display-only')
+  const { collapsed, toggleCollapsed, setCollapsed, headerRef, ready: collapseReady } =
+    useOverlayCollapse(mode !== 'display-only')
   const chrome = chromeFade || collapsed
   const onDragMouseDown = useWindowDrag()
   const [state, setState] = useState<TimerState | null>(null)
@@ -293,6 +295,15 @@ export default function CustomTimerWindowPage(): React.ReactElement {
     outline: 'none',
     minWidth: 0,
   }
+
+  useIdleCollapse({
+    key: groupId ? `customTimer:${groupId}` : 'customTimer',
+    active: collapsedSummary !== null,
+    collapsed,
+    ready: collapseReady,
+    setCollapsed,
+    allowed: mode !== 'display-only',
+  })
 
   return (
     <div

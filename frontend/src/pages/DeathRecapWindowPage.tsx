@@ -4,17 +4,20 @@
  * the last 20 s of incoming events. Renders in a dedicated frameless
  * Electron window.
  */
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { Skull } from 'lucide-react'
 import DeathRecapView from '../components/overlays/DeathRecapView'
 import { useLatestDeath } from '../hooks/useLatestDeath'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { CollapseToggle, useOverlayCollapse } from '../hooks/useOverlayCollapse'
+import { useIdleCollapse } from '../hooks/useIdleCollapse'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
 import OverlayLockButton from '../components/OverlayLockButton'
 import type { DeathRecord } from '../types/combat'
+
+const RECENT_DEATH_MS = 5 * 60 * 1000
 
 function DeathRecapHeader({ death }: { death: DeathRecord }): React.ReactElement {
   const at = new Date(death.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -35,10 +38,20 @@ export default function DeathRecapWindowPage(): React.ReactElement {
   const chromeFade = useOverlayChromeFade('deathRecap', mode === 'display-only')
   // Collapse to title bar. A collapsed window is only its title bar, so keep
   // that visible through the inactive fade.
-  const { collapsed, toggleCollapsed, headerRef } = useOverlayCollapse(mode !== 'display-only')
+  const { collapsed, toggleCollapsed, setCollapsed, headerRef, ready: collapseReady } =
+    useOverlayCollapse(mode !== 'display-only')
   const chrome = chromeFade || collapsed
   const onDragMouseDown = useWindowDrag()
   const death = useLatestDeath()
+  // Idle-collapse counts a death as activity for a few minutes.
+  const [recentDeath, setRecentDeath] = useState(false)
+  useEffect(() => {
+    const left = death ? Date.parse(death.timestamp) + RECENT_DEATH_MS - Date.now() : 0
+    setRecentDeath(left > 0)
+    if (left <= 0) return
+    const t = setTimeout(() => setRecentDeath(false), left)
+    return () => clearTimeout(t)
+  }, [death])
 
   // Who killed you last, plus the biggest hit in the recap window.
   const collapsedSummary = death
@@ -58,6 +71,15 @@ export default function DeathRecapWindowPage(): React.ReactElement {
     cursor: 'pointer',
     lineHeight: 1,
   }
+
+  useIdleCollapse({
+    key: 'deathRecap',
+    active: recentDeath,
+    collapsed,
+    ready: collapseReady,
+    setCollapsed,
+    allowed: mode !== 'display-only',
+  })
 
   return (
     <div

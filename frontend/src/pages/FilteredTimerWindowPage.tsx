@@ -12,6 +12,7 @@ import { useFilteredTimers } from '../hooks/useFilteredTimers'
 import { useTimerAppearance } from '../hooks/useTimerAppearance'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { CollapseToggle, useOverlayCollapse } from '../hooks/useOverlayCollapse'
+import { useIdleCollapse } from '../hooks/useIdleCollapse'
 import { timerSummary } from '../lib/overlaySummaries'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
@@ -25,7 +26,8 @@ export default function FilteredTimerWindowPage(): React.ReactElement {
   const chromeFade = useOverlayChromeFade('filteredTimer', mode === 'display-only')
   // Collapse to title bar. A collapsed window is only its title bar, so keep
   // that visible through the inactive fade.
-  const { collapsed, toggleCollapsed, headerRef } = useOverlayCollapse(mode !== 'display-only')
+  const { collapsed, toggleCollapsed, setCollapsed, headerRef, ready: collapseReady } =
+    useOverlayCollapse(mode !== 'display-only')
   const chrome = chromeFade || collapsed
   const onDragMouseDown = useWindowDrag()
   const appearance = useTimerAppearance()
@@ -44,6 +46,15 @@ export default function FilteredTimerWindowPage(): React.ReactElement {
     cursor: 'pointer',
     lineHeight: 1,
   }
+
+  useIdleCollapse({
+    key: 'filteredTimer',
+    active: collapsedSummary !== null,
+    collapsed,
+    ready: collapseReady,
+    setCollapsed,
+    allowed: mode !== 'display-only',
+  })
 
   return (
     <div

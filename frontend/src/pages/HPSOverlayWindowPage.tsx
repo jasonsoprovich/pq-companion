@@ -8,6 +8,7 @@ import { useWebSocket } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { CollapseToggle, useOverlayCollapse } from '../hooks/useOverlayCollapse'
+import { useIdleCollapse } from '../hooks/useIdleCollapse'
 import { compactNumber } from '../lib/overlaySummaries'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
@@ -143,7 +144,8 @@ export default function HPSOverlayWindowPage(): React.ReactElement {
   const chromeFade = useOverlayChromeFade('hps', mode === 'display-only')
   // Collapse to title bar. A collapsed window is only its title bar, so keep
   // that visible through the inactive fade.
-  const { collapsed, toggleCollapsed, headerRef } = useOverlayCollapse(mode !== 'display-only')
+  const { collapsed, toggleCollapsed, setCollapsed, headerRef, ready: collapseReady } =
+    useOverlayCollapse(mode !== 'display-only')
   const chrome = chromeFade || collapsed
   const onDragMouseDown = useWindowDrag()
   const [combat, setCombat] = useState<CombatState | null>(null)
@@ -164,6 +166,15 @@ export default function HPSOverlayWindowPage(): React.ReactElement {
   const fight = combat?.current_fight
 
   const collapsedSummary = fight && fight.you_hps > 0 ? `You ${compactNumber(fight.you_hps)} hps` : null
+
+  useIdleCollapse({
+    key: 'hps',
+    active: !!combat?.in_combat,
+    collapsed,
+    ready: collapseReady,
+    setCollapsed,
+    allowed: mode !== 'display-only',
+  })
 
   return (
     <div

@@ -8,6 +8,7 @@ import { useWebSocket } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { CollapseToggle, useOverlayCollapse } from '../hooks/useOverlayCollapse'
+import { useIdleCollapse } from '../hooks/useIdleCollapse'
 import { fmtRemaining } from '../lib/timeFormat'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useTimerAppearance } from '../hooks/useTimerAppearance'
@@ -30,7 +31,8 @@ export default function RespawnTimerWindowPage(): React.ReactElement {
   const chromeFade = useOverlayChromeFade('respawnTimer', mode === 'display-only')
   // Collapse to title bar. A collapsed window is only its title bar, so keep
   // that visible through the inactive fade.
-  const { collapsed, toggleCollapsed, headerRef } = useOverlayCollapse(mode !== 'display-only')
+  const { collapsed, toggleCollapsed, setCollapsed, headerRef, ready: collapseReady } =
+    useOverlayCollapse(mode !== 'display-only')
   const chrome = chromeFade || collapsed
   const onDragMouseDown = useWindowDrag()
   const appearance = useTimerAppearance()
@@ -67,6 +69,15 @@ export default function RespawnTimerWindowPage(): React.ReactElement {
   const toggleInstanceMode = useCallback(() => {
     setRespawnInstanceMode(!instanceMode).then(setState).catch(() => {})
   }, [instanceMode])
+
+  useIdleCollapse({
+    key: 'respawnTimer',
+    active: collapsedSummary !== null,
+    collapsed,
+    ready: collapseReady,
+    setCollapsed,
+    allowed: mode !== 'display-only',
+  })
 
   return (
     <div

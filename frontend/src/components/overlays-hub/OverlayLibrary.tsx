@@ -38,7 +38,7 @@ import TimerGroupsModal from '../TimerGroupsModal'
 import { useConfigDraft, type DraftSaveState } from '../../hooks/useConfigDraft'
 import { useEscapeToClose } from '../../hooks/useEscapeToClose'
 import GlobalOverlaySettings, { AlertTextSettings } from './settings/GlobalOverlaySettings'
-import { OverlayWindowControls } from './settings/OverlayWindowSettings'
+import { IDLE_COLLAPSE_HINT, IdleCollapseSelect, OverlayWindowControls } from './settings/OverlayWindowSettings'
 import { SettingsSection } from './settings/SettingsSection'
 import { OVERLAY_SETTINGS } from './settings/OverlaySpecificSettings'
 import { sameSelection, type HubSelection } from './selection'
@@ -606,7 +606,21 @@ export default function OverlayLibrary({
               <SecondaryButton icon={Hourglass} label="Manage timer windows" onClick={() => setShowGroupsModal(true)} />
             </>
           }
-        />
+        >
+          {config && (
+            <SettingsSection title="Window">
+              <div className="flex items-center justify-between gap-3 py-1.5">
+                <div className="min-w-0">
+                  <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>Collapse when idle</p>
+                  <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>{IDLE_COLLAPSE_HINT}</p>
+                </div>
+                <div className="shrink-0 text-xs">
+                  <IdleCollapseSelect windowKey={key} label={g.name} config={config} setConfig={setConfig} />
+                </div>
+              </div>
+            </SettingsSection>
+          )}
+        </Drawer>
       )
     }
   }

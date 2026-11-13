@@ -270,6 +270,10 @@ export interface Preferences {
   // name (see lib/overlays.ts). Scales an overlay independently of the main
   // window's zoom_factor. Missing/0 = 1.0 (100%).
   overlay_zoom_factors?: Record<string, number>
+  // Collapse a popout to its title bar after this many seconds with nothing
+  // to show, keyed by window key (overlay name or customTimer:<groupId>).
+  // Missing/0 = off.
+  overlay_idle_collapse?: Record<string, number>
   parse_combat_log: boolean
   overlay_dps_enabled: boolean
   overlay_hps_enabled: boolean

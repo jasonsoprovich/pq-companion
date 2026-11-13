@@ -12,6 +12,7 @@ import { Swords, ChartBar, ChartBarDecreasing, Clipboard, ClipboardCheck, Trash2
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { CollapseToggle, useOverlayCollapse } from '../hooks/useOverlayCollapse'
+import { useIdleCollapse } from '../hooks/useIdleCollapse'
 import { compactNumber, ordinal } from '../lib/overlaySummaries'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
@@ -71,7 +72,8 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
   const chromeFade = useOverlayChromeFade('dps', mode === 'display-only')
   // Collapse to title bar. A collapsed window is only its title bar, so keep
   // that visible through the inactive fade.
-  const { collapsed, toggleCollapsed, headerRef } = useOverlayCollapse(mode !== 'display-only')
+  const { collapsed, toggleCollapsed, setCollapsed, headerRef, ready: collapseReady } =
+    useOverlayCollapse(mode !== 'display-only')
   const chrome = chromeFade || collapsed
   const onDragMouseDown = useWindowDrag()
   const [combat, setCombat] = useState<CombatState | null>(null)
@@ -191,6 +193,15 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
     const topText = `Top: ${top.name} ${compactNumber(rate(top))}`
     return you > 0 ? `${topText} · You ${ordinal(you + 1)}` : topText
   })()
+
+  useIdleCollapse({
+    key: 'dps',
+    active: !!combat?.in_combat,
+    collapsed,
+    ready: collapseReady,
+    setCollapsed,
+    allowed: mode !== 'display-only',
+  })
 
   return (
     <div

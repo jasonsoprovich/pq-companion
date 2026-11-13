@@ -11,6 +11,7 @@ import PetView from '../components/overlays/PetView'
 import { usePetState, usePetTimers } from '../hooks/usePetState'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { CollapseToggle, useOverlayCollapse } from '../hooks/useOverlayCollapse'
+import { useIdleCollapse } from '../hooks/useIdleCollapse'
 import { fmtRemaining } from '../lib/timeFormat'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
@@ -26,7 +27,8 @@ export default function PetWindowPage(): React.ReactElement {
   const chromeFade = useOverlayChromeFade('pet', mode === 'display-only')
   // Collapse to title bar. A collapsed window is only its title bar, so keep
   // that visible through the inactive fade.
-  const { collapsed, toggleCollapsed, headerRef } = useOverlayCollapse(mode !== 'display-only')
+  const { collapsed, toggleCollapsed, setCollapsed, headerRef, ready: collapseReady } =
+    useOverlayCollapse(mode !== 'display-only')
   const chrome = chromeFade || collapsed
   const onDragMouseDown = useWindowDrag()
   const state = usePetState()
@@ -55,6 +57,15 @@ export default function PetWindowPage(): React.ReactElement {
     cursor: 'pointer',
     lineHeight: 1,
   }
+
+  useIdleCollapse({
+    key: 'pet',
+    active: collapsedSummary !== null,
+    collapsed,
+    ready: collapseReady,
+    setCollapsed,
+    allowed: mode !== 'display-only',
+  })
 
   return (
     <div

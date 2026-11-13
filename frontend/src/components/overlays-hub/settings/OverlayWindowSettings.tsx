@@ -9,6 +9,7 @@ import { OVERLAY_DEFS, resolveLockedMode } from '../../../lib/overlays'
 import type { OverlayName, LockedMode, FadeMode } from '../../../lib/overlays'
 import { DEV_HPS } from '../../../lib/devFlags'
 import type { Config } from '../../../types/config'
+import { IDLE_DELAY_OPTIONS, idleCollapseSecs, supportsIdleCollapse } from '../../../lib/idleCollapse'
 
 // OverlayLockModeCard lets the user pick, per popout overlay, how it behaves
 // while locked. The two modes trade off "click reaches the game" against
@@ -460,6 +461,56 @@ export function FadeSelect({
 }
 
 /**
+ * IdleCollapseSelect — "Collapse when idle": off, or the delay after the
+ * overlay last had something to show. Saved per window key.
+ */
+export function IdleCollapseSelect({
+  windowKey,
+  label,
+  config,
+  setConfig,
+}: {
+  windowKey: string
+  label: string
+  config: Config
+  setConfig: (c: Config) => void
+}): React.ReactElement {
+  const prefs = config.preferences
+  const value = idleCollapseSecs(config, windowKey)
+  const options = IDLE_DELAY_OPTIONS.some((o) => o.secs === value)
+    ? IDLE_DELAY_OPTIONS
+    : [...IDLE_DELAY_OPTIONS, { secs: value, label: `After ${value}s` }]
+  return (
+    <select
+      value={value}
+      onChange={(e) => {
+        const next = { ...(prefs.overlay_idle_collapse ?? {}) }
+        const secs = Number(e.target.value)
+        if (secs > 0) next[windowKey] = secs
+        else delete next[windowKey]
+        setConfig({ ...config, preferences: { ...prefs, overlay_idle_collapse: next } })
+      }}
+      className="rounded px-1.5 py-1 outline-none"
+      style={{
+        backgroundColor: 'var(--color-surface-2)',
+        border: '1px solid var(--color-border)',
+        color: 'var(--color-foreground)',
+        cursor: 'pointer',
+      }}
+      title={`Fold the ${label} overlay to its title bar when it has nothing to show`}
+    >
+      {options.map((o) => (
+        <option key={o.secs} value={o.secs}>{o.label}</option>
+      ))}
+    </select>
+  )
+}
+
+export const IDLE_COLLAPSE_HINT =
+  'Folds to the title bar when there is nothing to show and opens again when there is. ' +
+  'Collapsing or expanding it yourself wins until the next activity.'
+
+/**
  * OverlayWindowControls — one overlay's row of the Overlay Windows table, laid
  * out for its own settings drawer: lock mode, opacity, fade and (with more
  * than one monitor) which screen it's on.
@@ -532,6 +583,12 @@ export function OverlayWindowControls({
           onChange={(v) => patch({ overlay_fade_modes: { ...(prefs.overlay_fade_modes ?? {}), [name]: v } })}
         />,
       )}
+      {supportsIdleCollapse(name) &&
+        row(
+          'Collapse when idle',
+          <IdleCollapseSelect windowKey={name} label={label} config={config} setConfig={setConfig} />,
+          IDLE_COLLAPSE_HINT,
+        )}
       {displays.length > 1 &&
         row(
           'Monitor',

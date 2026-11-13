@@ -9,7 +9,8 @@
  * keep running and the window springs back instantly.
  *
  * `setCollapsed` sets it directly, for pages that fold themselves when they
- * have nothing to show.
+ * have nothing to show (see useIdleCollapse). `ready` turns true once the
+ * stored state has loaded.
  *
  * `enabled` is false in display-only lock mode, where the title bar itself is
  * hidden: a collapsed display-only window would show nothing at all, so a
@@ -23,15 +24,18 @@ export function useOverlayCollapse(enabled = true): {
   toggleCollapsed: () => void
   setCollapsed: (collapse: boolean) => void
   headerRef: React.RefObject<HTMLDivElement>
+  ready: boolean
 } {
   const headerRef = useRef<HTMLDivElement>(null)
   const [stored, setStored] = useState(false)
+  const [ready, setReady] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     window.electron?.overlay?.collapseGet?.()
       .then((v) => { if (!cancelled) setStored(!!v) })
       .catch(() => {})
+      .finally(() => { if (!cancelled) setReady(true) })
     const off = window.electron?.overlay?.onCollapseChanged?.((v) => {
       if (!cancelled) setStored(!!v)
     })
@@ -55,7 +59,7 @@ export function useOverlayCollapse(enabled = true): {
   const collapsed = stored && enabled
   const toggleCollapsed = useCallback(() => request(!collapsed), [collapsed, request])
 
-  return { collapsed, toggleCollapsed, setCollapsed: request, headerRef }
+  return { collapsed, toggleCollapsed, setCollapsed: request, headerRef, ready }
 }
 
 /**

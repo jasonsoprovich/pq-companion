@@ -23,6 +23,7 @@ import {
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { CollapseToggle, useOverlayCollapse } from '../hooks/useOverlayCollapse'
+import { useIdleCollapse } from '../hooks/useIdleCollapse'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
@@ -461,7 +462,8 @@ export default function RollTrackerWindowPage(): React.ReactElement {
   const chromeFade = useOverlayChromeFade('rollTracker', mode === 'display-only')
   // Collapse to title bar. A collapsed window is only its title bar, so keep
   // that visible through the inactive fade.
-  const { collapsed, toggleCollapsed, headerRef } = useOverlayCollapse(mode !== 'display-only')
+  const { collapsed, toggleCollapsed, setCollapsed, headerRef, ready: collapseReady } =
+    useOverlayCollapse(mode !== 'display-only')
   const chrome = chromeFade || collapsed
   const onDragMouseDown = useWindowDrag()
   const [state, setState] = useState<RollsState>({
@@ -540,6 +542,15 @@ export default function RollTrackerWindowPage(): React.ReactElement {
     if (parsed === state.auto_stop_seconds) return
     updateRollsSettings({ auto_stop_seconds: parsed }).then(setState).catch(() => {})
   }
+
+  useIdleCollapse({
+    key: 'rollTracker',
+    active: hasActiveSession,
+    collapsed,
+    ready: collapseReady,
+    setCollapsed,
+    allowed: mode !== 'display-only',
+  })
 
   return (
     <div

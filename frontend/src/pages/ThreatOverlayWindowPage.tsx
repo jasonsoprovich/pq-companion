@@ -10,6 +10,7 @@ import { useRaidThreatEnabled } from '../hooks/useRaidThreatEnabled'
 import { WSEvent } from '../lib/wsEvents'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { CollapseToggle, useOverlayCollapse } from '../hooks/useOverlayCollapse'
+import { useIdleCollapse } from '../hooks/useIdleCollapse'
 import { compactNumber, ordinal } from '../lib/overlaySummaries'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
@@ -36,7 +37,8 @@ export default function ThreatOverlayWindowPage(): React.ReactElement {
   const chromeFade = useOverlayChromeFade('threat', lockedMode === 'display-only')
   // Collapse to title bar. A collapsed window is only its title bar, so keep
   // that visible through the inactive fade.
-  const { collapsed, toggleCollapsed, headerRef } = useOverlayCollapse(lockedMode !== 'display-only')
+  const { collapsed, toggleCollapsed, setCollapsed, headerRef, ready: collapseReady } =
+    useOverlayCollapse(lockedMode !== 'display-only')
   const chrome = chromeFade || collapsed
   const onDragMouseDown = useWindowDrag()
   const [state, setState] = useState<ThreatState | null>(null)
@@ -82,6 +84,15 @@ export default function ThreatOverlayWindowPage(): React.ReactElement {
     const mob = state?.target ?? state?.mobs[0]
     return mob ? `${mob.name} · ${compactNumber(mob.hate)} hate` : null
   })()
+
+  useIdleCollapse({
+    key: 'threat',
+    active: !!(state?.in_combat || raidState?.in_combat),
+    collapsed,
+    ready: collapseReady,
+    setCollapsed,
+    allowed: lockedMode !== 'display-only',
+  })
 
   return (
     <div

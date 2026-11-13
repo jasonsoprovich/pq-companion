@@ -22,6 +22,7 @@ import { useWebSocket } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { CollapseToggle, useOverlayCollapse } from '../hooks/useOverlayCollapse'
+import { useIdleCollapse } from '../hooks/useIdleCollapse'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
@@ -184,7 +185,8 @@ export default function CHMetronomeOverlayWindowPage(): React.ReactElement {
   const chromeFade = useOverlayChromeFade('chMetronome', mode === 'display-only')
   // Collapse to title bar. A collapsed window is only its title bar, so keep
   // that visible through the inactive fade.
-  const { collapsed, toggleCollapsed, headerRef } = useOverlayCollapse(mode !== 'display-only')
+  const { collapsed, toggleCollapsed, setCollapsed, headerRef, ready: collapseReady } =
+    useOverlayCollapse(mode !== 'display-only')
   const chrome = chromeFade || collapsed
   const onDragMouseDown = useWindowDrag()
 
@@ -422,6 +424,15 @@ export default function CHMetronomeOverlayWindowPage(): React.ReactElement {
   // cast point (delay) and the land point (10s).
   const elapsedPct = Math.max(0, Math.min(1, elapsed / CH_CAST)) * 100
   const castPct = Math.max(0, Math.min(1, cfg.delay / CH_CAST)) * 100
+
+  useIdleCollapse({
+    key: 'chMetronome',
+    active: active,
+    collapsed,
+    ready: collapseReady,
+    setCollapsed,
+    allowed: mode !== 'display-only',
+  })
 
   return (
     <div
