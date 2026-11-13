@@ -9,8 +9,14 @@
  * OverlayStackContext, which hides the page's title bar and points its window
  * hooks at the stack. Every tab stays mounted, hidden when not showing, so
  * its data keeps flowing; each keeps its own zoom.
+ *
+ * Tabs report whether they have something to show. A tab that isn't showing
+ * gets a dot when its activity starts, until it's picked. With idle collapse
+ * on for any tab, the stack folds once every tab is idle, after the longest
+ * of their delays (tabs with no idle state never count as idle). A tab's
+ * right-click menu unstacks it into its own window or closes it.
  */
-import React, { Suspense, createRef, lazy, useCallback, useEffect, useMemo, useState } from 'react'
+import React, { Suspense, createRef, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Layers } from 'lucide-react'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import OverlayLockButton from '../components/OverlayLockButton'
@@ -19,6 +25,9 @@ import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
+import { useIdleCollapse } from '../hooks/useIdleCollapse'
+import { idleCollapseSecs, supportsIdleCollapse } from '../lib/idleCollapse'
+import type { Config } from '../types/config'
 import { useWebSocket, type WsMessage } from '../hooks/useWebSocket'
 import { OverlayStackContext, type OverlayStackValue } from '../hooks/overlayStackContext'
 import { setStackPrefFallback, type OverlayName } from '../lib/overlays'
@@ -84,17 +93,93 @@ function tabLabel(tab: string, info: StackInfo): string {
 
 const noop = (): void => {}
 
-// Each tab's zoom from preferences.overlay_zoom_factors, kept current.
-function useZoomFactors(): Record<string, number> {
-  const [zooms, setZooms] = useState<Record<string, number>>({})
+// The app config (tab zooms, idle collapse delays), kept current.
+function useConfig(): Config | null {
+  const [config, setConfig] = useState<Config | null>(null)
   const load = useCallback(() => {
-    getConfig().then((c) => setZooms(c.preferences.overlay_zoom_factors ?? {})).catch(() => {})
+    getConfig().then(setConfig).catch(() => {})
   }, [])
   useEffect(() => { load() }, [load])
   useWebSocket(useCallback((msg: WsMessage) => {
     if (msg.type === WSEvent.ConfigUpdated) load()
   }, [load]))
-  return zooms
+  return config
+}
+
+type TabMenu = { tab: string; x: number; y: number }
+
+const MENU_WIDTH = 170
+
+function TabMenuPopup({
+  menu,
+  label,
+  onClose,
+}: {
+  menu: TabMenu
+  label: string
+  onClose: () => void
+}): React.ReactElement {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const onDown = (e: MouseEvent): void => {
+      if (!ref.current?.contains(e.target as Node)) onClose()
+    }
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    window.addEventListener('blur', onClose)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+      window.removeEventListener('blur', onClose)
+    }
+  }, [onClose])
+  const run = (popOut: boolean): void => {
+    onClose()
+    window.electron?.overlay?.stackRemove(menu.tab, popOut)
+  }
+  const item: React.CSSProperties = {
+    display: 'block',
+    width: '100%',
+    textAlign: 'left',
+    padding: '5px 10px',
+    fontSize: 11,
+    background: 'none',
+    border: 'none',
+    color: 'rgba(255,255,255,0.85)',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  }
+  return (
+    <div
+      ref={ref}
+      className="no-drag"
+      role="menu"
+      style={{
+        position: 'fixed',
+        top: Math.min(menu.y, window.innerHeight - 64),
+        left: Math.max(4, Math.min(menu.x, window.innerWidth - MENU_WIDTH - 4)),
+        width: MENU_WIDTH,
+        zIndex: 1000,
+        padding: 3,
+        borderRadius: 6,
+        backgroundColor: 'rgba(16,16,20,0.97)',
+        border: '1px solid rgba(255,255,255,0.15)',
+        boxShadow: '0 6px 18px rgba(0,0,0,0.5)',
+      }}
+    >
+      <button role="menuitem" style={item} onClick={() => run(true)} title={`Move ${label} back into its own window`}>
+        Unstack {label}
+      </button>
+      <button role="menuitem" style={item} onClick={() => run(false)} title={`Close ${label} and take it out of the stack`}>
+        Close {label}
+      </button>
+    </div>
+  )
 }
 
 function StackWindow({ info }: { info: StackInfo }): React.ReactElement {
@@ -106,10 +191,51 @@ function StackWindow({ info }: { info: StackInfo }): React.ReactElement {
   const { locked, mode, toggleLocked, rootInteractionProps, headerInteractionProps, rowsInteractive } =
     useOverlayLock(key)
   const chromeFade = useOverlayChromeFade(key, mode === 'display-only')
-  const { collapsed, toggleCollapsed, headerRef } = useOverlayCollapse(mode !== 'display-only')
+  const { collapsed, toggleCollapsed, setCollapsed, headerRef, ready: collapseReady } =
+    useOverlayCollapse(mode !== 'display-only')
   const chrome = chromeFade || collapsed
   const onDragMouseDown = useWindowDrag()
-  const zooms = useZoomFactors()
+  const config = useConfig()
+  const zooms = config?.preferences.overlay_zoom_factors ?? {}
+  const [menu, setMenu] = useState<TabMenu | null>(null)
+  const closeMenu = useCallback(() => setMenu(null), [])
+
+  // Tab activity, and dots on tabs whose activity started while hidden.
+  const activeTabRef = useRef(info.active)
+  activeTabRef.current = info.active
+  const activityRef = useRef<Record<string, boolean>>({})
+  const [activity, setActivity] = useState<Record<string, boolean>>({})
+  const [dots, setDots] = useState<Record<string, boolean>>({})
+  const reportActive = useCallback((tab: string, active: boolean) => {
+    const was = activityRef.current[tab]
+    if (was === active) return
+    activityRef.current = { ...activityRef.current, [tab]: active }
+    setActivity(activityRef.current)
+    // A tab's first report is its state on load, not new activity.
+    if (active && was !== undefined && tab !== activeTabRef.current) {
+      setDots((d) => (d[tab] ? d : { ...d, [tab]: true }))
+    }
+  }, [])
+  useEffect(() => {
+    setDots((d) => {
+      if (!d[info.active]) return d
+      const next = { ...d }
+      delete next[info.active]
+      return next
+    })
+  }, [info.active])
+
+  // The stack folds once every tab is idle.
+  const delays = info.tabs.map((t) => idleCollapseSecs(config, t)).filter((v) => v > 0)
+  useIdleCollapse({
+    key: info.key,
+    active: info.tabs.some((t) => (supportsIdleCollapse(t) ? !!activity[t] : true)),
+    collapsed,
+    ready: collapseReady && config !== null,
+    setCollapsed,
+    allowed: mode !== 'display-only',
+    delaySecs: delays.length > 0 ? Math.max(...delays) : 0,
+  })
 
   const inertCollapse = useMemo<OverlayStackValue['collapse']>(
     () => ({ collapsed: false, toggleCollapsed: noop, setCollapsed: noop, headerRef: createRef(), ready: false }),
@@ -121,9 +247,10 @@ function StackWindow({ info }: { info: StackInfo }): React.ReactElement {
       lock: { locked, mode, toggleLocked, rowsInteractive },
       opacity,
       chrome,
+      reportActive,
       collapse: inertCollapse,
     }),
-    [info.key, locked, mode, toggleLocked, rowsInteractive, opacity, chrome, inertCollapse],
+    [info.key, locked, mode, toggleLocked, rowsInteractive, opacity, chrome, reportActive, inertCollapse],
   )
 
   const select = (tab: string): void => {
@@ -180,8 +307,15 @@ function StackWindow({ info }: { info: StackInfo }): React.ReactElement {
                 role="tab"
                 aria-selected={on}
                 onClick={() => select(tab)}
-                title={tabLabel(tab, info)}
+                onContextMenu={(e) => {
+                  e.preventDefault()
+                  setMenu({ tab, x: e.clientX, y: e.clientY })
+                }}
+                title={`${tabLabel(tab, info)}${dots[tab] ? ' · new activity' : ''} — right-click to unstack`}
                 style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
                   flexShrink: 1,
                   minWidth: 0,
                   overflow: 'hidden',
@@ -197,7 +331,13 @@ function StackWindow({ info }: { info: StackInfo }): React.ReactElement {
                   cursor: 'pointer',
                 }}
               >
-                {tabLabel(tab, info)}
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{tabLabel(tab, info)}</span>
+                {dots[tab] && (
+                  <span
+                    aria-label="new activity"
+                    style={{ width: 5, height: 5, borderRadius: '50%', backgroundColor: '#c9a84c', flexShrink: 0 }}
+                  />
+                )}
               </button>
             )
           })}
@@ -225,6 +365,8 @@ function StackWindow({ info }: { info: StackInfo }): React.ReactElement {
           </button>
         </div>
       </div>
+
+      {menu && <TabMenuPopup menu={menu} label={tabLabel(menu.tab, info)} onClose={closeMenu} />}
 
       <OverlayStackContext.Provider value={ctx}>
         {info.tabs.map((tab) => {

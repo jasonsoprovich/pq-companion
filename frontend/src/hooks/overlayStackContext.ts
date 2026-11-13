@@ -25,6 +25,9 @@ export interface OverlayStackValue {
   opacity: number
   // Chrome shown (not faded out).
   chrome: boolean
+  // A tab says whether it has something to show (see useIdleCollapse), for
+  // the stack's activity dots and its idle collapse.
+  reportActive: (key: string, active: boolean) => void
   // A do-nothing collapse for the page: the stack collapses as a whole.
   collapse: {
     collapsed: false

@@ -11,12 +11,17 @@
  * survives the window being reopened or reloaded.
  *
  * `allowed` is false where collapsing is off (display-only lock mode).
+ * `delaySecs` overrides the configured delay (a stack works out its own).
+ *
+ * Inside a stack the page only reports `active` to the stack, which
+ * collapses as a whole when every tab is idle.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getConfig } from '../services/api'
 import { useWebSocket, type WsMessage } from './useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
 import { idleCollapseSecs } from '../lib/idleCollapse'
+import { useOverlayStack } from './overlayStackContext'
 
 const AUTO_PREFIX = 'pq-idle-collapsed:'
 
@@ -55,6 +60,7 @@ export function useIdleCollapse({
   ready,
   setCollapsed,
   allowed = true,
+  delaySecs: delayOverride,
 }: {
   key: string
   active: boolean
@@ -63,8 +69,15 @@ export function useIdleCollapse({
   ready: boolean
   setCollapsed: (collapse: boolean) => void
   allowed?: boolean
+  delaySecs?: number
 }): void {
-  const delaySecs = useIdleDelay(key)
+  const configured = useIdleDelay(key)
+  const delaySecs = delayOverride ?? configured
+  const stack = useOverlayStack()
+  const reportActive = stack?.reportActive
+  useEffect(() => {
+    reportActive?.(key, active)
+  }, [reportActive, key, active])
   const on = allowed && delaySecs > 0 && !!key
   // The current collapse was ours.
   const autoRef = useRef(readAuto(key))

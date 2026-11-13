@@ -2651,7 +2651,16 @@ function isHotkeyAction(action: string): boolean {
 
 // Show/hide one overlay: open it if closed, show it if hidden, else hide it
 // (not close — it comes back instantly, and show-all brings it back too).
+// A stacked overlay acts on its stack: shown on its tab, or hidden when its
+// tab is already the one showing.
 function toggleOverlayFromHotkey(name: OverlayName): void {
+  const stackId = stackIdOf(name)
+  if (stackId) {
+    const sw = stackWindows.get(stackId)
+    if (sw && !sw.isDestroyed() && sw.isVisible() && stackSpec(stackId)?.active === name) hideOverlayWindow(sw)
+    else createStackWindow(stackId, name)
+    return
+  }
   const win = overlayWindowByName(name)
   if (!win || win.isDestroyed()) {
     createOverlayByName(name)
