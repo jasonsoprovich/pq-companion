@@ -45,6 +45,20 @@ export interface LayoutDashboardState {
   migrated: boolean
 }
 
+// One app process with its memory (MB) and CPU (% since the last call). role
+// says what it renders; keys are the overlay window keys for 'overlay'.
+export interface ProcessMetricRow {
+  pid: number
+  role: 'overlay' | 'main' | 'trigger' | 'streamkit' | 'helper'
+  keys: string[]
+  state?: 'open' | 'hidden'
+  type: string
+  memoryMB: number
+  // Windows only.
+  privateMB: number | null
+  cpu: number
+}
+
 export interface ElectronAPI {
   app: {
     getVersion: () => Promise<string>
@@ -186,6 +200,7 @@ export interface ElectronAPI {
     resetAllPositions: () => Promise<void>
     popoutStates: () => Promise<Record<string, boolean>>
     popoutWindowStates: () => Promise<Record<string, 'open' | 'hidden'>>
+    processMetrics: () => Promise<ProcessMetricRow[]>
     autoOpenGet: () => Promise<{ enabled: boolean; overlays: string[] }>
     autoOpenSetEnabled: (enabled: boolean) => Promise<void>
     getPositionMode: () => Promise<boolean>

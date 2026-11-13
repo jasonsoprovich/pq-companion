@@ -3179,6 +3179,60 @@ ipcMain.handle('overlay:popouts:window-states', () => {
   return states
 })
 
+// Per-process memory and CPU, for the Developer tab's Overlay processes
+// table. Each window's renderer is matched to its process by pid; everything
+// else (browser, GPU, utility) is listed as a helper. Memory is the working
+// set in MB, plus private bytes where the OS reports them (Windows). CPU is
+// averaged since the previous call, so the table polls at a steady rate.
+type ProcessRow = {
+  pid: number
+  role: 'overlay' | 'main' | 'trigger' | 'streamkit' | 'helper'
+  // Window keys this process renders (usually one).
+  keys: string[]
+  state?: 'open' | 'hidden'
+  type: string
+  memoryMB: number
+  privateMB: number | null
+  cpu: number
+}
+
+ipcMain.handle('overlay:process-metrics', (): ProcessRow[] => {
+  const byPid = new Map<number, { role: ProcessRow['role']; keys: string[]; state?: 'open' | 'hidden' }>()
+  const claim = (pid: number, role: ProcessRow['role'], key?: string, state?: 'open' | 'hidden'): void => {
+    if (!pid) return
+    const cur = byPid.get(pid) ?? { role, keys: [] }
+    if (key) cur.keys.push(key)
+    if (state) cur.state = cur.state === 'open' ? 'open' : state
+    byPid.set(pid, cur)
+  }
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue
+    const pid = win.webContents.getOSProcessId()
+    const key = windowToOverlayName.get(win)
+    if (win === mainWindow) claim(pid, 'main')
+    else if (win === triggerOverlayWindow) claim(pid, 'trigger')
+    else if (key) claim(pid, 'overlay', key, userHiddenOverlays.has(win) && !win.isVisible() ? 'hidden' : 'open')
+    else claim(pid, 'helper', 'window')
+  }
+  if (discordVoiceChildView && !discordVoiceChildView.webContents.isDestroyed()) {
+    claim(discordVoiceChildView.webContents.getOSProcessId(), 'streamkit', 'discordVoice')
+  }
+  const toMB = (kb: number | undefined): number => Math.round(((kb ?? 0) / 1024) * 10) / 10
+  return app.getAppMetrics().map((m) => {
+    const owner = byPid.get(m.pid)
+    return {
+      pid: m.pid,
+      role: owner?.role ?? 'helper',
+      keys: owner?.keys ?? [],
+      ...(owner?.state ? { state: owner.state } : {}),
+      type: m.name ? `${m.type} (${m.name})` : m.type,
+      memoryMB: toMB(m.memory.workingSetSize),
+      privateMB: m.memory.privateBytes !== undefined ? toMB(m.memory.privateBytes) : null,
+      cpu: Math.round(m.cpu.percentCPUUsage * 10) / 10,
+    }
+  })
+})
+
 // ── IPC handlers — restore overlays on launch ────────────────────────────────
 
 ipcMain.handle('overlay:auto-open:get', () => loadAutoOpenStore())

@@ -26,7 +26,7 @@ import {
   Trophy,
 } from 'lucide-react'
 import type { OverlayName } from './overlays'
-import type { DashboardPanelKey } from '../services/dashboardLayout'
+import { DASHBOARD_PANEL_LABELS, type DashboardPanelKey } from '../services/dashboardLayout'
 
 export type OverlayCategory = 'timers' | 'combat' | 'targets' | 'alerts'
 
@@ -237,4 +237,17 @@ export const CUSTOM_GROUP_INFO = {
   details:
     'Shows only the triggers assigned to this window, kept apart from the default ' +
     'Custom Timers window.',
+}
+
+// A window key's display name: an overlay's label, or a named timer window's
+// name from groups.
+export function overlayWindowLabel(key: string, groups: Array<{ id: string; name: string }>): string {
+  if (key.startsWith('customTimer:')) {
+    const id = key.slice('customTimer:'.length)
+    return groups.find((g) => g.id === id)?.name ?? 'Timer window'
+  }
+  const entry = OVERLAY_CATALOG.find((e) => e.name === key)
+  if (entry) return entry.label
+  const panel = (Object.keys(PANEL_POPOUT) as DashboardPanelKey[]).find((k) => PANEL_POPOUT[k].name === key)
+  return panel ? DASHBOARD_PANEL_LABELS[panel] : key
 }

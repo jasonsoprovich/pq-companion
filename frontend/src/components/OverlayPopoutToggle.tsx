@@ -3,8 +3,8 @@ import { createPortal } from 'react-dom'
 import { Check, ChevronDown, EyeOff, Layers } from 'lucide-react'
 import { useOverlayPopouts } from '../hooks/useOverlayPopouts'
 import { useOverlayLayouts } from '../hooks/useOverlayLayouts'
-import { OVERLAY_CATALOG, PANEL_POPOUT } from '../lib/overlayCatalog'
-import { DASHBOARD_PANEL_LABELS, type DashboardPanelKey } from '../services/dashboardLayout'
+import { PANEL_POPOUT, overlayWindowLabel } from '../lib/overlayCatalog'
+import type { DashboardPanelKey } from '../services/dashboardLayout'
 import { listTimerGroups } from '../services/api'
 import type { TimerGroup } from '../types/trigger'
 
@@ -21,17 +21,6 @@ type WinState = 'open' | 'hidden' | 'closed'
 
 const POLL_MS = 1000
 const GROUP_PREFIX = 'customTimer:'
-
-function windowLabel(key: string, groups: TimerGroup[]): string {
-  if (key.startsWith(GROUP_PREFIX)) {
-    const id = key.slice(GROUP_PREFIX.length)
-    return groups.find((g) => g.id === id)?.name ?? 'Timer window'
-  }
-  const entry = OVERLAY_CATALOG.find((e) => e.name === key)
-  if (entry) return entry.label
-  const panel = (Object.keys(PANEL_POPOUT) as DashboardPanelKey[]).find((k) => PANEL_POPOUT[k].name === key)
-  return panel ? DASHBOARD_PANEL_LABELS[panel] : key
-}
 
 // Pops out, shows or closes one window. Main's per-window toggle brings back
 // a window hidden by Hide All rather than closing it.
@@ -160,7 +149,7 @@ function QuickSwitcher({
       <div className="flex max-h-[50vh] flex-col overflow-y-auto">
         {rows.map((key) => {
           const st = stateOf(key)
-          const label = windowLabel(key, groups)
+          const label = overlayWindowLabel(key, groups)
           const action = st === 'open' ? 'Close' : st === 'hidden' ? 'Show' : 'Pop out'
           return (
             <div key={key} className="flex items-center gap-2 rounded px-2 py-0.5 text-xs">

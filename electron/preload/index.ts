@@ -8,6 +8,16 @@ type LayoutState = {
 type DashboardPanel = { x: number; y: number; width: number; height: number; visible: boolean }
 type LayoutDashboard = { panels: Record<string, DashboardPanel>; groups: Record<string, DashboardPanel> }
 type LayoutDashboardState = { id: string; dashboard: LayoutDashboard | null; migrated: boolean }
+type ProcessRow = {
+  pid: number
+  role: 'overlay' | 'main' | 'trigger' | 'streamkit' | 'helper'
+  keys: string[]
+  state?: 'open' | 'hidden'
+  type: string
+  memoryMB: number
+  privateMB: number | null
+  cpu: number
+}
 
 // Expose a safe, typed API to the renderer — no direct Node/Electron access
 contextBridge.exposeInMainWorld('electron', {
@@ -208,6 +218,8 @@ contextBridge.exposeInMainWorld('electron', {
     // Open popouts by window key: 'open', or 'hidden' by hide-all/a hotkey.
     popoutWindowStates: (): Promise<Record<string, 'open' | 'hidden'>> =>
       ipcRenderer.invoke('overlay:popouts:window-states'),
+    // Memory and CPU per app process, matched to windows (Developer tab).
+    processMetrics: (): Promise<ProcessRow[]> => ipcRenderer.invoke('overlay:process-metrics'),
     // "Restore overlays on launch": whether to re-open the last open popout set
     // on startup, plus that remembered set. Persisted in Electron userData.
     autoOpenGet: (): Promise<{ enabled: boolean; overlays: string[] }> =>
