@@ -24,6 +24,7 @@ import {
   MetronomeAlertSettings,
   RespawnAlertSettings,
 } from './TimerSettings'
+import { DPSSettings, ThreatSettings } from './CombatSettings'
 import type { HubSelection } from '../selection'
 
 export interface OverlaySettingsProps {
@@ -264,4 +265,6 @@ export const OVERLAY_SETTINGS: Partial<Record<DashboardPanelKey, React.Component
   respawn: RespawnSettings,
   chChain: ChainSettings,
   chMetronome: MetronomeSettings,
+  dps: DPSSettings,
+  threat: ThreatSettings,
 }

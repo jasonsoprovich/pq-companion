@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Navigate, useLocation, useSearchParams } from 'react-router-dom'
-import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, Layers, FileText, Palette, Code2, PanelLeft, Info, Globe, MessageCircle, Coffee, Heart, Eye, Gauge, Download, Headphones, Map as MapIcon, Keyboard as KeyboardIcon } from 'lucide-react'
+import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, FileText, Code2, PanelLeft, Info, Globe, MessageCircle, Coffee, Heart, Eye, Gauge, Download, Headphones, Map as MapIcon, Keyboard as KeyboardIcon } from 'lucide-react'
 import BackfillPanel from '../components/settings/BackfillPanel'
 import SidebarNavSettings from '../components/settings/SidebarNavSettings'
 import EqLogStatusCard from '../components/settings/EqLogStatusCard'
@@ -10,8 +10,8 @@ import KokoroTtsSettings from '../components/settings/KokoroTtsSettings'
 import DiscordWebhookSettings from '../components/settings/DiscordWebhookSettings'
 import { getConfig, saveConfigChanges, getLogStatus, getLogFileInfo, cleanupLog, exportDebugLogs, getServerInfo, testPortAvailability, detectZeal, getZealPipeStatus, getQuarmClientStatus, getEqwStatus, getChangelog, type ServerInfo, type TestPortResult, type ChangelogEntry } from '../services/api'
 import { renderChangelogBody } from '../components/WhatsNewModal'
-import type { Config, DPSClassColors, LogTrimSettings } from '../types/config'
-import { DEFAULT_DPS_CLASS_COLORS, DEFAULT_LOG_TRIM } from '../types/config'
+import type { Config, LogTrimSettings } from '../types/config'
+import { DEFAULT_LOG_TRIM } from '../types/config'
 import { mergeConfigEdits } from '../lib/configMerge'
 import { OVERLAY_DEFS, itemInfoOffered } from '../lib/overlays'
 import { DEV_HPS } from '../lib/devFlags'
@@ -59,7 +59,7 @@ import DeveloperTab from './DeveloperTab'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'discarded' | 'error'
 type UpdateState = 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'downloaded' | 'error'
-type Tab = 'general' | 'audio' | 'accessibility' | 'navigation' | 'overlays' | 'hotkeys' | 'dpscolors' | 'discord' | 'logs' | 'backups' | 'maps' | 'advanced' | 'about' | 'changelog' | 'developer'
+type Tab = 'general' | 'audio' | 'accessibility' | 'navigation' | 'hotkeys' | 'discord' | 'logs' | 'backups' | 'maps' | 'advanced' | 'about' | 'changelog' | 'developer'
 
 interface TabBarProps {
   tabs: { id: Tab; label: string; icon: React.ReactNode }[]
@@ -76,7 +76,7 @@ interface TabBarProps {
 // end — so forgetting to register one degrades gracefully rather than hiding it.
 const TAB_GROUPS: { label: string; ids: Tab[] }[] = [
   { label: 'General', ids: ['general', 'audio', 'accessibility'] },
-  { label: 'Interface', ids: ['navigation', 'overlays', 'hotkeys', 'dpscolors', 'discord'] },
+  { label: 'Interface', ids: ['navigation', 'hotkeys', 'discord'] },
   { label: 'System', ids: ['logs', 'backups', 'maps', 'advanced'] },
   { label: 'About', ids: ['about', 'changelog', 'developer'] },
 ]
@@ -332,6 +332,8 @@ const MOVED_TO_OVERLAYS_HUB: Record<string, string> = {
   iteminfo: 'itemInfo',
   pet: 'pet',
   spelltimers: 'timers',
+  overlays: 'global',
+  dpscolors: 'dps',
 }
 
 export default function SettingsPage(): React.ReactElement {
@@ -339,7 +341,7 @@ export default function SettingsPage(): React.ReactElement {
   // Allow deep-linking to a specific tab via ?tab= (e.g. links to the Logs tab
   // for backfill). Falls back to General for unknown/absent values.
   const [tab, setTab] = useState<Tab>(() => {
-    const valid: Tab[] = ['general', 'audio', 'accessibility', 'navigation', 'overlays', 'hotkeys', 'dpscolors', 'discord', 'logs', 'backups', 'maps', 'advanced', 'about', 'changelog', 'developer']
+    const valid: Tab[] = ['general', 'audio', 'accessibility', 'navigation', 'hotkeys', 'discord', 'logs', 'backups', 'maps', 'advanced', 'about', 'changelog', 'developer']
     const t = searchParams.get('tab') ?? ''
     // 'gamemaps' was its own tab until the two map tabs merged. Kept as an
     // alias so links written against the old name still land somewhere useful.
@@ -799,9 +801,7 @@ export default function SettingsPage(): React.ReactElement {
     { id: 'audio', label: 'Audio', icon: <Volume2 size={13} /> },
     { id: 'accessibility', label: 'Accessibility', icon: <Eye size={13} /> },
     { id: 'navigation', label: 'Navigation', icon: <PanelLeft size={13} /> },
-    { id: 'overlays', label: 'Overlays', icon: <Layers size={13} /> },
     { id: 'hotkeys', label: 'Hotkeys', icon: <KeyboardIcon size={13} /> },
-    { id: 'dpscolors', label: 'DPS Meters', icon: <Palette size={13} /> },
     { id: 'discord', label: 'Discord', icon: <Headphones size={13} /> },
     { id: 'logs', label: 'Logs', icon: <FileText size={13} /> },
     { id: 'backups', label: 'Backup & Restore', icon: <HardDrive size={13} /> },
@@ -1001,14 +1001,7 @@ export default function SettingsPage(): React.ReactElement {
     <div className="flex h-full">
       <TabBar tabs={tabs} active={tab} onChange={setTab} alerts={tabAlerts} />
       <div className="flex-1 overflow-y-auto">
-      {/* The Overlays tab holds a wide per-overlay control table (Pop out /
-          Reset / Monitor / lock-mode), so it gets more horizontal room than
-          the other tabs to keep those columns from clipping. */}
-      <div
-        className={`mx-auto p-6 ${
-          tab === 'overlays' ? 'max-w-4xl' : 'max-w-xl'
-        }`}
-      >
+      <div className="mx-auto max-w-xl p-6">
       {/* Explains the orange dot on the main sidebar's Settings button, which
           otherwise gives no hint where to look. */}
       {logLargeFile && tab !== 'logs' && (
@@ -2198,145 +2191,10 @@ export default function SettingsPage(): React.ReactElement {
         </section>
         )}
 
-        {/* ── Threat Meter ───────────────────────────────────────────────── */}
-        {tab === 'overlays' && (
-        <section
-          className="rounded-lg p-4"
-          style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
-        >
-          <h2
-            className="mb-1 text-sm font-semibold uppercase tracking-wide"
-            style={{ color: 'var(--color-muted)' }}
-          >
-            Threat Meter
-          </h2>
-          <p className="mb-4 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-            The Threat Meter overlay estimates your own per-mob hate from your
-            character&rsquo;s combat log. The Spell Casting Subtlety AA is now
-            auto-detected from your trained AAs, so use this only for a hate
-            modifier the logs and DB can&rsquo;t reveal &mdash; e.g.
-            hate-reduction gear. Leave it <code>0</code> otherwise, and
-            don&rsquo;t re-enter Spell Casting Subtlety here.
-          </p>
-          <div className="flex items-center gap-2">
-            <label className="text-sm" style={{ color: 'var(--color-foreground)' }}>
-              Manual hatemod %
-            </label>
-            <input
-              type="number"
-              min={-100}
-              max={500}
-              step={1}
-              defaultValue={config.preferences.threat_hatemod_pct ?? 0}
-              key={config.preferences.threat_hatemod_pct ?? 0}
-              onBlur={(e) => {
-                const v = Number(e.target.value)
-                const cur = config.preferences.threat_hatemod_pct ?? 0
-                if (!Number.isNaN(v) && v !== cur) {
-                  setConfig({
-                    ...config,
-                    preferences: {
-                      ...config.preferences,
-                      threat_hatemod_pct: Math.max(-100, Math.min(500, Math.round(v))),
-                    },
-                  })
-                }
-              }}
-              className="w-20 rounded px-2 py-1 text-xs"
-              style={{
-                backgroundColor: 'var(--color-surface-2)',
-                color: 'var(--color-foreground)',
-                border: '1px solid var(--color-border)',
-              }}
-            />
-            <span className="text-xs" style={{ color: 'var(--color-muted)' }}>
-              gear + AA hate bonus the log can&rsquo;t see
-            </span>
-          </div>
-        </section>
-        )}
-
-        {/* ── Raid threat (estimated) ────────────────────────────────────── */}
-        {/* Only shown once raid mode is enabled from the Developer tab; the
-            gate lives there so normal users never see this experimental card. */}
-        {tab === 'overlays' && (config.preferences.raid_threat_enabled ?? false) && (
-        <RaidThreatCard
-          classMods={config.preferences.raid_threat_class_mods ?? {}}
-          playerMods={config.preferences.raid_threat_player_mods ?? {}}
-          onPatch={(patch) =>
-            setConfig({ ...config, preferences: { ...config.preferences, ...patch } })
-          }
-        />
-        )}
-
-        {/* ── DPS Class Colors ───────────────────────────────────────────── */}
-        {/* ── Discord ────────────────────────────────────────────────────── */}
+        {/* ── Hotkeys / Discord ─────────────────────────────────────────── */}
         {tab === 'hotkeys' && <HotkeysSettings />}
 
         {tab === 'discord' && <DiscordWebhookSettings config={config} setConfig={setConfig} />}
-
-        {tab === 'dpscolors' && (
-        <>
-        <section
-          className="rounded-lg p-4 mb-4"
-          style={{
-            backgroundColor: 'var(--color-surface)',
-            border: '1px solid var(--color-border)',
-          }}
-        >
-          <h2
-            className="mb-1 text-sm font-semibold uppercase tracking-wide"
-            style={{ color: 'var(--color-muted)' }}
-          >
-            Combat Meter
-          </h2>
-          <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-            A parse stays on the meter through zoning and death — handy when you evac/Abscond to drop aggro and run back, or die and get rezzed. It ends only when the mob dies, you clear it with the meter’s ✕ button (which saves it to Combat History), or it sits idle for the timeout below. Raid-sized fights always get at least a 2-minute window.
-          </p>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
-                Fight Inactivity Timeout
-              </p>
-              <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-                How long a fight can go without any damage before it’s archived. Higher values survive longer zone trips; lower values close out parses faster. Default 60.
-              </p>
-            </div>
-            <div className="flex items-center gap-1 shrink-0 ml-3">
-              <input
-                type="number"
-                min={10}
-                max={1800}
-                step={5}
-                value={config.combat?.fight_timeout_seconds ?? 60}
-                onChange={(e) =>
-                  setConfig({
-                    ...config,
-                    combat: {
-                      ...config.combat,
-                      fight_timeout_seconds: Math.min(1800, Math.max(10, Number(e.target.value) || 60)),
-                    },
-                  })
-                }
-                className="w-20 rounded px-2 py-1 text-sm text-right"
-                style={{
-                  backgroundColor: 'var(--color-surface-2)',
-                  border: '1px solid var(--color-border)',
-                  color: 'var(--color-foreground)',
-                }}
-              />
-              <span className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-                sec
-              </span>
-            </div>
-          </div>
-        </section>
-        <DPSClassColorsSection
-          value={config.dps_class_colors ?? DEFAULT_DPS_CLASS_COLORS}
-          onChange={(next) => setConfig({ ...config, dps_class_colors: next })}
-        />
-        </>
-        )}
 
         {/* ── Log Files ──────────────────────────────────────────────────── */}
         {tab === 'logs' && (
@@ -2809,356 +2667,6 @@ function BackendNetworkSection(props: BackendNetworkSectionProps): React.ReactEl
           </button>
         </div>
       )}
-    </section>
-  )
-}
-
-const DPS_CLASS_ROWS: { key: keyof DPSClassColors; label: string }[] = [
-  { key: 'warrior', label: 'Warrior' },
-  { key: 'cleric', label: 'Cleric' },
-  { key: 'paladin', label: 'Paladin' },
-  { key: 'ranger', label: 'Ranger' },
-  { key: 'shadow_knight', label: 'Shadow Knight' },
-  { key: 'druid', label: 'Druid' },
-  { key: 'monk', label: 'Monk' },
-  { key: 'bard', label: 'Bard' },
-  { key: 'rogue', label: 'Rogue' },
-  { key: 'shaman', label: 'Shaman' },
-  { key: 'necromancer', label: 'Necromancer' },
-  { key: 'wizard', label: 'Wizard' },
-  { key: 'magician', label: 'Magician' },
-  { key: 'enchanter', label: 'Enchanter' },
-  { key: 'beastlord', label: 'Beastlord' },
-  { key: 'unknown', label: 'Unknown / Default' },
-]
-
-function normalizeHex(input: string): string {
-  let v = input.trim()
-  if (!v.startsWith('#')) v = '#' + v
-  return v.toUpperCase()
-}
-
-function isValidHex(input: string): boolean {
-  return /^#([0-9A-Fa-f]{6})$/.test(input.trim())
-}
-
-function DPSClassColorsSection({
-  value,
-  onChange,
-}: {
-  value: DPSClassColors
-  onChange: (next: DPSClassColors) => void
-}): React.ReactElement {
-  // Local mirror of the typed hex string per class so users can type freely
-  // (e.g. while halfway through "#69CC") without the upper-case normaliser
-  // jumping in mid-keystroke. We push to the parent config on blur or when
-  // the value parses as a valid hex; the color picker writes through
-  // immediately because it always produces a valid colour.
-  const [drafts, setDrafts] = React.useState<Record<string, string>>(() => {
-    const out: Record<string, string> = {}
-    for (const r of DPS_CLASS_ROWS) out[r.key] = value[r.key] ?? ''
-    return out
-  })
-
-  // Re-sync when the parent value changes (e.g. after Reset to defaults or a
-  // load from the API). Without this, the local draft state would shadow
-  // resets.
-  useEffect(() => {
-    const next: Record<string, string> = {}
-    for (const r of DPS_CLASS_ROWS) next[r.key] = value[r.key] ?? ''
-    setDrafts(next)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value])
-
-  function setOne(key: keyof DPSClassColors, hex: string): void {
-    onChange({ ...value, [key]: hex })
-  }
-
-  function handleTextChange(key: keyof DPSClassColors, raw: string): void {
-    setDrafts((d) => ({ ...d, [key]: raw }))
-    const norm = normalizeHex(raw)
-    if (isValidHex(norm)) setOne(key, norm)
-  }
-
-  function handleTextBlur(key: keyof DPSClassColors): void {
-    const norm = normalizeHex(drafts[key] ?? '')
-    if (isValidHex(norm)) {
-      setDrafts((d) => ({ ...d, [key]: norm }))
-      setOne(key, norm)
-    } else {
-      // Revert to the last valid persisted value if the user typed garbage.
-      setDrafts((d) => ({ ...d, [key]: value[key] }))
-    }
-  }
-
-  function resetOne(key: keyof DPSClassColors): void {
-    const def = DEFAULT_DPS_CLASS_COLORS[key]
-    setDrafts((d) => ({ ...d, [key]: def }))
-    setOne(key, def)
-  }
-
-  function resetAll(): void {
-    setDrafts(() => {
-      const out: Record<string, string> = {}
-      for (const r of DPS_CLASS_ROWS) out[r.key] = DEFAULT_DPS_CLASS_COLORS[r.key]
-      return out
-    })
-    onChange({ ...DEFAULT_DPS_CLASS_COLORS })
-  }
-
-  return (
-    <section
-      className="rounded-lg p-4"
-      style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
-    >
-      <div className="mb-3 flex items-start justify-between gap-3">
-        <div>
-          <h2
-            className="mb-1 text-sm font-semibold uppercase tracking-wide"
-            style={{ color: 'var(--color-muted)' }}
-          >
-            DPS Class Colors
-          </h2>
-          <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-            Per-class bar colour for the DPS meter and combat history. Pets
-            inherit their owner's colour. Combatants whose class can't be
-            resolved fall back to the Unknown / Default colour.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={resetAll}
-          className="flex shrink-0 items-center gap-1.5 rounded border px-2.5 py-1 text-xs"
-          style={{
-            borderColor: 'var(--color-border)',
-            color: 'var(--color-foreground)',
-            backgroundColor: 'var(--color-surface-2)',
-            cursor: 'pointer',
-          }}
-        >
-          <RefreshCw size={11} />
-          Reset all to defaults
-        </button>
-      </div>
-
-      <div
-        className="grid gap-2"
-        style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}
-      >
-        {DPS_CLASS_ROWS.map((row) => {
-          const draft = drafts[row.key] ?? ''
-          const persisted = value[row.key] ?? ''
-          const invalid = !isValidHex(normalizeHex(draft))
-          const isDefault = persisted.toUpperCase() === DEFAULT_DPS_CLASS_COLORS[row.key].toUpperCase()
-          return (
-            <div
-              key={row.key}
-              className="flex items-center gap-2 rounded border p-2"
-              style={{
-                borderColor: 'var(--color-border)',
-                backgroundColor: 'var(--color-surface-2)',
-              }}
-            >
-              <input
-                type="color"
-                value={isValidHex(persisted) ? persisted : DEFAULT_DPS_CLASS_COLORS[row.key]}
-                onChange={(e) => {
-                  const hex = normalizeHex(e.target.value)
-                  setDrafts((d) => ({ ...d, [row.key]: hex }))
-                  setOne(row.key, hex)
-                }}
-                title={`Pick ${row.label} colour`}
-                style={{
-                  width: 32,
-                  height: 24,
-                  padding: 0,
-                  border: '1px solid var(--color-border)',
-                  borderRadius: 4,
-                  cursor: 'pointer',
-                  flexShrink: 0,
-                  backgroundColor: 'transparent',
-                }}
-              />
-              <div className="flex min-w-0 flex-1 flex-col">
-                <span
-                  className="truncate text-xs font-medium"
-                  style={{ color: 'var(--color-foreground)' }}
-                >
-                  {row.label}
-                </span>
-                <input
-                  type="text"
-                  value={draft}
-                  onChange={(e) => handleTextChange(row.key, e.target.value)}
-                  onBlur={() => handleTextBlur(row.key)}
-                  spellCheck={false}
-                  maxLength={7}
-                  className="mt-0.5 rounded border px-1.5 py-0.5 text-xs font-mono"
-                  style={{
-                    borderColor: invalid ? '#f97316' : 'var(--color-border)',
-                    backgroundColor: 'var(--color-surface)',
-                    color: 'var(--color-foreground)',
-                  }}
-                />
-              </div>
-              <button
-                type="button"
-                onClick={() => resetOne(row.key)}
-                disabled={isDefault}
-                title={isDefault ? 'Already at default' : 'Reset to default'}
-                className="flex shrink-0 items-center justify-center rounded p-1"
-                style={{
-                  border: '1px solid var(--color-border)',
-                  backgroundColor: 'transparent',
-                  color: isDefault ? 'var(--color-muted)' : 'var(--color-muted-foreground)',
-                  cursor: isDefault ? 'not-allowed' : 'pointer',
-                  opacity: isDefault ? 0.4 : 1,
-                }}
-              >
-                <RefreshCw size={11} />
-              </button>
-            </div>
-          )
-        })}
-      </div>
-    </section>
-  )
-}
-
-// RAID_CLASSES mirrors internal/raidthreat. There is no built-in per-class
-// boost (tanks are handled by modelling taunt); these knobs are opt-in for a
-// known aggro-mod gear/AA setup, so every default is 0.
-const RAID_CLASSES = [
-  'Warrior', 'Shadow Knight', 'Paladin', 'Cleric', 'Druid', 'Shaman',
-  'Ranger', 'Monk', 'Rogue', 'Bard', 'Beastlord',
-  'Necromancer', 'Wizard', 'Magician', 'Enchanter',
-]
-
-// RaidThreatCard configures the Threat overlay's estimated Raid mode: optional
-// per-class and per-player hate adjustments for known aggro-mod setups. It is
-// only rendered once raid mode is enabled from the Developer tab (the enable
-// toggle lives there), so this card is pure tuning.
-function RaidThreatCard({
-  classMods,
-  playerMods,
-  onPatch,
-}: {
-  classMods: Record<string, number>
-  playerMods: Record<string, number>
-  onPatch: (patch: Record<string, unknown>) => void
-}): React.ReactElement {
-  const [newPlayer, setNewPlayer] = useState('')
-  const [newPlayerPct, setNewPlayerPct] = useState('')
-
-  const setClassMod = (cls: string, raw: string): void => {
-    const next = { ...classMods }
-    if (raw.trim() === '') delete next[cls]
-    else next[cls] = Math.max(-100, Math.min(500, Math.round(Number(raw) || 0)))
-    onPatch({ raid_threat_class_mods: next })
-  }
-  const addPlayerMod = (name: string, raw: string): void => {
-    const n = name.trim()
-    if (n === '') return
-    const next = { ...playerMods, [n]: Math.max(-100, Math.min(500, Math.round(Number(raw) || 0))) }
-    onPatch({ raid_threat_player_mods: next })
-  }
-  const removePlayerMod = (name: string): void => {
-    const next = { ...playerMods }
-    delete next[name]
-    onPatch({ raid_threat_player_mods: next })
-  }
-
-  return (
-    <section
-      className="rounded-lg p-4"
-      style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
-    >
-      <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
-        Raid threat (estimated)
-      </h2>
-      <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-        Raid mode is <strong>enabled</strong> (toggle it in Settings &rsaquo;
-        Developer). It estimates every nearby player&rsquo;s hate from the damage
-        they do — the same data the DPS meter uses — and pins a tank to the top
-        when it sees their taunt land. It is approximate: out-of-range players,
-        others&rsquo; DoTs, heals, and utility casts aren&rsquo;t in your log, so
-        DoT/healer classes read low.
-      </p>
-
-      <>
-          <div className="mt-4">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
-              Per-class hate adjustment (%)
-            </p>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-3">
-              {RAID_CLASSES.map((cls) => {
-                const set = classMods[cls]
-                return (
-                  <label key={cls} className="flex items-center justify-between gap-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-                    <span className="truncate">{cls}</span>
-                    <input
-                      type="number"
-                      defaultValue={set ?? ''}
-                      key={set ?? 'unset'}
-                      placeholder="0"
-                      onBlur={(e) => setClassMod(cls, e.target.value)}
-                      className="w-14 rounded px-1 py-0.5 text-right text-xs"
-                      style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
-                    />
-                  </label>
-                )
-              })}
-            </div>
-            <p className="mt-1 text-[11px]" style={{ color: 'var(--color-muted)' }}>
-              Blank = 0 (no adjustment). Applied to a player&rsquo;s observed damage —
-              opt-in for known aggro-mod gear/AAs.
-            </p>
-          </div>
-
-          <div className="mt-4">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
-              Per-player override (%)
-            </p>
-            {Object.keys(playerMods).length > 0 && (
-              <div className="mb-2 flex flex-col gap-1">
-                {Object.entries(playerMods).map(([name, pct]) => (
-                  <div key={name} className="flex items-center gap-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-                    <span className="w-28 truncate">{name}</span>
-                    <span className="w-12 text-right">{pct > 0 ? '+' : ''}{pct}%</span>
-                    <button type="button" onClick={() => removePlayerMod(name)} title="Remove" style={{ color: '#f87171', cursor: 'pointer' }}>
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div className="flex items-center gap-2">
-              <input
-                value={newPlayer}
-                onChange={(e) => setNewPlayer(e.target.value)}
-                placeholder="Player name"
-                className="w-28 rounded px-2 py-0.5 text-xs"
-                style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
-              />
-              <input
-                value={newPlayerPct}
-                onChange={(e) => setNewPlayerPct(e.target.value)}
-                type="number"
-                placeholder="%"
-                className="w-14 rounded px-1 py-0.5 text-right text-xs"
-                style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
-              />
-              <button
-                type="button"
-                onClick={() => { addPlayerMod(newPlayer, newPlayerPct); setNewPlayer(''); setNewPlayerPct('') }}
-                className="rounded px-2 py-0.5 text-xs"
-                style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-muted-foreground)', cursor: 'pointer' }}
-              >
-                Add
-              </button>
-            </div>
-          </div>
-        </>
     </section>
   )
 }

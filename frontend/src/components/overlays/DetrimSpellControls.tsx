@@ -16,7 +16,7 @@ const MUTED_ACCENT = '#f59e0b'
 
 // Two tiny per-spell buttons for a Detrimental timer row: silence this spell's
 // "fading soon" alert, or stop showing the spell at all (e.g. Tashanian).
-// Both persist to config and are listed in Settings > Overlays so they can be
+// Both persist to config and are listed in the Overlays hub settings so they can be
 // reversed. Hiding also dismisses the timer that's currently up.
 export function DetrimSpellControls({
   timerId, spellName, overrides, setOverride, color,

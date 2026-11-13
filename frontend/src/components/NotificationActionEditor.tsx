@@ -322,7 +322,7 @@ export function OverlayTextFields({
         <div className="flex items-center gap-1.5 ml-auto">
           <button
             type="button"
-            onClick={() => navigate('/settings?tab=overlays')}
+            onClick={() => navigate('/overlays?panel=trigger')}
             className="flex items-center gap-1 rounded px-2 py-1 text-[11px]"
             style={{
               backgroundColor: 'transparent',

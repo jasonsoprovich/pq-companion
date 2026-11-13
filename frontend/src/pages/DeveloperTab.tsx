@@ -158,7 +158,7 @@ function FlagsPanel(): React.ReactElement {
             healer classes read far too low and callouts can mislead. The Solo
             (personal) meter is always available and unaffected by this toggle —
             enable Raid mode only if you want to experiment with it. Per-class and
-            per-player tuning appears in Settings &rsaquo; Overlays once enabled.
+            per-player tuning appears in the Threat Meter&rsquo;s settings in the Overlays hub once enabled.
           </p>
           <button
             type="button"

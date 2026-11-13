@@ -14,7 +14,7 @@
  * for trigger-driven timers. Spell-cast-driven timers (no source trigger)
  * have an empty/absent list; for those in a Detrimental category (debuff/
  * dot/mez/stun) this hook falls back to the global Preferences.detrim_timer_
- * alert default (Settings > Overlays), so a plain auto-detected mez/DoT
+ * alert default (Overlays hub settings), so a plain auto-detected mez/DoT
  * timer on any mob still gets a fading-soon cue without the user having to
  * hand-build a trigger for it. Buff-category native timers have no such
  * fallback (would be noisy — see 76fe0428's commit note).
