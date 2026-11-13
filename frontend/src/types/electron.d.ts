@@ -15,6 +15,16 @@ export interface OverlayLayoutSummary {
   windows: string[]
   // Characters whose detected log-in switches to this layout.
   characters: string[]
+  // Stacks in the layout (their tabs are in `windows` too).
+  stacks: OverlayStackSummary[]
+}
+
+// A stack window: several overlays as tabs. key = `stack:<id>`.
+export interface OverlayStackSummary {
+  id: string
+  key: string
+  tabs: string[]
+  groupNames: Record<string, string>
 }
 
 export interface LayoutState {
@@ -196,6 +206,7 @@ export interface ElectronAPI {
     stackMerge: (target: string, source: string) => Promise<boolean>
     stackRemove: (key: string, popOut: boolean) => Promise<boolean>
     stackClose: () => Promise<void>
+    stackToggle: (key: string) => Promise<void>
     onStackChanged: (cb: (info: StackInfo) => void) => () => void
     onStackDropHint: (cb: (hint: StackDropHint) => void) => () => void
     hotkeysGet: () => Promise<HotkeyState>

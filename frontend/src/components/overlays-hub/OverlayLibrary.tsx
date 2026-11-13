@@ -3,15 +3,16 @@
  * its category: pop out / close (or show, when hidden), whether it also gets a
  * Dashboard panel, and its hotkey if one is bound. Clicking a card opens its
  * details on the right. Overlays that can't be used right now stay listed,
- * greyed, with the reason. Custom timer windows close the list under "Your
- * windows".
+ * greyed, with the reason. Custom timer windows and stacks (several overlays
+ * as tabs in one window) close the list under "Your windows". A stacked
+ * overlay's Move and Reset act on its stack.
  *
  * Dashboard visibility is written straight to the dashboard's saved layout;
  * the Dashboard tab reads it fresh when it mounts.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Bell, ExternalLink, Eye, Hourglass, Keyboard, LayoutDashboard, Move, Plus, RotateCcw, Settings2, X } from 'lucide-react'
+import { Bell, ExternalLink, Eye, Hourglass, Keyboard, Layers, LayoutDashboard, Move, Plus, RotateCcw, Settings2, SquareArrowOutUpRight, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import {
   CUSTOM_GROUP_INFO,
@@ -19,8 +20,12 @@ import {
   OVERLAY_CATEGORIES,
   PANEL_POPOUT,
   TRIGGER_ALERTS_INFO,
+  overlayWindowLabel,
   type OverlayCatalogEntry,
 } from '../../lib/overlayCatalog'
+import { useOverlayLayouts } from '../../hooks/useOverlayLayouts'
+import type { OverlayStackSummary } from '../../types/electron'
+import type { OverlayName } from '../../lib/overlays'
 import {
   defaultGroupPanelLayout,
   updateDashboardGroups,
@@ -367,6 +372,14 @@ function SectionHeading({ label }: { label: string }): React.ReactElement {
   )
 }
 
+const STACK_INFO = {
+  blurb: 'Several overlays as tabs in one window.',
+  details:
+    'Drag an overlay by its title bar onto another one\u2019s title bar to stack them. ' +
+    'Right-click a tab, or use the buttons below, to take one back out. The stack has its ' +
+    'own position, lock, opacity and fade; each tab keeps its zoom and its own settings.',
+}
+
 const GRID_STYLE: React.CSSProperties = {
   display: 'grid',
   gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
@@ -395,6 +408,15 @@ export default function OverlayLibrary({
   const [showGroupsModal, setShowGroupsModal] = useState(false)
   const setSelected = onSelect
   const { config, setConfig, saveState } = useConfigDraft()
+  const { state: layoutState } = useOverlayLayouts()
+  const stacks: OverlayStackSummary[] = useMemo(
+    () => layoutState?.layouts.find((l) => l.id === layoutState.activeId)?.stacks ?? [],
+    [layoutState],
+  )
+  const stackOf = (key: string): OverlayStackSummary | undefined => stacks.find((s) => s.tabs.includes(key))
+  const tabName = (s: OverlayStackSummary, tab: string): string =>
+    tab.startsWith('customTimer:') ? s.groupNames[tab] || overlayWindowLabel(tab, groups) : overlayWindowLabel(tab, groups)
+  const stackTitle = (s: OverlayStackSummary): string => s.tabs.map((t) => tabName(s, t)).join(' + ')
 
   const refreshStates = useCallback(() => {
     window.electron?.overlay?.popoutWindowStates?.().then(setWindowStates).catch(() => {})
@@ -505,13 +527,31 @@ export default function OverlayLibrary({
   const moveButton = (name: string, label: string, openWindow: () => void): React.ReactNode => {
     if (typeof window.electron?.overlay?.place !== 'function') return null
     const on = placing.includes(name)
+    const stacked = !name.startsWith('stack:') && !!stackOf(name)
     return (
       <SecondaryButton
         icon={Move}
-        label={on ? 'Done moving' : 'Move'}
+        label={on ? 'Done moving' : stacked ? 'Move stack' : 'Move'}
         active={on}
         onClick={() => toggleMove(name, openWindow)}
-        title={on ? `Done positioning ${label}` : `Pop out ${label} and drag it anywhere, even when it's locked`}
+        title={
+          on
+            ? `Done positioning ${label}`
+            : stacked
+              ? `Drag ${label}'s stack anywhere, even when it's locked`
+              : `Pop out ${label} and drag it anywhere, even when it's locked`
+        }
+      />
+    )
+  }
+  const resetButton = (name: string, label: string): React.ReactNode => {
+    const stacked = !name.startsWith('stack:') && !!stackOf(name)
+    return (
+      <SecondaryButton
+        icon={RotateCcw}
+        label={stacked ? 'Reset stack position' : 'Reset position'}
+        onClick={() => resetPosition(name)}
+        title={`Move ${stacked ? `${label}'s stack` : 'this window'} to the middle of your main screen at its default size, and unlock it`}
       />
     )
   }
@@ -546,12 +586,7 @@ export default function OverlayLibrary({
             <>
               <PopButton state={state} disabled={!!unavailable && !state} onClick={() => togglePopout(entry)} />
               {!unavailable && moveButton(entry.name, entry.label, () => togglePopout(entry))}
-              <SecondaryButton
-                icon={RotateCcw}
-                label="Reset position"
-                onClick={() => resetPosition(entry.name)}
-                title="Move this window to the middle of your main screen at its default size, and unlock it"
-              />
+              {resetButton(entry.name, entry.label)}
               <SecondaryButton
                 icon={Keyboard}
                 label={bindings[overlayAction(entry.name)] ? 'Change hotkey' : 'Set a hotkey'}
@@ -602,7 +637,7 @@ export default function OverlayLibrary({
             <>
               <PopButton state={state} onClick={() => toggleGroupPopout(g)} />
               {moveButton(key, g.name, () => toggleGroupPopout(g))}
-              <SecondaryButton icon={RotateCcw} label="Reset position" onClick={() => resetPosition(key)} />
+              {resetButton(key, g.name)}
               <SecondaryButton icon={Hourglass} label="Manage timer windows" onClick={() => setShowGroupsModal(true)} />
             </>
           }
@@ -618,6 +653,61 @@ export default function OverlayLibrary({
                   <IdleCollapseSelect windowKey={key} label={g.name} config={config} setConfig={setConfig} />
                 </div>
               </div>
+            </SettingsSection>
+          )}
+        </Drawer>
+      )
+    }
+  }
+
+  if (selected?.kind === 'stack') {
+    const s = stacks.find((x) => x.key === selected.key)
+    if (s) {
+      const state = windowStates[s.key]
+      const title = stackTitle(s)
+      details = (
+        <Drawer
+          icon={Layers}
+          color="#c9a84c"
+          title={title}
+          details={STACK_INFO.details}
+          status={<StatusText state={state} />}
+          saveState={saveState}
+          onClose={close}
+          actions={
+            <>
+              <PopButton state={state} onClick={() => { window.electron?.overlay?.stackToggle(s.key); afterToggle() }} />
+              {moveButton(s.key, 'the stack', () => window.electron?.overlay?.stackToggle(s.key))}
+              {resetButton(s.key, 'the stack')}
+            </>
+          }
+        >
+          <SettingsSection title="Tabs">
+            <div className="flex flex-col">
+              {s.tabs.map((tab) => (
+                <div key={tab} className="flex items-center justify-between gap-3 py-1.5">
+                  <span className="truncate text-sm" style={{ color: 'var(--color-foreground)' }}>{tabName(s, tab)}</span>
+                  <span className="flex shrink-0 gap-1.5">
+                    <SecondaryButton
+                      icon={SquareArrowOutUpRight}
+                      label="Unstack"
+                      onClick={() => { window.electron?.overlay?.stackRemove(tab, true); afterToggle() }}
+                      title={`Move ${tabName(s, tab)} back into its own window`}
+                    />
+                    <SecondaryButton
+                      icon={X}
+                      label="Close"
+                      onClick={() => { window.electron?.overlay?.stackRemove(tab, false); afterToggle() }}
+                      title={`Close ${tabName(s, tab)} and take it out of the stack`}
+                    />
+                  </span>
+                </div>
+              ))}
+            </div>
+          </SettingsSection>
+          {config && (
+            <SettingsSection title="Window">
+              <OverlayWindowControls name={s.key as OverlayName} label="stack" config={config} setConfig={setConfig} />
             </SettingsSection>
           )}
         </Drawer>
@@ -719,6 +809,28 @@ export default function OverlayLibrary({
                           on={groupLayout[g.id]?.visible ?? false}
                           onClick={() => toggleGroupDashboard(g.id, i)}
                         />
+                        <span className="flex-1" />
+                        <StatusText state={state} />
+                      </>
+                    }
+                  />
+                )
+              })}
+              {stacks.map((s) => {
+                const state = windowStates[s.key]
+                const sel: Selection = { kind: 'stack', key: s.key }
+                return (
+                  <Card
+                    key={s.key}
+                    icon={Layers}
+                    color="#c9a84c"
+                    title={stackTitle(s)}
+                    blurb={STACK_INFO.blurb}
+                    selected={isSel(sel)}
+                    onSelect={() => setSelected(sel)}
+                    footer={
+                      <>
+                        <PopButton state={state} onClick={() => { window.electron?.overlay?.stackToggle(s.key); afterToggle() }} />
                         <span className="flex-1" />
                         <StatusText state={state} />
                       </>

@@ -1,6 +1,7 @@
 /**
  * What the Overlays hub's settings drawer is showing: the all-overlays
- * settings, one overlay, the trigger alert layer, or a named timer window.
+ * settings, one overlay, the trigger alert layer, a named timer window, or a
+ * stack (by its window key, `stack:<id>`).
  * selectionFromParam reads it from the /overlays?panel= deep link.
  */
 import type { DashboardPanelKey } from '../../services/dashboardLayout'
@@ -11,6 +12,7 @@ export type HubSelection =
   | { kind: 'overlay'; panel: DashboardPanelKey }
   | { kind: 'trigger' }
   | { kind: 'group'; id: string }
+  | { kind: 'stack'; key: string }
 
 export function selectionFromParam(p: string | null): HubSelection | null {
   if (!p) return null
@@ -18,6 +20,7 @@ export function selectionFromParam(p: string | null): HubSelection | null {
   if (p === 'timers') return { kind: 'global', section: 'timers' }
   if (p === 'trigger') return { kind: 'trigger' }
   if (p.startsWith('group:')) return { kind: 'group', id: p.slice('group:'.length) }
+  if (p.startsWith('stack:')) return { kind: 'stack', key: p }
   const entry = OVERLAY_CATALOG.find((e) => e.panel === p || e.name === p)
   return entry ? { kind: 'overlay', panel: entry.panel } : null
 }
@@ -26,5 +29,6 @@ export function sameSelection(a: HubSelection | null, b: HubSelection): boolean 
   if (!a || a.kind !== b.kind) return false
   if (a.kind === 'overlay' && b.kind === 'overlay') return a.panel === b.panel
   if (a.kind === 'group' && b.kind === 'group') return a.id === b.id
+  if (a.kind === 'stack' && b.kind === 'stack') return a.key === b.key
   return true
 }

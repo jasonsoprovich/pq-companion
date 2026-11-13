@@ -464,29 +464,42 @@ export function FadeSelect({
  * IdleCollapseSelect — "Collapse when idle": off, or the delay after the
  * overlay last had something to show. Saved per window key.
  */
+//
+// followTabs (a stack): unset follows the stack's tabs, and Off is stored as
+// -1 so it can override them.
 export function IdleCollapseSelect({
   windowKey,
   label,
   config,
   setConfig,
+  followTabs = false,
 }: {
   windowKey: string
   label: string
   config: Config
   setConfig: (c: Config) => void
+  followTabs?: boolean
 }): React.ReactElement {
   const prefs = config.preferences
-  const value = idleCollapseSecs(config, windowKey)
-  const options = IDLE_DELAY_OPTIONS.some((o) => o.secs === value)
+  const raw = prefs.overlay_idle_collapse?.[windowKey]
+  const secs = idleCollapseSecs(config, windowKey)
+  const value = followTabs && raw === undefined ? 'follow' : String(secs)
+  const base = IDLE_DELAY_OPTIONS.some((o) => o.secs === secs)
     ? IDLE_DELAY_OPTIONS
-    : [...IDLE_DELAY_OPTIONS, { secs: value, label: `After ${value}s` }]
+    : [...IDLE_DELAY_OPTIONS, { secs, label: `After ${secs}s` }]
+  const options = [
+    ...(followTabs ? [{ value: 'follow', label: 'Follow its tabs' }] : []),
+    ...base.map((o) => ({ value: String(o.secs), label: o.label })),
+  ]
   return (
     <select
       value={value}
       onChange={(e) => {
         const next = { ...(prefs.overlay_idle_collapse ?? {}) }
-        const secs = Number(e.target.value)
-        if (secs > 0) next[windowKey] = secs
+        const v = e.target.value
+        if (v === 'follow') delete next[windowKey]
+        else if (Number(v) > 0) next[windowKey] = Number(v)
+        else if (followTabs) next[windowKey] = -1
         else delete next[windowKey]
         setConfig({ ...config, preferences: { ...prefs, overlay_idle_collapse: next } })
       }}
@@ -500,7 +513,7 @@ export function IdleCollapseSelect({
       title={`Fold the ${label} overlay to its title bar when it has nothing to show`}
     >
       {options.map((o) => (
-        <option key={o.secs} value={o.secs}>{o.label}</option>
+        <option key={o.value} value={o.value}>{o.label}</option>
       ))}
     </select>
   )
@@ -527,6 +540,7 @@ export function OverlayWindowControls({
   setConfig: (c: Config) => void
 }): React.ReactElement {
   const prefs = config.preferences
+  const isStack = name.startsWith('stack:')
   const [displays, setDisplays] = useState<Array<{ id: number; label: string; isPrimary: boolean }>>([])
   const [displayId, setDisplayId] = useState<number | undefined>(undefined)
   useEffect(() => {
@@ -583,11 +597,13 @@ export function OverlayWindowControls({
           onChange={(v) => patch({ overlay_fade_modes: { ...(prefs.overlay_fade_modes ?? {}), [name]: v } })}
         />,
       )}
-      {supportsIdleCollapse(name) &&
+      {(supportsIdleCollapse(name) || isStack) &&
         row(
           'Collapse when idle',
-          <IdleCollapseSelect windowKey={name} label={label} config={config} setConfig={setConfig} />,
-          IDLE_COLLAPSE_HINT,
+          <IdleCollapseSelect windowKey={name} label={label} config={config} setConfig={setConfig} followTabs={isStack} />,
+          isStack
+            ? 'Folds to the title bar once every tab is idle. Follow its tabs uses the longest delay set on them.'
+            : IDLE_COLLAPSE_HINT,
         )}
       {displays.length > 1 &&
         row(

@@ -3,7 +3,13 @@ import { contextBridge, ipcRenderer, webFrame } from 'electron'
 type HotkeyState = { bindings: Record<string, string>; status: Record<string, 'ok' | 'failed'> }
 type LayoutState = {
   activeId: string
-  layouts: Array<{ id: string; name: string; windows: string[]; characters: string[] }>
+  layouts: Array<{
+    id: string
+    name: string
+    windows: string[]
+    characters: string[]
+    stacks: Array<{ id: string; key: string; tabs: string[]; groupNames: Record<string, string> }>
+  }>
 }
 type DashboardPanel = { x: number; y: number; width: number; height: number; visible: boolean }
 type LayoutDashboard = { panels: Record<string, DashboardPanel>; groups: Record<string, DashboardPanel> }
@@ -201,6 +207,7 @@ contextBridge.exposeInMainWorld('electron', {
     stackRemove: (key: string, popOut: boolean): Promise<boolean> =>
       ipcRenderer.invoke('overlay:stack:remove', key, popOut),
     stackClose: (): Promise<void> => ipcRenderer.invoke('overlay:stack:close'),
+    stackToggle: (key: string): Promise<void> => ipcRenderer.invoke('overlay:stack:toggle', key),
     onStackChanged: (cb: (info: StackInfo) => void): (() => void) => {
       const listener = (_e: unknown, v: StackInfo): void => cb(v)
       ipcRenderer.on('overlay:stack:changed', listener)

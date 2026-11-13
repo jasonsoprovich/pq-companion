@@ -2798,7 +2798,13 @@ type LayoutStore = {
 }
 type LayoutSummary = {
   activeId: string
-  layouts: Array<{ id: string; name: string; windows: WindowKey[]; characters: string[] }>
+  layouts: Array<{
+    id: string
+    name: string
+    windows: WindowKey[]
+    characters: string[]
+    stacks: Array<{ id: string; key: WindowKey; tabs: WindowKey[]; groupNames: Record<string, string> }>
+  }>
 }
 
 const MAX_CHARACTER_NAME = 64
@@ -3005,6 +3011,9 @@ function layoutSummary(): LayoutSummary {
       name: l.name,
       windows: l.windows.flatMap((w) => w.stack?.tabs ?? [w.key]),
       characters: l.characters ?? [],
+      stacks: l.windows.flatMap((w) => w.stack
+        ? [{ id: w.key.slice(STACK_PREFIX.length), key: w.key, tabs: [...w.stack.tabs], groupNames: { ...(w.stack.groupNames ?? {}) } }]
+        : []),
     })),
   }
 }
@@ -3433,6 +3442,12 @@ function removeFromStack(key: WindowKey, popOut = false): boolean {
   return true
 }
 
+// The window an overlay lives in: its stack's when stacked, else its own.
+function windowKeyFor(key: WindowKey): WindowKey {
+  const id = stackIdOf(key)
+  return id ? `${STACK_PREFIX}${id}` : key
+}
+
 function stackIdForSender(sender: Electron.WebContents): string | undefined {
   const win = BrowserWindow.fromWebContents(sender)
   const key = win ? windowToOverlayName.get(win) : undefined
@@ -3451,6 +3466,15 @@ ipcMain.handle('overlay:stack:select', (event, tab: string) => {
   s.active = tab as WindowKey
   saveLayoutStore()
   notifyStackChanged(id)
+})
+
+// The hub's stack card: show a hidden stack, else close it (which takes it
+// out of the layout, like its × button).
+ipcMain.handle('overlay:stack:toggle', (_event, key: string) => {
+  if (!isStackKey(key)) return
+  const id = key.slice(STACK_PREFIX.length)
+  if (!stackSpec(id)) return
+  toggleOverlayWindow(stackWindows.get(id) ?? null, () => createStackWindow(id))
 })
 
 ipcMain.handle('overlay:stack:merge', (_event, target: string, source: string) => {
@@ -3917,7 +3941,7 @@ function resetOverlayPosition(name: WindowKey): void {
 }
 
 ipcMain.handle('overlay:reset-position', (_event, name: string) => {
-  if (isValidWindowKey(name)) resetOverlayPosition(name)
+  if (isValidWindowKey(name)) resetOverlayPosition(windowKeyFor(name))
 })
 
 ipcMain.handle('overlay:reset-all-positions', () => {
@@ -3958,11 +3982,16 @@ ipcMain.handle('overlay:display-ids', () => {
   // or closed), same as fixed overlays above, so a closed group's monitor
   // picker still shows where it'll reopen.
   for (const key of Object.keys(store)) {
-    if (!key.startsWith('customTimer:')) continue
+    if (!key.startsWith('customTimer:') && !isStackKey(key)) continue
     const windowKey = key as WindowKey
     const win = overlayWindowByName(windowKey)
     const b = win && !win.isDestroyed() ? win.getBounds() : store[windowKey] ?? OVERLAY_DEFAULTS.customTimer
     out[key] = screen.getDisplayMatching(b).id
+  }
+  // A stacked overlay is wherever its stack is.
+  for (const w of activeLayout().windows) {
+    if (!w.stack || out[w.key] === undefined) continue
+    for (const tab of w.stack.tabs) out[tab] = out[w.key]
   }
   return out
 })
@@ -3993,10 +4022,10 @@ function setPlacing(name: WindowKey, on: boolean): void {
 }
 
 ipcMain.handle('overlay:place:start', (_event, name: string) => {
-  if (isValidWindowKey(name)) setPlacing(name, true)
+  if (isValidWindowKey(name)) setPlacing(windowKeyFor(name), true)
 })
 ipcMain.handle('overlay:place:stop', (_event, name: string) => {
-  if (isValidWindowKey(name)) setPlacing(name, false)
+  if (isValidWindowKey(name)) setPlacing(windowKeyFor(name), false)
 })
 // Called by the overlay's own "Done" button — resolve the window to its name.
 ipcMain.handle('overlay:place:stop-self', (event) => {
@@ -4011,14 +4040,22 @@ ipcMain.handle('overlay:place:am-i-placing', (event) => {
   const name = win ? windowToOverlayName.get(win) : undefined
   return name ? placingOverlays.has(name) : false
 })
-ipcMain.handle('overlay:place:names', () => Array.from(placingOverlays))
+// A placing stack lists its tabs too, so their cards show "Done moving".
+ipcMain.handle('overlay:place:names', () => {
+  const names = Array.from(placingOverlays)
+  for (const n of [...names]) {
+    if (isStackKey(n)) names.push(...(stackSpec(n.slice(STACK_PREFIX.length))?.tabs ?? []))
+  }
+  return names
+})
 
 // Send one overlay to a chosen monitor, centered on it. Persists the new
 // bounds so a currently-closed overlay also re-opens there. This is the
 // reliable multi-monitor path — dragging frameless always-on-top windows
 // across monitors is unreliable on Windows, so users pick a monitor instead.
-ipcMain.handle('overlay:move-to-display', (_event, name: string, displayId: number) => {
-  if (!isValidWindowKey(name)) return
+ipcMain.handle('overlay:move-to-display', (_event, requested: string, displayId: number) => {
+  if (!isValidWindowKey(requested)) return
+  const name = windowKeyFor(requested)
   const target = screen.getAllDisplays().find((d) => d.id === displayId)
   if (!target) return
   const win = overlayWindowByName(name)

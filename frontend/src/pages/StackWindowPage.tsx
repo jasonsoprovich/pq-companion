@@ -11,10 +11,13 @@
  * its data keeps flowing; each keeps its own zoom.
  *
  * Tabs report whether they have something to show. A tab that isn't showing
- * gets a dot when its activity starts, until it's picked. With idle collapse
- * on for any tab, the stack folds once every tab is idle, after the longest
- * of their delays (tabs with no idle state never count as idle). A tab's
- * right-click menu unstacks it into its own window or closes it.
+ * gets a dot when its activity starts, until it's picked. The stack folds
+ * once every tab is idle (tabs with no idle state never count as idle),
+ * after its own idle delay, or by default the longest delay set on its tabs.
+ * A tab's right-click menu unstacks it into its own window or closes it.
+ *
+ * A new stack starts with its first tab's lock mode, opacity and fade, copied
+ * once so the hub shows them as the stack's own.
  */
 import React, { Suspense, createRef, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Layers } from 'lucide-react'
@@ -32,7 +35,7 @@ import { useWebSocket, type WsMessage } from '../hooks/useWebSocket'
 import { OverlayStackContext, type OverlayStackValue } from '../hooks/overlayStackContext'
 import { setStackPrefFallback, type OverlayName } from '../lib/overlays'
 import { WSEvent } from '../lib/wsEvents'
-import { getConfig } from '../services/api'
+import { getConfig, saveConfigChanges } from '../services/api'
 import type { StackInfo } from '../types/electron'
 
 const PAGES: Record<string, React.LazyExoticComponent<React.ComponentType<{ groupId?: string }>>> = {
@@ -92,6 +95,22 @@ function tabLabel(tab: string, info: StackInfo): string {
 }
 
 const noop = (): void => {}
+
+// Copies the first tab's window settings to a stack that has none yet.
+async function seedStackSettings(stackKey: string, firstTab: string): Promise<void> {
+  const base = await getConfig()
+  const p = base.preferences
+  const maps = ['overlay_locked_modes', 'overlay_opacities', 'overlay_fade_modes'] as const
+  const next = { ...p }
+  let changed = false
+  for (const m of maps) {
+    const cur = (p[m] ?? {}) as Record<string, unknown>
+    if (cur[stackKey] !== undefined || cur[firstTab] === undefined) continue
+    ;(next as Record<string, unknown>)[m] = { ...cur, [stackKey]: cur[firstTab] }
+    changed = true
+  }
+  if (changed) await saveConfigChanges({ ...base, preferences: next }, base)
+}
 
 // The app config (tab zooms, idle collapse delays), kept current.
 function useConfig(): Config | null {
@@ -225,8 +244,16 @@ function StackWindow({ info }: { info: StackInfo }): React.ReactElement {
     })
   }, [info.active])
 
-  // The stack folds once every tab is idle.
-  const delays = info.tabs.map((t) => idleCollapseSecs(config, t)).filter((v) => v > 0)
+  const firstTab = info.tabs[0] ?? ''
+  useEffect(() => {
+    if (firstTab) seedStackSettings(info.key, firstTab).catch(() => {})
+  }, [info.key, firstTab])
+
+  // The stack folds once every tab is idle: after its own delay when set
+  // (-1 = off), else the longest one set on its tabs.
+  const own = config?.preferences.overlay_idle_collapse?.[info.key]
+  const tabDelays = info.tabs.map((t) => idleCollapseSecs(config, t)).filter((v) => v > 0)
+  const delay = own !== undefined ? Math.max(own, 0) : tabDelays.length > 0 ? Math.max(...tabDelays) : 0
   useIdleCollapse({
     key: info.key,
     active: info.tabs.some((t) => (supportsIdleCollapse(t) ? !!activity[t] : true)),
@@ -234,7 +261,7 @@ function StackWindow({ info }: { info: StackInfo }): React.ReactElement {
     ready: collapseReady && config !== null,
     setCollapsed,
     allowed: mode !== 'display-only',
-    delaySecs: delays.length > 0 ? Math.max(...delays) : 0,
+    delaySecs: delay,
   })
 
   const inertCollapse = useMemo<OverlayStackValue['collapse']>(
