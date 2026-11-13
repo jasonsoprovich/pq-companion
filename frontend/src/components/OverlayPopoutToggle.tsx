@@ -5,8 +5,8 @@ import { useOverlayPopouts } from '../hooks/useOverlayPopouts'
 // Sidebar quick-toggle for overlays, next to the search bar — that area of
 // the sidebar is always visible. One click shows hidden overlays, hides open
 // ones (they stay alive and in place; trigger alerts keep showing), or pops
-// out the saved set when nothing is open. Same action as the Manage overlays
-// menu and the global show/hide hotkey (see useOverlayPopouts).
+// out the saved set when nothing is open. Same action as the global
+// show/hide hotkey (see useOverlayPopouts).
 export default function OverlayPopoutToggle(): React.ReactElement | null {
   const { anyPopoutOpen, anyHidden, supported, toggle } = useOverlayPopouts()
 

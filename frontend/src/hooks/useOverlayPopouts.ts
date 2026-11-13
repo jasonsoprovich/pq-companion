@@ -1,8 +1,7 @@
 /**
  * useOverlayPopouts — shared popout visibility state and the hide/show-all
- * toggle used by the sidebar quick-toggle button and the Overlays
- * Dashboard's "Manage overlays" menu (and, via the main process, the global
- * show/hide hotkey).
+ * toggle used by the sidebar quick-toggle button and the Overlays hub's
+ * ⋯ menu (and, via the main process, the global show/hide hotkey).
  *
  * The toggle shows overlays hidden by "hide all" if there are any, otherwise
  * hides the open ones (they stay alive and in place), otherwise — nothing

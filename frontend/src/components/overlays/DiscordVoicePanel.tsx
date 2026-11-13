@@ -18,7 +18,7 @@ interface DiscordVoicePanelProps {
 // popout overlay window (electron/main/index.ts createDiscordVoiceOverlay) —
 // there's no equivalent for docking a live native view inside the main
 // window's React canvas. This panel exists so Discord Voice still shows up
-// consistently in "Manage overlays" with working Dash/Pop/Move/Reset
+// consistently in the Overlays hub with working dashboard/pop/move/reset
 // controls, with a one-click shortcut to the real pop-out.
 export default function DiscordVoicePanel({
   defaultX = 24,

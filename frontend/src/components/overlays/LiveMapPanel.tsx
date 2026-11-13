@@ -21,7 +21,7 @@ interface LiveMapPanelProps {
 // Kept minimal on purpose, matching the popout: follow and auto-depth on, no
 // search, no inspector. It shares the popout's toggles and settings. Anything that needs reading or typing
 // belongs on the Live Map tab, which has room for it. This exists so the overlay
-// appears in "Manage overlays" with working Dash/Pop/Move/Reset like every other
+// appears in the Overlays hub with working dashboard/pop/move/reset like every other
 // one (feedback_overlay_dashboard_pattern) — and because the dashboard is where
 // you arrange overlays before committing them to the screen.
 export default function LiveMapPanel({

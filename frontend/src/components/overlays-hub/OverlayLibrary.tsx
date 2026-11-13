@@ -11,7 +11,7 @@
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Bell, ExternalLink, Eye, Hourglass, Keyboard, LayoutDashboard, Plus, RotateCcw, Settings2, X } from 'lucide-react'
+import { Bell, ExternalLink, Eye, Hourglass, Keyboard, LayoutDashboard, Move, Plus, RotateCcw, Settings2, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import {
   CUSTOM_GROUP_INFO,
@@ -331,11 +331,13 @@ function SecondaryButton({
   label,
   onClick,
   title,
+  active,
 }: {
   icon: LucideIcon
   label: string
   onClick: () => void
   title?: string
+  active?: boolean
 }): React.ReactElement {
   return (
     <button
@@ -343,8 +345,8 @@ function SecondaryButton({
       title={title}
       className="flex items-center gap-1 rounded px-2 py-1 text-xs"
       style={{
-        backgroundColor: 'var(--color-surface-2)',
-        color: 'var(--color-foreground)',
+        backgroundColor: active ? 'var(--color-primary)' : 'var(--color-surface-2)',
+        color: active ? '#fff' : 'var(--color-foreground)',
         border: '1px solid var(--color-border)',
       }}
     >
@@ -384,6 +386,8 @@ export default function OverlayLibrary({
   const { overlayDot, markOverlaySeen } = useFeatureDots()
   const itemInfoOffered = useItemInfoOffered()
   const [windowStates, setWindowStates] = useState<Record<string, 'open' | 'hidden'>>({})
+  // Windows in Move mode (a drag banner over the window, even a locked one).
+  const [placing, setPlacing] = useState<string[]>([])
   const { panels: layout, groups: groupLayout } = useDashboardLayouts()
   const [bindings, setBindings] = useState<Record<string, string>>({})
   const [discordEnabled, setDiscordEnabled] = useState(false)
@@ -394,6 +398,7 @@ export default function OverlayLibrary({
 
   const refreshStates = useCallback(() => {
     window.electron?.overlay?.popoutWindowStates?.().then(setWindowStates).catch(() => {})
+    window.electron?.overlay?.placingNames?.().then((n) => setPlacing(n ?? [])).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -488,6 +493,29 @@ export default function OverlayLibrary({
     window.electron?.overlay?.resetPosition?.(name)
   }
 
+  // Move mode needs an open window to draw its banner on, so a closed one
+  // pops out first.
+  const toggleMove = (name: string, openWindow: () => void): void => {
+    const on = !placing.includes(name)
+    if (on && !windowStates[name]) openWindow()
+    window.electron?.overlay?.place?.(name, on)
+    setPlacing((p) => (on ? [...p, name] : p.filter((n) => n !== name)))
+    afterToggle()
+  }
+  const moveButton = (name: string, label: string, openWindow: () => void): React.ReactNode => {
+    if (typeof window.electron?.overlay?.place !== 'function') return null
+    const on = placing.includes(name)
+    return (
+      <SecondaryButton
+        icon={Move}
+        label={on ? 'Done moving' : 'Move'}
+        active={on}
+        onClick={() => toggleMove(name, openWindow)}
+        title={on ? `Done positioning ${label}` : `Pop out ${label} and drag it anywhere, even when it's locked`}
+      />
+    )
+  }
+
   // ── Settings drawer for the selection ──
   const close = (): void => setSelected(null)
   let details: React.ReactNode = null
@@ -517,6 +545,7 @@ export default function OverlayLibrary({
           actions={
             <>
               <PopButton state={state} disabled={!!unavailable && !state} onClick={() => togglePopout(entry)} />
+              {!unavailable && moveButton(entry.name, entry.label, () => togglePopout(entry))}
               <SecondaryButton
                 icon={RotateCcw}
                 label="Reset position"
@@ -572,6 +601,7 @@ export default function OverlayLibrary({
           actions={
             <>
               <PopButton state={state} onClick={() => toggleGroupPopout(g)} />
+              {moveButton(key, g.name, () => toggleGroupPopout(g))}
               <SecondaryButton icon={RotateCcw} label="Reset position" onClick={() => resetPosition(key)} />
               <SecondaryButton icon={Hourglass} label="Manage timer windows" onClick={() => setShowGroupsModal(true)} />
             </>

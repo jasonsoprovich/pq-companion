@@ -32,7 +32,7 @@ export interface FeatureEntry {
   // Sidebar route that gets the dot ('/settings' for Settings tabs).
   nav: string
   settingsTab?: string
-  // DashboardPanelKey of an overlay row in Manage overlays.
+  // DashboardPanelKey of an overlay card in the Overlays hub.
   overlay?: string
 }
 
