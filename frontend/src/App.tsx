@@ -73,7 +73,7 @@ const CHChainOverlayWindowPage = lazy(() => import('./pages/CHChainOverlayWindow
 const CHMetronomeOverlayWindowPage = lazy(() => import('./pages/CHMetronomeOverlayWindowPage'))
 const DetrimTimerWindowPage = lazy(() => import('./pages/DetrimTimerWindowPage'))
 const CustomTimerWindowPage = lazy(() => import('./pages/CustomTimerWindowPage'))
-const OverlaysDashboard = lazy(() => import('./pages/OverlaysDashboard'))
+const OverlaysHub = lazy(() => import('./pages/OverlaysHub'))
 const CombatLogPage = lazy(() => import('./pages/CombatLogPage'))
 const CombatHistoryPage = lazy(() => import('./pages/CombatHistoryPage'))
 const TriggersPage = lazy(() => import('./pages/TriggersPage'))
@@ -362,7 +362,7 @@ export default function App(): React.ReactElement {
           <Route path="inventory" element={<InventoryPage />} />
           <Route path="backup-manager" element={<Navigate to="/settings" replace />} />
           <Route path="log-feed" element={<LogFeedPage />} />
-          <Route path="overlays" element={<OverlaysDashboard />} />
+          <Route path="overlays" element={<OverlaysHub />} />
           <Route path="overlays/npc" element={<Navigate to="/overlays" replace />} />
           <Route path="overlays/dps" element={<Navigate to="/overlays" replace />} />
           <Route path="overlays/timers" element={<Navigate to="/overlays" replace />} />

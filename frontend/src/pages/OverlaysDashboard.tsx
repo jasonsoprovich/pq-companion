@@ -11,9 +11,9 @@
  * restored on next mount. Drag/resize snaps to a 16px grid.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Eye, EyeOff, Monitor, MonitorPlay, RotateCcw, ExternalLink, Layers, X, Crosshair, ChevronDown, Move, ListChecks, Trash2, Hourglass } from 'lucide-react'
+import { Eye, EyeOff, Monitor, RotateCcw, ExternalLink, Layers, X, Crosshair, ChevronDown, Move, ListChecks, Trash2, Hourglass } from 'lucide-react'
 import type { OverlayName } from '../lib/overlays'
-import LayoutChips from '../components/LayoutChips'
+import { PANEL_POPOUT } from '../lib/overlayCatalog'
 import BuffTimerPanel from '../components/overlays/BuffTimerPanel'
 import FilteredTimerPanel from '../components/overlays/FilteredTimerPanel'
 import KillCounterPanel from '../components/overlays/KillCounterPanel'
@@ -70,32 +70,6 @@ const SNAP_GRID = 16
 // so panels never sit flush against the scroll container edge and users can
 // still grab the bottom resize handle once scrolled to the end.
 const CANVAS_PADDING = 120
-
-// Maps each dashboard panel to its standalone popout window: the canonical
-// overlay name (used for popout open-state polling and per-overlay position
-// reset) and the IPC toggle that opens/closes that floating window.
-const PANEL_POPOUT: Record<DashboardPanelKey, { name: OverlayName; toggle: () => void }> = {
-  buff:        { name: 'buffTimer',    toggle: () => { window.electron?.overlay?.toggleBuffTimer() } },
-  detrim:      { name: 'detrimTimer',  toggle: () => { window.electron?.overlay?.toggleDetrimTimer() } },
-  dps:         { name: 'dps',          toggle: () => { window.electron?.overlay?.toggleDPS() } },
-  npc:         { name: 'npc',          toggle: () => { window.electron?.overlay?.toggleNPC() } },
-  threat:      { name: 'threat',       toggle: () => { window.electron?.overlay?.toggleThreat() } },
-  hps:         { name: 'hps',          toggle: () => { window.electron?.overlay?.toggleHPS() } },
-  rolls:       { name: 'rollTracker',  toggle: () => { window.electron?.overlay?.toggleRollTracker() } },
-  respawn:     { name: 'respawnTimer', toggle: () => { window.electron?.overlay?.toggleRespawnTimer() } },
-  chChain:     { name: 'chChain',      toggle: () => { window.electron?.overlay?.toggleCHChain() } },
-  chMetronome: { name: 'chMetronome',  toggle: () => { window.electron?.overlay?.toggleCHMetronome() } },
-  custom:      { name: 'customTimer',  toggle: () => { window.electron?.overlay?.toggleCustomTimer() } },
-  discordVoice: { name: 'discordVoice', toggle: () => { window.electron?.overlay?.toggleDiscordVoice() } },
-  liveMap:     { name: 'liveMap',      toggle: () => { window.electron?.overlay?.toggleLiveMap() } },
-  zoneLockouts: { name: 'zoneLockouts', toggle: () => { window.electron?.overlay?.toggleZoneLockouts() } },
-  raidReadiness: { name: 'raidReadiness', toggle: () => { window.electron?.overlay?.toggleRaidReadiness() } },
-  filtered:    { name: 'filteredTimer', toggle: () => { window.electron?.overlay?.toggleFilteredTimer() } },
-  kills:       { name: 'killCounter',  toggle: () => { window.electron?.overlay?.toggleKillCounter() } },
-  itemInfo:    { name: 'itemInfo',     toggle: () => { window.electron?.overlay?.toggleItemInfo() } },
-  pet:         { name: 'pet',          toggle: () => { window.electron?.overlay?.togglePet() } },
-  deathRecap:  { name: 'deathRecap',   toggle: () => { window.electron?.overlay?.toggleDeathRecap() } },
-}
 
 // Compact square icon button for the manager's per-overlay rows.
 function RowIconButton({
@@ -815,7 +789,7 @@ export default function OverlaysDashboard(): React.ReactElement {
         backgroundColor: 'var(--color-background)',
       }}
     >
-      {/* Toolbar — compact: title left, the Manage overlays menu (per-overlay
+      {/* Toolbar — compact: the Manage overlays menu (per-overlay
           show/pop-out/reset + bulk actions) on the right. Each popped-out
           overlay is positioned individually (drag its window, or pick a
           monitor in Settings), so there's no global position-mode toggle. */}
@@ -823,16 +797,7 @@ export default function OverlaysDashboard(): React.ReactElement {
         className="flex items-center gap-3 border-b px-4 py-2 shrink-0"
         style={{ borderColor: 'var(--color-border)' }}
       >
-        <div className="flex items-center gap-2 shrink-0">
-          <MonitorPlay size={14} style={{ color: 'var(--color-primary)' }} />
-          <span className="text-xs font-semibold" style={{ color: 'var(--color-foreground)' }}>
-            Overlays
-          </span>
-        </div>
-
-        <div className="min-w-0 flex-1">
-          <LayoutChips />
-        </div>
+        <div className="min-w-0 flex-1" />
 
         <div className="flex items-center gap-2 shrink-0">
           <button

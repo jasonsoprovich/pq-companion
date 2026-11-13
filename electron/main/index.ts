@@ -3008,6 +3008,17 @@ ipcMain.handle('overlay:popouts:states', () => {
   return states
 })
 
+// Open popouts by window key, as 'open' or 'hidden' (hidden by hide-all or a
+// hotkey). Closed windows are absent. The Overlays hub shows all three states.
+ipcMain.handle('overlay:popouts:window-states', () => {
+  const states: Record<string, 'open' | 'hidden'> = {}
+  for (const win of userPopoutWindows()) {
+    const key = windowToOverlayName.get(win)
+    if (key) states[key] = userHiddenOverlays.has(win) && !win.isVisible() ? 'hidden' : 'open'
+  }
+  return states
+})
+
 // ── IPC handlers — restore overlays on launch ────────────────────────────────
 
 ipcMain.handle('overlay:auto-open:get', () => loadAutoOpenStore())

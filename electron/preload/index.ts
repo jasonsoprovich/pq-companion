@@ -189,6 +189,9 @@ contextBridge.exposeInMainWorld('electron', {
     },
     popoutStates: (): Promise<Record<string, boolean>> =>
       ipcRenderer.invoke('overlay:popouts:states'),
+    // Open popouts by window key: 'open', or 'hidden' by hide-all/a hotkey.
+    popoutWindowStates: (): Promise<Record<string, 'open' | 'hidden'>> =>
+      ipcRenderer.invoke('overlay:popouts:window-states'),
     // "Restore overlays on launch": whether to re-open the last open popout set
     // on startup, plus that remembered set. Persisted in Electron userData.
     autoOpenGet: (): Promise<{ enabled: boolean; overlays: string[] }> =>
