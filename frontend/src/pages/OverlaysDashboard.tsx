@@ -56,6 +56,7 @@ import {
   type PanelLayout,
 } from '../services/dashboardLayout'
 import { useOverlayPopouts } from '../hooks/useOverlayPopouts'
+import { NewDot, useFeatureDots } from '../hooks/useFeatureDots'
 import { setGroupInPopoutSelection, setPanelInPopoutSelection } from '../services/overlayPopoutSelection'
 
 // Bounds/lock persistence + IPC key for a named timer group's window —
@@ -191,6 +192,10 @@ function OverlaysManager({
 }): React.ReactElement {
   const [open, setOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
+  // Green "new feature" markers: a dot on the menu button while any listed
+  // overlay is new, and a NEW tag on its row until the row is used.
+  const { overlayDot, markOverlaySeen } = useFeatureDots()
+  const anyNew = panelKeys.some((k) => !lockedHints[k] && overlayDot(k))
 
   // Close on outside click. Also re-read popout state each time the menu opens
   // so the bulk-action label and per-overlay indicators are fresh on display.
@@ -227,6 +232,7 @@ function OverlaysManager({
         <ListChecks size={11} />
         Manage overlays
         <ChevronDown size={11} style={{ opacity: 0.7 }} />
+        {anyNew && <NewDot title="New overlays inside" />}
       </button>
 
       {open && (
@@ -355,31 +361,45 @@ function OverlaysManager({
               }
               const dashOn = layout[key].visible
               const popOn = !!popoutStates[PANEL_POPOUT[key].name]
+              const isNew = overlayDot(key)
               return (
                 <React.Fragment key={key}>
                   <span
-                    className="truncate text-xs"
+                    className="flex min-w-0 items-center gap-1.5 text-xs"
                     style={{ color: 'var(--color-foreground)', paddingTop: 5, paddingBottom: 5 }}
                   >
-                    {labels[key]}
+                    <span className="truncate">{labels[key]}</span>
+                    {isNew && (
+                      <span
+                        className="shrink-0 rounded px-1 text-[9px] font-semibold"
+                        style={{
+                          color: 'var(--color-success)',
+                          border: '1px solid var(--color-success)',
+                          backgroundColor: 'rgba(34,197,94,0.12)',
+                        }}
+                        title="New since your last update"
+                      >
+                        NEW
+                      </span>
+                    )}
                   </span>
                   <RowIconButton
                     active={dashOn}
-                    onClick={() => onToggleVisible(key)}
+                    onClick={() => { markOverlaySeen(key); onToggleVisible(key) }}
                     title={dashOn ? `Hide ${labels[key]} panel in the dashboard` : `Show ${labels[key]} panel in the dashboard`}
                   >
                     {dashOn ? <Eye size={12} /> : <EyeOff size={12} />}
                   </RowIconButton>
                   <RowIconButton
                     active={popOn}
-                    onClick={() => onTogglePopout(key)}
+                    onClick={() => { markOverlaySeen(key); onTogglePopout(key) }}
                     title={popOn ? `Close the ${labels[key]} pop-out window` : `Pop out ${labels[key]} as a floating window`}
                   >
                     <ExternalLink size={12} />
                   </RowIconButton>
                   <RowIconButton
                     active={placingNames.includes(PANEL_POPOUT[key].name)}
-                    onClick={() => onMovePanel(key)}
+                    onClick={() => { markOverlaySeen(key); onMovePanel(key) }}
                     title={
                       placingNames.includes(PANEL_POPOUT[key].name)
                         ? `Done positioning ${labels[key]}`

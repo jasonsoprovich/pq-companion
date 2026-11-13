@@ -85,6 +85,27 @@ type Config struct {
 	// LogTrim configures Settings > Logs "Archive & Trim" and the large-log
 	// warning threshold.
 	LogTrim LogTrimSettings `yaml:"log_trim" json:"log_trim"`
+
+	// FeatureDots backs the green "new feature" dots on sidebar items,
+	// Settings tabs and overlay rows. Owned entirely by the frontend
+	// (frontend/src/lib/featureRegistry.ts); the backend only persists it.
+	FeatureDots FeatureDotsState `yaml:"feature_dots" json:"feature_dots"`
+}
+
+// FeatureDotsState is the persisted state for the "new feature" dots.
+type FeatureDotsState struct {
+	// Baseline is the app version the user had before dots were first
+	// tracked (or the install version on a fresh install). Registry
+	// entries newer than it get a dot. Empty means "not initialized yet".
+	Baseline string `yaml:"baseline,omitempty" json:"baseline"`
+	// Activated is the app version that first initialized the dots. Expiry
+	// of one-time launch entries is counted from it.
+	Activated string `yaml:"activated,omitempty" json:"activated"`
+	// LaunchEligible is true for users who upgraded into the dot system
+	// (not fresh installs), so they also see the one-time launch set.
+	LaunchEligible bool `yaml:"launch_eligible,omitempty" json:"launch_eligible"`
+	// Seen holds dot keys the user has cleared by visiting them.
+	Seen []string `yaml:"seen,omitempty" json:"seen"`
 }
 
 // Log trim modes for LogTrimSettings.Mode.

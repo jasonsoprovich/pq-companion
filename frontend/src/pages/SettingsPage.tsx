@@ -71,6 +71,7 @@ function formatManifestDate(d: string): string {
 }
 
 import BackupManagerPage from './BackupManagerPage'
+import { NewDot, useFeatureDots } from '../hooks/useFeatureDots'
 import GameMapExportPanel from '../components/maps/GameMapExportPanel'
 import MapSettingsPanel from '../components/settings/MapSettingsPanel'
 import DeveloperTab from './DeveloperTab'
@@ -107,6 +108,7 @@ const TAB_GROUPS: { label: string; ids: Tab[] }[] = [
 function TabBar({ tabs, active, onChange, alerts }: TabBarProps): React.ReactElement {
   const byId = new Map(tabs.map((t) => [t.id, t]))
   const grouped = new Set(TAB_GROUPS.flatMap((g) => g.ids))
+  const { settingsTabDot } = useFeatureDots()
   const leftovers = tabs.filter((t) => !grouped.has(t.id))
 
   const renderButton = ({ id, label, icon }: TabBarProps['tabs'][number]): React.ReactElement => (
@@ -134,6 +136,7 @@ function TabBar({ tabs, active, onChange, alerts }: TabBarProps): React.ReactEle
           title={alerts[id]}
         />
       )}
+      {!alerts?.[id] && active !== id && settingsTabDot(id) && <NewDot className="ml-auto" />}
     </button>
   )
 
@@ -363,6 +366,12 @@ export default function SettingsPage(): React.ReactElement {
     }
     return 'general'
   })
+
+  // Opening a tab clears its green "new feature" dot.
+  const { markSettingsTabSeen } = useFeatureDots()
+  useEffect(() => {
+    markSettingsTabSeen(tab)
+  }, [tab, markSettingsTabSeen])
   // The sidebar's large-log dot links to ?tab=logs, and Logs and Backup &
   // Restore link to each other. The initializer above only runs on mount, so
   // also honour the param when navigating here while the page is already

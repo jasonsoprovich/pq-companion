@@ -728,4 +728,14 @@ export interface Config {
   // True once the user checks "Don't show this again" on the popup, or
   // flips the equivalent Settings > Changelog toggle.
   changelog_popup_disabled: boolean
+  // State behind the green "new feature" dots (see lib/featureRegistry.ts).
+  // Zero value (empty baseline) means "not initialized yet".
+  feature_dots?: FeatureDotsState
+}
+
+export interface FeatureDotsState {
+  baseline: string
+  activated: string
+  launch_eligible: boolean
+  seen: string[] | null
 }

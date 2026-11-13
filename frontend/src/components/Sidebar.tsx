@@ -10,11 +10,13 @@ import { useWindowDrag } from '../hooks/useWindowDrag'
 import { visibleNavSections, orderItems, favoriteItems, type NavItem } from '../lib/sidebarNav'
 import { useSidebarPrefs } from '../hooks/useSidebarPrefs'
 import { resolveRememberedRoute } from '../lib/lastSubRoute'
+import { NewDot, useFeatureDots } from '../hooks/useFeatureDots'
 
 function SidebarLink({ to, label, icon, end }: NavItem): React.ReactElement {
   // Subscribe to navigation so the remembered sub-page (Combat/Raids) is
   // re-resolved after every route change, not just when the sidebar re-renders.
   useLocation()
+  const { navDot } = useFeatureDots()
   return (
     <NavLink
       to={resolveRememberedRoute(to)}
@@ -30,6 +32,7 @@ function SidebarLink({ to, label, icon, end }: NavItem): React.ReactElement {
     >
       {icon}
       {label}
+      {navDot(to) && <NewDot className="ml-auto" />}
     </NavLink>
   )
 }
@@ -58,6 +61,7 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
   const onDragMouseDown = useWindowDrag()
   const { hidden, order, favorites, flags } = useSidebarPrefs()
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(loadCollapsed)
+  const { navDot } = useFeatureDots()
 
   const toggleSection = (id: string): void => {
     setCollapsed((prev) => {
@@ -187,6 +191,11 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
                   )}
                   {section.label}
                 </span>
+                {/* A collapsed section would hide its items' dots, so the
+                    header carries one instead. */}
+                {isCollapsed && section.items.some((i) => navDot(i.to)) && (
+                  <NewDot className="ml-auto" />
+                )}
               </button>
               {!isCollapsed && (
                 <nav className="space-y-0.5 px-2 py-1">
@@ -225,11 +234,21 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
         >
           <span className="relative">
             <Settings size={16} />
-            {logLargeFile && (
+            {logLargeFile ? (
               <span
                 className="absolute -top-1 -right-1 h-2 w-2 rounded-full"
                 style={{ backgroundColor: '#f97316' }}
               />
+            ) : (
+              // The orange warning dot wins; otherwise green for new
+              // Settings features.
+              navDot('/settings') && (
+                <span
+                  className="absolute -top-1 -right-1 h-2 w-2 rounded-full"
+                  style={{ backgroundColor: 'var(--color-success)' }}
+                  title="New since your last update"
+                />
+              )
             )}
           </span>
           Settings

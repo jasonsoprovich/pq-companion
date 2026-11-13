@@ -1,4 +1,6 @@
 import React, { useEffect, useState, lazy, Suspense } from 'react'
+import { FeatureDotsProvider } from './hooks/useFeatureDots'
+import { initialFeatureDots } from './lib/featureRegistry'
 import { HashRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import Layout from './components/Layout'
 import OnboardingWizard from './components/OnboardingWizard'
@@ -192,20 +194,30 @@ function MainWindowLayout(): React.ReactElement {
           Boolean(c.preferences?.minimize_to_tray)
         )
 
-        if (c.changelog_popup_disabled) return
         window.electron?.app?.getVersion?.()
           .then((appVersion) => {
             if (!appVersion) return
+            // First run of the "new feature" dots: pick the baseline from
+            // the last-seen version as loaded (empty = fresh install) before
+            // the stamp below overwrites it. Saved together with the stamp
+            // so the two writes can't race.
+            const dotsPatch = c.feature_dots?.baseline
+              ? {}
+              : { feature_dots: initialFeatureDots(c.last_seen_changelog_version, appVersion) }
             if (!c.last_seen_changelog_version) {
               // Fresh install: stamp the current version silently — the
               // wizard above already covers first-run orientation, so
               // there's no "what's new" to show yet.
               void saveConfigChanges(
-                { ...c, last_seen_changelog_version: appVersion },
+                { ...c, ...dotsPatch, last_seen_changelog_version: appVersion },
                 c,
               )
               return
             }
+            if ('feature_dots' in dotsPatch) {
+              void saveConfigChanges({ ...c, ...dotsPatch }, c)
+            }
+            if (c.changelog_popup_disabled) return
             if (c.last_seen_changelog_version === appVersion) return
             getChangelog()
               .then(({ entries }) => {
@@ -263,7 +275,9 @@ function MainWindowLayout(): React.ReactElement {
         {onboardingDone === true && whatsNew && (
           <WhatsNewModal entries={whatsNew.entries} onDismiss={dismissWhatsNew} />
         )}
-        <Layout />
+        <FeatureDotsProvider>
+          <Layout />
+        </FeatureDotsProvider>
       </BackfillProvider>
     </ActiveCharacterProvider>
   )
