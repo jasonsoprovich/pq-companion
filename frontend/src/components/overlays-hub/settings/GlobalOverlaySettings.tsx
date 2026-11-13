@@ -1,10 +1,11 @@
 /**
  * GlobalOverlaySettings — everything that applies to all overlays, opened
  * from the gear in the Overlays hub header: appearance, trigger alert text
- * defaults and monitor, and the Overlay Windows table for changing many
- * overlays at once.
+ * defaults and monitor, the settings shared by every timer overlay, and the
+ * Overlay Windows table for changing many overlays at once. `focus` scrolls
+ * to a section when opened from a link.
  */
-import React from 'react'
+import React, { useEffect, useRef } from 'react'
 import type { Config } from '../../../types/config'
 import { itemInfoOffered } from '../../../lib/overlays'
 import { OverlayTextDefaults } from '../../settings/AlertDefaultsSettings'
@@ -12,6 +13,7 @@ import OverlayAppearanceSettings from './OverlayAppearanceSettings'
 import TriggerDisplayPicker from './TriggerDisplayPicker'
 import { OverlayLockModeCard } from './OverlayWindowSettings'
 import { SettingsSection } from './SettingsSection'
+import { SharedTimerSettings } from './TimerSettings'
 
 export function AlertTextSettings({
   config,
@@ -31,10 +33,16 @@ export function AlertTextSettings({
 export default function GlobalOverlaySettings({
   config,
   setConfig,
+  focus,
 }: {
   config: Config
   setConfig: (c: Config) => void
+  focus?: 'timers'
 }): React.ReactElement {
+  const timersRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (focus === 'timers') timersRef.current?.scrollIntoView({ block: 'start' })
+  }, [focus])
   const prefs = config.preferences
   const patch = (p: Partial<Config['preferences']>): void =>
     setConfig({ ...config, preferences: { ...prefs, ...p } })
@@ -42,6 +50,9 @@ export default function GlobalOverlaySettings({
     <div className="flex flex-col gap-4">
       <OverlayAppearanceSettings config={config} setConfig={setConfig} />
       <AlertTextSettings config={config} setConfig={setConfig} />
+      <div ref={timersRef}>
+        <SharedTimerSettings config={config} setConfig={setConfig} />
+      </div>
       <OverlayLockModeCard
         offerItemInfo={itemInfoOffered(prefs)}
         modes={prefs.overlay_locked_modes ?? {}}

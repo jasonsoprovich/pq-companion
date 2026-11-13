@@ -17,10 +17,91 @@ import ItemInfoDisplayCard from '../../settings/ItemInfoDisplayCard'
 import ItemInfoLayoutCard from '../../settings/ItemInfoLayoutCard'
 import ItemInfoPreview from '../../settings/ItemInfoPreview'
 import { PetAlertsCard, PetGeneralCard, PetPreview, PetWatchListCard } from '../../settings/PetOverlaySettings'
+import {
+  CHChainSettings,
+  CustomTimerAlertSettings,
+  DetrimAlertSettings,
+  MetronomeAlertSettings,
+  RespawnAlertSettings,
+} from './TimerSettings'
+import type { HubSelection } from '../selection'
 
 export interface OverlaySettingsProps {
   config: Config
   setConfig: (c: Config) => void
+  // Opens another drawer: shared timer settings, or a related overlay.
+  open: (s: HubSelection) => void
+}
+
+function LinkNote({ text, label, onClick }: { text: string; label: string; onClick: () => void }): React.ReactElement {
+  return (
+    <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+      {text}{' '}
+      <button onClick={onClick} className="underline" style={{ color: 'var(--color-primary)' }}>
+        {label}
+      </button>
+    </p>
+  )
+}
+
+// Tracking, thresholds and bar appearance are shared by every timer overlay,
+// so they live in the global Overlay settings.
+function SharedTimersNote({ open }: { open: OverlaySettingsProps['open'] }): React.ReactElement {
+  return (
+    <LinkNote
+      text="Which spells are tracked, when timers show and how bars look are shared by all timer overlays."
+      label="Shared timer settings"
+      onClick={() => open({ kind: 'global', section: 'timers' })}
+    />
+  )
+}
+
+function BuffSettings({ open }: OverlaySettingsProps): React.ReactElement {
+  return <SharedTimersNote open={open} />
+}
+
+function FilteredSettings({ open }: OverlaySettingsProps): React.ReactElement {
+  return <SharedTimersNote open={open} />
+}
+
+function DetrimSettings(props: OverlaySettingsProps): React.ReactElement {
+  return (
+    <>
+      <SharedTimersNote open={props.open} />
+      <DetrimAlertSettings config={props.config} setConfig={props.setConfig} />
+    </>
+  )
+}
+
+function CustomSettings(props: OverlaySettingsProps): React.ReactElement {
+  return (
+    <>
+      <SharedTimersNote open={props.open} />
+      <CustomTimerAlertSettings config={props.config} setConfig={props.setConfig} />
+    </>
+  )
+}
+
+function RespawnSettings({ config, setConfig }: OverlaySettingsProps): React.ReactElement {
+  return <RespawnAlertSettings config={config} setConfig={setConfig} />
+}
+
+function ChainSettings({ config, setConfig }: OverlaySettingsProps): React.ReactElement {
+  return <CHChainSettings config={config} setConfig={setConfig} />
+}
+
+// The metronome runs off the CH Chain's call tracking.
+function MetronomeSettings({ config, setConfig, open }: OverlaySettingsProps): React.ReactElement {
+  return (
+    <>
+      <LinkNote
+        text="Runs off the chain calls that CH Chain tracks; turn tracking on and set the call pattern there."
+        label="CH Chain settings"
+        onClick={() => open({ kind: 'overlay', panel: 'chChain' })}
+      />
+      <MetronomeAlertSettings config={config} setConfig={setConfig} />
+    </>
+  )
 }
 
 function NPCSettings({ config, setConfig }: OverlaySettingsProps): React.ReactElement {
@@ -176,4 +257,11 @@ export const OVERLAY_SETTINGS: Partial<Record<DashboardPanelKey, React.Component
   itemInfo: ItemInfoSettings,
   pet: PetSettings,
   discordVoice: DiscordVoiceSettings,
+  buff: BuffSettings,
+  filtered: FilteredSettings,
+  detrim: DetrimSettings,
+  custom: CustomSettings,
+  respawn: RespawnSettings,
+  chChain: ChainSettings,
+  chMetronome: MetronomeSettings,
 }

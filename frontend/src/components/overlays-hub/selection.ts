@@ -1,13 +1,13 @@
 /**
  * What the Overlays hub's settings drawer is showing: the all-overlays
  * settings, one overlay, the trigger alert layer, or a named timer window.
- * `panelParam` round-trips it through the /overlays?panel= deep link.
+ * selectionFromParam reads it from the /overlays?panel= deep link.
  */
 import type { DashboardPanelKey } from '../../services/dashboardLayout'
 import { OVERLAY_CATALOG } from '../../lib/overlayCatalog'
 
 export type HubSelection =
-  | { kind: 'global' }
+  | { kind: 'global'; section?: 'timers' }
   | { kind: 'overlay'; panel: DashboardPanelKey }
   | { kind: 'trigger' }
   | { kind: 'group'; id: string }
@@ -15,6 +15,7 @@ export type HubSelection =
 export function selectionFromParam(p: string | null): HubSelection | null {
   if (!p) return null
   if (p === 'global') return { kind: 'global' }
+  if (p === 'timers') return { kind: 'global', section: 'timers' }
   if (p === 'trigger') return { kind: 'trigger' }
   if (p.startsWith('group:')) return { kind: 'group', id: p.slice('group:'.length) }
   const entry = OVERLAY_CATALOG.find((e) => e.panel === p || e.name === p)

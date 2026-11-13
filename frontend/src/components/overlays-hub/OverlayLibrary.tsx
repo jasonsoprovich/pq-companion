@@ -505,7 +505,7 @@ export default function OverlayLibrary({
     details = (
       <Drawer icon={Settings2} color="#c9a84c" title="Overlay settings" saveState={saveState} onClose={close}
         details="Settings for every overlay. Each overlay's own settings are on its card.">
-        {config && <GlobalOverlaySettings config={config} setConfig={setConfig} />}
+        {config && <GlobalOverlaySettings config={config} setConfig={setConfig} focus={selected.section} />}
       </Drawer>
     )
   } else if (selected?.kind === 'overlay') {
@@ -546,7 +546,7 @@ export default function OverlayLibrary({
               <OverlayWindowControls name={entry.name} label={entry.label} config={config} setConfig={setConfig} />
             </SettingsSection>
           )}
-          {config && Specific && <Specific config={config} setConfig={setConfig} />}
+          {config && Specific && <Specific config={config} setConfig={setConfig} open={setSelected} />}
         </Drawer>
       )
     }
@@ -708,7 +708,8 @@ export default function OverlayLibrary({
           </section>
         </div>
       </div>
-      {details}
+      {/* Keyed by selection so switching drawers starts the new one at the top. */}
+      {details && <React.Fragment key={JSON.stringify(selected)}>{details}</React.Fragment>}
       {showGroupsModal && (
         <TimerGroupsModal groups={groups} onChanged={reloadGroups} onClose={() => setShowGroupsModal(false)} />
       )}
