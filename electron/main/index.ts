@@ -1852,10 +1852,11 @@ function createDiscordVoiceOverlay(): void {
 
   discordVoiceOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
   if (discordVoiceTopInterval) clearInterval(discordVoiceTopInterval)
+  // Skips a hidden window: on macOS moveTop() orders a hidden window back on
+  // screen, which undid Hide All for this overlay alone.
   discordVoiceTopInterval = setInterval(() => {
-    if (discordVoiceOverlayWindow && !discordVoiceOverlayWindow.isDestroyed()) {
-      discordVoiceOverlayWindow.moveTop()
-    }
+    const win = discordVoiceOverlayWindow
+    if (win && !win.isDestroyed() && win.isVisible()) win.moveTop()
   }, 2000)
   discordVoiceOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   windowToOverlayName.set(discordVoiceOverlayWindow, 'discordVoice')
