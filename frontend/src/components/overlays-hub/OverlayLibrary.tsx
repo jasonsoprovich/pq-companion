@@ -43,6 +43,7 @@ import { useEscapeToClose } from '../../hooks/useEscapeToClose'
 import GlobalOverlaySettings, { AlertTextSettings } from './settings/GlobalOverlaySettings'
 import { OverlayWindowControls } from './settings/OverlayWindowSettings'
 import { SettingsSection } from './settings/SettingsSection'
+import { OVERLAY_SETTINGS } from './settings/OverlaySpecificSettings'
 import { sameSelection, type HubSelection } from './selection'
 import type { TimerGroup } from '../../types/trigger'
 
@@ -438,7 +439,7 @@ export default function OverlayLibrary({
   const unavailableFor = useCallback(
     (panel: DashboardPanelKey): Unavailable | null => {
       if (panel === 'discordVoice' && !discordEnabled) {
-        return { reason: 'Turned off.', fix: { label: 'Turn it on in settings', to: '/settings?tab=discord' } }
+        return { reason: 'Turned off.', fix: { label: 'Turn it on in its settings', to: '/overlays?panel=discordVoice' } }
       }
       if (panel === 'itemInfo' && !itemInfoOffered) {
         return { reason: 'Needs Zeal 1.5.0 or newer. Inspect any item in game to turn it on.' }
@@ -512,6 +513,7 @@ export default function OverlayLibrary({
     if (entry) {
       const state = windowStates[entry.name]
       const unavailable = unavailableFor(entry.panel)
+      const Specific = OVERLAY_SETTINGS[entry.panel]
       details = (
         <Drawer
           icon={entry.icon}
@@ -544,6 +546,7 @@ export default function OverlayLibrary({
               <OverlayWindowControls name={entry.name} label={entry.label} config={config} setConfig={setConfig} />
             </SettingsSection>
           )}
+          {config && Specific && <Specific config={config} setConfig={setConfig} />}
         </Drawer>
       )
     }
