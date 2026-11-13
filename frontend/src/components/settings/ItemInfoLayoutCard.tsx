@@ -173,13 +173,12 @@ export default function ItemInfoLayoutCard({ settings, onChange }: Props): React
               Open the popout when I click an item link in game
             </label>
             <label
-              className="mt-2 flex items-center gap-2 pl-6 text-sm"
-              style={{ color: 'var(--color-foreground)', opacity: settings.auto_show ? 1 : 0.4 }}
+              className="mt-2 flex items-center gap-2 text-sm"
+              style={{ color: 'var(--color-foreground)' }}
             >
-              Close it again after
+              Clear the item after
               <input
                 inputMode="numeric"
-                disabled={!settings.auto_show}
                 value={autoHide > 0 ? String(autoHide) : ''}
                 placeholder="never"
                 onChange={(e) => {
@@ -191,9 +190,10 @@ export default function ItemInfoLayoutCard({ settings, onChange }: Props): React
               />
               seconds
             </label>
-            <p className="mt-1 pl-6 text-xs" style={muted}>
-              Blank keeps it open. The timer restarts on each new item and pauses while your
-              mouse is over the window.
+            <p className="mt-1 text-xs" style={muted}>
+              Blank keeps the item until you clear it. With no item the popout folds down to its
+              title bar, and opens back up for the next one. The timer restarts on each new item
+              and pauses while your mouse is over the window.
             </p>
           </div>
         </div>

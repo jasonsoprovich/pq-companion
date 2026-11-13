@@ -48,3 +48,30 @@ func TestTracker(t *testing.T) {
 		})
 	}
 }
+
+func TestTrackerClear(t *testing.T) {
+	mgr, err := config.LoadFrom(filepath.Join(t.TempDir(), "config.yaml"))
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	tr := NewTracker(ws.NewHub(), mgr)
+
+	tr.Clear()
+	if tr.Last() != nil {
+		t.Fatal("Last after Clear with no item: want nil")
+	}
+
+	tr.Handle(13073, "Bone Chips", "Tester")
+	tr.Clear()
+	if got := tr.Last(); got != nil {
+		t.Fatalf("Last after Clear = %+v, want nil", got)
+	}
+	if !mgr.Get().Preferences.ZealItemDisplaySeen {
+		t.Error("Clear reset ZealItemDisplaySeen; it should stay set")
+	}
+
+	tr.Handle(5013, "Rusty Short Sword", "Tester")
+	if got := tr.Last(); got == nil || got.ItemID != 5013 {
+		t.Fatalf("Last after a new item = %+v, want item 5013", got)
+	}
+}

@@ -8,6 +8,9 @@
  * isn't unmounted — the shrunken window simply clips it — so timers and data
  * keep running and the window springs back instantly.
  *
+ * `setCollapsed` sets it directly, for pages that fold themselves when they
+ * have nothing to show.
+ *
  * `enabled` is false in display-only lock mode, where the title bar itself is
  * hidden: a collapsed display-only window would show nothing at all, so a
  * stored collapse is undone instead.
@@ -18,6 +21,7 @@ import { ChevronDown, ChevronRight } from 'lucide-react'
 export function useOverlayCollapse(enabled = true): {
   collapsed: boolean
   toggleCollapsed: () => void
+  setCollapsed: (collapse: boolean) => void
   headerRef: React.RefObject<HTMLDivElement>
 } {
   const headerRef = useRef<HTMLDivElement>(null)
@@ -51,7 +55,7 @@ export function useOverlayCollapse(enabled = true): {
   const collapsed = stored && enabled
   const toggleCollapsed = useCallback(() => request(!collapsed), [collapsed, request])
 
-  return { collapsed, toggleCollapsed, headerRef }
+  return { collapsed, toggleCollapsed, setCollapsed: request, headerRef }
 }
 
 /**

@@ -21,6 +21,9 @@ import (
 // EventType is the WebSocket event broadcast for each item window opened.
 const EventType = "item:display"
 
+// ClearedEventType is broadcast when the player clears the current item.
+const ClearedEventType = "item:cleared"
+
 // Shown is one item display event as sent to the frontend.
 type Shown struct {
 	ItemID    int       `json:"item_id"`
@@ -70,6 +73,15 @@ func (t *Tracker) Last() *Shown {
 	}
 	s := *t.last
 	return &s
+}
+
+// Clear forgets the current item, so the Item Info views empty out and a
+// freshly opened one has nothing to show until the next item window.
+func (t *Tracker) Clear() {
+	t.mu.Lock()
+	t.last = nil
+	t.mu.Unlock()
+	t.hub.Broadcast(ws.Event{Type: ClearedEventType, Data: nil})
 }
 
 func (t *Tracker) record(s Shown) {

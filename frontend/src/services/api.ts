@@ -274,6 +274,11 @@ export function getLastItemDisplay(): Promise<ItemDisplayShown | null> {
   return get<ItemDisplayShown | null>('/api/item-display/last')
 }
 
+// Forgets the current Item Info item; every open view empties out.
+export function clearItemDisplay(): Promise<void> {
+  return post<void>('/api/item-display/clear')
+}
+
 export function simulateItemDisplay(itemId: number): Promise<ItemDisplayShown> {
   return post<ItemDisplayShown>('/api/item-display/simulate', { item_id: itemId })
 }

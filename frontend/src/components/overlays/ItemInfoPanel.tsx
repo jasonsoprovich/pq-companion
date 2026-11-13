@@ -1,11 +1,11 @@
 import React, { useState } from 'react'
-import { ExternalLink, FlaskConical, Info } from 'lucide-react'
+import { Eraser, ExternalLink, FlaskConical, Info } from 'lucide-react'
 import OverlayWindow from '../OverlayWindow'
 import ItemInfoView from './ItemInfoView'
 import ItemSearchModal from '../ItemSearchModal'
 import { useItemDisplay } from '../../hooks/useItemDisplay'
 import { useDeveloperMode } from '../../hooks/useDeveloperMode'
-import { simulateItemDisplay } from '../../services/api'
+import { clearItemDisplay, simulateItemDisplay } from '../../services/api'
 
 interface ItemInfoPanelProps {
   defaultX?: number
@@ -20,6 +20,7 @@ interface ItemInfoPanelProps {
 // (ItemInfoWindowPage), both fed by item:display broadcasts. In Developer
 // Mode the header gets a "simulate item click" picker, which fakes the Zeal
 // event through the backend so every open view updates as it would in game.
+// Clear empties every view, the popout included.
 export default function ItemInfoPanel({
   defaultX = 24,
   defaultY = 24,
@@ -54,6 +55,15 @@ export default function ItemInfoPanel({
                 style={btn}
               >
                 <FlaskConical size={12} />
+              </button>
+            )}
+            {display.shown && (
+              <button
+                onClick={() => { clearItemDisplay().catch(() => {}) }}
+                title="Clear the item"
+                style={btn}
+              >
+                <Eraser size={12} />
               </button>
             )}
             {window.electron?.overlay && (

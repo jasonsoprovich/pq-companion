@@ -39,6 +39,7 @@ export const WSEvent = {
   // pipe message, or the developer simulate endpoint) — carries
   // itemdisplay.Shown {item_id, name, character, at, simulated}.
   ItemDisplay: 'item:display',
+  ItemCleared: 'item:cleared',
   // Broadcast when the active character zones — carries {name, last_zone,
   // last_zone_at} so the Characters page can update its "Camped in …" line.
   CharacterZone: 'character:zone',

@@ -513,6 +513,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 		r.Route("/item-display", func(r chi.Router) {
 			r.Get("/last", itemDisplayH.last)
 			r.Post("/simulate", itemDisplayH.simulate)
+			r.Post("/clear", itemDisplayH.clear)
 		})
 		r.Route("/kills", func(r chi.Router) {
 			r.Get("/", killsH.list)

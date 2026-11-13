@@ -22,6 +22,13 @@ func (h *itemDisplayHandler) last(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, h.tracker.Last())
 }
 
+// clear handles POST /api/item-display/clear — forgets the current item, from
+// the Item Info overlay's Clear button or its auto-clear timer.
+func (h *itemDisplayHandler) clear(w http.ResponseWriter, r *http.Request) {
+	h.tracker.Clear()
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // simulate handles POST /api/item-display/simulate {"item_id": N} — a
 // developer tool that fakes the Zeal item event, so the overlay can be built
 // and tested without a Zeal build that sends it. Doesn't mark Zeal as

@@ -1064,7 +1064,8 @@ type ItemInfoOverlaySettings struct {
 	// "hide" when it has nothing; "" or missing means the section's default.
 	EmptyModes map[string]string `yaml:"empty_modes,omitempty" json:"empty_modes"`
 	// AutoShow opens the popout when an item link is clicked in game;
-	// AutoHideSecs (0 = never) closes it again after that long untouched.
+	// AutoHideSecs (0 = never) clears the item after that long untouched,
+	// folding the popout to its title bar.
 	AutoShow     bool `yaml:"auto_show,omitempty" json:"auto_show"`
 	AutoHideSecs int  `yaml:"auto_hide_secs,omitempty" json:"auto_hide_secs"`
 	// DefaultsSeeded marks that the default hidden sections were applied

@@ -2,11 +2,15 @@
  * ItemInfoWindowPage — transparent always-on-top overlay showing the summary
  * card (ItemInfoCard) for the item last opened in game, fed by the proposed
  * Zeal item pipe message. Links inside open in the main window rather than
- * navigating this one. With auto-show and an auto-hide delay set, it closes
- * itself once that long passes without a new item or the mouse over it.
+ * navigating this one.
+ *
+ * With no item (before the first, or after Clear) it folds to its title bar,
+ * and opens back up for the next item. With an auto-clear delay set, the item
+ * clears itself once that long passes without a new item or the mouse over
+ * the window, so the overlay only takes space while it's useful.
  */
 import React, { useCallback, useEffect, useRef } from 'react'
-import { Info } from 'lucide-react'
+import { Eraser, Info } from 'lucide-react'
 import ItemInfoView from '../components/overlays/ItemInfoView'
 import { useItemDisplay } from '../hooks/useItemDisplay'
 import { useItemInfoSettings } from '../hooks/useItemInfoSettings'
@@ -21,7 +25,7 @@ import OverlayLockButton from '../components/OverlayLockButton'
 import { ActiveCharacterProvider, useActiveCharacter } from '../contexts/ActiveCharacterContext'
 import { useWebSocket, type WsMessage } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
-import { listCharacters } from '../services/api'
+import { clearItemDisplay, listCharacters } from '../services/api'
 
 // Overlay windows render outside the main Layout, so nothing fills the
 // active-character context here. The card's wishlist star needs it, so this
@@ -57,26 +61,34 @@ export default function ItemInfoWindowPage(): React.ReactElement {
   const chromeFade = useOverlayChromeFade('itemInfo', mode === 'display-only')
   // Collapse to title bar. A collapsed window is only its title bar, so keep
   // that visible through the inactive fade.
-  const { collapsed, toggleCollapsed, headerRef } = useOverlayCollapse(mode !== 'display-only')
+  const { collapsed, toggleCollapsed, setCollapsed, headerRef } = useOverlayCollapse(mode !== 'display-only')
   const chrome = chromeFade || collapsed
   const onDragMouseDown = useWindowDrag()
   const display = useItemDisplay()
   const { raw } = useItemInfoSettings('popout')
-  const hideSecs = raw?.auto_show ? raw.auto_hide_secs ?? 0 : 0
+  const hideSecs = raw?.auto_hide_secs ?? 0
   const hovered = useRef(false)
   const hideTimer = useRef<number | null>(null)
+  const hasItem = display.shown !== null
 
-  // (Re)arms the auto-hide countdown; a hovered window re-arms on leave.
-  const collapsedSummary = display.item ? display.item.name : null
+  const collapsedSummary = display.item ? display.item.name : hasItem ? display.shown?.name ?? null : 'no item'
 
+  // Fold to the title bar while there's nothing to show; open back up for
+  // each new item, even if it was folded by hand.
+  useEffect(() => {
+    if (!display.loaded || mode === 'display-only') return
+    setCollapsed(!hasItem)
+  }, [display.loaded, display.shown, hasItem, mode, setCollapsed])
+
+  // (Re)arms the auto-clear countdown; a hovered window re-arms on leave.
   const armHide = React.useCallback(() => {
     if (hideTimer.current) window.clearTimeout(hideTimer.current)
     hideTimer.current = null
-    if (hideSecs <= 0) return
+    if (hideSecs <= 0 || !hasItem) return
     hideTimer.current = window.setTimeout(() => {
-      if (!hovered.current) window.electron?.overlay?.closeItemInfo()
+      if (!hovered.current) clearItemDisplay().catch(() => {})
     }, hideSecs * 1000)
-  }, [hideSecs])
+  }, [hideSecs, hasItem])
 
   useEffect(() => {
     armHide()
@@ -148,6 +160,15 @@ export default function ItemInfoWindowPage(): React.ReactElement {
         </div>
         <div className="no-drag" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <CollapseToggle collapsed={collapsed} onToggle={toggleCollapsed} summary={collapsedSummary} />
+          {hasItem && (
+            <button
+              onClick={() => { clearItemDisplay().catch(() => {}) }}
+              style={headerBtn}
+              title="Clear the item"
+            >
+              <Eraser size={10} />
+            </button>
+          )}
           <OverlayLockButton locked={locked} onToggle={toggleLocked} />
           <button
             onClick={() => window.electron?.overlay?.closeItemInfo()}

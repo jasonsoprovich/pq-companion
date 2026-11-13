@@ -2,7 +2,8 @@
  * useItemDisplay — the item the player last opened an in-game item window
  * for, shared by the Item Info dashboard panel and popout. Seeds from
  * GET /api/item-display/last, then follows item:display broadcasts and loads
- * the full item row for each.
+ * the full item row for each. item:cleared (the Clear button, or the popout's
+ * auto-clear timer) empties every view at once.
  *
  * useItemInfoOffered — whether the Item Info overlay should be offered at
  * all (see itemInfoOffered): tracks the config live, so the overlay appears
@@ -22,12 +23,16 @@ export interface ItemDisplayHook {
   // The item row for shown, or null while loading / when not found.
   item: Item | null
   notFound: boolean
+  // True once the last item has been fetched, so a view can tell "no item"
+  // from "not loaded yet".
+  loaded: boolean
 }
 
 export function useItemDisplay(): ItemDisplayHook {
   const [shown, setShown] = useState<ItemDisplayShown | null>(null)
   const [item, setItem] = useState<Item | null>(null)
   const [notFound, setNotFound] = useState(false)
+  const [loaded, setLoaded] = useState(false)
   // Drops a slow lookup that finishes after a newer item arrived.
   const latestId = useRef(0)
 
@@ -47,6 +52,12 @@ export function useItemDisplay(): ItemDisplayHook {
 
   const ready = useWebSocket((msg) => {
     if (msg.type === WSEvent.ItemDisplay) show(msg.data as ItemDisplayShown)
+    if (msg.type === WSEvent.ItemCleared) {
+      latestId.current = 0
+      setShown(null)
+      setItem(null)
+      setNotFound(false)
+    }
   })
 
   useEffect(() => {
@@ -54,9 +65,10 @@ export function useItemDisplay(): ItemDisplayHook {
     getLastItemDisplay()
       .then((s) => { if (s) show(s) })
       .catch(() => {})
+      .finally(() => setLoaded(true))
   }, [ready, show])
 
-  return { shown, item, notFound }
+  return { shown, item, notFound, loaded }
 }
 
 export function useItemInfoOffered(): boolean {
