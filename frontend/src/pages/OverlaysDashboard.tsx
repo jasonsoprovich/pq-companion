@@ -55,7 +55,7 @@ import {
   type GroupPanelLayouts,
   type PanelLayout,
 } from '../services/dashboardLayout'
-import { useOverlayPopouts } from '../hooks/useOverlayPopouts'
+import { useOverlayPopouts, type PopoutVisibility } from '../hooks/useOverlayPopouts'
 import { NewDot, useFeatureDots } from '../hooks/useFeatureDots'
 import { setGroupInPopoutSelection, setPanelInPopoutSelection } from '../services/overlayPopoutSelection'
 
@@ -143,9 +143,10 @@ function OverlaysManager({
   onResetPanelPosition,
   placingNames,
   onMovePanel,
-  anyPopoutOpen,
+  visibility,
   onMenuOpen,
   onTogglePopouts,
+  onCloseAllPopouts,
   onResetPositions,
   onResetLayout,
   onClearTimers,
@@ -172,9 +173,10 @@ function OverlaysManager({
   onResetPanelPosition: (key: DashboardPanelKey) => void
   placingNames: string[]
   onMovePanel: (key: DashboardPanelKey) => void
-  anyPopoutOpen: boolean
+  visibility: PopoutVisibility
   onMenuOpen: () => void
   onTogglePopouts: () => void
+  onCloseAllPopouts: () => void
   onResetPositions: () => void
   onResetLayout: () => void
   onClearTimers: () => void
@@ -251,15 +253,37 @@ function OverlaysManager({
         >
           {/* Global actions */}
           <div className="mb-3 flex flex-wrap items-center gap-2">
-            {typeof window.electron?.overlay?.anyPopoutOpen === 'function' && (
-              <button
-                onClick={onTogglePopouts}
-                className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
-                style={actionBtn}
-              >
-                {anyPopoutOpen ? <X size={11} /> : <Layers size={11} />}
-                {anyPopoutOpen ? 'Close All Popouts' : 'Pop Out All'}
-              </button>
+            {typeof window.electron?.overlay?.togglePopoutVisibility === 'function' && (
+              <>
+                {/* Same action as the sidebar button and the show/hide
+                    hotkey: show hidden overlays, else hide open ones (kept
+                    in place), else pop out the saved set. */}
+                <button
+                  onClick={onTogglePopouts}
+                  className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
+                  style={actionBtn}
+                  title={
+                    visibility.hidden > 0
+                      ? 'Show the overlays you hid'
+                      : visibility.open > 0
+                        ? 'Hide every pop-out overlay without closing it (trigger alerts keep showing)'
+                        : 'Pop out the overlays you last popped out individually'
+                  }
+                >
+                  {visibility.hidden > 0 ? <Eye size={11} /> : visibility.open > 0 ? <EyeOff size={11} /> : <Layers size={11} />}
+                  {visibility.hidden > 0 ? 'Show All' : visibility.open > 0 ? 'Hide All' : 'Pop Out All'}
+                </button>
+                {visibility.open > 0 && (
+                  <button
+                    onClick={onCloseAllPopouts}
+                    className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
+                    style={actionBtn}
+                    title="Close every pop-out overlay window"
+                  >
+                    <X size={11} /> Close All
+                  </button>
+                )}
+              </>
             )}
             {typeof window.electron?.overlay?.resetAllPositions === 'function' && (
               <button
@@ -724,7 +748,12 @@ export default function OverlaysDashboard(): React.ReactElement {
   // Tracks whether any standalone popout window is currently open, and drives
   // the open-all/close-all toggle — shared with the sidebar's quick-toggle
   // button so both stay in sync via the same polled IPC state.
-  const { anyPopoutOpen, toggle: handleTogglePopouts, refresh: refreshAnyPopoutOpen } = useOverlayPopouts()
+  const {
+    visibility,
+    toggle: handleTogglePopouts,
+    closeAll: handleCloseAllPopouts,
+    refresh: refreshAnyPopoutOpen,
+  } = useOverlayPopouts()
 
   // Re-read popout open-state on demand — used when the Manage overlays menu
   // opens so the "Pop Out All / Close All Popouts" label and per-overlay Pop
@@ -834,9 +863,10 @@ export default function OverlaysDashboard(): React.ReactElement {
             onResetPanelPosition={resetPanelPosition}
             placingNames={placingNames}
             onMovePanel={toggleMovePanel}
-            anyPopoutOpen={anyPopoutOpen}
+            visibility={visibility}
             onMenuOpen={refreshPopouts}
             onTogglePopouts={handleTogglePopouts}
+            onCloseAllPopouts={handleCloseAllPopouts}
             onResetPositions={() => setShowResetConfirm(true)}
             onResetLayout={handleReset}
             onClearTimers={() => setShowClearTimersConfirm(true)}

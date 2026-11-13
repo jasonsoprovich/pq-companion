@@ -1,5 +1,6 @@
 import React, { useEffect, useState, lazy, Suspense } from 'react'
 import { FeatureDotsProvider } from './hooks/useFeatureDots'
+import { openSavedPopoutSelection } from './hooks/useOverlayPopouts'
 import { initialFeatureDots } from './lib/featureRegistry'
 import { HashRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import Layout from './components/Layout'
@@ -165,6 +166,13 @@ function MainWindowLayout(): React.ReactElement {
       .then((primary) => { if (!cancelled) setAudioOwner(Boolean(primary)) })
       .catch(() => { /* no IPC (dev preview): stay owner */ })
     return () => { cancelled = true }
+  }, [])
+
+  // Show/hide-all with nothing open (sidebar button, Manage overlays menu or
+  // the global hotkey): main asks this window to open the saved popout set,
+  // which lives in this renderer's localStorage.
+  useEffect(() => {
+    return window.electron?.overlay?.onOpenPopoutSelection?.(openSavedPopoutSelection)
   }, [])
 
   // Deep links pushed from overlay windows (e.g. an NPC overlay loot row)

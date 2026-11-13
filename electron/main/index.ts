@@ -677,7 +677,11 @@ function watchOverlayVisibility(name: WindowKey, win: BrowserWindow): void {
     win.restore()
   })
   win.on('restore', () => console.log(`[main] overlay ${name} restored`))
-  win.on('hide', () => console.warn(`[main] overlay ${name} hidden: ${describeOverlayState(win)}`))
+  win.on('hide', () => {
+    // Hide-all hides on purpose; only unexpected hides are worth a warning.
+    if (userHiddenOverlays.has(win)) console.log(`[main] overlay ${name} hidden by hide-all`)
+    else console.warn(`[main] overlay ${name} hidden: ${describeOverlayState(win)}`)
+  })
   win.on('always-on-top-changed', (_e, isOnTop) => {
     console.log(`[main] overlay ${name} always-on-top-changed: ${isOnTop}`)
   })
@@ -976,8 +980,7 @@ function loadOverlayRoute(win: BrowserWindow, route: string): void {
 function createStandardOverlay(name: StandardOverlay): void {
   const existing = stdWin(name)
   if (existing) {
-    if (!existing.isVisible()) existing.showInactive()
-    existing.moveTop()
+    showOverlayWindow(existing)
     return
   }
 
@@ -1586,8 +1589,7 @@ function createCustomTimerGroupOverlay(groupId: string, groupName: string): void
   const existing = customTimerGroupWindows.get(groupId)
   if (existing && !existing.isDestroyed()) {
     // Bring forward without taking focus (see createStandardOverlay).
-    if (!existing.isVisible()) existing.showInactive()
-    existing.moveTop()
+    showOverlayWindow(existing)
     return
   }
 
@@ -1799,8 +1801,7 @@ function clearDiscordVoiceContent(win: BrowserWindow): void {
 function createDiscordVoiceOverlay(): void {
   if (discordVoiceOverlayWindow && !discordVoiceOverlayWindow.isDestroyed()) {
     // Bring forward without taking focus (see createStandardOverlay).
-    if (!discordVoiceOverlayWindow.isVisible()) discordVoiceOverlayWindow.showInactive()
-    discordVoiceOverlayWindow.moveTop()
+    showOverlayWindow(discordVoiceOverlayWindow)
     return
   }
 
@@ -2041,9 +2042,7 @@ for (const [name, spec] of Object.entries(STANDARD_OVERLAYS) as Array<[StandardO
     stdWin(name)?.close()
   })
   ipcMain.handle(`overlay:${spec.ipc}:toggle`, () => {
-    const win = stdWin(name)
-    if (win) win.close()
-    else createStandardOverlay(name)
+    toggleOverlayWindow(stdWin(name), () => createStandardOverlay(name))
   })
 }
 
@@ -2067,12 +2066,9 @@ ipcMain.handle('overlay:customtimer:group:close', (_event, groupId: string) => {
 })
 
 ipcMain.handle('overlay:customtimer:group:toggle', (_event, groupId: string, groupName: string) => {
-  const win = customTimerGroupWindows.get(groupId)
-  if (win && !win.isDestroyed()) {
-    win.close()
-  } else {
-    createCustomTimerGroupOverlay(groupId, groupName)
-  }
+  toggleOverlayWindow(customTimerGroupWindows.get(groupId) ?? null, () =>
+    createCustomTimerGroupOverlay(groupId, groupName),
+  )
 })
 
 ipcMain.handle('overlay:trigger:open', () => {
@@ -2200,11 +2196,7 @@ ipcMain.handle('overlay:discordvoice:close', () => {
 })
 
 ipcMain.handle('overlay:discordvoice:toggle', () => {
-  if (discordVoiceOverlayWindow && !discordVoiceOverlayWindow.isDestroyed()) {
-    discordVoiceOverlayWindow.close()
-  } else {
-    createDiscordVoiceOverlay()
-  }
+  toggleOverlayWindow(discordVoiceOverlayWindow, createDiscordVoiceOverlay)
 })
 
 // Called by DiscordVoiceOverlayWindowPage once it has read the saved
@@ -2279,6 +2271,65 @@ function userPopoutWindows(): BrowserWindow[] {
 
 ipcMain.handle('overlay:popouts:any-open', () => userPopoutWindows().length > 0)
 
+// ── Hide / show all ──────────────────────────────────────────────────────────
+// "Hide all" hides the open popouts without closing them, so they come back
+// instantly in place. The trigger alert overlay is never in userPopoutWindows,
+// so alerts keep firing while everything else is hidden. Windows hidden this
+// way are tracked so a per-overlay toggle can bring one back, and so the
+// state survives windows opening or closing in between.
+const userHiddenOverlays = new WeakSet<BrowserWindow>()
+
+type PopoutVisibility = { open: number; hidden: number }
+
+function popoutVisibility(): PopoutVisibility {
+  const wins = userPopoutWindows()
+  return {
+    open: wins.length,
+    hidden: wins.filter((w) => userHiddenOverlays.has(w) && !w.isVisible()).length,
+  }
+}
+
+function showOverlayWindow(win: BrowserWindow): void {
+  userHiddenOverlays.delete(win)
+  if (!win.isVisible()) win.showInactive()
+  win.moveTop()
+}
+
+function hideAllPopouts(): void {
+  for (const win of userPopoutWindows()) {
+    if (!win.isVisible()) continue
+    userHiddenOverlays.add(win)
+    win.hide()
+  }
+}
+
+function showAllPopouts(): void {
+  for (const win of userPopoutWindows()) {
+    if (userHiddenOverlays.has(win)) showOverlayWindow(win)
+  }
+}
+
+// Shared by the sidebar button, the Manage overlays menu and the global
+// hotkey: show hidden overlays if any, else hide the open ones, else ask the
+// main window to open the user's saved set (it lives in the renderer).
+function toggleAllPopoutsVisibility(): void {
+  const { open, hidden } = popoutVisibility()
+  if (hidden > 0) showAllPopouts()
+  else if (open > 0) hideAllPopouts()
+  else mainWindow?.webContents.send('overlay:popouts:open-selection')
+}
+
+// Per-overlay toggle: an overlay hidden by "hide all" comes back rather than
+// closing, so toggling one overlay never closes something you can't see.
+function toggleOverlayWindow(win: BrowserWindow | null, create: () => void): void {
+  if (!win || win.isDestroyed()) create()
+  else if (userHiddenOverlays.has(win) && !win.isVisible()) showOverlayWindow(win)
+  else win.close()
+}
+
+ipcMain.handle('overlay:popouts:visibility', () => popoutVisibility())
+ipcMain.handle('overlay:popouts:toggle-visibility', () => toggleAllPopoutsVisibility())
+
 // A requested panel is either a plain dashboard panel key (existing behavior)
 // or, for a named timer group panel, an object carrying both its id and
 // current display name — main process has no independent way to know a
@@ -2345,13 +2396,15 @@ ipcMain.handle('overlay:popouts:states', () => {
   const states: Record<string, boolean> = {}
   for (const name of RESETTABLE_OVERLAYS) {
     const win = overlayWindowByName(name)
-    states[name] = !!win && !win.isDestroyed()
+    // A window hidden by "hide all" reports closed, so its Pop toggle (which
+    // brings it back) reads as "pop out" rather than "close".
+    states[name] = !!win && !win.isDestroyed() && !userHiddenOverlays.has(win)
   }
   // Only currently-open named groups can be reported — Electron doesn't know
   // the full group list (that's backend/renderer state), just which windows
   // it has actually created this session.
   for (const [groupId, win] of customTimerGroupWindows) {
-    states[customTimerWindowKey(groupId)] = !win.isDestroyed()
+    states[customTimerWindowKey(groupId)] = !win.isDestroyed() && !userHiddenOverlays.has(win)
   }
   return states
 })
@@ -2562,6 +2615,7 @@ function setPlacing(name: WindowKey, on: boolean): void {
       // Re-home an off-screen overlay onto the primary monitor first so its
       // placing banner is actually visible to grab.
       if (!isOnScreen(win.getBounds())) win.setBounds(centeredOnPrimary(win.getBounds()))
+      userHiddenOverlays.delete(win)
       win.show()
     }
     win.webContents.send('overlay:placing-changed', on)

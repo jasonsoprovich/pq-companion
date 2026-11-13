@@ -110,6 +110,9 @@ export interface ElectronAPI {
     anyPopoutOpen: () => Promise<boolean>
     openAllPopouts: (panels?: Array<string | { key: string; name: string }>) => Promise<void>
     closeAllPopouts: () => Promise<void>
+    popoutVisibility: () => Promise<{ open: number; hidden: number }>
+    togglePopoutVisibility: () => Promise<void>
+    onOpenPopoutSelection: (cb: () => void) => () => void
     setIgnoreMouseEvents: (ignore: boolean) => Promise<void>
     setTriggerMode: (mode: 'interactive' | 'passthrough' | 'hidden') => Promise<void>
     onTriggerEscape: (cb: () => void) => () => void

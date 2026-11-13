@@ -1,29 +1,40 @@
 import React from 'react'
-import { Layers } from 'lucide-react'
+import { EyeOff, Layers } from 'lucide-react'
 import { useOverlayPopouts } from '../hooks/useOverlayPopouts'
 
-// Sidebar quick-toggle for popping every visible overlay out (or closing them
-// all again) without leaving the current page. Sits next to the character
-// switcher — that area of the sidebar is always visible — and mirrors the
-// "Pop Out All / Close All Popouts" action from the Overlays page's Manage
-// overlays menu (same IPC calls via useOverlayPopouts, so both stay in sync).
+// Sidebar quick-toggle for overlays, next to the search bar — that area of
+// the sidebar is always visible. One click shows hidden overlays, hides open
+// ones (they stay alive and in place; trigger alerts keep showing), or pops
+// out the saved set when nothing is open. Same action as the Manage overlays
+// menu and the global show/hide hotkey (see useOverlayPopouts).
 export default function OverlayPopoutToggle(): React.ReactElement | null {
-  const { anyPopoutOpen, supported, toggle } = useOverlayPopouts()
+  const { anyPopoutOpen, anyHidden, supported, toggle } = useOverlayPopouts()
 
   if (!supported) return null
 
+  const showing = anyPopoutOpen && !anyHidden
   return (
     <button
       onClick={toggle}
       className="flex h-[30px] w-7 shrink-0 items-center justify-center rounded transition-colors"
       style={{
-        border: '1px solid var(--color-border)',
-        backgroundColor: anyPopoutOpen ? 'var(--color-primary)' : 'var(--color-surface-2)',
-        color: anyPopoutOpen ? 'var(--color-primary-foreground)' : 'var(--color-muted)',
+        border: `1px solid ${anyHidden ? 'var(--color-primary)' : 'var(--color-border)'}`,
+        backgroundColor: showing ? 'var(--color-primary)' : 'var(--color-surface-2)',
+        color: showing
+          ? 'var(--color-primary-foreground)'
+          : anyHidden
+            ? 'var(--color-primary)'
+            : 'var(--color-muted)',
       }}
-      title={anyPopoutOpen ? 'Close all pop-out overlay windows' : 'Pop out all overlay windows'}
+      title={
+        anyHidden
+          ? 'Overlays hidden — click to show them again'
+          : anyPopoutOpen
+            ? 'Hide all overlays (they stay in place; trigger alerts keep showing)'
+            : 'Pop out your overlays'
+      }
     >
-      <Layers size={13} />
+      {anyHidden ? <EyeOff size={13} /> : <Layers size={13} />}
     </button>
   )
 }

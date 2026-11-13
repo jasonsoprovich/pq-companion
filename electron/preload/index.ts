@@ -146,6 +146,18 @@ contextBridge.exposeInMainWorld('electron', {
     openAllPopouts: (panels?: Array<string | { key: string; name: string }>): Promise<void> =>
       ipcRenderer.invoke('overlay:popouts:open-all', panels),
     closeAllPopouts: (): Promise<void> => ipcRenderer.invoke('overlay:popouts:close-all'),
+    // Hide/show all: open popout count and how many are hidden by hide-all.
+    popoutVisibility: (): Promise<{ open: number; hidden: number }> =>
+      ipcRenderer.invoke('overlay:popouts:visibility'),
+    // Show hidden overlays, else hide open ones, else (nothing open) main
+    // asks this window to open the saved set via onOpenPopoutSelection.
+    togglePopoutVisibility: (): Promise<void> =>
+      ipcRenderer.invoke('overlay:popouts:toggle-visibility'),
+    onOpenPopoutSelection: (cb: () => void): (() => void) => {
+      const listener = (): void => cb()
+      ipcRenderer.on('overlay:popouts:open-selection', listener)
+      return () => ipcRenderer.removeListener('overlay:popouts:open-selection', listener)
+    },
     popoutStates: (): Promise<Record<string, boolean>> =>
       ipcRenderer.invoke('overlay:popouts:states'),
     // "Restore overlays on launch": whether to re-open the last open popout set
