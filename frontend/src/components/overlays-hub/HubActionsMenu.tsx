@@ -13,7 +13,7 @@ import { DEFAULT_IDLE_SECS, IDLE_COLLAPSE_OVERLAYS } from '../../lib/idleCollaps
 
 // On: every supported overlay and timer window collapses when idle, keeping
 // a delay already picked (new ones get the default). Off: none do.
-async function setIdleCollapseForAll(on: boolean): Promise<void> {
+export async function setIdleCollapseForAll(on: boolean): Promise<void> {
   const base = await getConfig()
   let next: Record<string, number> = {}
   if (on) {

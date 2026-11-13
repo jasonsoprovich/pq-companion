@@ -1,4 +1,4 @@
-import React, { useEffect, useState, lazy, Suspense } from 'react'
+import React, { useEffect, useRef, useState, lazy, Suspense } from 'react'
 import { FeatureDotsProvider } from './hooks/useFeatureDots'
 import { migratePopoutSelection } from './services/overlayPopoutSelection'
 import { useLayoutAutoSwitch } from './hooks/useLayoutAutoSwitch'
@@ -6,6 +6,7 @@ import { initialFeatureDots } from './lib/featureRegistry'
 import { HashRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import Layout from './components/Layout'
 import OnboardingWizard from './components/OnboardingWizard'
+import OverlaySetupWizard from './components/overlays-hub/OverlaySetupWizard'
 import WhatsNewModal from './components/WhatsNewModal'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import StackDropHint from './components/StackDropHint'
@@ -196,6 +197,10 @@ function MainWindowLayout(): React.ReactElement {
   // 'unknown' until config has been loaded; then either true (skip wizard)
   // or false (show wizard before mounting the main Layout).
   const [onboardingDone, setOnboardingDone] = useState<boolean | 'unknown'>('unknown')
+  // Overlay setup follows first-launch setup (not a rerun from Settings),
+  // and opens from the Overlays hub via 'pq:open-overlay-setup'.
+  const firstRunRef = useRef(false)
+  const [overlaySetup, setOverlaySetup] = useState(false)
 
   // "What's new" popup: null until a version bump (with unseen changelog
   // entries) is confirmed. appVersion is captured alongside the entries so
@@ -206,6 +211,7 @@ function MainWindowLayout(): React.ReactElement {
     getConfig()
       .then((c) => {
         setOnboardingDone(Boolean(c.onboarding_completed))
+        firstRunRef.current = !c.onboarding_completed
         // Mirror the persisted "Minimize to Tray" preference to the main
         // process so the close ('X') behaviour and tray icon match the saved
         // setting from the moment the app loads.
@@ -260,8 +266,15 @@ function MainWindowLayout(): React.ReactElement {
     function handleReopen(): void {
       setOnboardingDone(false)
     }
+    function handleOverlaySetup(): void {
+      setOverlaySetup(true)
+    }
     window.addEventListener('pq:open-onboarding', handleReopen)
-    return () => window.removeEventListener('pq:open-onboarding', handleReopen)
+    window.addEventListener('pq:open-overlay-setup', handleOverlaySetup)
+    return () => {
+      window.removeEventListener('pq:open-onboarding', handleReopen)
+      window.removeEventListener('pq:open-overlay-setup', handleOverlaySetup)
+    }
   }, [])
 
   function dismissWhatsNew(disablePopup: boolean): void {
@@ -288,8 +301,15 @@ function MainWindowLayout(): React.ReactElement {
           <OnboardingWizard
             allowCancel
             onCancel={() => setOnboardingDone(true)}
-            onComplete={() => setOnboardingDone(true)}
+            onComplete={() => {
+              setOnboardingDone(true)
+              if (firstRunRef.current && window.electron?.overlay) setOverlaySetup(true)
+              firstRunRef.current = false
+            }}
           />
+        )}
+        {onboardingDone === true && overlaySetup && (
+          <OverlaySetupWizard onClose={() => setOverlaySetup(false)} />
         )}
         {onboardingDone === true && whatsNew && (
           <WhatsNewModal entries={whatsNew.entries} onDismiss={dismissWhatsNew} />
