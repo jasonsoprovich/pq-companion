@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useLocation, useSearchParams } from 'react-router-dom'
-import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, Layers, FileText, Palette, Code2, PanelLeft, Crosshair, Info, Globe, MessageCircle, Coffee, Heart, ExternalLink, Eye, Gauge, Download, Headphones, Package, PawPrint, Map as MapIcon } from 'lucide-react'
+import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, Layers, FileText, Palette, Code2, PanelLeft, Crosshair, Info, Globe, MessageCircle, Coffee, Heart, ExternalLink, Eye, Gauge, Download, Headphones, Package, PawPrint, Map as MapIcon, Keyboard as KeyboardIcon } from 'lucide-react'
 import BackfillPanel from '../components/settings/BackfillPanel'
 import SidebarNavSettings from '../components/settings/SidebarNavSettings'
 import EqLogStatusCard from '../components/settings/EqLogStatusCard'
@@ -71,6 +71,7 @@ function formatManifestDate(d: string): string {
 }
 
 import BackupManagerPage from './BackupManagerPage'
+import HotkeysSettings from '../components/settings/HotkeysSettings'
 import { NewDot, useFeatureDots } from '../hooks/useFeatureDots'
 import GameMapExportPanel from '../components/maps/GameMapExportPanel'
 import MapSettingsPanel from '../components/settings/MapSettingsPanel'
@@ -79,7 +80,7 @@ import DeveloperTab from './DeveloperTab'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'discarded' | 'error'
 type UpdateState = 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'downloaded' | 'error'
-type Tab = 'general' | 'audio' | 'accessibility' | 'navigation' | 'overlays' | 'npcoverlay' | 'iteminfo' | 'pet' | 'spelltimers' | 'dpscolors' | 'discord' | 'logs' | 'backups' | 'maps' | 'advanced' | 'about' | 'changelog' | 'developer'
+type Tab = 'general' | 'audio' | 'accessibility' | 'navigation' | 'overlays' | 'hotkeys' | 'npcoverlay' | 'iteminfo' | 'pet' | 'spelltimers' | 'dpscolors' | 'discord' | 'logs' | 'backups' | 'maps' | 'advanced' | 'about' | 'changelog' | 'developer'
 
 interface TabBarProps {
   tabs: { id: Tab; label: string; icon: React.ReactNode }[]
@@ -96,7 +97,7 @@ interface TabBarProps {
 // end — so forgetting to register one degrades gracefully rather than hiding it.
 const TAB_GROUPS: { label: string; ids: Tab[] }[] = [
   { label: 'General', ids: ['general', 'audio', 'accessibility'] },
-  { label: 'Interface', ids: ['navigation', 'overlays', 'npcoverlay', 'iteminfo', 'pet', 'spelltimers', 'dpscolors', 'discord'] },
+  { label: 'Interface', ids: ['navigation', 'overlays', 'hotkeys', 'npcoverlay', 'iteminfo', 'pet', 'spelltimers', 'dpscolors', 'discord'] },
   { label: 'System', ids: ['logs', 'backups', 'maps', 'advanced'] },
   { label: 'About', ids: ['about', 'changelog', 'developer'] },
 ]
@@ -350,7 +351,7 @@ export default function SettingsPage(): React.ReactElement {
   // Allow deep-linking to a specific tab via ?tab= (e.g. links to the Logs tab
   // for backfill). Falls back to General for unknown/absent values.
   const [tab, setTab] = useState<Tab>(() => {
-    const valid: Tab[] = ['general', 'audio', 'accessibility', 'navigation', 'overlays', 'npcoverlay', 'iteminfo', 'pet', 'spelltimers', 'dpscolors', 'discord', 'logs', 'backups', 'maps', 'advanced', 'about', 'changelog', 'developer']
+    const valid: Tab[] = ['general', 'audio', 'accessibility', 'navigation', 'overlays', 'hotkeys', 'npcoverlay', 'iteminfo', 'pet', 'spelltimers', 'dpscolors', 'discord', 'logs', 'backups', 'maps', 'advanced', 'about', 'changelog', 'developer']
     const t = searchParams.get('tab') ?? ''
     // 'gamemaps' was its own tab until the two map tabs merged. Kept as an
     // alias so links written against the old name still land somewhere useful.
@@ -823,6 +824,7 @@ export default function SettingsPage(): React.ReactElement {
     { id: 'accessibility', label: 'Accessibility', icon: <Eye size={13} /> },
     { id: 'navigation', label: 'Navigation', icon: <PanelLeft size={13} /> },
     { id: 'overlays', label: 'Overlays', icon: <Layers size={13} /> },
+    { id: 'hotkeys', label: 'Hotkeys', icon: <KeyboardIcon size={13} /> },
     { id: 'npcoverlay', label: 'NPC Overlay', icon: <Crosshair size={13} /> },
     // Hidden with the overlay itself until Zeal sends its first item event.
     ...(config && itemInfoOffered(config.preferences)
@@ -3636,6 +3638,8 @@ export default function SettingsPage(): React.ReactElement {
 
         {/* ── DPS Class Colors ───────────────────────────────────────────── */}
         {/* ── Discord ────────────────────────────────────────────────────── */}
+        {tab === 'hotkeys' && <HotkeysSettings />}
+
         {tab === 'discord' && (
           <>
             <DiscordVoiceOverlaySettings config={config} setConfig={setConfig} />

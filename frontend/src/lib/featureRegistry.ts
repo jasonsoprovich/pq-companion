@@ -46,6 +46,10 @@ export const FEATURES: readonly FeatureEntry[] = [
   { id: 'backup-restore', launch: true, nav: '/settings', settingsTab: 'backups' },
   { id: 'raid-replay', launch: true, nav: '/raid-replay' },
   { id: 'live-map-3d', launch: true, nav: '/live-map' },
+
+  // ── Overlay overhaul (feat/overlay-hub). `since` is a placeholder for the
+  // release this branch ships in — update it at merge time. ──
+  { id: 'overlay-hotkeys', since: '0.34.0', nav: '/settings', settingsTab: 'hotkeys' },
 ]
 
 // ── Version helpers ─────────────────────────────────────────────────────────

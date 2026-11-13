@@ -1,5 +1,12 @@
 // Type definitions for the Electron contextBridge API exposed in preload/index.ts
 
+// Global overlay hotkeys: bound accelerators by action id, and whether each
+// registered with the OS ('failed' = another program owns the combo).
+export interface HotkeyState {
+  bindings: Record<string, string>
+  status: Record<string, 'ok' | 'failed'>
+}
+
 export interface ElectronAPI {
   app: {
     getVersion: () => Promise<string>
@@ -113,6 +120,10 @@ export interface ElectronAPI {
     popoutVisibility: () => Promise<{ open: number; hidden: number }>
     togglePopoutVisibility: () => Promise<void>
     onOpenPopoutSelection: (cb: () => void) => () => void
+    hotkeysGet: () => Promise<HotkeyState>
+    hotkeysSet: (action: string, accelerator: string | null) => Promise<HotkeyState>
+    hotkeysSetMany: (bindings: Record<string, string>) => Promise<HotkeyState>
+    hotkeysSuspend: (suspend: boolean) => Promise<void>
     setIgnoreMouseEvents: (ignore: boolean) => Promise<void>
     setTriggerMode: (mode: 'interactive' | 'passthrough' | 'hidden') => Promise<void>
     onTriggerEscape: (cb: () => void) => () => void

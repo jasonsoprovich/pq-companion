@@ -764,6 +764,7 @@ type ClientStateElectron = {
   overlayAutoOpen?: AutoOpenStore
   overlayDisplay?: OverlayDisplayPref
   mainWindowState?: MainWindowState
+  overlayHotkeys?: HotkeyStore
 }
 
 const CLIENT_STATE_FILES: { [K in keyof ClientStateElectron]-?: () => string } = {
@@ -772,6 +773,7 @@ const CLIENT_STATE_FILES: { [K in keyof ClientStateElectron]-?: () => string } =
   overlayAutoOpen: autoOpenFilePath,
   overlayDisplay: overlayDisplayFilePath,
   mainWindowState: mainWindowStateFilePath,
+  overlayHotkeys: hotkeysFilePath,
 }
 
 // Matches appbackup.Manager.pendingClientStatePath() on the Go side exactly —
@@ -796,6 +798,7 @@ function collectClientStateElectron(): ClientStateElectron {
     overlayAutoOpen: autoOpen,
     ...(displayPref ? { overlayDisplay: displayPref } : {}),
     mainWindowState: loadMainWindowState(),
+    overlayHotkeys: loadHotkeyStore(),
   }
 }
 
@@ -2328,6 +2331,139 @@ function toggleOverlayWindow(win: BrowserWindow | null, create: () => void): voi
 }
 
 ipcMain.handle('overlay:popouts:visibility', () => popoutVisibility())
+
+// ── Global overlay hotkeys ───────────────────────────────────────────────────
+// User-bound key combos registered with the OS via globalShortcut, so they
+// fire while EverQuest has focus — and never take focus from it: every action
+// below shows windows with showInactive(). The trade-off (explained in
+// Settings → Hotkeys): while a combo is bound here, EQ doesn't receive it.
+// Nothing is bound by default. Stored in userData like the other overlay
+// window prefs, since main must register them before any renderer loads.
+
+// 'toggleAll' = the show/hide-all action; 'overlay:<name>' = show/hide one.
+type HotkeyStore = { bindings: Record<string, string> }
+type HotkeyStatus = 'ok' | 'failed'
+
+function hotkeysFilePath(): string {
+  return join(app.getPath('userData'), 'overlay-hotkeys.json')
+}
+
+function loadHotkeyStore(): HotkeyStore {
+  try {
+    const parsed = JSON.parse(readFileSync(hotkeysFilePath(), 'utf-8')) as Partial<HotkeyStore>
+    const bindings: Record<string, string> = {}
+    for (const [action, acc] of Object.entries(parsed.bindings ?? {})) {
+      if (typeof acc === 'string' && acc && isHotkeyAction(action)) bindings[action] = acc
+    }
+    return { bindings }
+  } catch {
+    return { bindings: {} }
+  }
+}
+
+function saveHotkeyStore(store: HotkeyStore): void {
+  try {
+    writeFileSync(hotkeysFilePath(), JSON.stringify(store, null, 2), 'utf-8')
+  } catch (err) {
+    console.warn('[main] failed to save overlay hotkeys', err)
+  }
+}
+
+function isHotkeyAction(action: string): boolean {
+  if (action === 'toggleAll') return true
+  if (!action.startsWith('overlay:')) return false
+  const name = action.slice('overlay:'.length)
+  return name === 'discordVoice' || isStandardOverlay(name)
+}
+
+// Show/hide one overlay: open it if closed, show it if hidden, else hide it
+// (not close — it comes back instantly, and show-all brings it back too).
+function toggleOverlayFromHotkey(name: OverlayName): void {
+  const win = overlayWindowByName(name)
+  if (!win || win.isDestroyed()) {
+    createOverlayByName(name)
+  } else if (!win.isVisible()) {
+    showOverlayWindow(win)
+  } else {
+    userHiddenOverlays.add(win)
+    win.hide()
+  }
+}
+
+function runHotkeyAction(action: string): void {
+  if (action === 'toggleAll') toggleAllPopoutsVisibility()
+  else if (action.startsWith('overlay:')) toggleOverlayFromHotkey(action.slice('overlay:'.length) as OverlayName)
+}
+
+let hotkeyStore: HotkeyStore = { bindings: {} }
+const registeredHotkeys = new Map<string, string>() // action -> accelerator
+let hotkeyStatus: Record<string, HotkeyStatus> = {}
+let hotkeysSuspendTimer: ReturnType<typeof setTimeout> | null = null
+
+// (Re)registers every binding. Only our own accelerators are unregistered —
+// the trigger overlay's Escape shortcut is left alone.
+function applyHotkeys(): void {
+  for (const acc of registeredHotkeys.values()) globalShortcut.unregister(acc)
+  registeredHotkeys.clear()
+  hotkeyStatus = {}
+  if (hotkeysSuspendTimer) return
+  for (const [action, acc] of Object.entries(hotkeyStore.bindings)) {
+    let ok = false
+    try {
+      // Fails (false, or throws on a malformed combo) when another program
+      // — or another of our bindings — already owns the combo.
+      ok = globalShortcut.register(acc, () => runHotkeyAction(action))
+    } catch {
+      ok = false
+    }
+    if (ok) registeredHotkeys.set(action, acc)
+    hotkeyStatus[action] = ok ? 'ok' : 'failed'
+  }
+}
+
+function hotkeyState(): { bindings: Record<string, string>; status: Record<string, HotkeyStatus> } {
+  return { bindings: { ...hotkeyStore.bindings }, status: { ...hotkeyStatus } }
+}
+
+function initHotkeys(): void {
+  hotkeyStore = loadHotkeyStore()
+  applyHotkeys()
+}
+
+ipcMain.handle('hotkeys:get', () => hotkeyState())
+
+// accelerator null/empty clears the binding.
+ipcMain.handle('hotkeys:set', (_event, action: string, accelerator: string | null) => {
+  if (!isHotkeyAction(action)) return hotkeyState()
+  if (accelerator) hotkeyStore.bindings[action] = accelerator
+  else delete hotkeyStore.bindings[action]
+  saveHotkeyStore(hotkeyStore)
+  applyHotkeys()
+  return hotkeyState()
+})
+
+ipcMain.handle('hotkeys:set-many', (_event, bindings: Record<string, string>) => {
+  for (const [action, acc] of Object.entries(bindings ?? {})) {
+    if (isHotkeyAction(action) && typeof acc === 'string' && acc) hotkeyStore.bindings[action] = acc
+  }
+  saveHotkeyStore(hotkeyStore)
+  applyHotkeys()
+  return hotkeyState()
+})
+
+// While Settings records a new combo, every hotkey is released so the key
+// press reaches the page instead of firing an action. Auto-resumes after 30s
+// in case the page goes away mid-recording.
+ipcMain.handle('hotkeys:suspend', (_event, suspend: boolean) => {
+  if (hotkeysSuspendTimer) clearTimeout(hotkeysSuspendTimer)
+  hotkeysSuspendTimer = suspend
+    ? setTimeout(() => {
+        hotkeysSuspendTimer = null
+        applyHotkeys()
+      }, 30_000)
+    : null
+  applyHotkeys()
+})
 ipcMain.handle('overlay:popouts:toggle-visibility', () => toggleAllPopoutsVisibility())
 
 // A requested panel is either a plain dashboard panel key (existing behavior)
@@ -3178,6 +3314,7 @@ app.whenReady().then(async () => {
   // band, leaving overlays open but buried behind the game. The raise
   // interval only re-stacks; these also re-apply the topmost flag itself.
   startOverlayRaiseInterval()
+  initHotkeys()
   const onDisplayChanged = (): void => {
     console.log('[main] display layout changed; reasserting overlays')
     resizeTriggerOverlay()

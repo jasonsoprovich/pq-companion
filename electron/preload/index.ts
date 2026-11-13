@@ -1,5 +1,7 @@
 import { contextBridge, ipcRenderer, webFrame } from 'electron'
 
+type HotkeyState = { bindings: Record<string, string>; status: Record<string, 'ok' | 'failed'> }
+
 // Expose a safe, typed API to the renderer — no direct Node/Electron access
 contextBridge.exposeInMainWorld('electron', {
   app: {
@@ -153,6 +155,14 @@ contextBridge.exposeInMainWorld('electron', {
     // asks this window to open the saved set via onOpenPopoutSelection.
     togglePopoutVisibility: (): Promise<void> =>
       ipcRenderer.invoke('overlay:popouts:toggle-visibility'),
+    // Global overlay hotkeys (Settings → Hotkeys). Action ids: 'toggleAll'
+    // or 'overlay:<name>'. Accelerators use Electron's syntax (Ctrl+Alt+H).
+    hotkeysGet: (): Promise<HotkeyState> => ipcRenderer.invoke('hotkeys:get'),
+    hotkeysSet: (action: string, accelerator: string | null): Promise<HotkeyState> =>
+      ipcRenderer.invoke('hotkeys:set', action, accelerator),
+    hotkeysSetMany: (bindings: Record<string, string>): Promise<HotkeyState> =>
+      ipcRenderer.invoke('hotkeys:set-many', bindings),
+    hotkeysSuspend: (suspend: boolean): Promise<void> => ipcRenderer.invoke('hotkeys:suspend', suspend),
     onOpenPopoutSelection: (cb: () => void): (() => void) => {
       const listener = (): void => cb()
       ipcRenderer.on('overlay:popouts:open-selection', listener)
