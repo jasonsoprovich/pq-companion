@@ -3468,6 +3468,67 @@ ipcMain.handle('overlay:stack:select', (event, tab: string) => {
   notifyStackChanged(id)
 })
 
+// ── Arrange ──────────────────────────────────────────────────────────────────
+// The hub's Arrange tab: the monitors and every window in the active layout,
+// where it is now (open or hidden) or will open (closed). Moving one there
+// moves the real window, or sets where a closed one opens.
+type ArrangeWindow = {
+  key: WindowKey
+  bounds: Bounds
+  state: 'open' | 'hidden' | 'closed'
+  collapsed: boolean
+  groupName?: string
+  tabs?: WindowKey[]
+  groupNames?: Record<string, string>
+}
+
+ipcMain.handle('overlay:arrange:get', () => {
+  const primaryId = screen.getPrimaryDisplay().id
+  const displays = screen.getAllDisplays().map((d, i) => ({
+    id: d.id,
+    label: d.label && d.label.trim().length > 0 ? d.label : `Display ${i + 1}`,
+    bounds: { ...d.bounds },
+    isPrimary: d.id === primaryId,
+  }))
+  const store = loadBoundsStore()
+  const windows: ArrangeWindow[] = activeLayout().windows.map((w) => {
+    const win = overlayWindowByName(w.key)
+    const open = !!win && !win.isDestroyed()
+    const state: ArrangeWindow['state'] = open
+      ? userHiddenOverlays.has(win as BrowserWindow) && !(win as BrowserWindow).isVisible() ? 'hidden' : 'open'
+      : closedWhileHidden.has(w.key) ? 'hidden' : 'closed'
+    const bounds = open ? (win as BrowserWindow).getBounds() : w.bounds ?? store[w.key] ?? defaultBoundsFor(w.key)
+    return {
+      key: w.key,
+      bounds: { ...bounds },
+      state,
+      collapsed: !!collapsedEntry(w.key),
+      ...(w.key.startsWith('customTimer:') ? { groupName: groupNameFor(w.key) ?? w.groupName ?? '' } : {}),
+      ...(w.stack ? { tabs: [...w.stack.tabs], groupNames: { ...(w.stack.groupNames ?? {}) } } : {}),
+    }
+  })
+  return { displays, windows }
+})
+
+ipcMain.handle('overlay:arrange:move', (_event, key: string, x: number, y: number) => {
+  if (!isValidWindowKey(key) || !Number.isFinite(x) || !Number.isFinite(y)) return
+  const entry = activeLayout().windows.find((w) => w.key === key)
+  if (!entry) return
+  const pos = { x: Math.round(x), y: Math.round(y) }
+  const win = overlayWindowByName(key)
+  if (win && !win.isDestroyed()) {
+    // The window's move listener saves the new spot (and the layout's copy).
+    win.setBounds({ ...win.getBounds(), ...pos })
+    return
+  }
+  const store = loadBoundsStore()
+  const bounds = { ...(entry.bounds ?? store[key] ?? defaultBoundsFor(key)), ...pos }
+  store[key] = bounds
+  saveBoundsStore(store)
+  entry.bounds = { ...bounds }
+  saveLayoutStore()
+})
+
 // The hub's stack card: show a hidden stack, else close it (which takes it
 // out of the layout, like its × button).
 ipcMain.handle('overlay:stack:toggle', (_event, key: string) => {

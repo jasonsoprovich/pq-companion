@@ -1,7 +1,9 @@
 /**
  * OverlaysHub — the /overlays page. Library lists every overlay as a card
- * (pop out, dashboard panel, hotkey, details); Dashboard is the in-app panel
- * grid. The layout chips sit above both, since a layout covers every popout.
+ * (pop out, dashboard panel, hotkey, details); Arrange draws the layout's
+ * windows on a miniature of the monitors to move them; Dashboard is the
+ * in-app panel grid. The layout chips sit above all three, since a layout
+ * covers every popout.
  * The page remembers which tab you were on.
  *
  * Settings open in a drawer over the Library: the gear for settings that
@@ -12,19 +14,21 @@
  */
 import React, { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { LayoutGrid, LayoutDashboard, MonitorPlay, Settings2 } from 'lucide-react'
+import { LayoutGrid, LayoutDashboard, Monitor, MonitorPlay, Settings2 } from 'lucide-react'
 import { usePersistentState } from '../hooks/usePersistentState'
 import LayoutChips from '../components/LayoutChips'
 import OverlayLibrary from '../components/overlays-hub/OverlayLibrary'
 import HubActionsMenu from '../components/overlays-hub/HubActionsMenu'
+import ArrangeView from '../components/overlays-hub/ArrangeView'
 import OverlaysDashboard from './OverlaysDashboard'
 import { selectionFromParam, type HubSelection } from '../components/overlays-hub/selection'
 
-type HubTab = 'library' | 'dashboard'
-const HUB_TABS: readonly HubTab[] = ['library', 'dashboard']
+type HubTab = 'library' | 'arrange' | 'dashboard'
+const HUB_TABS: readonly HubTab[] = ['library', 'arrange', 'dashboard']
 
 const TAB_DEFS: Array<{ id: HubTab; label: string; icon: React.ElementType }> = [
   { id: 'library', label: 'Library', icon: LayoutGrid },
+  { id: 'arrange', label: 'Arrange', icon: Monitor },
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
 ]
 
@@ -104,6 +108,13 @@ export default function OverlaysHub(): React.ReactElement {
       <div className="min-h-0 flex-1">
         {tab === 'library' ? (
           <OverlayLibrary selected={selected} onSelect={setSelected} />
+        ) : tab === 'arrange' ? (
+          <ArrangeView
+            onOpenSettings={(sel) => {
+              setTab('library')
+              setSelected(sel)
+            }}
+          />
         ) : (
           <OverlaysDashboard />
         )}

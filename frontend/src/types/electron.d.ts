@@ -84,6 +84,38 @@ export interface StackInfo {
 // ('source'). name = a timer window's display name. null = no drop armed.
 export type StackDropHint = { role: 'source' | 'target'; key: string; name?: string } | null
 
+// The hub's Arrange tab: every monitor, and every window in the active
+// layout at its current spot (open/hidden) or where it will open (closed).
+export interface ArrangeRect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export interface ArrangeDisplay {
+  id: number
+  label: string
+  bounds: ArrangeRect
+  isPrimary: boolean
+}
+
+export interface ArrangeWindow {
+  key: string
+  bounds: ArrangeRect
+  state: 'open' | 'hidden' | 'closed'
+  collapsed: boolean
+  groupName?: string
+  // A stack's tabs.
+  tabs?: string[]
+  groupNames?: Record<string, string>
+}
+
+export interface ArrangeState {
+  displays: ArrangeDisplay[]
+  windows: ArrangeWindow[]
+}
+
 export interface ElectronAPI {
   app: {
     getVersion: () => Promise<string>
@@ -207,6 +239,8 @@ export interface ElectronAPI {
     stackRemove: (key: string, popOut: boolean) => Promise<boolean>
     stackClose: () => Promise<void>
     stackToggle: (key: string) => Promise<void>
+    arrangeGet: () => Promise<ArrangeState>
+    arrangeMove: (key: string, x: number, y: number) => Promise<void>
     onStackChanged: (cb: (info: StackInfo) => void) => () => void
     onStackDropHint: (cb: (hint: StackDropHint) => void) => () => void
     hotkeysGet: () => Promise<HotkeyState>
