@@ -43,14 +43,13 @@ import { WSEvent } from '../lib/wsEvents'
 import type { TimerGroup } from '../types/trigger'
 import {
   DASHBOARD_PANEL_LABELS,
-  DEFAULT_DASHBOARD_LAYOUT,
   SHOW_HPS_PANEL,
   VISIBLE_DASHBOARD_PANEL_KEYS,
-  loadDashboardLayout,
-  saveDashboardLayout,
-  loadGroupPanelLayouts,
-  saveGroupPanelLayouts,
   defaultGroupPanelLayout,
+  resetDashboard,
+  updateDashboardGroups,
+  updateDashboardPanels,
+  useDashboardLayouts,
   type DashboardLayout,
   type DashboardPanelKey,
   type GroupPanelLayouts,
@@ -466,11 +465,15 @@ function OverlaysManager({
 }
 
 export default function OverlaysDashboard(): React.ReactElement {
-  const [layout, setLayout] = useState<DashboardLayout>(() => loadDashboardLayout())
-  // Bumped on Reset so panels remount with fresh defaults — OverlayWindow keeps
-  // its position in local state, so we have to force a fresh mount to apply
-  // new initial values.
-  const [layoutVersion, setLayoutVersion] = useState(0)
+  // The active overlay layout's arrangement. version bumps when it's replaced
+  // (layout switch, reset, first load); panels are keyed on it to remount,
+  // since OverlayWindow keeps its position in local state.
+  const {
+    ready,
+    panels: layout,
+    groups: groupLayout,
+    version: layoutVersion,
+  } = useDashboardLayouts()
 
   // Discord Voice only makes sense to offer here once the user has actually
   // turned it on in Settings → Overlays — unlike the other panels, showing it
@@ -524,13 +527,9 @@ export default function OverlaysDashboard(): React.ReactElement {
     [itemInfoOffered],
   )
 
-  useEffect(() => {
-    saveDashboardLayout(layout)
-  }, [layout])
-
   const updatePanel = useCallback(
     (key: DashboardPanelKey, patch: Partial<DashboardLayout[DashboardPanelKey]>) => {
-      setLayout((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }))
+      updateDashboardPanels((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }))
     },
     [],
   )
@@ -603,15 +602,13 @@ export default function OverlaysDashboard(): React.ReactElement {
   }, [placingNames, popoutStates])
 
   const handleReset = useCallback(() => {
-    setLayout({ ...DEFAULT_DASHBOARD_LAYOUT })
-    setLayoutVersion((v) => v + 1)
+    resetDashboard()
   }, [])
 
   // ── Named timer-group dashboard panels ──────────────────────────────────
   // Mirrors the fixed-panel state/handlers above, but keyed by TimerGroup.id
   // instead of a compile-time DashboardPanelKey — see dashboardLayout.ts.
   const [timerGroups, setTimerGroups] = useState<TimerGroup[]>([])
-  const [groupLayout, setGroupLayout] = useState<GroupPanelLayouts>(() => loadGroupPanelLayouts())
   const [showTimerGroups, setShowTimerGroups] = useState(false)
 
   const reloadTimerGroups = useCallback(() => {
@@ -620,11 +617,11 @@ export default function OverlaysDashboard(): React.ReactElement {
 
   useEffect(() => { reloadTimerGroups() }, [reloadTimerGroups])
 
-  // A group the dashboard hasn't seen before (just created, or from before
-  // this feature existed) gets a default hidden panel layout the first time
-  // it shows up in the list.
+  // A group the dashboard hasn't seen before (just created, new to this
+  // layout, or after a reset) gets a default hidden panel layout.
   useEffect(() => {
-    setGroupLayout((prev) => {
+    if (!ready) return
+    updateDashboardGroups((prev) => {
       let changed = false
       const next = { ...prev }
       timerGroups.forEach((g, i) => {
@@ -635,14 +632,10 @@ export default function OverlaysDashboard(): React.ReactElement {
       })
       return changed ? next : prev
     })
-  }, [timerGroups])
-
-  useEffect(() => {
-    saveGroupPanelLayouts(groupLayout)
-  }, [groupLayout])
+  }, [timerGroups, ready, groupLayout])
 
   const updateGroupPanel = useCallback((id: string, patch: Partial<PanelLayout>) => {
-    setGroupLayout((prev) => ({
+    updateDashboardGroups((prev) => ({
       ...prev,
       [id]: { ...(prev[id] ?? defaultGroupPanelLayout(0)), ...patch },
     }))
@@ -844,8 +837,9 @@ export default function OverlaysDashboard(): React.ReactElement {
         </div>
       </div>
 
-      {/* Dashboard canvas */}
-      <div style={{ position: 'relative', flex: 1, overflow: 'auto' }}>
+      {/* Dashboard canvas. Hidden until the layout's arrangement loads, so
+          panels don't flash at their default spots first. */}
+      <div style={{ position: 'relative', flex: 1, overflow: 'auto', visibility: ready ? undefined : 'hidden' }}>
         {/* Invisible sizer forces the scroll container to extend past the
             lowest/rightmost panel so panels aren't tight against the edge
             when scrolled to the end. */}

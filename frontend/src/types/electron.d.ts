@@ -20,6 +20,29 @@ export interface LayoutState {
   layouts: OverlayLayoutSummary[]
 }
 
+// A layout's in-app dashboard arrangement: fixed panels by panel key, named
+// timer windows by group id.
+export interface LayoutDashboardPanel {
+  x: number
+  y: number
+  width: number
+  height: number
+  visible: boolean
+}
+
+export interface LayoutDashboard {
+  panels: Record<string, LayoutDashboardPanel>
+  groups: Record<string, LayoutDashboardPanel>
+}
+
+// dashboard null = defaults; migrated false = the old localStorage
+// arrangement hasn't been handed over yet.
+export interface LayoutDashboardState {
+  id: string
+  dashboard: LayoutDashboard | null
+  migrated: boolean
+}
+
 export interface ElectronAPI {
   app: {
     getVersion: () => Promise<string>
@@ -145,6 +168,9 @@ export interface ElectronAPI {
     layoutsDelete: (id: string) => Promise<LayoutState>
     layoutsOpenActive: () => Promise<void>
     layoutsMigrateSelection: (entries: Array<string | { key: string; name: string }>) => Promise<LayoutState>
+    layoutsDashboardGet: () => Promise<LayoutDashboardState>
+    layoutsDashboardSet: (id: string, dashboard: LayoutDashboard) => Promise<void>
+    layoutsMigrateDashboard: (dashboard: LayoutDashboard | null) => Promise<LayoutDashboardState>
     onLayoutsChanged: (cb: (state: LayoutState) => void) => () => void
     setIgnoreMouseEvents: (ignore: boolean) => Promise<void>
     setTriggerMode: (mode: 'interactive' | 'passthrough' | 'hidden') => Promise<void>

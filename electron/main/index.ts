@@ -2614,12 +2614,24 @@ ipcMain.handle('overlay:popouts:toggle-visibility', () => toggleAllPopoutsVisibi
 // (overlayBounds.json, overlay-collapsed.json) stay what each window opens
 // from; a switch writes the target's entries into them first. The trigger
 // alert overlay is never part of a layout.
+//
+// Each layout also keeps the in-app dashboard's arrangement (panel and timer
+// window positions, sizes, which are shown). Main only stores it: the
+// renderer reads the active layout's and writes back by layout id.
 
 type LayoutWindow = { key: WindowKey; groupName?: string; bounds?: Bounds; collapse?: CollapseEntry }
-type OverlayLayout = { id: string; name: string; windows: LayoutWindow[] }
+type DashboardPanel = { x: number; y: number; width: number; height: number; visible: boolean }
+type LayoutDashboard = { panels: Record<string, DashboardPanel>; groups: Record<string, DashboardPanel> }
+type OverlayLayout = { id: string; name: string; windows: LayoutWindow[]; dashboard?: LayoutDashboard }
 // selectionMigrated: the renderer's old "Pop Out All" set (localStorage) has
-// been folded into the Default layout, or wasn't needed.
-type LayoutStore = { activeId: string; layouts: OverlayLayout[]; selectionMigrated: boolean }
+// been folded into the Default layout, or wasn't needed. dashboardMigrated:
+// the same for the dashboard arrangement the renderer kept in localStorage.
+type LayoutStore = {
+  activeId: string
+  layouts: OverlayLayout[]
+  selectionMigrated: boolean
+  dashboardMigrated: boolean
+}
 type LayoutSummary = { activeId: string; layouts: Array<{ id: string; name: string; windows: WindowKey[] }> }
 
 // Dashboard panel key → popout window. The old saved selection and the
@@ -2677,6 +2689,34 @@ function withLiveState(w: LayoutWindow): LayoutWindow {
   }
 }
 
+function isDashboardPanel(v: unknown): v is DashboardPanel {
+  if (!v || typeof v !== 'object') return false
+  const o = v as Record<string, unknown>
+  return ['x', 'y', 'width', 'height'].every((k) => typeof o[k] === 'number' && Number.isFinite(o[k]))
+    && typeof o.visible === 'boolean'
+}
+
+function cleanPanelMap(v: unknown): Record<string, DashboardPanel> {
+  const out: Record<string, DashboardPanel> = {}
+  if (!v || typeof v !== 'object') return out
+  for (const [k, p] of Object.entries(v as Record<string, unknown>)) {
+    if (k.length <= 64 && isDashboardPanel(p)) {
+      out[k] = { x: p.x, y: p.y, width: p.width, height: p.height, visible: p.visible }
+    }
+  }
+  return out
+}
+
+function cleanDashboard(v: unknown): LayoutDashboard | undefined {
+  if (!v || typeof v !== 'object') return undefined
+  const o = v as Record<string, unknown>
+  return { panels: cleanPanelMap(o.panels), groups: cleanPanelMap(o.groups) }
+}
+
+function copyDashboard(d: LayoutDashboard | undefined): LayoutDashboard | undefined {
+  return d ? { panels: cleanPanelMap(d.panels), groups: cleanPanelMap(d.groups) } : undefined
+}
+
 function layoutWindowFromRequest(entry: PopoutRequestEntry): LayoutWindow | null {
   if (typeof entry === 'string') {
     const name = PANEL_TO_OVERLAY[entry] ?? entry
@@ -2705,6 +2745,7 @@ function initialLayoutStore(): LayoutStore {
     activeId: 'default',
     layouts: [{ id: 'default', name: 'Default', windows }],
     selectionMigrated: fromAutoOpen,
+    dashboardMigrated: false,
   }
 }
 
@@ -2718,11 +2759,17 @@ function parseLayoutStore(raw: unknown): LayoutStore | null {
     const windows = (Array.isArray(l.windows) ? l.windows : []).filter(
       (w): w is LayoutWindow => !!w && typeof w.key === 'string' && isValidWindowKey(w.key) && w.key !== 'trigger',
     )
-    layouts.push({ id: l.id, name: cleanLayoutName(l.name), windows })
+    const dashboard = cleanDashboard(l.dashboard)
+    layouts.push({ id: l.id, name: cleanLayoutName(l.name), windows, ...(dashboard ? { dashboard } : {}) })
   }
   if (layouts.length === 0) return null
   const activeId = layouts.some((l) => l.id === o.activeId) ? (o.activeId as string) : layouts[0].id
-  return { activeId, layouts, selectionMigrated: o.selectionMigrated === true }
+  return {
+    activeId,
+    layouts,
+    selectionMigrated: o.selectionMigrated === true,
+    dashboardMigrated: o.dashboardMigrated === true,
+  }
 }
 
 let layoutStoreCache: LayoutStore | null = null
@@ -2922,6 +2969,8 @@ ipcMain.handle('layouts:create', (_event, name: string) => {
     name: cleanLayoutName(name),
     windows: activeLayout().windows.map((w) => withLiveState({ key: w.key, ...(w.groupName !== undefined ? { groupName: w.groupName } : {}) })),
   }
+  const dashboard = copyDashboard(activeLayout().dashboard)
+  if (dashboard) copy.dashboard = dashboard
   store.layouts.push(copy)
   store.activeId = copy.id
   saveLayoutStore()
@@ -2980,6 +3029,40 @@ ipcMain.handle('layouts:migrate-selection', (_event, entries: PopoutRequestEntry
   return layoutSummary()
 })
 
+// The active layout's dashboard arrangement; null means the defaults.
+// migrated=false asks the renderer to send its old localStorage arrangement.
+function dashboardState(): { id: string; dashboard: LayoutDashboard | null; migrated: boolean } {
+  const store = loadLayoutStore()
+  const layout = activeLayout()
+  return { id: layout.id, dashboard: layout.dashboard ?? null, migrated: store.dashboardMigrated }
+}
+
+ipcMain.handle('layouts:dashboard-get', () => dashboardState())
+
+// Saved by layout id, so a save in flight across a switch lands in the layout
+// it was made in.
+ipcMain.handle('layouts:dashboard-set', (_event, id: string, dashboard: unknown) => {
+  const layout = loadLayoutStore().layouts.find((l) => l.id === id)
+  const clean = cleanDashboard(dashboard)
+  if (!layout || !clean) return
+  layout.dashboard = clean
+  saveLayoutStore()
+})
+
+// One-time: the renderer's old localStorage arrangement becomes every
+// existing layout's (they were all made before layouts had their own).
+ipcMain.handle('layouts:migrate-dashboard', (_event, dashboard: unknown) => {
+  const store = loadLayoutStore()
+  if (!store.dashboardMigrated) {
+    store.dashboardMigrated = true
+    const clean = cleanDashboard(dashboard)
+    if (clean) {
+      for (const l of store.layouts) if (!l.dashboard) l.dashboard = copyDashboard(clean)
+    }
+    saveLayoutStore()
+  }
+  return dashboardState()
+})
 
 ipcMain.handle('overlay:popouts:close-all', () => {
   // Use close() (not destroy()) so each window's 'close' handler persists its

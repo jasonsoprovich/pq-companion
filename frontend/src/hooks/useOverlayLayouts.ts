@@ -6,6 +6,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import type { LayoutState } from '../types/electron'
+import { flushDashboardSave } from '../services/dashboardLayout'
 
 export function useOverlayLayouts(): {
   state: LayoutState | null
@@ -31,16 +32,19 @@ export function useOverlayLayouts(): {
     return () => { cancelled = true; off() }
   }, [supported])
 
-  const run = useCallback((p: Promise<LayoutState> | undefined) => {
-    p?.then(setState).catch(() => {})
+  // Pending dashboard moves are sent first, so a switch saves them into the
+  // layout they were made in and a new layout copies them.
+  const run = useCallback((p: () => Promise<LayoutState> | undefined) => {
+    flushDashboardSave()
+    p()?.then(setState).catch(() => {})
   }, [])
 
   return {
     state,
     supported,
-    switchTo: useCallback((id: string) => run(o?.layoutsSwitch(id)), [o, run]),
-    create: useCallback((name: string) => run(o?.layoutsCreate(name)), [o, run]),
-    rename: useCallback((id: string, name: string) => run(o?.layoutsRename(id, name)), [o, run]),
-    remove: useCallback((id: string) => run(o?.layoutsDelete(id)), [o, run]),
+    switchTo: useCallback((id: string) => run(() => o?.layoutsSwitch(id)), [o, run]),
+    create: useCallback((name: string) => run(() => o?.layoutsCreate(name)), [o, run]),
+    rename: useCallback((id: string, name: string) => run(() => o?.layoutsRename(id, name)), [o, run]),
+    remove: useCallback((id: string) => run(() => o?.layoutsDelete(id)), [o, run]),
   }
 }

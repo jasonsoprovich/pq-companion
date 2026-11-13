@@ -23,13 +23,10 @@ import {
 } from '../../lib/overlayCatalog'
 import {
   defaultGroupPanelLayout,
-  loadDashboardLayout,
-  loadGroupPanelLayouts,
-  saveDashboardLayout,
-  saveGroupPanelLayouts,
-  type DashboardLayout,
+  updateDashboardGroups,
+  updateDashboardPanels,
+  useDashboardLayouts,
   type DashboardPanelKey,
-  type GroupPanelLayouts,
 } from '../../services/dashboardLayout'
 import { getConfig, listTimerGroups } from '../../services/api'
 import { useWebSocket } from '../../hooks/useWebSocket'
@@ -387,8 +384,7 @@ export default function OverlayLibrary({
   const { overlayDot, markOverlaySeen } = useFeatureDots()
   const itemInfoOffered = useItemInfoOffered()
   const [windowStates, setWindowStates] = useState<Record<string, 'open' | 'hidden'>>({})
-  const [layout, setLayout] = useState<DashboardLayout>(() => loadDashboardLayout())
-  const [groupLayout, setGroupLayout] = useState<GroupPanelLayouts>(() => loadGroupPanelLayouts())
+  const { panels: layout, groups: groupLayout } = useDashboardLayouts()
   const [bindings, setBindings] = useState<Record<string, string>>({})
   const [discordEnabled, setDiscordEnabled] = useState(false)
   const [groups, setGroups] = useState<TimerGroup[]>([])
@@ -461,11 +457,7 @@ export default function OverlayLibrary({
   const toggleDashboard = useCallback(
     (panel: DashboardPanelKey) => {
       markOverlaySeen(panel)
-      setLayout((prev) => {
-        const next = { ...prev, [panel]: { ...prev[panel], visible: !prev[panel].visible } }
-        saveDashboardLayout(next)
-        return next
-      })
+      updateDashboardPanels((prev) => ({ ...prev, [panel]: { ...prev[panel], visible: !prev[panel].visible } }))
     },
     [markOverlaySeen],
   )
@@ -479,11 +471,9 @@ export default function OverlayLibrary({
   )
 
   const toggleGroupDashboard = useCallback((id: string, index: number) => {
-    setGroupLayout((prev) => {
+    updateDashboardGroups((prev) => {
       const cur = prev[id] ?? defaultGroupPanelLayout(index)
-      const next = { ...prev, [id]: { ...cur, visible: !cur.visible } }
-      saveGroupPanelLayouts(next)
-      return next
+      return { ...prev, [id]: { ...cur, visible: !cur.visible } }
     })
   }, [])
 

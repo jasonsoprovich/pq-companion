@@ -2,6 +2,9 @@ import { contextBridge, ipcRenderer, webFrame } from 'electron'
 
 type HotkeyState = { bindings: Record<string, string>; status: Record<string, 'ok' | 'failed'> }
 type LayoutState = { activeId: string; layouts: Array<{ id: string; name: string; windows: string[] }> }
+type DashboardPanel = { x: number; y: number; width: number; height: number; visible: boolean }
+type LayoutDashboard = { panels: Record<string, DashboardPanel>; groups: Record<string, DashboardPanel> }
+type LayoutDashboardState = { id: string; dashboard: LayoutDashboard | null; migrated: boolean }
 
 // Expose a safe, typed API to the renderer — no direct Node/Electron access
 contextBridge.exposeInMainWorld('electron', {
@@ -182,6 +185,12 @@ contextBridge.exposeInMainWorld('electron', {
     // One-time move of the old saved Pop Out All set into the Default layout.
     layoutsMigrateSelection: (entries: Array<string | { key: string; name: string }>): Promise<LayoutState> =>
       ipcRenderer.invoke('layouts:migrate-selection', entries),
+    // The active layout's dashboard arrangement (see dashboardLayout.ts).
+    layoutsDashboardGet: (): Promise<LayoutDashboardState> => ipcRenderer.invoke('layouts:dashboard-get'),
+    layoutsDashboardSet: (id: string, dashboard: LayoutDashboard): Promise<void> =>
+      ipcRenderer.invoke('layouts:dashboard-set', id, dashboard),
+    layoutsMigrateDashboard: (dashboard: LayoutDashboard | null): Promise<LayoutDashboardState> =>
+      ipcRenderer.invoke('layouts:migrate-dashboard', dashboard),
     onLayoutsChanged: (cb: (state: LayoutState) => void): (() => void) => {
       const listener = (_e: unknown, s: LayoutState): void => cb(s)
       ipcRenderer.on('layouts:changed', listener)
