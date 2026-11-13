@@ -2003,14 +2003,75 @@ ipcMain.handle('window:drag:start', (event) => {
       width: start.width,
       height: start.height,
     })
+    updateStackDropTarget(win, cur)
   }, 16)
   dragLoops.set(win, loop)
 })
 
 ipcMain.handle('window:drag:end', (event) => {
   const win = BrowserWindow.fromWebContents(event.sender)
-  if (win) stopDrag(win)
+  if (!win) return
+  stopDrag(win)
+  finishStackDrop(win)
 })
+
+// ── Drag to stack ────────────────────────────────────────────────────────────
+// Dragging an overlay by its title bar until the cursor is over another
+// overlay's title bar arms a drop: the target gets an outline and the dragged
+// window says what letting go will do. Releasing there stacks them (see
+// mergeIntoStack). Only the title-bar strip counts, so overlapping windows
+// while arranging them never stacks by accident.
+const STACK_DROP_BAND_PX = 36
+const stackDropTargets = new WeakMap<BrowserWindow, BrowserWindow>()
+
+type StackDropHint = { role: 'source' | 'target'; key: string; name?: string } | null
+
+function sendStackDropHint(win: BrowserWindow, hint: StackDropHint): void {
+  if (!win.isDestroyed()) win.webContents.send('overlay:stack:drop-hint', hint)
+}
+
+function canStackDrop(key: WindowKey | undefined): key is WindowKey {
+  return !!key && (isStackKey(key) || isStackable(key))
+}
+
+function stackDropTargetAt(source: BrowserWindow, cur: Electron.Point): BrowserWindow | null {
+  if (!canStackDrop(windowToOverlayName.get(source))) return null
+  for (const win of userPopoutWindows()) {
+    if (win === source || !win.isVisible() || !canStackDrop(windowToOverlayName.get(win))) continue
+    const b = win.getBounds()
+    if (cur.x >= b.x && cur.x < b.x + b.width && cur.y >= b.y && cur.y < b.y + STACK_DROP_BAND_PX) return win
+  }
+  return null
+}
+
+function updateStackDropTarget(source: BrowserWindow, cur: Electron.Point): void {
+  const next = stackDropTargetAt(source, cur)
+  const prev = stackDropTargets.get(source) ?? null
+  if (next === prev) return
+  if (prev) sendStackDropHint(prev, null)
+  if (next) {
+    stackDropTargets.set(source, next)
+    const sourceKey = windowToOverlayName.get(source) as WindowKey
+    const targetKey = windowToOverlayName.get(next) as WindowKey
+    sendStackDropHint(next, { role: 'target', key: sourceKey, name: groupNameFor(sourceKey) })
+    sendStackDropHint(source, { role: 'source', key: targetKey, name: groupNameFor(targetKey) })
+  } else {
+    stackDropTargets.delete(source)
+    sendStackDropHint(source, null)
+  }
+}
+
+function finishStackDrop(source: BrowserWindow): void {
+  const target = stackDropTargets.get(source)
+  stackDropTargets.delete(source)
+  if (!target) return
+  sendStackDropHint(source, null)
+  sendStackDropHint(target, null)
+  if (target.isDestroyed() || source.isDestroyed()) return
+  const targetKey = windowToOverlayName.get(target)
+  const sourceKey = windowToOverlayName.get(source)
+  if (canStackDrop(targetKey) && canStackDrop(sourceKey)) mergeIntoStack(targetKey, sourceKey)
+}
 
 // Default spawn point for the positioning card, in coordinates local to the
 // trigger overlay window. The overlay now covers exactly one monitor, so its

@@ -9,6 +9,7 @@ type DashboardPanel = { x: number; y: number; width: number; height: number; vis
 type LayoutDashboard = { panels: Record<string, DashboardPanel>; groups: Record<string, DashboardPanel> }
 type LayoutDashboardState = { id: string; dashboard: LayoutDashboard | null; migrated: boolean }
 type StackInfo = { id: string; key: string; tabs: string[]; active: string; groupNames: Record<string, string> }
+type StackDropHint = { role: 'source' | 'target'; key: string; name?: string } | null
 type ProcessRow = {
   pid: number
   role: 'overlay' | 'main' | 'trigger' | 'streamkit' | 'helper'
@@ -204,6 +205,11 @@ contextBridge.exposeInMainWorld('electron', {
       const listener = (_e: unknown, v: StackInfo): void => cb(v)
       ipcRenderer.on('overlay:stack:changed', listener)
       return () => ipcRenderer.removeListener('overlay:stack:changed', listener)
+    },
+    onStackDropHint: (cb: (hint: StackDropHint) => void): (() => void) => {
+      const listener = (_e: unknown, v: StackDropHint): void => cb(v)
+      ipcRenderer.on('overlay:stack:drop-hint', listener)
+      return () => ipcRenderer.removeListener('overlay:stack:drop-hint', listener)
     },
     onPausedChanged: (cb: (paused: boolean) => void): (() => void) => {
       const listener = (_e: unknown, v: boolean): void => cb(v)

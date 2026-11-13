@@ -8,6 +8,7 @@ import Layout from './components/Layout'
 import OnboardingWizard from './components/OnboardingWizard'
 import WhatsNewModal from './components/WhatsNewModal'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import StackDropHint from './components/StackDropHint'
 import { getConfig, getChangelog, updateConfig, saveConfigChanges, type ChangelogEntry } from './services/api'
 import { setAudioOwner } from './services/audio'
 import { loadEnums } from './lib/enumsCache'
@@ -142,6 +143,7 @@ function OverlayPage({
   return (
     <ErrorBoundary label={`${overlayKey ?? 'Overlay'} overlay`}>
       <Suspense fallback={null}>{children}</Suspense>
+      <StackDropHint />
     </ErrorBoundary>
   )
 }

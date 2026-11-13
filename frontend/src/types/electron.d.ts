@@ -69,6 +69,11 @@ export interface StackInfo {
   groupNames: Record<string, string>
 }
 
+// While dragging one overlay onto another to stack: in the target, the
+// window being dropped ('target'); in the dragged one, where it would land
+// ('source'). name = a timer window's display name. null = no drop armed.
+export type StackDropHint = { role: 'source' | 'target'; key: string; name?: string } | null
+
 export interface ElectronAPI {
   app: {
     getVersion: () => Promise<string>
@@ -192,6 +197,7 @@ export interface ElectronAPI {
     stackRemove: (key: string, popOut: boolean) => Promise<boolean>
     stackClose: () => Promise<void>
     onStackChanged: (cb: (info: StackInfo) => void) => () => void
+    onStackDropHint: (cb: (hint: StackDropHint) => void) => () => void
     hotkeysGet: () => Promise<HotkeyState>
     hotkeysSet: (action: string, accelerator: string | null) => Promise<HotkeyState>
     hotkeysSetMany: (bindings: Record<string, string>) => Promise<HotkeyState>
