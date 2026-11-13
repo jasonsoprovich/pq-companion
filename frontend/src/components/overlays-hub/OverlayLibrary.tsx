@@ -11,7 +11,7 @@
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Bell, ExternalLink, Eye, Hourglass, Keyboard, LayoutDashboard, Plus, RotateCcw, X } from 'lucide-react'
+import { Bell, ExternalLink, Eye, Hourglass, Keyboard, LayoutDashboard, Plus, RotateCcw, Settings2, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import {
   CUSTOM_GROUP_INFO,
@@ -38,10 +38,16 @@ import { NewDot, useFeatureDots } from '../../hooks/useFeatureDots'
 import { WSEvent } from '../../lib/wsEvents'
 import { acceleratorParts, overlayAction } from '../../lib/hotkeys'
 import TimerGroupsModal from '../TimerGroupsModal'
+import { useConfigDraft, type DraftSaveState } from '../../hooks/useConfigDraft'
+import { useEscapeToClose } from '../../hooks/useEscapeToClose'
+import GlobalOverlaySettings, { AlertTextSettings } from './settings/GlobalOverlaySettings'
+import { OverlayWindowControls } from './settings/OverlayWindowSettings'
+import { SettingsSection } from './settings/SettingsSection'
+import { sameSelection, type HubSelection } from './selection'
 import type { TimerGroup } from '../../types/trigger'
 
 type WindowState = 'open' | 'hidden' | undefined
-type Selection = { kind: 'overlay'; panel: DashboardPanelKey } | { kind: 'trigger' } | { kind: 'group'; id: string }
+type Selection = HubSelection
 
 const POLL_MS = 1500
 
@@ -259,45 +265,65 @@ function Card({
   )
 }
 
-function DetailsPanel({
+function Drawer({
   icon,
   color,
   title,
   details,
   status,
+  saveState,
   unavailable,
   actions,
+  children,
   onClose,
 }: {
   icon: LucideIcon
   color: string
   title: string
-  details: string
+  details?: string
   status?: React.ReactNode
+  saveState: DraftSaveState
   unavailable?: Unavailable | null
-  actions: React.ReactNode
+  actions?: React.ReactNode
+  children?: React.ReactNode
   onClose: () => void
 }): React.ReactElement {
+  useEscapeToClose(onClose)
   return (
     <aside
-      className="flex w-80 shrink-0 flex-col gap-3 overflow-y-auto border-l p-4"
-      style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}
+      className="absolute inset-y-0 right-0 z-20 flex w-[640px] max-w-full flex-col border-l"
+      style={{
+        borderColor: 'var(--color-border)',
+        backgroundColor: 'var(--color-background)',
+        boxShadow: '-12px 0 32px rgba(0,0,0,0.45)',
+      }}
     >
-      <div className="flex items-center gap-2.5">
+      <div
+        className="flex shrink-0 items-center gap-2.5 border-b px-4 py-3"
+        style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}
+      >
         <IconTile icon={icon} color={color} size={36} />
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>{title}</div>
           {status}
         </div>
-        <button onClick={onClose} title="Close details" style={{ color: 'var(--color-muted-foreground)' }}>
-          <X size={14} />
+        <span className="text-[11px]" style={{ color: saveState === 'error' ? 'var(--color-danger)' : 'var(--color-muted-foreground)' }}>
+          {saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved' : saveState === 'error' ? 'Couldn’t save' : ''}
+        </span>
+        <button onClick={onClose} title="Close (Esc)" style={{ color: 'var(--color-muted-foreground)' }}>
+          <X size={16} />
         </button>
       </div>
-      <p className="text-xs leading-relaxed" style={{ color: 'var(--color-muted-foreground)' }}>{details}</p>
-      {unavailable && (
-        <p className="text-xs leading-snug" style={{ color: 'var(--color-warning, #f59e0b)' }}>{unavailable.reason}</p>
-      )}
-      <div className="flex flex-wrap gap-2">{actions}</div>
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
+        {details && (
+          <p className="text-xs leading-relaxed" style={{ color: 'var(--color-muted-foreground)' }}>{details}</p>
+        )}
+        {unavailable && (
+          <p className="text-xs leading-snug" style={{ color: 'var(--color-warning)' }}>{unavailable.reason}</p>
+        )}
+        {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
+        {children}
+      </div>
     </aside>
   )
 }
@@ -349,7 +375,13 @@ const GRID_STYLE: React.CSSProperties = {
 
 // ── Library ──────────────────────────────────────────────────────────────────
 
-export default function OverlayLibrary(): React.ReactElement {
+export default function OverlayLibrary({
+  selected,
+  onSelect,
+}: {
+  selected: HubSelection | null
+  onSelect: (s: HubSelection | null) => void
+}): React.ReactElement {
   const navigate = useNavigate()
   const { overlayDot, markOverlaySeen } = useFeatureDots()
   const itemInfoOffered = useItemInfoOffered()
@@ -360,7 +392,8 @@ export default function OverlayLibrary(): React.ReactElement {
   const [discordEnabled, setDiscordEnabled] = useState(false)
   const [groups, setGroups] = useState<TimerGroup[]>([])
   const [showGroupsModal, setShowGroupsModal] = useState(false)
-  const [selected, setSelected] = useState<Selection | null>(null)
+  const setSelected = onSelect
+  const { config, setConfig, saveState } = useConfigDraft()
 
   const refreshStates = useCallback(() => {
     window.electron?.overlay?.popoutWindowStates?.().then(setWindowStates).catch(() => {})
@@ -405,7 +438,7 @@ export default function OverlayLibrary(): React.ReactElement {
   const unavailableFor = useCallback(
     (panel: DashboardPanelKey): Unavailable | null => {
       if (panel === 'discordVoice' && !discordEnabled) {
-        return { reason: 'Turned off.', fix: { label: 'Turn it on in settings', to: '/settings?tab=overlays' } }
+        return { reason: 'Turned off.', fix: { label: 'Turn it on in settings', to: '/settings?tab=discord' } }
       }
       if (panel === 'itemInfo' && !itemInfoOffered) {
         return { reason: 'Needs Zeal 1.5.0 or newer. Inspect any item in game to turn it on.' }
@@ -464,22 +497,31 @@ export default function OverlayLibrary(): React.ReactElement {
     window.electron?.overlay?.resetPosition?.(name)
   }
 
-  // ── Details panel for the selection ──
+  // ── Settings drawer for the selection ──
+  const close = (): void => setSelected(null)
   let details: React.ReactNode = null
-  if (selected?.kind === 'overlay') {
+  if (selected?.kind === 'global') {
+    details = (
+      <Drawer icon={Settings2} color="#c9a84c" title="Overlay settings" saveState={saveState} onClose={close}
+        details="Settings for every overlay. Each overlay's own settings are on its card.">
+        {config && <GlobalOverlaySettings config={config} setConfig={setConfig} />}
+      </Drawer>
+    )
+  } else if (selected?.kind === 'overlay') {
     const entry = OVERLAY_CATALOG.find((e) => e.panel === selected.panel)
     if (entry) {
       const state = windowStates[entry.name]
       const unavailable = unavailableFor(entry.panel)
       details = (
-        <DetailsPanel
+        <Drawer
           icon={entry.icon}
           color={entry.color}
           title={entry.label}
           details={entry.details}
           status={<StatusText state={state} />}
+          saveState={saveState}
           unavailable={unavailable}
-          onClose={() => setSelected(null)}
+          onClose={close}
           actions={
             <>
               <PopButton state={state} disabled={!!unavailable && !state} onClick={() => togglePopout(entry)} />
@@ -496,25 +538,29 @@ export default function OverlayLibrary(): React.ReactElement {
               />
             </>
           }
-        />
+        >
+          {config && (
+            <SettingsSection title="Window">
+              <OverlayWindowControls name={entry.name} label={entry.label} config={config} setConfig={setConfig} />
+            </SettingsSection>
+          )}
+        </Drawer>
       )
     }
   } else if (selected?.kind === 'trigger') {
     details = (
-      <DetailsPanel
+      <Drawer
         icon={Bell}
         color="#c9a84c"
         title={TRIGGER_ALERTS_INFO.label}
         details={TRIGGER_ALERTS_INFO.details}
         status={<span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--color-success)' }}>Always on</span>}
-        onClose={() => setSelected(null)}
-        actions={
-          <>
-            <SecondaryButton icon={Bell} label="Alert text settings" onClick={() => navigate('/settings?tab=overlays')} />
-            <SecondaryButton icon={ExternalLink} label="Open Triggers" onClick={() => navigate('/triggers')} />
-          </>
-        }
-      />
+        saveState={saveState}
+        onClose={close}
+        actions={<SecondaryButton icon={ExternalLink} label="Open Triggers" onClick={() => navigate('/triggers')} />}
+      >
+        {config && <AlertTextSettings config={config} setConfig={setConfig} />}
+      </Drawer>
     )
   } else if (selected?.kind === 'group') {
     const g = groups.find((x) => x.id === selected.id)
@@ -522,13 +568,14 @@ export default function OverlayLibrary(): React.ReactElement {
       const key = `customTimer:${g.id}`
       const state = windowStates[key]
       details = (
-        <DetailsPanel
+        <Drawer
           icon={Hourglass}
           color="#38bdf8"
           title={g.name}
           details={CUSTOM_GROUP_INFO.details}
           status={<StatusText state={state} />}
-          onClose={() => setSelected(null)}
+          saveState={saveState}
+          onClose={close}
           actions={
             <>
               <PopButton state={state} onClick={() => toggleGroupPopout(g)} />
@@ -541,14 +588,10 @@ export default function OverlayLibrary(): React.ReactElement {
     }
   }
 
-  const isSel = (s: Selection): boolean =>
-    !!selected &&
-    selected.kind === s.kind &&
-    (s.kind !== 'overlay' || (selected.kind === 'overlay' && selected.panel === s.panel)) &&
-    (s.kind !== 'group' || (selected.kind === 'group' && selected.id === s.id))
+  const isSel = (s: Selection): boolean => sameSelection(selected, s)
 
   return (
-    <div className="flex h-full min-h-0">
+    <div className="relative flex h-full min-h-0">
       <div className="min-w-0 flex-1 overflow-y-auto p-4">
         <div className="flex flex-col gap-6">
           {byCategory.map((cat) => (
