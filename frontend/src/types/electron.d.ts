@@ -13,6 +13,8 @@ export interface OverlayLayoutSummary {
   id: string
   name: string
   windows: string[]
+  // Characters whose detected log-in switches to this layout.
+  characters: string[]
 }
 
 export interface LayoutState {
@@ -167,6 +169,8 @@ export interface ElectronAPI {
     layoutsRename: (id: string, name: string) => Promise<LayoutState>
     layoutsDelete: (id: string) => Promise<LayoutState>
     layoutsOpenActive: () => Promise<void>
+    layoutsSetCharacters: (id: string, names: string[]) => Promise<LayoutState>
+    layoutsSwitchForCharacter: (name: string) => Promise<LayoutState>
     layoutsMigrateSelection: (entries: Array<string | { key: string; name: string }>) => Promise<LayoutState>
     layoutsDashboardGet: () => Promise<LayoutDashboardState>
     layoutsDashboardSet: (id: string, dashboard: LayoutDashboard) => Promise<void>

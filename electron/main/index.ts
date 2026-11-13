@@ -2619,11 +2619,21 @@ ipcMain.handle('overlay:popouts:toggle-visibility', () => toggleAllPopoutsVisibi
 // Each layout also keeps the in-app dashboard's arrangement (panel and timer
 // window positions, sizes, which are shown). Main only stores it: the
 // renderer reads the active layout's and writes back by layout id.
+//
+// A layout can also be linked to characters: when the app detects you've
+// logged in on one, it switches to that character's layout. A character is
+// linked to at most one layout; names compare case-insensitively.
 
 type LayoutWindow = { key: WindowKey; groupName?: string; bounds?: Bounds; collapse?: CollapseEntry }
 type DashboardPanel = { x: number; y: number; width: number; height: number; visible: boolean }
 type LayoutDashboard = { panels: Record<string, DashboardPanel>; groups: Record<string, DashboardPanel> }
-type OverlayLayout = { id: string; name: string; windows: LayoutWindow[]; dashboard?: LayoutDashboard }
+type OverlayLayout = {
+  id: string
+  name: string
+  windows: LayoutWindow[]
+  dashboard?: LayoutDashboard
+  characters?: string[]
+}
 // selectionMigrated: the renderer's old "Pop Out All" set (localStorage) has
 // been folded into the Default layout, or wasn't needed. dashboardMigrated:
 // the same for the dashboard arrangement the renderer kept in localStorage.
@@ -2633,7 +2643,24 @@ type LayoutStore = {
   selectionMigrated: boolean
   dashboardMigrated: boolean
 }
-type LayoutSummary = { activeId: string; layouts: Array<{ id: string; name: string; windows: WindowKey[] }> }
+type LayoutSummary = {
+  activeId: string
+  layouts: Array<{ id: string; name: string; windows: WindowKey[]; characters: string[] }>
+}
+
+const MAX_CHARACTER_NAME = 64
+
+// Trimmed, de-duplicated (case-insensitively) character names.
+function cleanCharacters(v: unknown): string[] {
+  if (!Array.isArray(v)) return []
+  const out: string[] = []
+  for (const n of v) {
+    if (typeof n !== 'string') continue
+    const name = n.trim().slice(0, MAX_CHARACTER_NAME)
+    if (name && !out.some((x) => x.toLowerCase() === name.toLowerCase())) out.push(name)
+  }
+  return out
+}
 
 // Dashboard panel key → popout window. The old saved selection and the
 // dashboard's Pop Out All speak in panel keys.
@@ -2761,7 +2788,17 @@ function parseLayoutStore(raw: unknown): LayoutStore | null {
       (w): w is LayoutWindow => !!w && typeof w.key === 'string' && isValidWindowKey(w.key) && w.key !== 'trigger',
     )
     const dashboard = cleanDashboard(l.dashboard)
-    layouts.push({ id: l.id, name: cleanLayoutName(l.name), windows, ...(dashboard ? { dashboard } : {}) })
+    // A character linked twice (hand-edited file) stays with the first layout.
+    const characters = cleanCharacters(l.characters).filter(
+      (c) => !layouts.some((x) => x.characters?.some((y) => y.toLowerCase() === c.toLowerCase())),
+    )
+    layouts.push({
+      id: l.id,
+      name: cleanLayoutName(l.name),
+      windows,
+      ...(dashboard ? { dashboard } : {}),
+      ...(characters.length > 0 ? { characters } : {}),
+    })
   }
   if (layouts.length === 0) return null
   const activeId = layouts.some((l) => l.id === o.activeId) ? (o.activeId as string) : layouts[0].id
@@ -2805,7 +2842,12 @@ function layoutSummary(): LayoutSummary {
   const store = loadLayoutStore()
   return {
     activeId: store.activeId,
-    layouts: store.layouts.map((l) => ({ id: l.id, name: l.name, windows: l.windows.map((w) => w.key) })),
+    layouts: store.layouts.map((l) => ({
+      id: l.id,
+      name: l.name,
+      windows: l.windows.map((w) => w.key),
+      characters: l.characters ?? [],
+    })),
   }
 }
 
@@ -3011,6 +3053,40 @@ ipcMain.handle('layouts:delete', (_event, id: string) => {
 })
 
 ipcMain.handle('layouts:open-active', () => openLayoutWindows(activeLayout()))
+
+// Sets the characters linked to a layout. Each one is unlinked from any other
+// layout first, so a character always maps to one layout.
+ipcMain.handle('layouts:set-characters', (_event, id: string, names: unknown) => {
+  const store = loadLayoutStore()
+  const layout = store.layouts.find((l) => l.id === id)
+  if (!layout) return layoutSummary()
+  const chars = cleanCharacters(names)
+  const lower = new Set(chars.map((c) => c.toLowerCase()))
+  for (const l of store.layouts) {
+    if (l === layout || !l.characters) continue
+    l.characters = l.characters.filter((c) => !lower.has(c.toLowerCase()))
+    if (l.characters.length === 0) delete l.characters
+  }
+  if (chars.length > 0) layout.characters = chars
+  else delete layout.characters
+  saveLayoutStore()
+  broadcastLayouts()
+  return layoutSummary()
+})
+
+// A character was detected in game: switch to its linked layout, if it has
+// one and it isn't already active. Unlinked characters change nothing.
+ipcMain.handle('layouts:switch-for-character', (_event, name: unknown) => {
+  if (typeof name !== 'string' || !name.trim()) return layoutSummary()
+  const lower = name.trim().toLowerCase()
+  const store = loadLayoutStore()
+  const target = store.layouts.find((l) => l.characters?.some((c) => c.toLowerCase() === lower))
+  if (target && target.id !== store.activeId) {
+    console.log(`[main] character ${name} detected; switching to layout ${target.name}`)
+    switchLayout(target.id)
+  }
+  return layoutSummary()
+})
 
 // One-time migration of the renderer's old saved Pop Out All set into the
 // Default layout, sent on startup with group names resolved.

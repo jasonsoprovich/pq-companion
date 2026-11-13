@@ -15,6 +15,7 @@ export function useOverlayLayouts(): {
   create: (name: string) => void
   rename: (id: string, name: string) => void
   remove: (id: string) => void
+  setCharacters: (id: string, names: string[]) => void
 } {
   const o = window.electron?.overlay
   const supported = typeof o?.layoutsGet === 'function'
@@ -46,5 +47,9 @@ export function useOverlayLayouts(): {
     create: useCallback((name: string) => run(() => o?.layoutsCreate(name)), [o, run]),
     rename: useCallback((id: string, name: string) => run(() => o?.layoutsRename(id, name)), [o, run]),
     remove: useCallback((id: string) => run(() => o?.layoutsDelete(id)), [o, run]),
+    setCharacters: useCallback(
+      (id: string, names: string[]) => run(() => o?.layoutsSetCharacters(id, names)),
+      [o, run],
+    ),
   }
 }

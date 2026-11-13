@@ -1,6 +1,7 @@
 import React, { useEffect, useState, lazy, Suspense } from 'react'
 import { FeatureDotsProvider } from './hooks/useFeatureDots'
 import { migratePopoutSelection } from './services/overlayPopoutSelection'
+import { useLayoutAutoSwitch } from './hooks/useLayoutAutoSwitch'
 import { initialFeatureDots } from './lib/featureRegistry'
 import { HashRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import Layout from './components/Layout'
@@ -172,6 +173,9 @@ function MainWindowLayout(): React.ReactElement {
   useEffect(() => {
     migratePopoutSelection()
   }, [])
+
+  // Logging in on a character linked to a layout switches to it.
+  useLayoutAutoSwitch()
 
   // Deep links pushed from overlay windows (e.g. an NPC overlay loot row)
   // arrive here as hash routes; navigate the main window to them.

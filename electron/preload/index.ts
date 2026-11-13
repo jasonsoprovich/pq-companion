@@ -1,7 +1,10 @@
 import { contextBridge, ipcRenderer, webFrame } from 'electron'
 
 type HotkeyState = { bindings: Record<string, string>; status: Record<string, 'ok' | 'failed'> }
-type LayoutState = { activeId: string; layouts: Array<{ id: string; name: string; windows: string[] }> }
+type LayoutState = {
+  activeId: string
+  layouts: Array<{ id: string; name: string; windows: string[]; characters: string[] }>
+}
 type DashboardPanel = { x: number; y: number; width: number; height: number; visible: boolean }
 type LayoutDashboard = { panels: Record<string, DashboardPanel>; groups: Record<string, DashboardPanel> }
 type LayoutDashboardState = { id: string; dashboard: LayoutDashboard | null; migrated: boolean }
@@ -182,6 +185,10 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.invoke('layouts:rename', id, name),
     layoutsDelete: (id: string): Promise<LayoutState> => ipcRenderer.invoke('layouts:delete', id),
     layoutsOpenActive: (): Promise<void> => ipcRenderer.invoke('layouts:open-active'),
+    layoutsSetCharacters: (id: string, names: string[]): Promise<LayoutState> =>
+      ipcRenderer.invoke('layouts:set-characters', id, names),
+    layoutsSwitchForCharacter: (name: string): Promise<LayoutState> =>
+      ipcRenderer.invoke('layouts:switch-for-character', name),
     // One-time move of the old saved Pop Out All set into the Default layout.
     layoutsMigrateSelection: (entries: Array<string | { key: string; name: string }>): Promise<LayoutState> =>
       ipcRenderer.invoke('layouts:migrate-selection', entries),
