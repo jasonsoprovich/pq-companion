@@ -7,6 +7,8 @@ import { Hourglass, Pin, Skull, Trash2 } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
+import { CollapseToggle, useOverlayCollapse } from '../hooks/useOverlayCollapse'
+import { fmtRemaining } from '../lib/timeFormat'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useTimerAppearance } from '../hooks/useTimerAppearance'
 import { useOverlayLock } from '../hooks/useOverlayLock'
@@ -25,7 +27,11 @@ export default function RespawnTimerWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity('respawnTimer')
   const { locked, mode, toggleLocked, rootInteractionProps, headerInteractionProps, rowsInteractive } =
     useOverlayLock('respawnTimer')
-  const chrome = useOverlayChromeFade('respawnTimer', mode === 'display-only')
+  const chromeFade = useOverlayChromeFade('respawnTimer', mode === 'display-only')
+  // Collapse to title bar. A collapsed window is only its title bar, so keep
+  // that visible through the inactive fade.
+  const { collapsed, toggleCollapsed, headerRef } = useOverlayCollapse(mode !== 'display-only')
+  const chrome = chromeFade || collapsed
   const onDragMouseDown = useWindowDrag()
   const appearance = useTimerAppearance()
   const [state, setState] = useState<RespawnState | null>(null)
@@ -46,6 +52,14 @@ export default function RespawnTimerWindowPage(): React.ReactElement {
 
   const allTimers = state?.timers ?? []
   const timers = pinnedOnly ? allTimers.filter((t) => t.pinned) : allTimers
+  // Next respawn plus how many are pending.
+  const collapsedSummary = (() => {
+    const pending = timers.filter((t) => Date.parse(t.respawn_at) > Date.now())
+    if (pending.length === 0) return null
+    const next = pending.reduce((a, b) => (Date.parse(b.respawn_at) < Date.parse(a.respawn_at) ? b : a))
+    const secs = (Date.parse(next.respawn_at) - Date.now()) / 1000
+    return `${next.npc_name} ${fmtRemaining(secs, true)} · ${pending.length} pending`
+  })()
   const currentZone = state?.current_zone ?? ''
   const instanceMode = state?.instance_mode ?? false
   const anyPinned = allTimers.some((t) => t.pinned)
@@ -73,6 +87,7 @@ export default function RespawnTimerWindowPage(): React.ReactElement {
     >
       {/* ── Drag handle / title bar ─────────────────────────────────────── */}
       <div
+        ref={headerRef}
         {...headerInteractionProps}
         onMouseDown={onDragMouseDown}
         className={`overlay-header ${locked ? 'no-drag' : 'drag-region'}`}
@@ -112,6 +127,7 @@ export default function RespawnTimerWindowPage(): React.ReactElement {
           )}
         </div>
         <div className="no-drag" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <CollapseToggle collapsed={collapsed} onToggle={toggleCollapsed} summary={collapsedSummary} />
           <button
             onClick={togglePinnedOnly}
             title={pinnedOnly ? 'Showing pinned only — click to show all' : 'Show pinned timers only'}

@@ -13,6 +13,8 @@ import { useBuffSortMode, sortBuffs } from '../hooks/useBuffSortMode'
 import TimerRowControls from '../components/overlays/TimerRowControls'
 import { useTimerAppearance, type TimerAppearance } from '../hooks/useTimerAppearance'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
+import { CollapseToggle, useOverlayCollapse } from '../hooks/useOverlayCollapse'
+import { plural, timerSummary } from '../lib/overlaySummaries'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
@@ -168,7 +170,11 @@ export default function BuffTimerWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity('buffTimer')
   const { locked, mode, toggleLocked, rootInteractionProps, headerInteractionProps, rowsInteractive } =
     useOverlayLock('buffTimer')
-  const chrome = useOverlayChromeFade('buffTimer', mode === 'display-only')
+  const chromeFade = useOverlayChromeFade('buffTimer', mode === 'display-only')
+  // Collapse to title bar. A collapsed window is only its title bar, so keep
+  // that visible through the inactive fade.
+  const { collapsed, toggleCollapsed, headerRef } = useOverlayCollapse(mode !== 'display-only')
+  const chrome = chromeFade || collapsed
   const onDragMouseDown = useWindowDrag()
   const [state, setState] = useState<TimerState | null>(null)
   const activePlayer = useActivePlayerName()
@@ -196,6 +202,8 @@ export default function BuffTimerWindowPage(): React.ReactElement {
     sortMode,
   )
 
+  const collapsedSummary = timerSummary(buffs, (n) => plural(n, 'buff'))
+
   return (
     <div
       {...rootInteractionProps}
@@ -215,6 +223,7 @@ export default function BuffTimerWindowPage(): React.ReactElement {
     >
       {/* ── Drag handle / title bar ─────────────────────────────────────── */}
       <div
+        ref={headerRef}
         {...headerInteractionProps}
         onMouseDown={onDragMouseDown}
         className={`overlay-header ${locked ? 'no-drag' : 'drag-region'}`}
@@ -249,6 +258,7 @@ export default function BuffTimerWindowPage(): React.ReactElement {
           className="no-drag"
           style={{ display: 'flex', alignItems: 'center', gap: 6 }}
         >
+          <CollapseToggle collapsed={collapsed} onToggle={toggleCollapsed} summary={collapsedSummary} />
           <button
             onClick={toggleSort}
             title={

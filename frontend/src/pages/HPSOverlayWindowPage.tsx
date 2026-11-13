@@ -7,6 +7,8 @@ import { HeartPulse } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
+import { CollapseToggle, useOverlayCollapse } from '../hooks/useOverlayCollapse'
+import { compactNumber } from '../lib/overlaySummaries'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
@@ -138,7 +140,11 @@ export default function HPSOverlayWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity('hps')
   const { locked, mode, toggleLocked, rootInteractionProps, headerInteractionProps } =
     useOverlayLock('hps')
-  const chrome = useOverlayChromeFade('hps', mode === 'display-only')
+  const chromeFade = useOverlayChromeFade('hps', mode === 'display-only')
+  // Collapse to title bar. A collapsed window is only its title bar, so keep
+  // that visible through the inactive fade.
+  const { collapsed, toggleCollapsed, headerRef } = useOverlayCollapse(mode !== 'display-only')
+  const chrome = chromeFade || collapsed
   const onDragMouseDown = useWindowDrag()
   const [combat, setCombat] = useState<CombatState | null>(null)
   const [showAll, setShowAll] = useState(true)
@@ -156,6 +162,8 @@ export default function HPSOverlayWindowPage(): React.ReactElement {
   useWebSocket(handleMessage)
 
   const fight = combat?.current_fight
+
+  const collapsedSummary = fight && fight.you_hps > 0 ? `You ${compactNumber(fight.you_hps)} hps` : null
 
   return (
     <div
@@ -176,6 +184,7 @@ export default function HPSOverlayWindowPage(): React.ReactElement {
     >
       {/* ── Drag handle / title bar ─────────────────────────────────────── */}
       <div
+        ref={headerRef}
         {...headerInteractionProps}
         onMouseDown={onDragMouseDown}
         className={`overlay-header ${locked ? 'no-drag' : 'drag-region'}`}
@@ -212,6 +221,7 @@ export default function HPSOverlayWindowPage(): React.ReactElement {
           className="no-drag"
           style={{ display: 'flex', alignItems: 'center', gap: 6 }}
         >
+          <CollapseToggle collapsed={collapsed} onToggle={toggleCollapsed} summary={collapsedSummary} />
           {/* filter toggle */}
           <button
             onClick={() => setShowAll((v) => !v)}

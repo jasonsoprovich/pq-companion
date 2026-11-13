@@ -13,6 +13,7 @@ import { useItemInfoSettings } from '../hooks/useItemInfoSettings'
 import { AppNavigateContext } from '../hooks/useAppNavigate'
 import { openRouteInMain } from '../lib/overlayNav'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
+import { CollapseToggle, useOverlayCollapse } from '../hooks/useOverlayCollapse'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
@@ -53,7 +54,11 @@ export default function ItemInfoWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity('itemInfo')
   const { locked, mode, toggleLocked, rootInteractionProps, headerInteractionProps } =
     useOverlayLock('itemInfo')
-  const chrome = useOverlayChromeFade('itemInfo', mode === 'display-only')
+  const chromeFade = useOverlayChromeFade('itemInfo', mode === 'display-only')
+  // Collapse to title bar. A collapsed window is only its title bar, so keep
+  // that visible through the inactive fade.
+  const { collapsed, toggleCollapsed, headerRef } = useOverlayCollapse(mode !== 'display-only')
+  const chrome = chromeFade || collapsed
   const onDragMouseDown = useWindowDrag()
   const display = useItemDisplay()
   const { raw } = useItemInfoSettings('popout')
@@ -62,6 +67,8 @@ export default function ItemInfoWindowPage(): React.ReactElement {
   const hideTimer = useRef<number | null>(null)
 
   // (Re)arms the auto-hide countdown; a hovered window re-arms on leave.
+  const collapsedSummary = display.item ? display.item.name : null
+
   const armHide = React.useCallback(() => {
     if (hideTimer.current) window.clearTimeout(hideTimer.current)
     hideTimer.current = null
@@ -117,6 +124,7 @@ export default function ItemInfoWindowPage(): React.ReactElement {
     >
       {/* ── Drag handle / title bar ─────────────────────────────────────── */}
       <div
+        ref={headerRef}
         {...headerInteractionProps}
         onMouseDown={onDragMouseDown}
         className={`overlay-header ${locked ? 'no-drag' : 'drag-region'}`}
@@ -139,6 +147,7 @@ export default function ItemInfoWindowPage(): React.ReactElement {
           <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.8)' }}>Item Info</span>
         </div>
         <div className="no-drag" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <CollapseToggle collapsed={collapsed} onToggle={toggleCollapsed} summary={collapsedSummary} />
           <OverlayLockButton locked={locked} onToggle={toggleLocked} />
           <button
             onClick={() => window.electron?.overlay?.closeItemInfo()}

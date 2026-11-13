@@ -3,6 +3,7 @@ import { Crosshair, ExternalLink, X } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
+import { CollapseToggle, useOverlayCollapse } from '../hooks/useOverlayCollapse'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
@@ -731,7 +732,11 @@ export default function NPCOverlayWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity('npc')
   const { locked, mode, toggleLocked, rootInteractionProps, headerInteractionProps } =
     useOverlayLock('npc')
-  const chrome = useOverlayChromeFade('npc', mode === 'display-only')
+  const chromeFade = useOverlayChromeFade('npc', mode === 'display-only')
+  // Collapse to title bar. A collapsed window is only its title bar, so keep
+  // that visible through the inactive fade.
+  const { collapsed, toggleCollapsed, headerRef } = useOverlayCollapse(mode !== 'display-only')
+  const chrome = chromeFade || collapsed
   const onDragMouseDown = useWindowDrag()
   const [target, setTarget] = useState<TargetState | null>(null)
   const [view, setView] = useNPCOverlayView('popout')
@@ -768,6 +773,15 @@ export default function NPCOverlayWindowPage(): React.ReactElement {
     })
   }, [])
 
+  // "a lava drake · L52 · 74%" — HP only when Zeal reports it.
+  const collapsedSummary = (() => {
+    if (!target?.has_target || !target.target_name) return null
+    const parts = [target.target_name]
+    if (target.npc_data) parts.push(`L${npcLiveLevelLabel(target.npc_data, target.live_level)}`)
+    if (target.hp_percent >= 0) parts.push(`${Math.round(target.is_corpse ? 0 : target.hp_percent)}%`)
+    return parts.join(' · ')
+  })()
+
   useWebSocket(handleMessage)
 
   return (
@@ -794,6 +808,7 @@ export default function NPCOverlayWindowPage(): React.ReactElement {
     >
       {/* Drag region header */}
       <div
+        ref={headerRef}
         {...headerInteractionProps}
         onMouseDown={onDragMouseDown}
         className={`overlay-header ${locked ? 'no-drag' : 'drag-region'}`}
@@ -820,6 +835,7 @@ export default function NPCOverlayWindowPage(): React.ReactElement {
           className="no-drag"
           style={{ display: 'flex', alignItems: 'center', gap: 6 }}
         >
+          <CollapseToggle collapsed={collapsed} onToggle={toggleCollapsed} summary={collapsedSummary} />
           {target?.npc_data && linksEnabled && (
             <button
               onClick={() => openEntityInMain('npc', target.npc_data!.id)}

@@ -163,6 +163,16 @@ contextBridge.exposeInMainWorld('electron', {
     hotkeysSetMany: (bindings: Record<string, string>): Promise<HotkeyState> =>
       ipcRenderer.invoke('hotkeys:set-many', bindings),
     hotkeysSuspend: (suspend: boolean): Promise<void> => ipcRenderer.invoke('hotkeys:suspend', suspend),
+    // Collapse this overlay window to its title bar. headerFraction = header
+    // height / window content height (zoom-independent).
+    collapseGet: (): Promise<boolean> => ipcRenderer.invoke('overlay:collapse:get'),
+    collapseSet: (collapsed: boolean, headerFraction: number): Promise<boolean> =>
+      ipcRenderer.invoke('overlay:collapse:set', collapsed, headerFraction),
+    onCollapseChanged: (cb: (collapsed: boolean) => void): (() => void) => {
+      const listener = (_e: unknown, v: boolean): void => cb(v)
+      ipcRenderer.on('overlay:collapse-changed', listener)
+      return () => ipcRenderer.removeListener('overlay:collapse-changed', listener)
+    },
     onOpenPopoutSelection: (cb: () => void): (() => void) => {
       const listener = (): void => cb()
       ipcRenderer.on('overlay:popouts:open-selection', listener)

@@ -12,6 +12,8 @@ import { useDisplayThresholds, passesThreshold } from '../hooks/useDisplayThresh
 import TimerRowControls from '../components/overlays/TimerRowControls'
 import { useTimerAppearance, type TimerAppearance } from '../hooks/useTimerAppearance'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
+import { CollapseToggle, useOverlayCollapse } from '../hooks/useOverlayCollapse'
+import { mobCount, plural, timerSummary } from '../lib/overlaySummaries'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { WSEvent } from '../lib/wsEvents'
 import { useOverlayLock } from '../hooks/useOverlayLock'
@@ -230,7 +232,11 @@ export default function DetrimTimerWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity('detrimTimer')
   const { locked, mode, toggleLocked, rootInteractionProps, headerInteractionProps, rowsInteractive } =
     useOverlayLock('detrimTimer')
-  const chrome = useOverlayChromeFade('detrimTimer', mode === 'display-only')
+  const chromeFade = useOverlayChromeFade('detrimTimer', mode === 'display-only')
+  // Collapse to title bar. A collapsed window is only its title bar, so keep
+  // that visible through the inactive fade.
+  const { collapsed, toggleCollapsed, headerRef } = useOverlayCollapse(mode !== 'display-only')
+  const chrome = chromeFade || collapsed
   const onDragMouseDown = useWindowDrag()
   const [state, setState] = useState<TimerState | null>(null)
   const activePlayer = useActivePlayerName()
@@ -255,6 +261,8 @@ export default function DetrimTimerWindowPage(): React.ReactElement {
     .filter((t) => DETRIM_CATEGORIES.has(t.category))
     .filter((t) => passesThreshold(t, thresholds))
 
+  const collapsedSummary = timerSummary(detrims, (_n, live) => plural(mobCount(live), 'mob'))
+
   return (
     <div
       {...rootInteractionProps}
@@ -274,6 +282,7 @@ export default function DetrimTimerWindowPage(): React.ReactElement {
     >
       {/* ── Drag handle / title bar ─────────────────────────────────────── */}
       <div
+        ref={headerRef}
         {...headerInteractionProps}
         onMouseDown={onDragMouseDown}
         className={`overlay-header ${locked ? 'no-drag' : 'drag-region'}`}
@@ -308,6 +317,7 @@ export default function DetrimTimerWindowPage(): React.ReactElement {
           className="no-drag"
           style={{ display: 'flex', alignItems: 'center', gap: 6 }}
         >
+          <CollapseToggle collapsed={collapsed} onToggle={toggleCollapsed} summary={collapsedSummary} />
           <button
             onClick={() => clearTimers('detrimental').catch(() => {})}
             title="Clear all active detrimental timers"

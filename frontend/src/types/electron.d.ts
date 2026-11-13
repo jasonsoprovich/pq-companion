@@ -120,6 +120,9 @@ export interface ElectronAPI {
     popoutVisibility: () => Promise<{ open: number; hidden: number }>
     togglePopoutVisibility: () => Promise<void>
     onOpenPopoutSelection: (cb: () => void) => () => void
+    collapseGet: () => Promise<boolean>
+    collapseSet: (collapsed: boolean, headerFraction: number) => Promise<boolean>
+    onCollapseChanged: (cb: (collapsed: boolean) => void) => () => void
     hotkeysGet: () => Promise<HotkeyState>
     hotkeysSet: (action: string, accelerator: string | null) => Promise<HotkeyState>
     hotkeysSetMany: (bindings: Record<string, string>) => Promise<HotkeyState>

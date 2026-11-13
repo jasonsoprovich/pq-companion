@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
+import { CollapseToggle, useOverlayCollapse } from '../hooks/useOverlayCollapse'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
@@ -457,7 +458,11 @@ export default function RollTrackerWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity('rollTracker')
   const { locked, mode, toggleLocked, rootInteractionProps, headerInteractionProps } =
     useOverlayLock('rollTracker')
-  const chrome = useOverlayChromeFade('rollTracker', mode === 'display-only')
+  const chromeFade = useOverlayChromeFade('rollTracker', mode === 'display-only')
+  // Collapse to title bar. A collapsed window is only its title bar, so keep
+  // that visible through the inactive fade.
+  const { collapsed, toggleCollapsed, headerRef } = useOverlayCollapse(mode !== 'display-only')
+  const chrome = chromeFade || collapsed
   const onDragMouseDown = useWindowDrag()
   const [state, setState] = useState<RollsState>({
     sessions: [],
@@ -514,6 +519,17 @@ export default function RollTrackerWindowPage(): React.ReactElement {
     const { contests, ungrouped } = groupContests(state.sessions, state.profile)
     return orderRollEntries(contests, ungrouped)
   }, [state.sessions, state.profile])
+  // "Leader: Thorgrim 987 (12)" for the active (or latest) roll.
+  const collapsedSummary = (() => {
+    const sessions = state.sessions ?? []
+    const s = sessions.find((x) => x.active) ?? sessions[sessions.length - 1]
+    const rolls = (s?.rolls ?? []).filter((r) => !r.duplicate)
+    if (!s || rolls.length === 0) return null
+    const best = rolls.reduce((a, b) =>
+      state.winner_rule === 'lowest' ? (b.value < a.value ? b : a) : (b.value > a.value ? b : a),
+    )
+    return `Leader: ${best.roller} ${best.value} (${rolls.length})`
+  })()
   const presetId = presetIdFor(state.profile)
   const commitDuration = (): void => {
     const parsed = parseInt(durationDraft, 10)
@@ -543,6 +559,7 @@ export default function RollTrackerWindowPage(): React.ReactElement {
       }}
     >
       <div
+        ref={headerRef}
         {...headerInteractionProps}
         onMouseDown={onDragMouseDown}
         className={`overlay-header ${locked ? 'no-drag' : 'drag-region'}`}
@@ -576,6 +593,7 @@ export default function RollTrackerWindowPage(): React.ReactElement {
           )}
         </div>
         <div className="no-drag" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <CollapseToggle collapsed={collapsed} onToggle={toggleCollapsed} summary={collapsedSummary} />
           <div style={{ display: 'flex', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 3, overflow: 'hidden' }}>
             <button
               onClick={() => handleMode('manual')}

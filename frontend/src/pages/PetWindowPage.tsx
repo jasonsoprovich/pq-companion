@@ -8,8 +8,10 @@
 import React from 'react'
 import { PawPrint } from 'lucide-react'
 import PetView from '../components/overlays/PetView'
-import { usePetState } from '../hooks/usePetState'
+import { usePetState, usePetTimers } from '../hooks/usePetState'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
+import { CollapseToggle, useOverlayCollapse } from '../hooks/useOverlayCollapse'
+import { fmtRemaining } from '../lib/timeFormat'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
@@ -21,9 +23,26 @@ export default function PetWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity('pet')
   const { locked, mode, toggleLocked, rootInteractionProps, headerInteractionProps, rowsInteractive } =
     useOverlayLock('pet')
-  const chrome = useOverlayChromeFade('pet', mode === 'display-only')
+  const chromeFade = useOverlayChromeFade('pet', mode === 'display-only')
+  // Collapse to title bar. A collapsed window is only its title bar, so keep
+  // that visible through the inactive fade.
+  const { collapsed, toggleCollapsed, headerRef } = useOverlayCollapse(mode !== 'display-only')
+  const chrome = chromeFade || collapsed
   const onDragMouseDown = useWindowDrag()
   const state = usePetState()
+
+  // "74% · Charm 1m 12s" — charm time only while charmed.
+  const { charm } = usePetTimers(state.name)
+  const collapsedSummary = (() => {
+    if (!state.name) return null
+    const parts: string[] = []
+    if (state.hp_percent != null && state.hp_percent >= 0) parts.push(`${Math.round(state.hp_percent)}%`)
+    else parts.push(state.name)
+    if (charm && !charm.expired) {
+      parts.push(`Charm ${fmtRemaining((Date.parse(charm.expires_at) - Date.now()) / 1000, true)}`)
+    }
+    return parts.join(' · ')
+  })()
 
   const headerBtn: React.CSSProperties = {
     display: 'flex',
@@ -56,6 +75,7 @@ export default function PetWindowPage(): React.ReactElement {
     >
       {/* ── Drag handle / title bar ─────────────────────────────────────── */}
       <div
+        ref={headerRef}
         {...headerInteractionProps}
         onMouseDown={onDragMouseDown}
         className={`overlay-header ${locked ? 'no-drag' : 'drag-region'}`}
@@ -78,6 +98,7 @@ export default function PetWindowPage(): React.ReactElement {
           <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.8)' }}>Pet</span>
         </div>
         <div className="no-drag" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <CollapseToggle collapsed={collapsed} onToggle={toggleCollapsed} summary={collapsedSummary} />
           <OverlayLockButton locked={locked} onToggle={toggleLocked} />
           <button
             onClick={() => window.electron?.overlay?.closePet()}

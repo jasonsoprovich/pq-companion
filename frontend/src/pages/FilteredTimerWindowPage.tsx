@@ -11,6 +11,8 @@ import FilteredTimerView, { filterSummary } from '../components/overlays/Filtere
 import { useFilteredTimers } from '../hooks/useFilteredTimers'
 import { useTimerAppearance } from '../hooks/useTimerAppearance'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
+import { CollapseToggle, useOverlayCollapse } from '../hooks/useOverlayCollapse'
+import { timerSummary } from '../lib/overlaySummaries'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
@@ -20,10 +22,16 @@ export default function FilteredTimerWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity('filteredTimer')
   const { locked, mode, toggleLocked, rootInteractionProps, headerInteractionProps, rowsInteractive } =
     useOverlayLock('filteredTimer')
-  const chrome = useOverlayChromeFade('filteredTimer', mode === 'display-only')
+  const chromeFade = useOverlayChromeFade('filteredTimer', mode === 'display-only')
+  // Collapse to title bar. A collapsed window is only its title bar, so keep
+  // that visible through the inactive fade.
+  const { collapsed, toggleCollapsed, headerRef } = useOverlayCollapse(mode !== 'display-only')
+  const chrome = chromeFade || collapsed
   const onDragMouseDown = useWindowDrag()
   const appearance = useTimerAppearance()
   const f = useFilteredTimers()
+
+  const collapsedSummary = timerSummary(f.timers ?? [], (n) => `${n} match`)
 
   const headerBtn: React.CSSProperties = {
     display: 'flex',
@@ -56,6 +64,7 @@ export default function FilteredTimerWindowPage(): React.ReactElement {
     >
       {/* ── Drag handle / title bar ─────────────────────────────────────── */}
       <div
+        ref={headerRef}
         {...headerInteractionProps}
         onMouseDown={onDragMouseDown}
         className={`overlay-header ${locked ? 'no-drag' : 'drag-region'}`}
@@ -89,6 +98,7 @@ export default function FilteredTimerWindowPage(): React.ReactElement {
           </span>
         </div>
         <div className="no-drag" style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          <CollapseToggle collapsed={collapsed} onToggle={toggleCollapsed} summary={collapsedSummary} />
           {!locked && (
             <button
               onClick={f.toggleCollapsed}

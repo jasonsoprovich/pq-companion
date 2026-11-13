@@ -7,6 +7,7 @@ import React from 'react'
 import { ShieldAlert, ShieldCheck, Circle } from 'lucide-react'
 import { useRaidReadiness } from '../hooks/useRaidReadiness'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
+import { CollapseToggle, useOverlayCollapse } from '../hooks/useOverlayCollapse'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
@@ -17,12 +18,20 @@ export default function RaidReadinessWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity('raidReadiness')
   const { locked, mode, toggleLocked, rootInteractionProps, headerInteractionProps } =
     useOverlayLock('raidReadiness')
-  const chrome = useOverlayChromeFade('raidReadiness', mode === 'display-only')
+  const chromeFade = useOverlayChromeFade('raidReadiness', mode === 'display-only')
+  // Collapse to title bar. A collapsed window is only its title bar, so keep
+  // that visible through the inactive fade.
+  const { collapsed, toggleCollapsed, headerRef } = useOverlayCollapse(mode !== 'display-only')
+  const chrome = chromeFade || collapsed
   const onDragMouseDown = useWindowDrag()
   const { roster, report, encounters, selectedId } = useRaidReadiness()
   const encounter = encounters.find((e) => e.id === selectedId)
   const gapRows = deriveGapRows(report, 'min')
   const ok = report ? gapRows.length === 0 : null
+
+  // "Missing: Enchanter, Shaman" or "Ready".
+  const collapsedSummary =
+    ok === null ? null : ok ? 'Ready' : `Missing: ${gapRows.map((r) => r.label).join(', ')}`
 
   return (
     <div
@@ -43,6 +52,7 @@ export default function RaidReadinessWindowPage(): React.ReactElement {
     >
       {/* ── Drag handle / title bar ─────────────────────────────────────── */}
       <div
+        ref={headerRef}
         {...headerInteractionProps}
         onMouseDown={onDragMouseDown}
         className={`overlay-header ${locked ? 'no-drag' : 'drag-region'}`}
@@ -76,6 +86,7 @@ export default function RaidReadinessWindowPage(): React.ReactElement {
           )}
         </div>
         <div className="no-drag" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <CollapseToggle collapsed={collapsed} onToggle={toggleCollapsed} summary={collapsedSummary} />
           <OverlayLockButton locked={locked} onToggle={toggleLocked} />
           <button
             onClick={() => window.electron?.overlay?.closeRaidReadiness()}

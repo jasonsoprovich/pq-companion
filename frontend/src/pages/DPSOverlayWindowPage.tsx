@@ -11,6 +11,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Swords, ChartBar, ChartBarDecreasing, Clipboard, ClipboardCheck, Trash2, Users, Activity, Hourglass, User, History, Crosshair, XCircle } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
+import { CollapseToggle, useOverlayCollapse } from '../hooks/useOverlayCollapse'
+import { compactNumber, ordinal } from '../lib/overlaySummaries'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
@@ -66,7 +68,11 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
   const palette = useDPSClassColors()
   const { locked, mode, toggleLocked, rootInteractionProps, headerInteractionProps } =
     useOverlayLock('dps')
-  const chrome = useOverlayChromeFade('dps', mode === 'display-only')
+  const chromeFade = useOverlayChromeFade('dps', mode === 'display-only')
+  // Collapse to title bar. A collapsed window is only its title bar, so keep
+  // that visible through the inactive fade.
+  const { collapsed, toggleCollapsed, headerRef } = useOverlayCollapse(mode !== 'display-only')
+  const chrome = chromeFade || collapsed
   const onDragMouseDown = useWindowDrag()
   const [combat, setCombat] = useState<CombatState | null>(null)
   const [showAll, setShowAll] = useState(true)
@@ -174,6 +180,18 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
     }
   }
 
+  // "Top: Kaelyn 1.4k · You 3rd" in the active DPS mode.
+  const collapsedSummary = (() => {
+    const list = [...(fight?.combatants ?? [])].sort((a, b) => b.total_damage - a.total_damage)
+    if (list.length === 0) return null
+    const rate = (e: (typeof list)[number]): number =>
+      dpsMode === 'personal' ? e.active_dps : dpsMode === 'raid' ? e.raid_dps : e.dps
+    const top = list[0]
+    const you = list.findIndex((e) => e.name === 'You')
+    const topText = `Top: ${top.name} ${compactNumber(rate(top))}`
+    return you > 0 ? `${topText} · You ${ordinal(you + 1)}` : topText
+  })()
+
   return (
     <div
       {...rootInteractionProps}
@@ -193,6 +211,7 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
     >
       {/* ── Drag handle / title bar ─────────────────────────────────────── */}
       <div
+        ref={headerRef}
         {...headerInteractionProps}
         onMouseDown={onDragMouseDown}
         className={`overlay-header ${locked ? 'no-drag' : 'drag-region'}`}
@@ -229,6 +248,7 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
           className="no-drag"
           style={{ display: 'flex', alignItems: 'center', gap: 6 }}
         >
+          <CollapseToggle collapsed={collapsed} onToggle={toggleCollapsed} summary={collapsedSummary} />
           {/* filter toggle */}
           <button
             onClick={() => setShowAll((v) => !v)}

@@ -9,6 +9,7 @@ import { useWebSocket } from '../hooks/useWebSocket'
 import { useLiveZone } from '../hooks/useLiveZone'
 import { useActivePlayerName } from '../hooks/useActivePlayerName'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
+import { CollapseToggle, useOverlayCollapse } from '../hooks/useOverlayCollapse'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
@@ -16,13 +17,17 @@ import OverlayLockButton from '../components/OverlayLockButton'
 import { getZoneLockouts } from '../services/api'
 import { openEntityInMain } from '../lib/overlayNav'
 import type { ZoneLockoutBoss } from '../types/lockouts'
-import { deriveZoneLockoutRow, sortZoneLockoutRows, ZoneLockoutRow } from '../components/overlays/zoneLockoutsShared'
+import { deriveZoneLockoutRow, fmtLockoutRemaining, sortZoneLockoutRows, ZoneLockoutRow } from '../components/overlays/zoneLockoutsShared'
 
 export default function ZoneLockoutsWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity('zoneLockouts')
   const { locked, mode, toggleLocked, rootInteractionProps, headerInteractionProps } =
     useOverlayLock('zoneLockouts')
-  const chrome = useOverlayChromeFade('zoneLockouts', mode === 'display-only')
+  const chromeFade = useOverlayChromeFade('zoneLockouts', mode === 'display-only')
+  // Collapse to title bar. A collapsed window is only its title bar, so keep
+  // that visible through the inactive fade.
+  const { collapsed, toggleCollapsed, headerRef } = useOverlayCollapse(mode !== 'display-only')
+  const chrome = chromeFade || collapsed
   const onDragMouseDown = useWindowDrag()
   const { zone } = useLiveZone()
   const activePlayer = useActivePlayerName()
@@ -56,6 +61,14 @@ export default function ZoneLockoutsWindowPage(): React.ReactElement {
     ? sortZoneLockoutRows(bosses.map((b) => deriveZoneLockoutRow(b, activePlayer, nowMs)))
     : []
 
+  // "2 locked · next: Vox 3d".
+  const collapsedSummary = (() => {
+    const locked = rows.filter((r) => r.status === 'locked')
+    if (locked.length === 0) return rows.length > 0 ? 'All available' : null
+    const next = locked.reduce((a, b) => (b.remainingMs < a.remainingMs ? b : a))
+    return `${locked.length} locked · next: ${next.targetName} ${fmtLockoutRemaining(next.remainingMs)}`
+  })()
+
   return (
     <div
       {...rootInteractionProps}
@@ -75,6 +88,7 @@ export default function ZoneLockoutsWindowPage(): React.ReactElement {
     >
       {/* ── Drag handle / title bar ─────────────────────────────────────── */}
       <div
+        ref={headerRef}
         {...headerInteractionProps}
         onMouseDown={onDragMouseDown}
         className={`overlay-header ${locked ? 'no-drag' : 'drag-region'}`}
@@ -104,6 +118,7 @@ export default function ZoneLockoutsWindowPage(): React.ReactElement {
           )}
         </div>
         <div className="no-drag" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <CollapseToggle collapsed={collapsed} onToggle={toggleCollapsed} summary={collapsedSummary} />
           <OverlayLockButton locked={locked} onToggle={toggleLocked} />
           <button
             onClick={() => window.electron?.overlay?.closeZoneLockouts()}

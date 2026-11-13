@@ -9,6 +9,7 @@ import { Crosshair } from 'lucide-react'
 import KillCounterView from '../components/overlays/KillCounterView'
 import { useKillCounters } from '../hooks/useKillCounters'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
+import { CollapseToggle, useOverlayCollapse } from '../hooks/useOverlayCollapse'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
@@ -18,9 +19,20 @@ export default function KillCounterWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity('killCounter')
   const { locked, mode, toggleLocked, rootInteractionProps, headerInteractionProps, rowsInteractive } =
     useOverlayLock('killCounter')
-  const chrome = useOverlayChromeFade('killCounter', mode === 'display-only')
+  const chromeFade = useOverlayChromeFade('killCounter', mode === 'display-only')
+  // Collapse to title bar. A collapsed window is only its title bar, so keep
+  // that visible through the inactive fade.
+  const { collapsed, toggleCollapsed, headerRef } = useOverlayCollapse(mode !== 'display-only')
+  const chrome = chromeFade || collapsed
   const onDragMouseDown = useWindowDrag()
   const k = useKillCounters()
+
+  // "Bertox 42/60" for the first enabled counter.
+  const collapsedSummary = (() => {
+    const c = k.counters.find((x) => x.def.enabled)
+    if (!c) return null
+    return c.def.goal ? `${c.def.name} ${c.count}/${c.def.goal}` : `${c.def.name} ${c.count}`
+  })()
 
   const headerBtn: React.CSSProperties = {
     display: 'flex',
@@ -53,6 +65,7 @@ export default function KillCounterWindowPage(): React.ReactElement {
     >
       {/* ── Drag handle / title bar ─────────────────────────────────────── */}
       <div
+        ref={headerRef}
         {...headerInteractionProps}
         onMouseDown={onDragMouseDown}
         className={`overlay-header ${locked ? 'no-drag' : 'drag-region'}`}
@@ -75,6 +88,7 @@ export default function KillCounterWindowPage(): React.ReactElement {
           <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.8)' }}>Kill Counters</span>
         </div>
         <div className="no-drag" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <CollapseToggle collapsed={collapsed} onToggle={toggleCollapsed} summary={collapsedSummary} />
           <OverlayLockButton locked={locked} onToggle={toggleLocked} />
           <button
             onClick={() => window.electron?.overlay?.closeKillCounter()}

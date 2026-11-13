@@ -21,6 +21,7 @@ import { Bell, BellOff, Gauge, X } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
+import { CollapseToggle, useOverlayCollapse } from '../hooks/useOverlayCollapse'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
@@ -180,7 +181,11 @@ export default function CHMetronomeOverlayWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity('chMetronome')
   const { locked, mode, toggleLocked, rootInteractionProps, headerInteractionProps } =
     useOverlayLock('chMetronome')
-  const chrome = useOverlayChromeFade('chMetronome', mode === 'display-only')
+  const chromeFade = useOverlayChromeFade('chMetronome', mode === 'display-only')
+  // Collapse to title bar. A collapsed window is only its title bar, so keep
+  // that visible through the inactive fade.
+  const { collapsed, toggleCollapsed, headerRef } = useOverlayCollapse(mode !== 'display-only')
+  const chrome = chromeFade || collapsed
   const onDragMouseDown = useWindowDrag()
 
   const [cfg, setCfg] = useState<Cfg>(loadCfg)
@@ -372,6 +377,15 @@ export default function CHMetronomeOverlayWindowPage(): React.ReactElement {
   const castIn = active ? cfg.delay - elapsed : 0 // seconds until I should cast
   const flashing = active && castIn <= 0.15 && elapsed <= cfg.delay + PULSE_SECS
 
+  // "Your slot in 3.4s" / "CAST NOW" while a chain is running.
+  const collapsedSummary = !active
+    ? null
+    : flashing
+      ? 'CAST NOW'
+      : castIn > 0.15
+        ? `Your slot in ${castIn.toFixed(1)}s`
+        : null
+
   let bigText = '—'
   let bigColor = 'rgba(255,255,255,0.25)'
   let subText = `Waiting for ${posLabel(watch, activeChain)}…`
@@ -429,6 +443,7 @@ export default function CHMetronomeOverlayWindowPage(): React.ReactElement {
       }}
     >
       <div
+        ref={headerRef}
         {...headerInteractionProps}
         onMouseDown={onDragMouseDown}
         className={`overlay-header ${locked ? 'no-drag' : 'drag-region'}`}
@@ -459,6 +474,7 @@ export default function CHMetronomeOverlayWindowPage(): React.ReactElement {
           </span>
         </div>
         <div className="no-drag" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <CollapseToggle collapsed={collapsed} onToggle={toggleCollapsed} summary={collapsedSummary} />
           <button
             onClick={toggleAlertsEnabled}
             disabled={!alertsConfigured}

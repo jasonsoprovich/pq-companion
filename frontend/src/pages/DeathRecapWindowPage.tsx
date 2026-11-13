@@ -9,6 +9,7 @@ import { Skull } from 'lucide-react'
 import DeathRecapView from '../components/overlays/DeathRecapView'
 import { useLatestDeath } from '../hooks/useLatestDeath'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
+import { CollapseToggle, useOverlayCollapse } from '../hooks/useOverlayCollapse'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
@@ -31,9 +32,20 @@ export default function DeathRecapWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity('deathRecap')
   const { locked, mode, toggleLocked, rootInteractionProps, headerInteractionProps, rowsInteractive } =
     useOverlayLock('deathRecap')
-  const chrome = useOverlayChromeFade('deathRecap', mode === 'display-only')
+  const chromeFade = useOverlayChromeFade('deathRecap', mode === 'display-only')
+  // Collapse to title bar. A collapsed window is only its title bar, so keep
+  // that visible through the inactive fade.
+  const { collapsed, toggleCollapsed, headerRef } = useOverlayCollapse(mode !== 'display-only')
+  const chrome = chromeFade || collapsed
   const onDragMouseDown = useWindowDrag()
   const death = useLatestDeath()
+
+  // Who killed you last, plus the biggest hit in the recap window.
+  const collapsedSummary = death
+    ? death.recap?.biggest_hit
+      ? `${death.slain_by} · max hit ${death.recap.biggest_hit}`
+      : death.slain_by
+    : null
 
   const headerBtn: React.CSSProperties = {
     display: 'flex',
@@ -66,6 +78,7 @@ export default function DeathRecapWindowPage(): React.ReactElement {
     >
       {/* ── Drag handle / title bar ─────────────────────────────────────── */}
       <div
+        ref={headerRef}
         {...headerInteractionProps}
         onMouseDown={onDragMouseDown}
         className={`overlay-header ${locked ? 'no-drag' : 'drag-region'}`}
@@ -88,6 +101,7 @@ export default function DeathRecapWindowPage(): React.ReactElement {
           <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.8)' }}>Death Recap</span>
         </div>
         <div className="no-drag" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <CollapseToggle collapsed={collapsed} onToggle={toggleCollapsed} summary={collapsedSummary} />
           <OverlayLockButton locked={locked} onToggle={toggleLocked} />
           <button
             onClick={() => window.electron?.overlay?.closeDeathRecap()}

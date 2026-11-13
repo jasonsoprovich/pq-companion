@@ -538,8 +538,10 @@ function writeBoundsNow(name: WindowKey, win: BrowserWindow): void {
   }
   if (win.isDestroyed()) return
   const b = win.getBounds()
+  // A collapsed window is title-bar height; persist its expanded height.
+  const height = collapsedEntry(name)?.expandedHeight ?? b.height
   const store = loadBoundsStore()
-  store[name] = { x: b.x, y: b.y, width: b.width, height: b.height }
+  store[name] = { x: b.x, y: b.y, width: b.width, height }
   saveBoundsStore(store)
 }
 
@@ -765,6 +767,7 @@ type ClientStateElectron = {
   overlayDisplay?: OverlayDisplayPref
   mainWindowState?: MainWindowState
   overlayHotkeys?: HotkeyStore
+  overlayCollapsed?: CollapseStore
 }
 
 const CLIENT_STATE_FILES: { [K in keyof ClientStateElectron]-?: () => string } = {
@@ -774,6 +777,7 @@ const CLIENT_STATE_FILES: { [K in keyof ClientStateElectron]-?: () => string } =
   overlayDisplay: overlayDisplayFilePath,
   mainWindowState: mainWindowStateFilePath,
   overlayHotkeys: hotkeysFilePath,
+  overlayCollapsed: collapseFilePath,
 }
 
 // Matches appbackup.Manager.pendingClientStatePath() on the Go side exactly —
@@ -799,6 +803,7 @@ function collectClientStateElectron(): ClientStateElectron {
     ...(displayPref ? { overlayDisplay: displayPref } : {}),
     mainWindowState: loadMainWindowState(),
     overlayHotkeys: loadHotkeyStore(),
+    overlayCollapsed: loadCollapseStore(),
   }
 }
 
@@ -1022,6 +1027,7 @@ function createStandardOverlay(name: StandardOverlay): void {
   windowToOverlayName.set(win, name)
   applyInitialOverlayInput(win, name)
   trackOverlayBounds(name, win)
+  restoreCollapsedState(win, name)
   loadOverlayRoute(win, spec.route)
 
   win.on('closed', () => {
@@ -1630,6 +1636,7 @@ function createCustomTimerGroupOverlay(groupId: string, groupName: string): void
   windowToOverlayName.set(win, key)
   applyInitialOverlayInput(win, key)
   trackOverlayBounds(key, win)
+  restoreCollapsedState(win, key)
 
   const query = `group=${encodeURIComponent(groupId)}&name=${encodeURIComponent(groupName)}`
   if (isDev) {
@@ -2332,6 +2339,122 @@ function toggleOverlayWindow(win: BrowserWindow | null, create: () => void): voi
 
 ipcMain.handle('overlay:popouts:visibility', () => popoutVisibility())
 
+// ── Collapse to title bar ────────────────────────────────────────────────────
+// A popout can fold down to just its title bar (chevron in its header). The
+// top edge stays put and the window shrinks to the header's height; vertical
+// resizing is pinned while collapsed. The state, the header height and the
+// expanded height persist per window, and the bounds store always keeps the
+// expanded height, so turning the feature off or resetting never strands a
+// window at title-bar size. Discord Voice (child web view) doesn't collapse.
+
+type CollapseEntry = { collapsed: boolean; headerHeight: number; expandedHeight: number }
+type CollapseStore = Partial<Record<WindowKey, CollapseEntry>>
+
+function collapseFilePath(): string {
+  return join(app.getPath('userData'), 'overlay-collapsed.json')
+}
+
+let collapseStoreCache: CollapseStore | null = null
+
+function loadCollapseStore(): CollapseStore {
+  if (collapseStoreCache) return collapseStoreCache
+  try {
+    collapseStoreCache = JSON.parse(readFileSync(collapseFilePath(), 'utf-8')) as CollapseStore
+  } catch {
+    collapseStoreCache = {}
+  }
+  return collapseStoreCache
+}
+
+function saveCollapseStore(): void {
+  try {
+    writeFileSync(collapseFilePath(), JSON.stringify(loadCollapseStore(), null, 2), 'utf-8')
+  } catch (err) {
+    console.warn('[main] failed to save overlay collapse state', err)
+  }
+}
+
+function collapsedEntry(name: WindowKey): CollapseEntry | null {
+  const e = loadCollapseStore()[name]
+  return e?.collapsed ? e : null
+}
+
+function minSizeFor(name: WindowKey): { minWidth: number; minHeight: number } {
+  const base = name.startsWith('customTimer:') ? 'customTimer' : name
+  return isStandardOverlay(base) ? STANDARD_OVERLAYS[base] : { minWidth: 180, minHeight: 120 }
+}
+
+function applyCollapsedSize(win: BrowserWindow, name: WindowKey, headerHeight: number): void {
+  const { width } = win.getBounds()
+  win.setMinimumSize(minSizeFor(name).minWidth, headerHeight)
+  win.setMaximumSize(100_000, headerHeight)
+  win.setSize(width, headerHeight)
+}
+
+function applyExpandedSize(win: BrowserWindow, name: WindowKey, height: number): void {
+  const { width } = win.getBounds()
+  const min = minSizeFor(name)
+  win.setMaximumSize(0, 0) // 0 = no limit
+  win.setMinimumSize(min.minWidth, min.minHeight)
+  win.setSize(width, Math.max(height, min.minHeight))
+}
+
+// Called right after a popout is created, before it shows, so a window that
+// was collapsed last session reopens collapsed without a flash.
+function restoreCollapsedState(win: BrowserWindow, name: WindowKey): void {
+  const e = collapsedEntry(name)
+  if (e) applyCollapsedSize(win, name, e.headerHeight)
+}
+
+function setOverlayCollapsed(win: BrowserWindow, name: WindowKey, collapsed: boolean, headerHeight: number): void {
+  const store = loadCollapseStore()
+  const cur = store[name]
+  if (collapsed) {
+    const expandedHeight = cur?.collapsed ? cur.expandedHeight : win.getBounds().height
+    store[name] = { collapsed: true, headerHeight, expandedHeight }
+    applyCollapsedSize(win, name, headerHeight)
+  } else {
+    const height = cur?.collapsed ? cur.expandedHeight : win.getBounds().height
+    if (cur) store[name] = { ...cur, collapsed: false }
+    applyExpandedSize(win, name, height)
+  }
+  saveCollapseStore()
+  writeBoundsNow(name, win)
+}
+
+// Clears collapse for a window being reset to default bounds.
+function clearOverlayCollapsed(name: WindowKey, win: BrowserWindow | null): void {
+  const store = loadCollapseStore()
+  if (!store[name]?.collapsed) return
+  store[name] = { ...(store[name] as CollapseEntry), collapsed: false }
+  saveCollapseStore()
+  if (win && !win.isDestroyed()) {
+    const min = minSizeFor(name)
+    win.setMaximumSize(0, 0)
+    win.setMinimumSize(min.minWidth, min.minHeight)
+    win.webContents.send('overlay:collapse-changed', false)
+  }
+}
+
+ipcMain.handle('overlay:collapse:get', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  const name = win ? windowToOverlayName.get(win) : undefined
+  return name ? collapsedEntry(name) !== null : false
+})
+
+// headerFraction = title bar height / window content height, measured by the
+// renderer. Sent as a fraction so CSS zoom and display scaling cancel out.
+ipcMain.handle('overlay:collapse:set', (event, collapsed: boolean, headerFraction: number) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  const name = win ? windowToOverlayName.get(win) : undefined
+  if (!win || !name || name === 'discordVoice' || name === 'trigger') return false
+  const contentHeight = win.getContentBounds().height
+  const frac = Number.isFinite(headerFraction) && headerFraction > 0 ? Math.min(headerFraction, 1) : 0
+  const headerHeight = Math.max(16, Math.min(96, Math.round(frac * contentHeight) || 28))
+  setOverlayCollapsed(win, name, collapsed === true, headerHeight)
+  return collapsed === true
+})
+
 // ── Global overlay hotkeys ───────────────────────────────────────────────────
 // User-bound key combos registered with the OS via globalShortcut, so they
 // fire while EverQuest has focus — and never take focus from it: every action
@@ -2672,6 +2795,7 @@ function resetOverlayPosition(name: WindowKey): void {
   setOverlayLocked(name, false)
 
   const win = overlayWindowByName(name)
+  clearOverlayCollapsed(name, win)
   if (win && !win.isDestroyed()) {
     win.setResizable(true)
     win.setIgnoreMouseEvents(false)

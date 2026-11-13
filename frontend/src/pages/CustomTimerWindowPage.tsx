@@ -15,6 +15,8 @@ import { WSEvent } from '../lib/wsEvents'
 import TimerRowControls from '../components/overlays/TimerRowControls'
 import { useTimerAppearance, type TimerAppearance } from '../hooks/useTimerAppearance'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
+import { CollapseToggle, useOverlayCollapse } from '../hooks/useOverlayCollapse'
+import { timerSummary } from '../lib/overlaySummaries'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
@@ -212,7 +214,11 @@ export default function CustomTimerWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity('customTimer')
   const { locked, mode, toggleLocked, rootInteractionProps, headerInteractionProps, rowsInteractive } =
     useOverlayLock('customTimer')
-  const chrome = useOverlayChromeFade('customTimer', mode === 'display-only')
+  const chromeFade = useOverlayChromeFade('customTimer', mode === 'display-only')
+  // Collapse to title bar. A collapsed window is only its title bar, so keep
+  // that visible through the inactive fade.
+  const { collapsed, toggleCollapsed, headerRef } = useOverlayCollapse(mode !== 'display-only')
+  const chrome = chromeFade || collapsed
   const onDragMouseDown = useWindowDrag()
   const [state, setState] = useState<TimerState | null>(null)
   const thresholds = useDisplayThresholds()
@@ -246,6 +252,8 @@ export default function CustomTimerWindowPage(): React.ReactElement {
   const timers = (state?.timers ?? [])
     .filter((t) => t.category === 'custom' && (groupId ? t.custom_group === groupId : !t.custom_group))
     .filter((t) => passesThreshold(t, thresholds))
+
+  const collapsedSummary = timerSummary(timers, (n) => `${n} active`)
 
   const handleAdd = (e: React.FormEvent): void => {
     e.preventDefault()
@@ -305,6 +313,7 @@ export default function CustomTimerWindowPage(): React.ReactElement {
     >
       {/* ── Drag handle / title bar ─────────────────────────────────────── */}
       <div
+        ref={headerRef}
         {...headerInteractionProps}
         onMouseDown={onDragMouseDown}
         className={`overlay-header ${locked ? 'no-drag' : 'drag-region'}`}
@@ -339,6 +348,7 @@ export default function CustomTimerWindowPage(): React.ReactElement {
           className="no-drag"
           style={{ display: 'flex', alignItems: 'center', gap: 6 }}
         >
+          <CollapseToggle collapsed={collapsed} onToggle={toggleCollapsed} summary={collapsedSummary} />
           <button
             onClick={handleClear}
             title="Clear all timers in this window"

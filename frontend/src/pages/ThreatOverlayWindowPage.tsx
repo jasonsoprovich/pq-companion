@@ -9,6 +9,8 @@ import { useWebSocket } from '../hooks/useWebSocket'
 import { useRaidThreatEnabled } from '../hooks/useRaidThreatEnabled'
 import { WSEvent } from '../lib/wsEvents'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
+import { CollapseToggle, useOverlayCollapse } from '../hooks/useOverlayCollapse'
+import { compactNumber, ordinal } from '../lib/overlaySummaries'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
@@ -31,7 +33,11 @@ export default function ThreatOverlayWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity('threat')
   const { locked, mode: lockedMode, toggleLocked, rootInteractionProps, headerInteractionProps } =
     useOverlayLock('threat')
-  const chrome = useOverlayChromeFade('threat', lockedMode === 'display-only')
+  const chromeFade = useOverlayChromeFade('threat', lockedMode === 'display-only')
+  // Collapse to title bar. A collapsed window is only its title bar, so keep
+  // that visible through the inactive fade.
+  const { collapsed, toggleCollapsed, headerRef } = useOverlayCollapse(lockedMode !== 'display-only')
+  const chrome = chromeFade || collapsed
   const onDragMouseDown = useWindowDrag()
   const [state, setState] = useState<ThreatState | null>(null)
   const [raidState, setRaidState] = useState<RaidThreatState | null>(null)
@@ -63,6 +69,20 @@ export default function ThreatOverlayWindowPage(): React.ReactElement {
 
   useWebSocket(handleMessage)
 
+  // Raid estimate: "You 2nd · 87%" on the target. Personal: your own hate.
+  const collapsedSummary = (() => {
+    if (effMode === 'raid') {
+      const mob = raidState?.mobs.find((m) => m.is_target) ?? raidState?.mobs[0]
+      if (!mob) return null
+      const ranked = [...mob.players].sort((a, b) => b.hate - a.hate)
+      const i = ranked.findIndex((p) => p.is_you)
+      if (i < 0) return mob.name
+      return `You ${ordinal(i + 1)} · ${Math.round(ranked[i].hate_pct * 100)}%`
+    }
+    const mob = state?.target ?? state?.mobs[0]
+    return mob ? `${mob.name} · ${compactNumber(mob.hate)} hate` : null
+  })()
+
   return (
     <div
       {...rootInteractionProps}
@@ -82,6 +102,7 @@ export default function ThreatOverlayWindowPage(): React.ReactElement {
     >
       {/* ── Drag handle / title bar ─────────────────────────────────────── */}
       <div
+        ref={headerRef}
         {...headerInteractionProps}
         onMouseDown={onDragMouseDown}
         className={`overlay-header ${locked ? 'no-drag' : 'drag-region'}`}
@@ -106,6 +127,7 @@ export default function ThreatOverlayWindowPage(): React.ReactElement {
           </span>
         </div>
         <div className="no-drag" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <CollapseToggle collapsed={collapsed} onToggle={toggleCollapsed} summary={collapsedSummary} />
           {raidEnabled && <ThreatModeToggle mode={effMode} onChange={chooseMode} />}
           <button
             onClick={() => (effMode === 'raid' ? resetRaidThreat() : resetThreat()).catch(() => {})}

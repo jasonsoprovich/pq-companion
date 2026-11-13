@@ -11,6 +11,7 @@ import { HeartPulse, Trash2, X } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
+import { CollapseToggle, useOverlayCollapse } from '../hooks/useOverlayCollapse'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
@@ -259,7 +260,11 @@ export default function CHChainOverlayWindowPage(): React.ReactElement {
   const opacity = useOverlayOpacity('chChain')
   const { locked, mode, toggleLocked, rootInteractionProps, headerInteractionProps } =
     useOverlayLock('chChain')
-  const chrome = useOverlayChromeFade('chChain', mode === 'display-only')
+  const chromeFade = useOverlayChromeFade('chChain', mode === 'display-only')
+  // Collapse to title bar. A collapsed window is only its title bar, so keep
+  // that visible through the inactive fade.
+  const { collapsed, toggleCollapsed, headerRef } = useOverlayCollapse(mode !== 'display-only')
+  const chrome = chromeFade || collapsed
   const onDragMouseDown = useWindowDrag()
   const [state, setState] = useState<TimerState | null>(null)
   const [view, setView] = useState<ChainView>(loadView)
@@ -304,6 +309,14 @@ export default function CHChainOverlayWindowPage(): React.ReactElement {
       return a.spell_name.localeCompare(b.spell_name)
     })
   const cadence = computeCadence(chain)
+  // Most recent callout plus the live cadence ("Last: #3 Healbot · 2.5s").
+  const collapsedSummary = (() => {
+    const last = chain[chain.length - 1]
+    if (!last) return null
+    const label = `Last: ${last.spell_name}`
+    if (!cadence) return label
+    return `${label} · ${cadence.cadence.toFixed(1)}s${cadence.stalled ? ' · stalled' : ''}`
+  })()
   const { displayList, exitingIds } = useAnimatedChainList(chain)
 
   return (
@@ -324,6 +337,7 @@ export default function CHChainOverlayWindowPage(): React.ReactElement {
       }}
     >
       <div
+        ref={headerRef}
         {...headerInteractionProps}
         onMouseDown={onDragMouseDown}
         className={`overlay-header ${locked ? 'no-drag' : 'drag-region'}`}
@@ -374,6 +388,7 @@ export default function CHChainOverlayWindowPage(): React.ReactElement {
           )}
         </div>
         <div className="no-drag" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <CollapseToggle collapsed={collapsed} onToggle={toggleCollapsed} summary={collapsedSummary} />
           {secondaryEnabled && <ChainToggle view={activeView} onChange={changeView} />}
           <button
             onClick={() => clearTimers(activeCategory).catch(() => {})}
