@@ -7,7 +7,8 @@
  * Settings open in a drawer over the Library: the gear for settings that
  * apply to every overlay, or a card for that overlay's own. /overlays?panel=
  * opens one directly (global, trigger, group:<id>, or an overlay's panel
- * key or name) — old Settings tab links redirect here.
+ * key or name) — old Settings tab links redirect here. The ⋯ menu beside
+ * the gear holds actions on every overlay at once.
  */
 import React, { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -15,6 +16,7 @@ import { LayoutGrid, LayoutDashboard, MonitorPlay, Settings2 } from 'lucide-reac
 import { usePersistentState } from '../hooks/usePersistentState'
 import LayoutChips from '../components/LayoutChips'
 import OverlayLibrary from '../components/overlays-hub/OverlayLibrary'
+import HubActionsMenu from '../components/overlays-hub/HubActionsMenu'
 import OverlaysDashboard from './OverlaysDashboard'
 import { selectionFromParam, type HubSelection } from '../components/overlays-hub/selection'
 
@@ -82,19 +84,22 @@ export default function OverlaysHub(): React.ReactElement {
         <div className="min-w-0 flex-1 py-2">
           <LayoutChips />
         </div>
-        <button
-          onClick={openGlobal}
-          className="flex shrink-0 items-center gap-1.5 rounded px-2 py-1 text-xs"
-          style={{
-            backgroundColor: selected?.kind === 'global' ? 'var(--color-surface-2)' : 'transparent',
-            color: 'var(--color-foreground)',
-            border: '1px solid var(--color-border)',
-          }}
-          title="Settings for every overlay: opacity, fade, alert text, lock modes"
-        >
-          <Settings2 size={12} />
-          Overlay settings
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            onClick={openGlobal}
+            className="flex shrink-0 items-center gap-1.5 rounded px-2 py-1 text-xs"
+            style={{
+              backgroundColor: selected?.kind === 'global' ? 'var(--color-surface-2)' : 'transparent',
+              color: 'var(--color-foreground)',
+              border: '1px solid var(--color-border)',
+            }}
+            title="Settings for every overlay: opacity, fade, alert text, lock modes"
+          >
+            <Settings2 size={12} />
+            Overlay settings
+          </button>
+          <HubActionsMenu />
+        </div>
       </div>
       <div className="min-h-0 flex-1">
         {tab === 'library' ? (
