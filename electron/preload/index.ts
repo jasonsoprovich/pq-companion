@@ -204,13 +204,14 @@ contextBridge.exposeInMainWorld('electron', {
     stackSelect: (tab: string): Promise<void> => ipcRenderer.invoke('overlay:stack:select', tab),
     stackMerge: (target: string, source: string): Promise<boolean> =>
       ipcRenderer.invoke('overlay:stack:merge', target, source),
-    stackRemove: (key: string, popOut: boolean): Promise<boolean> =>
-      ipcRenderer.invoke('overlay:stack:remove', key, popOut),
+    stackRemove: (key: string, popOut: boolean, x?: number, y?: number): Promise<boolean> =>
+      ipcRenderer.invoke('overlay:stack:remove', key, popOut, x, y),
     stackClose: (): Promise<void> => ipcRenderer.invoke('overlay:stack:close'),
     stackToggle: (key: string): Promise<void> => ipcRenderer.invoke('overlay:stack:toggle', key),
     // The hub's Arrange tab: monitors and the active layout's windows, and
     // moving one (the real window, or where a closed one will open).
     arrangeGet: (): Promise<unknown> => ipcRenderer.invoke('overlay:arrange:get'),
+    arrangeOpen: (key: string): Promise<void> => ipcRenderer.invoke('overlay:arrange:open', key),
     arrangeMove: (key: string, x: number, y: number): Promise<void> =>
       ipcRenderer.invoke('overlay:arrange:move', key, x, y),
     onStackChanged: (cb: (info: StackInfo) => void): (() => void) => {

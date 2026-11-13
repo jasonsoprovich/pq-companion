@@ -236,10 +236,12 @@ export interface ElectronAPI {
     stackGet: () => Promise<StackInfo | null>
     stackSelect: (tab: string) => Promise<void>
     stackMerge: (target: string, source: string) => Promise<boolean>
-    stackRemove: (key: string, popOut: boolean) => Promise<boolean>
+    // popOut with x/y: the window opens with its top-left there.
+    stackRemove: (key: string, popOut: boolean, x?: number, y?: number) => Promise<boolean>
     stackClose: () => Promise<void>
     stackToggle: (key: string) => Promise<void>
     arrangeGet: () => Promise<ArrangeState>
+    arrangeOpen: (key: string) => Promise<void>
     arrangeMove: (key: string, x: number, y: number) => Promise<void>
     onStackChanged: (cb: (info: StackInfo) => void) => () => void
     onStackDropHint: (cb: (hint: StackDropHint) => void) => () => void

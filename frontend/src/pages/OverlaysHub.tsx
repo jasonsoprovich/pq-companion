@@ -109,12 +109,7 @@ export default function OverlaysHub(): React.ReactElement {
         {tab === 'library' ? (
           <OverlayLibrary selected={selected} onSelect={setSelected} />
         ) : tab === 'arrange' ? (
-          <ArrangeView
-            onOpenSettings={(sel) => {
-              setTab('library')
-              setSelected(sel)
-            }}
-          />
+          <ArrangeView />
         ) : (
           <OverlaysDashboard />
         )}

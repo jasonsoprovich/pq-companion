@@ -3413,9 +3413,9 @@ function dissolveStack(id: string): void {
 }
 
 // Takes an overlay out of its stack. popOut opens it in its own window beside
-// the stack; otherwise it's closed (and leaves the layout). False when it
-// wasn't stacked.
-function removeFromStack(key: WindowKey, popOut = false): boolean {
+// the stack (or with its top-left at `at`); otherwise it's closed (and leaves
+// the layout). False when it wasn't stacked.
+function removeFromStack(key: WindowKey, popOut = false, at?: { x: number; y: number }): boolean {
   const id = stackIdOf(key)
   if (!id) return false
   const layout = activeLayout()
@@ -3426,7 +3426,22 @@ function removeFromStack(key: WindowKey, popOut = false): boolean {
   if (s.active === key) s.active = s.tabs[0]
   if (popOut) {
     const b = liveBounds(`${STACK_PREFIX}${id}`)
-    const bounds = b ? { ...b, x: b.x + 24, y: b.y + 24 } : undefined
+    let bounds: Electron.Rectangle | undefined
+    if (b && at) {
+      // Its own last size, its title bar at the drop spot, kept on that monitor.
+      const own = loadBoundsStore()[key]
+      const width = own?.width ?? b.width
+      const height = own?.height ?? b.height
+      const wa = screen.getDisplayNearestPoint({ x: Math.round(at.x), y: Math.round(at.y) }).workArea
+      bounds = {
+        x: Math.round(Math.min(Math.max(at.x, wa.x), wa.x + wa.width - Math.min(width, wa.width))),
+        y: Math.round(Math.min(Math.max(at.y, wa.y), wa.y + wa.height - 40)),
+        width,
+        height,
+      }
+    } else if (b) {
+      bounds = { ...b, x: b.x + 24, y: b.y + 24 }
+    }
     layout.windows.push({ key, ...(groupName !== undefined ? { groupName } : {}), ...(bounds ? { bounds } : {}) })
     if (bounds) {
       const store = loadBoundsStore()
@@ -3510,6 +3525,17 @@ ipcMain.handle('overlay:arrange:get', () => {
   return { displays, windows }
 })
 
+// Picking a window in Arrange: opens a closed one at its saved spot, shows a
+// hidden one, and brings an open one to the front.
+ipcMain.handle('overlay:arrange:open', (_event, key: string) => {
+  if (!isValidWindowKey(key)) return
+  const entry = activeLayout().windows.find((w) => w.key === key)
+  if (!entry) return
+  const win = overlayWindowByName(key)
+  if (win && !win.isDestroyed()) showOverlayWindow(win)
+  else openLayoutWindows({ id: '', name: '', windows: [entry] })
+})
+
 ipcMain.handle('overlay:arrange:move', (_event, key: string, x: number, y: number) => {
   if (!isValidWindowKey(key) || !Number.isFinite(x) || !Number.isFinite(y)) return
   const entry = activeLayout().windows.find((w) => w.key === key)
@@ -3543,9 +3569,10 @@ ipcMain.handle('overlay:stack:merge', (_event, target: string, source: string) =
   return mergeIntoStack(target, source)
 })
 
-ipcMain.handle('overlay:stack:remove', (_event, key: string, popOut: boolean) => {
+ipcMain.handle('overlay:stack:remove', (_event, key: string, popOut: boolean, x?: number, y?: number) => {
   if (!isValidWindowKey(key)) return false
-  return removeFromStack(key, !!popOut)
+  const at = Number.isFinite(x) && Number.isFinite(y) ? { x: x as number, y: y as number } : undefined
+  return removeFromStack(key, !!popOut, at)
 })
 
 // Closing a stack's window (its × button) closes all its tabs: the stack
