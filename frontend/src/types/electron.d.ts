@@ -173,6 +173,8 @@ export interface ElectronAPI {
     collapseGet: () => Promise<boolean>
     collapseSet: (collapsed: boolean, headerFraction: number) => Promise<boolean>
     onCollapseChanged: (cb: (collapsed: boolean) => void) => () => void
+    // Hidden windows are paused (content unmounted) until shown again.
+    onPausedChanged: (cb: (paused: boolean) => void) => () => void
     hotkeysGet: () => Promise<HotkeyState>
     hotkeysSet: (action: string, accelerator: string | null) => Promise<HotkeyState>
     hotkeysSetMany: (bindings: Record<string, string>) => Promise<HotkeyState>

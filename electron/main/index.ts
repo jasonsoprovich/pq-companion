@@ -639,6 +639,9 @@ function getRestoredBounds(name: WindowKey, defaults: Bounds): Bounds {
 }
 
 function trackOverlayBounds(name: WindowKey, win: BrowserWindow): void {
+  // Opened again (by Show All, its toggle, or a layout): no longer a window
+  // closed for being hidden.
+  closedWhileHidden.delete(name)
   win.on('move', () => persistBounds(name, win))
   win.on('resize', () => persistBounds(name, win))
   win.on('close', () => {
@@ -2297,17 +2300,52 @@ ipcMain.handle('overlay:popouts:any-open', () => userPopoutWindows().length > 0)
 // state survives windows opening or closing in between.
 const userHiddenOverlays = new WeakSet<BrowserWindow>()
 
+// A hidden window costs as much as an open one: its process keeps its memory
+// (~50 MB) and keeps rendering live data. So a hidden window is told to pause
+// ('overlay:paused': it unmounts its content and drops its WebSocket), and
+// one left hidden for HIDDEN_CLOSE_MS is closed outright. Closed-while-hidden
+// windows still count as hidden: Show All (or their own toggle) reopens them
+// in place, and they stay in the layout.
+const HIDDEN_CLOSE_MS = 30 * 60 * 1000
+const hiddenCloseTimers = new WeakMap<BrowserWindow, ReturnType<typeof setTimeout>>()
+const closedWhileHidden = new Map<WindowKey, LayoutWindow>()
+
 type PopoutVisibility = { open: number; hidden: number }
 
 function popoutVisibility(): PopoutVisibility {
   const wins = userPopoutWindows()
   return {
-    open: wins.length,
-    hidden: wins.filter((w) => userHiddenOverlays.has(w) && !w.isVisible()).length,
+    open: wins.length + closedWhileHidden.size,
+    hidden: wins.filter((w) => userHiddenOverlays.has(w) && !w.isVisible()).length + closedWhileHidden.size,
   }
 }
 
+function setOverlayPaused(win: BrowserWindow, paused: boolean): void {
+  if (!win.isDestroyed()) win.webContents.send('overlay:paused', paused)
+}
+
+function hideOverlayWindow(win: BrowserWindow): void {
+  userHiddenOverlays.add(win)
+  win.hide()
+  setOverlayPaused(win, true)
+  const prev = hiddenCloseTimers.get(win)
+  if (prev) clearTimeout(prev)
+  hiddenCloseTimers.set(win, setTimeout(() => {
+    hiddenCloseTimers.delete(win)
+    if (win.isDestroyed() || win.isVisible() || !userHiddenOverlays.has(win)) return
+    const key = windowToOverlayName.get(win)
+    if (!key) return
+    console.log(`[main] overlay ${key} hidden for ${HIDDEN_CLOSE_MS / 60000} min; closing until shown`)
+    closedWhileHidden.set(key, { key, ...(groupNameFor(key) !== undefined ? { groupName: groupNameFor(key) } : {}) })
+    closePopoutsInBulk([win])
+  }, HIDDEN_CLOSE_MS))
+}
+
 function showOverlayWindow(win: BrowserWindow): void {
+  const t = hiddenCloseTimers.get(win)
+  if (t) clearTimeout(t)
+  hiddenCloseTimers.delete(win)
+  if (userHiddenOverlays.has(win)) setOverlayPaused(win, false)
   userHiddenOverlays.delete(win)
   if (!win.isVisible()) win.showInactive()
   win.moveTop()
@@ -2316,8 +2354,7 @@ function showOverlayWindow(win: BrowserWindow): void {
 function hideAllPopouts(): void {
   for (const win of userPopoutWindows()) {
     if (!win.isVisible()) continue
-    userHiddenOverlays.add(win)
-    win.hide()
+    hideOverlayWindow(win)
   }
 }
 
@@ -2325,6 +2362,15 @@ function showAllPopouts(): void {
   for (const win of userPopoutWindows()) {
     if (userHiddenOverlays.has(win)) showOverlayWindow(win)
   }
+  reopenClosedWhileHidden()
+}
+
+// Reopens windows closed for being hidden too long, at their saved spots.
+function reopenClosedWhileHidden(): void {
+  if (closedWhileHidden.size === 0) return
+  const windows = [...closedWhileHidden.values()]
+  closedWhileHidden.clear()
+  openLayoutWindows({ id: '', name: '', windows })
 }
 
 // Shared by the sidebar button, the Manage overlays menu and the global
@@ -2523,8 +2569,7 @@ function toggleOverlayFromHotkey(name: OverlayName): void {
   } else if (!win.isVisible()) {
     showOverlayWindow(win)
   } else {
-    userHiddenOverlays.add(win)
-    win.hide()
+    hideOverlayWindow(win)
   }
 }
 
@@ -2963,6 +3008,7 @@ function switchLayout(id: string, flush = true): void {
     }
   }
   store.activeId = id
+  closedWhileHidden.clear()
   const wanted = new Set(target.windows.map((w) => w.key))
   closePopoutsInBulk(userPopoutWindows().filter((win) => {
     const key = windowToOverlayName.get(win)
@@ -3146,6 +3192,7 @@ ipcMain.handle('overlay:popouts:close-all', () => {
   // bounds. The always-on trigger overlay is intentionally left open so trigger
   // alerts keep rendering after a bulk close. A bulk close leaves the active
   // layout's window set alone, so toggling back on reopens the same windows.
+  closedWhileHidden.clear()
   closePopoutsInBulk(userPopoutWindows())
 })
 
@@ -3176,6 +3223,7 @@ ipcMain.handle('overlay:popouts:window-states', () => {
     const key = windowToOverlayName.get(win)
     if (key) states[key] = userHiddenOverlays.has(win) && !win.isVisible() ? 'hidden' : 'open'
   }
+  for (const key of closedWhileHidden.keys()) states[key] = 'hidden'
   return states
 })
 

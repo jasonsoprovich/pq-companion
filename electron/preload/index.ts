@@ -185,6 +185,13 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.on('overlay:collapse-changed', listener)
       return () => ipcRenderer.removeListener('overlay:collapse-changed', listener)
     },
+    // Main pauses a window it hides (Hide All, the hotkey) and resumes it on
+    // show: a hidden overlay drops its content and data feed until then.
+    onPausedChanged: (cb: (paused: boolean) => void): (() => void) => {
+      const listener = (_e: unknown, v: boolean): void => cb(v)
+      ipcRenderer.on('overlay:paused', listener)
+      return () => ipcRenderer.removeListener('overlay:paused', listener)
+    },
     // Overlay layouts: named sets of popouts with their positions. The
     // active one saves itself as windows open, close, move or collapse.
     layoutsGet: (): Promise<LayoutState> => ipcRenderer.invoke('layouts:get'),

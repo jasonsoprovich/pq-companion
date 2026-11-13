@@ -125,6 +125,12 @@ function OverlayPage({
   // Apply this window's per-overlay zoom (no-op default of 1.0 when unset).
   // Called unconditionally with '' for keyless overlays so hook order is stable.
   useOverlayZoom(overlayKey ?? '')
+  // While main has this window hidden, render nothing: a hidden overlay kept
+  // rendering live data and holding its WebSocket. Remounting on show reloads
+  // the current state from the backend.
+  const [paused, setPaused] = useState(false)
+  useEffect(() => window.electron?.overlay?.onPausedChanged?.(setPaused), [])
+  if (paused) return <></>
   // Overlay pages are lazy too; a null fallback keeps the window fully
   // transparent while the (small) chunk loads instead of flashing a backdrop.
   //

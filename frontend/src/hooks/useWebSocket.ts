@@ -23,6 +23,27 @@ let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 // — every onmessage fires across the shared handler set, so each event lands
 // N times in the Log Feed where N is the number of leaked sockets (issue #124).
 let connectPromise: Promise<void> | null = null
+// Closes the socket once no consumer is left (a paused overlay window unmounts
+// all of them). Delayed so a remount, or one consumer swapping for another,
+// keeps the connection.
+const IDLE_CLOSE_MS = 2000
+let idleTimer: ReturnType<typeof setTimeout> | null = null
+
+function closeIfIdle(): void {
+  if (idleTimer !== null) clearTimeout(idleTimer)
+  idleTimer = setTimeout(() => {
+    idleTimer = null
+    if (stateHandlers.size > 0) return
+    if (reconnectTimer !== null) {
+      clearTimeout(reconnectTimer)
+      reconnectTimer = null
+    }
+    const ws = socket
+    socket = null
+    ws?.close()
+    setState('closed')
+  }, IDLE_CLOSE_MS)
+}
 
 function setState(state: WsReadyState): void {
   currentState = state
@@ -134,6 +155,7 @@ export function useWebSocket(
     return () => {
       stateHandlers.delete(stateHandler)
       messageHandlers.delete(msgHandler)
+      if (stateHandlers.size === 0) closeIfIdle()
     }
   }, [])
 
