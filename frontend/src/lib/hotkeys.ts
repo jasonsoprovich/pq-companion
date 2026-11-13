@@ -9,18 +9,24 @@ import { SHOW_HPS_PANEL } from '../services/dashboardLayout'
 
 export const TOGGLE_ALL_ACTION = 'toggleAll'
 export const overlayAction = (name: OverlayName): string => `overlay:${name}`
+export const layoutAction = (id: string): string => `layout:${id}`
 
 export interface HotkeyActionDef {
   id: string
   label: string
+  kind: 'all' | 'layout' | 'overlay'
 }
 
-export function hotkeyActions(): HotkeyActionDef[] {
+// Layout actions switch to that layout (or show/hide everything when it's
+// already active), so they're listed with the show/hide-all action.
+export function hotkeyActions(layouts: Array<{ id: string; name: string }> = []): HotkeyActionDef[] {
   return [
-    { id: TOGGLE_ALL_ACTION, label: 'Show / hide all overlays' },
+    { id: TOGGLE_ALL_ACTION, label: 'Show / hide all overlays', kind: 'all' },
+    ...layouts.map((l) => ({ id: layoutAction(l.id), label: l.name, kind: 'layout' as const })),
     ...OVERLAY_DEFS.filter((d) => d.name !== 'hps' || SHOW_HPS_PANEL).map((d) => ({
       id: overlayAction(d.name),
       label: d.label,
+      kind: 'overlay' as const,
     })),
   ]
 }

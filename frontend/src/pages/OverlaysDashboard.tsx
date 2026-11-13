@@ -13,6 +13,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Eye, EyeOff, Monitor, MonitorPlay, RotateCcw, ExternalLink, Layers, X, Crosshair, ChevronDown, Move, ListChecks, Trash2, Hourglass } from 'lucide-react'
 import type { OverlayName } from '../lib/overlays'
+import LayoutChips from '../components/LayoutChips'
 import BuffTimerPanel from '../components/overlays/BuffTimerPanel'
 import FilteredTimerPanel from '../components/overlays/FilteredTimerPanel'
 import KillCounterPanel from '../components/overlays/KillCounterPanel'
@@ -57,7 +58,6 @@ import {
 } from '../services/dashboardLayout'
 import { useOverlayPopouts, type PopoutVisibility } from '../hooks/useOverlayPopouts'
 import { NewDot, useFeatureDots } from '../hooks/useFeatureDots'
-import { setGroupInPopoutSelection, setPanelInPopoutSelection } from '../services/overlayPopoutSelection'
 
 // Bounds/lock persistence + IPC key for a named timer group's window —
 // mirrors electron/main/index.ts's customTimerWindowKey.
@@ -601,9 +601,6 @@ export default function OverlaysDashboard(): React.ReactElement {
     PANEL_POPOUT[key].toggle()
     const name = PANEL_POPOUT[key].name
     const wanted = !popoutStates[name]
-    // Remember this as part of the user's curated popout set, independent of
-    // dashboard visibility, so "Pop Out All" can restore exactly this later.
-    setPanelInPopoutSelection(key, wanted)
     // Optimistic flip; the poll reconciles shortly after.
     setPopoutStates((s) => ({ ...s, [name]: wanted }))
   }, [popoutStates])
@@ -625,7 +622,6 @@ export default function OverlaysDashboard(): React.ReactElement {
     }
     if (!popoutStates[name]) {
       PANEL_POPOUT[key].toggle()
-      setPanelInPopoutSelection(key, true)
       setPopoutStates((s) => ({ ...s, [name]: true }))
     }
     window.electron?.overlay?.place?.(name, true)
@@ -696,7 +692,6 @@ export default function OverlaysDashboard(): React.ReactElement {
     window.electron?.overlay?.toggleCustomTimerGroup(id, g?.name ?? '')
     const key = groupWindowKey(id)
     const wanted = !popoutStates[key]
-    setGroupInPopoutSelection(id, wanted)
     setPopoutStates((s) => ({ ...s, [key]: wanted }))
   }, [timerGroups, popoutStates])
 
@@ -715,7 +710,6 @@ export default function OverlaysDashboard(): React.ReactElement {
     if (!popoutStates[key]) {
       const g = timerGroups.find((x) => x.id === id)
       window.electron?.overlay?.toggleCustomTimerGroup(id, g?.name ?? '')
-      setGroupInPopoutSelection(id, true)
       setPopoutStates((s) => ({ ...s, [key]: true }))
     }
     window.electron?.overlay?.place?.(key, true)
@@ -836,7 +830,9 @@ export default function OverlaysDashboard(): React.ReactElement {
           </span>
         </div>
 
-        <div className="min-w-0 flex-1" />
+        <div className="min-w-0 flex-1">
+          <LayoutChips />
+        </div>
 
         <div className="flex items-center gap-2 shrink-0">
           <button

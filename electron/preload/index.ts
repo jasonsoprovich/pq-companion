@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webFrame } from 'electron'
 
 type HotkeyState = { bindings: Record<string, string>; status: Record<string, 'ok' | 'failed'> }
+type LayoutState = { activeId: string; layouts: Array<{ id: string; name: string; windows: string[] }> }
 
 // Expose a safe, typed API to the renderer — no direct Node/Electron access
 contextBridge.exposeInMainWorld('electron', {
@@ -142,21 +143,16 @@ contextBridge.exposeInMainWorld('electron', {
     closeRaidReadiness: (): Promise<void> => ipcRenderer.invoke('overlay:raidreadiness:close'),
     toggleRaidReadiness: (): Promise<void> => ipcRenderer.invoke('overlay:raidreadiness:toggle'),
     anyPopoutOpen: (): Promise<boolean> => ipcRenderer.invoke('overlay:popouts:any-open'),
-    // A panel entry is a plain dashboard panel key, or {key, name} for a
-    // named timer-group panel — main process needs the group's display name
-    // to create its window and has no independent way to know it.
-    openAllPopouts: (panels?: Array<string | { key: string; name: string }>): Promise<void> =>
-      ipcRenderer.invoke('overlay:popouts:open-all', panels),
     closeAllPopouts: (): Promise<void> => ipcRenderer.invoke('overlay:popouts:close-all'),
     // Hide/show all: open popout count and how many are hidden by hide-all.
     popoutVisibility: (): Promise<{ open: number; hidden: number }> =>
       ipcRenderer.invoke('overlay:popouts:visibility'),
-    // Show hidden overlays, else hide open ones, else (nothing open) main
-    // asks this window to open the saved set via onOpenPopoutSelection.
+    // Show hidden overlays, else hide open ones, else (nothing open) open
+    // the active layout.
     togglePopoutVisibility: (): Promise<void> =>
       ipcRenderer.invoke('overlay:popouts:toggle-visibility'),
-    // Global overlay hotkeys (Settings → Hotkeys). Action ids: 'toggleAll'
-    // or 'overlay:<name>'. Accelerators use Electron's syntax (Ctrl+Alt+H).
+    // Global overlay hotkeys (Settings → Hotkeys). Action ids: 'toggleAll',
+    // 'overlay:<name>' or 'layout:<id>'. Accelerators use Electron's syntax (Ctrl+Alt+H).
     hotkeysGet: (): Promise<HotkeyState> => ipcRenderer.invoke('hotkeys:get'),
     hotkeysSet: (action: string, accelerator: string | null): Promise<HotkeyState> =>
       ipcRenderer.invoke('hotkeys:set', action, accelerator),
@@ -173,10 +169,23 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.on('overlay:collapse-changed', listener)
       return () => ipcRenderer.removeListener('overlay:collapse-changed', listener)
     },
-    onOpenPopoutSelection: (cb: () => void): (() => void) => {
-      const listener = (): void => cb()
-      ipcRenderer.on('overlay:popouts:open-selection', listener)
-      return () => ipcRenderer.removeListener('overlay:popouts:open-selection', listener)
+    // Overlay layouts: named sets of popouts with their positions. The
+    // active one saves itself as windows open, close, move or collapse.
+    layoutsGet: (): Promise<LayoutState> => ipcRenderer.invoke('layouts:get'),
+    layoutsSwitch: (id: string): Promise<LayoutState> => ipcRenderer.invoke('layouts:switch', id),
+    // Copies the active layout under a new name and makes the copy active.
+    layoutsCreate: (name: string): Promise<LayoutState> => ipcRenderer.invoke('layouts:create', name),
+    layoutsRename: (id: string, name: string): Promise<LayoutState> =>
+      ipcRenderer.invoke('layouts:rename', id, name),
+    layoutsDelete: (id: string): Promise<LayoutState> => ipcRenderer.invoke('layouts:delete', id),
+    layoutsOpenActive: (): Promise<void> => ipcRenderer.invoke('layouts:open-active'),
+    // One-time move of the old saved Pop Out All set into the Default layout.
+    layoutsMigrateSelection: (entries: Array<string | { key: string; name: string }>): Promise<LayoutState> =>
+      ipcRenderer.invoke('layouts:migrate-selection', entries),
+    onLayoutsChanged: (cb: (state: LayoutState) => void): (() => void) => {
+      const listener = (_e: unknown, s: LayoutState): void => cb(s)
+      ipcRenderer.on('layouts:changed', listener)
+      return () => ipcRenderer.removeListener('layouts:changed', listener)
     },
     popoutStates: (): Promise<Record<string, boolean>> =>
       ipcRenderer.invoke('overlay:popouts:states'),

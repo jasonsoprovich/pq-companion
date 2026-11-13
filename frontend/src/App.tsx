@@ -1,6 +1,6 @@
 import React, { useEffect, useState, lazy, Suspense } from 'react'
 import { FeatureDotsProvider } from './hooks/useFeatureDots'
-import { openSavedPopoutSelection } from './hooks/useOverlayPopouts'
+import { migratePopoutSelection } from './services/overlayPopoutSelection'
 import { initialFeatureDots } from './lib/featureRegistry'
 import { HashRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import Layout from './components/Layout'
@@ -168,11 +168,9 @@ function MainWindowLayout(): React.ReactElement {
     return () => { cancelled = true }
   }, [])
 
-  // Show/hide-all with nothing open (sidebar button, Manage overlays menu or
-  // the global hotkey): main asks this window to open the saved popout set,
-  // which lives in this renderer's localStorage.
+  // One-time: fold the old saved Pop Out All set into the Default layout.
   useEffect(() => {
-    return window.electron?.overlay?.onOpenPopoutSelection?.(openSavedPopoutSelection)
+    migratePopoutSelection()
   }, [])
 
   // Deep links pushed from overlay windows (e.g. an NPC overlay loot row)

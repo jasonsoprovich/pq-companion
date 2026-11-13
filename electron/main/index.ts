@@ -543,6 +543,7 @@ function writeBoundsNow(name: WindowKey, win: BrowserWindow): void {
   const store = loadBoundsStore()
   store[name] = { x: b.x, y: b.y, width: b.width, height }
   saveBoundsStore(store)
+  layoutBoundsChanged(name, store[name] as Bounds)
 }
 
 function persistBounds(name: WindowKey, win: BrowserWindow): void {
@@ -649,6 +650,7 @@ function trackOverlayBounds(name: WindowKey, win: BrowserWindow): void {
     placingOverlays.delete(name)
   })
   watchOverlayVisibility(name, win)
+  layoutWindowOpened(name, win)
 }
 
 // One-line snapshot of the window properties that decide whether an overlay
@@ -768,6 +770,7 @@ type ClientStateElectron = {
   mainWindowState?: MainWindowState
   overlayHotkeys?: HotkeyStore
   overlayCollapsed?: CollapseStore
+  overlayLayouts?: LayoutStore
 }
 
 const CLIENT_STATE_FILES: { [K in keyof ClientStateElectron]-?: () => string } = {
@@ -778,6 +781,7 @@ const CLIENT_STATE_FILES: { [K in keyof ClientStateElectron]-?: () => string } =
   mainWindowState: mainWindowStateFilePath,
   overlayHotkeys: hotkeysFilePath,
   overlayCollapsed: collapseFilePath,
+  overlayLayouts: layoutsFilePath,
 }
 
 // Matches appbackup.Manager.pendingClientStatePath() on the Go side exactly —
@@ -804,6 +808,7 @@ function collectClientStateElectron(): ClientStateElectron {
     mainWindowState: loadMainWindowState(),
     overlayHotkeys: loadHotkeyStore(),
     overlayCollapsed: loadCollapseStore(),
+    overlayLayouts: loadLayoutStore(),
   }
 }
 
@@ -1454,6 +1459,8 @@ function closeAllOverlays(): void {
   // Capture the open set for "restore on launch" before we tear the windows
   // down — once destroyed, currentlyOpenAutoOpenEntries() would report nothing.
   snapshotAutoOpenOverlays()
+  // Quitting isn't the user closing windows; keep the active layout intact.
+  layoutsFrozen = true
   // Driven by RESETTABLE_OVERLAYS/overlayWindowByName (not a hand-maintained
   // array) so every overlay type gets closed automatically, including ones
   // added after this function was written — discordVoice was previously
@@ -2320,13 +2327,13 @@ function showAllPopouts(): void {
 }
 
 // Shared by the sidebar button, the Manage overlays menu and the global
-// hotkey: show hidden overlays if any, else hide the open ones, else ask the
-// main window to open the user's saved set (it lives in the renderer).
+// hotkey: show hidden overlays if any, else hide the open ones, else open the
+// active layout.
 function toggleAllPopoutsVisibility(): void {
   const { open, hidden } = popoutVisibility()
   if (hidden > 0) showAllPopouts()
   else if (open > 0) hideAllPopouts()
-  else mainWindow?.webContents.send('overlay:popouts:open-selection')
+  else openLayoutWindows(activeLayout())
 }
 
 // Per-overlay toggle: an overlay hidden by "hide all" comes back rather than
@@ -2419,6 +2426,7 @@ function setOverlayCollapsed(win: BrowserWindow, name: WindowKey, collapsed: boo
     applyExpandedSize(win, name, height)
   }
   saveCollapseStore()
+  layoutCollapseChanged(name)
   writeBoundsNow(name, win)
 }
 
@@ -2428,6 +2436,7 @@ function clearOverlayCollapsed(name: WindowKey, win: BrowserWindow | null): void
   if (!store[name]?.collapsed) return
   store[name] = { ...(store[name] as CollapseEntry), collapsed: false }
   saveCollapseStore()
+  layoutCollapseChanged(name)
   if (win && !win.isDestroyed()) {
     const min = minSizeFor(name)
     win.setMaximumSize(0, 0)
@@ -2463,7 +2472,8 @@ ipcMain.handle('overlay:collapse:set', (event, collapsed: boolean, headerFractio
 // Nothing is bound by default. Stored in userData like the other overlay
 // window prefs, since main must register them before any renderer loads.
 
-// 'toggleAll' = the show/hide-all action; 'overlay:<name>' = show/hide one.
+// 'toggleAll' = the show/hide-all action; 'overlay:<name>' = show/hide one;
+// 'layout:<id>' = switch to a layout (see runLayoutHotkey).
 type HotkeyStore = { bindings: Record<string, string> }
 type HotkeyStatus = 'ok' | 'failed'
 
@@ -2494,6 +2504,10 @@ function saveHotkeyStore(store: HotkeyStore): void {
 
 function isHotkeyAction(action: string): boolean {
   if (action === 'toggleAll') return true
+  if (action.startsWith('layout:')) {
+    const id = action.slice('layout:'.length)
+    return loadLayoutStore().layouts.some((l) => l.id === id)
+  }
   if (!action.startsWith('overlay:')) return false
   const name = action.slice('overlay:'.length)
   return name === 'discordVoice' || isStandardOverlay(name)
@@ -2515,6 +2529,7 @@ function toggleOverlayFromHotkey(name: OverlayName): void {
 
 function runHotkeyAction(action: string): void {
   if (action === 'toggleAll') toggleAllPopoutsVisibility()
+  else if (action.startsWith('layout:')) runLayoutHotkey(action.slice('layout:'.length))
   else if (action.startsWith('overlay:')) toggleOverlayFromHotkey(action.slice('overlay:'.length) as OverlayName)
 }
 
@@ -2589,64 +2604,389 @@ ipcMain.handle('hotkeys:suspend', (_event, suspend: boolean) => {
 })
 ipcMain.handle('overlay:popouts:toggle-visibility', () => toggleAllPopoutsVisibility())
 
-// A requested panel is either a plain dashboard panel key (existing behavior)
-// or, for a named timer group panel, an object carrying both its id and
-// current display name — main process has no independent way to know a
-// group's name, so the renderer (which has the live TimerGroup list) sends it.
+// ── Overlay layouts ──────────────────────────────────────────────────────────
+// A layout is a named set of popout windows with each one's position, size and
+// collapse state. Exactly one is active, and it saves itself: opening or
+// closing a window, moving, resizing or collapsing it updates the active
+// layout. Bulk closes (Close All, quitting, a layout switch) don't, so the set
+// survives them. Switching makes the screen match the target: windows not in
+// it close, and its windows open or move into place. The per-window stores
+// (overlayBounds.json, overlay-collapsed.json) stay what each window opens
+// from; a switch writes the target's entries into them first. The trigger
+// alert overlay is never part of a layout.
+
+type LayoutWindow = { key: WindowKey; groupName?: string; bounds?: Bounds; collapse?: CollapseEntry }
+type OverlayLayout = { id: string; name: string; windows: LayoutWindow[] }
+// selectionMigrated: the renderer's old "Pop Out All" set (localStorage) has
+// been folded into the Default layout, or wasn't needed.
+type LayoutStore = { activeId: string; layouts: OverlayLayout[]; selectionMigrated: boolean }
+type LayoutSummary = { activeId: string; layouts: Array<{ id: string; name: string; windows: WindowKey[] }> }
+
+// Dashboard panel key → popout window. The old saved selection and the
+// dashboard's Pop Out All speak in panel keys.
+const PANEL_TO_OVERLAY: Record<string, Exclude<OverlayName, 'trigger'>> = {
+  dps: 'dps',
+  hps: 'hps',
+  buff: 'buffTimer',
+  detrim: 'detrimTimer',
+  custom: 'customTimer',
+  npc: 'npc',
+  threat: 'threat',
+  rolls: 'rollTracker',
+  respawn: 'respawnTimer',
+  chChain: 'chChain',
+  chMetronome: 'chMetronome',
+  discordVoice: 'discordVoice',
+  liveMap: 'liveMap',
+  zoneLockouts: 'zoneLockouts',
+  raidReadiness: 'raidReadiness',
+  filtered: 'filteredTimer',
+  kills: 'killCounter',
+  itemInfo: 'itemInfo',
+  pet: 'pet',
+  deathRecap: 'deathRecap',
+}
+
+const MAX_LAYOUT_NAME = 40
+
+// A window as the renderer names it: a dashboard panel key, or a named timer
+// group's window key plus its display name (main has no other way to know it).
 type PopoutRequestEntry = string | { key: `customTimer:${string}`; name: string }
 
-ipcMain.handle('overlay:popouts:open-all', (_event, panels?: PopoutRequestEntry[]) => {
-  // `panels` is the set of dashboard panel keys the user has toggled visible
-  // (buff/detrim/dps/npc/rolls/respawn/chChain/chMetronome/custom), plus any
-  // visible named timer-group panels. Only those overlays pop out, so the
-  // button respects the dashboard view instead of opening everything. When the
-  // argument is omitted (legacy callers), fall back to opening all fixed panels
-  // (groups are never included in that fallback — there's no way to enumerate
-  // them without the renderer's input).
-  const all = !Array.isArray(panels)
-  const want = new Set<string>()
-  const groupWants: Array<{ id: string; name: string }> = []
-  for (const p of panels ?? []) {
-    if (typeof p === 'string') want.add(p)
-    else groupWants.push({ id: p.key.slice('customTimer:'.length), name: p.name })
-  }
-  const wants = (key: string): boolean => all || want.has(key)
+function layoutsFilePath(): string {
+  return join(app.getPath('userData'), 'overlay-layouts.json')
+}
 
-  if (wants('dps') && !stdWin('dps')) createStandardOverlay('dps')
-  if (wants('buff') && !stdWin('buffTimer')) createStandardOverlay('buffTimer')
-  if (wants('detrim') && !stdWin('detrimTimer')) createStandardOverlay('detrimTimer')
-  if (wants('custom') && !stdWin('customTimer')) createStandardOverlay('customTimer')
-  if (wants('npc') && !stdWin('npc')) createStandardOverlay('npc')
-  if (wants('threat') && !stdWin('threat')) createStandardOverlay('threat')
-  if (wants('rolls') && !stdWin('rollTracker')) createStandardOverlay('rollTracker')
-  if (wants('respawn') && !stdWin('respawnTimer')) createStandardOverlay('respawnTimer')
-  if (wants('chChain') && !stdWin('chChain')) createStandardOverlay('chChain')
-  if (wants('chMetronome') && !stdWin('chMetronome')) createStandardOverlay('chMetronome')
-  if (wants('liveMap') && !stdWin('liveMap')) createStandardOverlay('liveMap')
-  if (wants('discordVoice') && (!discordVoiceOverlayWindow || discordVoiceOverlayWindow.isDestroyed())) createDiscordVoiceOverlay()
-  if (wants('zoneLockouts') && !stdWin('zoneLockouts')) createStandardOverlay('zoneLockouts')
-  if (wants('raidReadiness') && !stdWin('raidReadiness')) createStandardOverlay('raidReadiness')
-  if (wants('filtered') && !stdWin('filteredTimer')) createStandardOverlay('filteredTimer')
-  if (wants('kills') && !stdWin('killCounter')) createStandardOverlay('killCounter')
-  if (wants('itemInfo') && !stdWin('itemInfo')) createStandardOverlay('itemInfo')
-  if (wants('pet') && !stdWin('pet')) createStandardOverlay('pet')
-  if (wants('deathRecap') && !stdWin('deathRecap')) createStandardOverlay('deathRecap')
-  for (const g of groupWants) {
-    const win = customTimerGroupWindows.get(g.id)
-    if (!win || win.isDestroyed()) createCustomTimerGroupOverlay(g.id, g.name)
-  }
+function newLayoutId(): string {
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+}
 
-  // Trigger Alerts has no in-dashboard panel or visibility toggle, so it isn't
-  // something the user can "disable in the dashboard view". It always pops out
-  // (and stays invisible until a trigger fires).
+function cleanLayoutName(name: unknown): string {
+  const s = typeof name === 'string' ? name.trim().slice(0, MAX_LAYOUT_NAME) : ''
+  return s || 'Layout'
+}
+
+// A layout entry carrying the window's current saved position and collapse.
+function withLiveState(w: LayoutWindow): LayoutWindow {
+  const bounds = loadBoundsStore()[w.key]
+  const collapse = loadCollapseStore()[w.key]
+  return {
+    ...w,
+    ...(bounds ? { bounds: { ...bounds } } : {}),
+    ...(collapse ? { collapse: { ...collapse } } : {}),
+  }
+}
+
+function layoutWindowFromRequest(entry: PopoutRequestEntry): LayoutWindow | null {
+  if (typeof entry === 'string') {
+    const name = PANEL_TO_OVERLAY[entry] ?? entry
+    // isValidWindowKey already excludes the trigger overlay.
+    return isValidWindowKey(name) ? { key: name } : null
+  }
+  return entry?.key?.startsWith('customTimer:') ? { key: entry.key, groupName: entry.name ?? '' } : null
+}
+
+// First run with layouts: seed "Default" from the restore-on-launch set when
+// that was on (it's what's on screen). Otherwise the renderer migrates its
+// saved Pop Out All set (layouts:migrate-selection).
+function initialLayoutStore(): LayoutStore {
+  const autoOpen = loadAutoOpenStore()
+  const fromAutoOpen = autoOpen.enabled && autoOpen.overlays.length > 0
+  const windows: LayoutWindow[] = []
+  if (fromAutoOpen) {
+    for (const entry of autoOpen.overlays) {
+      const w = typeof entry === 'string'
+        ? layoutWindowFromRequest(entry)
+        : layoutWindowFromRequest({ key: entry.key, name: entry.groupName })
+      if (w) windows.push(withLiveState(w))
+    }
+  }
+  return {
+    activeId: 'default',
+    layouts: [{ id: 'default', name: 'Default', windows }],
+    selectionMigrated: fromAutoOpen,
+  }
+}
+
+function parseLayoutStore(raw: unknown): LayoutStore | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Partial<LayoutStore>
+  if (!Array.isArray(o.layouts)) return null
+  const layouts: OverlayLayout[] = []
+  for (const l of o.layouts) {
+    if (!l || typeof l.id !== 'string' || !l.id || layouts.some((x) => x.id === l.id)) continue
+    const windows = (Array.isArray(l.windows) ? l.windows : []).filter(
+      (w): w is LayoutWindow => !!w && typeof w.key === 'string' && isValidWindowKey(w.key) && w.key !== 'trigger',
+    )
+    layouts.push({ id: l.id, name: cleanLayoutName(l.name), windows })
+  }
+  if (layouts.length === 0) return null
+  const activeId = layouts.some((l) => l.id === o.activeId) ? (o.activeId as string) : layouts[0].id
+  return { activeId, layouts, selectionMigrated: o.selectionMigrated === true }
+}
+
+let layoutStoreCache: LayoutStore | null = null
+
+function loadLayoutStore(): LayoutStore {
+  if (layoutStoreCache) return layoutStoreCache
+  let parsed: LayoutStore | null = null
+  try {
+    parsed = parseLayoutStore(JSON.parse(readFileSync(layoutsFilePath(), 'utf-8')))
+  } catch {
+    parsed = null
+  }
+  layoutStoreCache = parsed ?? initialLayoutStore()
+  if (!parsed) saveLayoutStore()
+  return layoutStoreCache
+}
+
+function saveLayoutStore(): void {
+  try {
+    writeFileSync(layoutsFilePath(), JSON.stringify(loadLayoutStore(), null, 2), 'utf-8')
+  } catch (err) {
+    console.warn('[main] failed to save overlay layouts', err)
+  }
+}
+
+function activeLayout(): OverlayLayout {
+  const store = loadLayoutStore()
+  return store.layouts.find((l) => l.id === store.activeId) ?? store.layouts[0]
+}
+
+function layoutSummary(): LayoutSummary {
+  const store = loadLayoutStore()
+  return {
+    activeId: store.activeId,
+    layouts: store.layouts.map((l) => ({ id: l.id, name: l.name, windows: l.windows.map((w) => w.key) })),
+  }
+}
+
+function broadcastLayouts(): void {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('layouts:changed', layoutSummary())
+}
+
+// Windows closing as part of a bulk close, so their 'closed' event doesn't
+// drop them from the active layout. layoutsFrozen does the same while quitting.
+const bulkClosingWindows = new WeakSet<BrowserWindow>()
+let layoutsFrozen = false
+
+function closePopoutsInBulk(wins: BrowserWindow[]): void {
+  for (const win of wins) {
+    bulkClosingWindows.add(win)
+    win.close()
+  }
+}
+
+function groupNameFor(key: WindowKey): string | undefined {
+  return key.startsWith('customTimer:') ? customTimerGroupNames.get(key.slice('customTimer:'.length)) : undefined
+}
+
+// Called for every popout as it's created (from trackOverlayBounds).
+function layoutWindowOpened(key: WindowKey, win: BrowserWindow): void {
+  win.on('closed', () => {
+    if (!layoutsFrozen && !bulkClosingWindows.has(win)) layoutWindowClosed(key)
+  })
+  if (layoutsFrozen) return
+  const layout = activeLayout()
+  const groupName = groupNameFor(key)
+  const existing = layout.windows.find((w) => w.key === key)
+  if (existing) {
+    if (groupName === undefined || existing.groupName === groupName) return
+    existing.groupName = groupName
+  } else {
+    layout.windows.push(withLiveState({ key, ...(groupName !== undefined ? { groupName } : {}) }))
+  }
+  saveLayoutStore()
+  broadcastLayouts()
+}
+
+function layoutWindowClosed(key: WindowKey): void {
+  const layout = activeLayout()
+  const before = layout.windows.length
+  layout.windows = layout.windows.filter((w) => w.key !== key)
+  if (layout.windows.length === before) return
+  saveLayoutStore()
+  broadcastLayouts()
+}
+
+function layoutBoundsChanged(key: WindowKey, bounds: Bounds): void {
+  const entry = activeLayout().windows.find((w) => w.key === key)
+  if (!entry) return
+  entry.bounds = { ...bounds }
+  saveLayoutStore()
+}
+
+function layoutCollapseChanged(key: WindowKey): void {
+  const entry = activeLayout().windows.find((w) => w.key === key)
+  const collapse = loadCollapseStore()[key]
+  if (!entry || !collapse) return
+  entry.collapse = { ...collapse }
+  saveLayoutStore()
+}
+
+// Moves an already-open window to its spot in a layout and applies the
+// layout's collapse state (already written to the collapse store).
+function placeWindowForLayout(win: BrowserWindow, w: LayoutWindow): void {
+  const min = minSizeFor(w.key)
+  win.setMaximumSize(0, 0)
+  win.setMinimumSize(min.minWidth, min.minHeight)
+  if (w.bounds && isOnScreen(w.bounds)) win.setBounds(w.bounds)
+  const c = collapsedEntry(w.key)
+  if (c) applyCollapsedSize(win, w.key, c.headerHeight)
+  win.webContents.send('overlay:collapse-changed', !!c)
+  showOverlayWindow(win)
+}
+
+// Opens every window in a layout (or brings it back if hidden), at its saved
+// spot. Also makes sure the trigger alert overlay exists.
+function openLayoutWindows(layout: OverlayLayout, place = false): void {
+  for (const w of [...layout.windows]) {
+    const win = overlayWindowByName(w.key)
+    if (win && !win.isDestroyed()) {
+      if (place) placeWindowForLayout(win, w)
+      else showOverlayWindow(win)
+    } else if (w.key.startsWith('customTimer:')) {
+      createCustomTimerGroupOverlay(w.key.slice('customTimer:'.length), w.groupName ?? '')
+    } else {
+      createOverlayByName(w.key as OverlayName)
+    }
+  }
   if (!triggerOverlayWindow || triggerOverlayWindow.isDestroyed()) createTriggerOverlay()
+}
+
+// flush=false when the outgoing layout no longer exists (it was deleted):
+// pending moves are dropped instead of saved into whichever layout is next.
+function switchLayout(id: string, flush = true): void {
+  const store = loadLayoutStore()
+  const target = store.layouts.find((l) => l.id === id)
+  if (!target) return
+  // Save pending moves into the outgoing layout before it stops being active.
+  for (const win of userPopoutWindows()) {
+    const key = windowToOverlayName.get(win)
+    if (!key) continue
+    if (flush) {
+      writeBoundsNow(key, win)
+    } else {
+      const t = boundsDebounceTimers.get(key)
+      if (t) clearTimeout(t)
+      boundsDebounceTimers.delete(key)
+    }
+  }
+  store.activeId = id
+  const wanted = new Set(target.windows.map((w) => w.key))
+  closePopoutsInBulk(userPopoutWindows().filter((win) => {
+    const key = windowToOverlayName.get(win)
+    return !key || !wanted.has(key)
+  }))
+  // Windows open from the per-window stores, so seed them with the target's
+  // positions and collapse states. No collapse entry means expanded.
+  const bounds = loadBoundsStore()
+  const collapse = loadCollapseStore()
+  for (const w of target.windows) {
+    if (w.bounds) bounds[w.key] = { ...w.bounds }
+    const cur = collapse[w.key]
+    if (w.collapse) collapse[w.key] = { ...w.collapse }
+    else if (cur?.collapsed) collapse[w.key] = { ...cur, collapsed: false }
+  }
+  saveBoundsStore(bounds)
+  saveCollapseStore()
+  saveLayoutStore()
+  openLayoutWindows(target, true)
+  broadcastLayouts()
+}
+
+// A layout hotkey switches to that layout, or shows/hides everything when it's
+// already the active one.
+function runLayoutHotkey(id: string): void {
+  if (loadLayoutStore().activeId === id) toggleAllPopoutsVisibility()
+  else switchLayout(id)
+}
+
+ipcMain.handle('layouts:get', () => layoutSummary())
+
+ipcMain.handle('layouts:switch', (_event, id: string) => {
+  switchLayout(id)
+  return layoutSummary()
 })
+
+// Copies the active layout (its window set, with current positions) under a
+// new name and makes the copy active. Nothing on screen changes.
+ipcMain.handle('layouts:create', (_event, name: string) => {
+  const store = loadLayoutStore()
+  for (const win of userPopoutWindows()) {
+    const key = windowToOverlayName.get(win)
+    if (key) writeBoundsNow(key, win)
+  }
+  const copy: OverlayLayout = {
+    id: newLayoutId(),
+    name: cleanLayoutName(name),
+    windows: activeLayout().windows.map((w) => withLiveState({ key: w.key, ...(w.groupName !== undefined ? { groupName: w.groupName } : {}) })),
+  }
+  store.layouts.push(copy)
+  store.activeId = copy.id
+  saveLayoutStore()
+  broadcastLayouts()
+  return layoutSummary()
+})
+
+ipcMain.handle('layouts:rename', (_event, id: string, name: string) => {
+  const layout = loadLayoutStore().layouts.find((l) => l.id === id)
+  if (layout) {
+    layout.name = cleanLayoutName(name)
+    saveLayoutStore()
+    broadcastLayouts()
+  }
+  return layoutSummary()
+})
+
+// The last layout can't be deleted. Deleting the active one switches to the
+// first remaining layout; its hotkey binding goes with it.
+ipcMain.handle('layouts:delete', (_event, id: string) => {
+  const store = loadLayoutStore()
+  if (store.layouts.length <= 1 || !store.layouts.some((l) => l.id === id)) return layoutSummary()
+  const wasActive = store.activeId === id
+  store.layouts = store.layouts.filter((l) => l.id !== id)
+  if (hotkeyStore.bindings[`layout:${id}`]) {
+    delete hotkeyStore.bindings[`layout:${id}`]
+    saveHotkeyStore(hotkeyStore)
+    applyHotkeys()
+  }
+  if (wasActive) {
+    switchLayout(store.layouts[0].id, false)
+  } else {
+    saveLayoutStore()
+    broadcastLayouts()
+  }
+  return layoutSummary()
+})
+
+ipcMain.handle('layouts:open-active', () => openLayoutWindows(activeLayout()))
+
+// One-time migration of the renderer's old saved Pop Out All set into the
+// Default layout, sent on startup with group names resolved.
+ipcMain.handle('layouts:migrate-selection', (_event, entries: PopoutRequestEntry[]) => {
+  const store = loadLayoutStore()
+  if (store.selectionMigrated) return layoutSummary()
+  store.selectionMigrated = true
+  const layout = activeLayout()
+  if (layout.windows.length === 0 && Array.isArray(entries)) {
+    for (const entry of entries) {
+      const w = layoutWindowFromRequest(entry)
+      if (w && !layout.windows.some((x) => x.key === w.key)) layout.windows.push(withLiveState(w))
+    }
+  }
+  saveLayoutStore()
+  broadcastLayouts()
+  return layoutSummary()
+})
+
 
 ipcMain.handle('overlay:popouts:close-all', () => {
   // Use close() (not destroy()) so each window's 'close' handler persists its
   // bounds. The always-on trigger overlay is intentionally left open so trigger
-  // alerts keep rendering after a bulk close.
-  for (const win of userPopoutWindows()) win.close()
+  // alerts keep rendering after a bulk close. A bulk close leaves the active
+  // layout's window set alone, so toggling back on reopens the same windows.
+  closePopoutsInBulk(userPopoutWindows())
 })
 
 // Per-overlay popout open state, keyed by canonical overlay name (excludes the
@@ -3408,20 +3748,10 @@ app.whenReady().then(async () => {
   // bounds/lock state via the normal create path, so they come back in place.
   // A named group entry carries its own display name (see AutoOpenGroupEntry)
   // so this needs no backend round-trip — the backend isn't reachable yet.
-  const autoOpen = loadAutoOpenStore()
-  if (autoOpen.enabled) {
-    for (const entry of autoOpen.overlays) {
-      if (typeof entry === 'string') {
-        if (entry === 'trigger') continue
-        const win = overlayWindowByName(entry)
-        if (!win || win.isDestroyed()) createOverlayByName(entry)
-      } else if (entry.key.startsWith('customTimer:')) {
-        const groupId = entry.key.slice('customTimer:'.length)
-        const win = customTimerGroupWindows.get(groupId)
-        if (!win || win.isDestroyed()) createCustomTimerGroupOverlay(groupId, entry.groupName)
-      }
-    }
-  }
+  //
+  // The active layout is the set that was open at quit (it tracks every open
+  // and close), so restoring means opening it.
+  if (loadAutoOpenStore().enabled) openLayoutWindows(activeLayout())
 
   setupAutoUpdater()
 
@@ -3485,6 +3815,7 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   if (!gotSingleInstanceLock) return
   snapshotAutoOpenOverlays()
+  layoutsFrozen = true
 })
 
 app.on('before-quit', (event) => {

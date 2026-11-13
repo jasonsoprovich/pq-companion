@@ -4,7 +4,7 @@
  * them with the OS at startup); this tab records new combos and shows
  * whether each one registered.
  */
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, Info, Keyboard, Wand2, X } from 'lucide-react'
 import type { HotkeyState } from '../../types/electron'
 import {
@@ -14,6 +14,7 @@ import {
   eqConflictWarning,
   hotkeyActions,
 } from '../../lib/hotkeys'
+import { useOverlayLayouts } from '../../hooks/useOverlayLayouts'
 
 function Kbd({ children }: { children: React.ReactNode }): React.ReactElement {
   return (
@@ -39,10 +40,14 @@ export default function HotkeysSettings(): React.ReactElement {
   const [recording, setRecording] = useState<string | null>(null)
   const [recordError, setRecordError] = useState<string | null>(null)
   const recordingRef = useRef<string | null>(null)
+  const { state: layoutState } = useOverlayLayouts()
+  const layouts = layoutState?.layouts
+  const actions = useMemo(() => hotkeyActions(layouts ?? []), [layouts])
 
+  // Re-read on layout changes too: deleting a layout drops its binding.
   useEffect(() => {
     if (supported) api.hotkeysGet().then(setState).catch(() => {})
-  }, [api, supported])
+  }, [api, supported, layouts])
 
   const stopRecording = useCallback(() => {
     if (recordingRef.current) void api?.hotkeysSuspend(false)
@@ -88,7 +93,7 @@ export default function HotkeysSettings(): React.ReactElement {
         ([a, acc]) => acc === result.accelerator && a !== recording,
       )
       if (owner) {
-        const label = hotkeyActions().find((x) => x.id === owner[0])?.label ?? owner[0]
+        const label = actions.find((x) => x.id === owner[0])?.label ?? owner[0]
         setRecordError(`${result.accelerator} is already used for "${label}".`)
         return
       }
@@ -98,7 +103,7 @@ export default function HotkeysSettings(): React.ReactElement {
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [recording, state.bindings, api, stopRecording])
+  }, [recording, state.bindings, api, stopRecording, actions])
 
   const applySuggested = (): void => {
     const used = new Set(Object.values(state.bindings))
@@ -143,7 +148,7 @@ export default function HotkeysSettings(): React.ReactElement {
               color: 'var(--color-foreground)',
             }}
             title={Object.entries(SUGGESTED_HOTKEYS)
-              .map(([a, acc]) => `${hotkeyActions().find((x) => x.id === a)?.label}: ${acc}`)
+              .map(([a, acc]) => `${actions.find((x) => x.id === a)?.label}: ${acc}`)
               .join('\n')}
           >
             <Wand2 size={11} /> Use suggested keys
@@ -169,12 +174,14 @@ export default function HotkeysSettings(): React.ReactElement {
             keeps getting every other key you press. The trade-off: while a combo is bound
             here, EQ won't receive it, so avoid combos you use in EQ's key bindings or
             hotbars. Hiding an overlay keeps it in place; trigger alert text is never hidden.
+            A layout's key switches to that layout, or shows and hides everything when
+            it's already the active one.
           </p>
         </div>
       </div>
 
       <div className="flex flex-col">
-        {hotkeyActions().map((a, i) => {
+        {actions.map((a, i) => {
           const acc = state.bindings[a.id]
           const failed = acc && state.status[a.id] === 'failed'
           const warning = acc && !failed ? eqConflictWarning(acc) : null
@@ -189,10 +196,14 @@ export default function HotkeysSettings(): React.ReactElement {
                 className="min-w-0 flex-1 text-xs"
                 style={{
                   color: 'var(--color-foreground)',
-                  fontWeight: i === 0 ? 600 : undefined,
+                  fontWeight: a.kind === 'overlay' ? undefined : 600,
                 }}
               >
-                {i === 0 ? a.label : `Show / hide · ${a.label}`}
+                {a.kind === 'all'
+                  ? a.label
+                  : a.kind === 'layout'
+                    ? `Switch layout · ${a.label}`
+                    : `Show / hide · ${a.label}`}
               </span>
               <button
                 onClick={() => (isRecording ? stopRecording() : startRecording(a.id))}

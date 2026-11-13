@@ -7,6 +7,19 @@ export interface HotkeyState {
   status: Record<string, 'ok' | 'failed'>
 }
 
+// Overlay layouts: named sets of popout windows. `windows` are window keys
+// (overlay names, or customTimer:<groupId>).
+export interface OverlayLayoutSummary {
+  id: string
+  name: string
+  windows: string[]
+}
+
+export interface LayoutState {
+  activeId: string
+  layouts: OverlayLayoutSummary[]
+}
+
 export interface ElectronAPI {
   app: {
     getVersion: () => Promise<string>
@@ -115,11 +128,9 @@ export interface ElectronAPI {
     closeRaidReadiness: () => Promise<void>
     toggleRaidReadiness: () => Promise<void>
     anyPopoutOpen: () => Promise<boolean>
-    openAllPopouts: (panels?: Array<string | { key: string; name: string }>) => Promise<void>
     closeAllPopouts: () => Promise<void>
     popoutVisibility: () => Promise<{ open: number; hidden: number }>
     togglePopoutVisibility: () => Promise<void>
-    onOpenPopoutSelection: (cb: () => void) => () => void
     collapseGet: () => Promise<boolean>
     collapseSet: (collapsed: boolean, headerFraction: number) => Promise<boolean>
     onCollapseChanged: (cb: (collapsed: boolean) => void) => () => void
@@ -127,6 +138,14 @@ export interface ElectronAPI {
     hotkeysSet: (action: string, accelerator: string | null) => Promise<HotkeyState>
     hotkeysSetMany: (bindings: Record<string, string>) => Promise<HotkeyState>
     hotkeysSuspend: (suspend: boolean) => Promise<void>
+    layoutsGet: () => Promise<LayoutState>
+    layoutsSwitch: (id: string) => Promise<LayoutState>
+    layoutsCreate: (name: string) => Promise<LayoutState>
+    layoutsRename: (id: string, name: string) => Promise<LayoutState>
+    layoutsDelete: (id: string) => Promise<LayoutState>
+    layoutsOpenActive: () => Promise<void>
+    layoutsMigrateSelection: (entries: Array<string | { key: string; name: string }>) => Promise<LayoutState>
+    onLayoutsChanged: (cb: (state: LayoutState) => void) => () => void
     setIgnoreMouseEvents: (ignore: boolean) => Promise<void>
     setTriggerMode: (mode: 'interactive' | 'passthrough' | 'hidden') => Promise<void>
     onTriggerEscape: (cb: () => void) => () => void

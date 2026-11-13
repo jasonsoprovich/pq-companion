@@ -1,73 +1,59 @@
 /**
- * overlayPopoutSelection — localStorage-backed memory of which overlays the
- * user has individually popped out via "Manage overlays". "Pop Out All" (the
- * sidebar quick-toggle and the dashboard's bulk action) reopens exactly this
- * set rather than whatever panels happen to be visible on the Overlays
- * Dashboard — dashboard visibility and popout state are independent, so a
- * panel can be arranged on the dashboard without ever floating as a window,
- * and a popped-out overlay doesn't need a dashboard panel at all.
- *
- * "Close All" doesn't touch this selection — it just closes whatever's
- * currently open — so the next "Pop Out All" restores the same set.
+ * overlayPopoutSelection — the old localStorage memory of which overlays
+ * "Pop Out All" reopened. Overlay layouts (Electron main process) replaced
+ * it; this only remains to move a saved set into the Default layout once,
+ * after which the key is removed.
  */
-import { VISIBLE_DASHBOARD_PANEL_KEYS, loadDashboardLayout, type DashboardPanelKey } from './dashboardLayout'
+import { listTimerGroups } from './api'
+import type { TimerGroup } from '../types/trigger'
 
 const STORAGE_KEY = 'pq-overlay-popout-selection'
 
-export interface PopoutSelection {
-  panels: DashboardPanelKey[]
+interface PopoutSelection {
+  panels: string[]
   groups: string[]
 }
 
-// First-run default (no selection saved yet): whatever's visible on the
-// dashboard, matching the old "Pop Out All" behavior until the user curates
-// their own set via Manage overlays.
-function defaultSelection(): PopoutSelection {
-  const layout = loadDashboardLayout()
-  return {
-    panels: VISIBLE_DASHBOARD_PANEL_KEYS.filter((k) => layout[k].visible),
-    groups: [],
-  }
-}
-
-export function loadPopoutSelection(): PopoutSelection {
+function loadSavedSelection(): PopoutSelection | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return defaultSelection()
+    if (!raw) return null
     const parsed = JSON.parse(raw) as Partial<PopoutSelection>
     return {
       panels: Array.isArray(parsed.panels) ? parsed.panels : [],
       groups: Array.isArray(parsed.groups) ? parsed.groups : [],
     }
   } catch {
-    return defaultSelection()
+    return null
   }
 }
 
-function saveSelection(sel: PopoutSelection): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(sel))
-  } catch {
-    // localStorage may be unavailable / full — ignore.
+// Main ignores this once it has migrated (or seeded Default from the
+// restore-on-launch set), so it's safe to call on every startup. Group
+// windows need their display names, which only the backend has.
+export function migratePopoutSelection(): void {
+  const o = window.electron?.overlay
+  if (!o?.layoutsMigrateSelection) return
+  const sel = loadSavedSelection()
+  const send = (groups: TimerGroup[]): void => {
+    const entries: Array<string | { key: string; name: string }> = [...(sel?.panels ?? [])]
+    for (const id of sel?.groups ?? []) {
+      const g = groups.find((x) => x.id === id)
+      if (g) entries.push({ key: `customTimer:${id}`, name: g.name })
+    }
+    o.layoutsMigrateSelection(entries)
+      .then(() => {
+        try {
+          localStorage.removeItem(STORAGE_KEY)
+        } catch {
+          // localStorage unavailable — harmless, main won't migrate twice.
+        }
+      })
+      .catch(() => {})
   }
-}
-
-export function setPanelInPopoutSelection(panel: DashboardPanelKey, wanted: boolean): void {
-  const sel = loadPopoutSelection()
-  const has = sel.panels.includes(panel)
-  if (has === wanted) return
-  saveSelection({
-    ...sel,
-    panels: wanted ? [...sel.panels, panel] : sel.panels.filter((p) => p !== panel),
-  })
-}
-
-export function setGroupInPopoutSelection(groupId: string, wanted: boolean): void {
-  const sel = loadPopoutSelection()
-  const has = sel.groups.includes(groupId)
-  if (has === wanted) return
-  saveSelection({
-    ...sel,
-    groups: wanted ? [...sel.groups, groupId] : sel.groups.filter((g) => g !== groupId),
-  })
+  if (sel && sel.groups.length > 0) {
+    listTimerGroups().then(send).catch(() => send([]))
+  } else {
+    send([])
+  }
 }
