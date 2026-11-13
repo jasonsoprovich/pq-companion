@@ -1,11 +1,11 @@
 /**
  * HubActionsMenu — the ⋯ menu in the Overlays hub header, for actions on
- * every overlay at once: close all popouts, recenter every window, clear all
+ * every overlay at once: rerun overlay setup, close all popouts, recenter every window, clear all
  * timers (those two ask first), and turn collapse-when-idle on or off for
  * every overlay that offers it.
  */
 import React, { useEffect, useRef, useState } from 'react'
-import { ChevronsDownUp, ChevronsUpDown, Crosshair, MoreHorizontal, Trash2, X } from 'lucide-react'
+import { ChevronsDownUp, ChevronsUpDown, Crosshair, MoreHorizontal, Trash2, Wand2, X } from 'lucide-react'
 import { ConfirmModal } from '../ConfirmModal'
 import { clearTimers, getConfig, listTimerGroups, saveConfigChanges } from '../../services/api'
 import { useOverlayPopouts } from '../../hooks/useOverlayPopouts'
@@ -116,6 +116,14 @@ export default function HubActionsMenu(): React.ReactElement {
             boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
           }}
         >
+          {typeof window.electron?.overlay?.setupApply === 'function' && (
+            <MenuItem
+              icon={Wand2}
+              label="Set up overlays…"
+              hint="Pick overlays for your class and place them around your screen, as a new layout or in place of this one."
+              onClick={() => pick(() => window.dispatchEvent(new Event('pq:open-overlay-setup')))}
+            />
+          )}
           <MenuItem
             icon={X}
             label="Close all popouts"
