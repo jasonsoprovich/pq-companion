@@ -535,6 +535,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/", customOverlaysH.state)
 			r.Post("/", customOverlaysH.create)
 			r.Post("/test", customOverlaysH.test)
+			r.Get("/templates", customOverlaysH.templates)
 			r.Put("/{id}", customOverlaysH.update)
 			r.Delete("/{id}", customOverlaysH.remove)
 			r.Post("/{id}/action", customOverlaysH.action)

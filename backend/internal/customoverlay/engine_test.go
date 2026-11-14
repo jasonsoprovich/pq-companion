@@ -2,6 +2,7 @@ package customoverlay
 
 import (
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -180,7 +181,7 @@ func TestChannelHelper(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			e, _ := newTestEngine(t, nil, "Me")
-			res := e.TestLine(base(tc.rule), tc.line, "")
+			res := e.TestLines(base(tc.rule), []string{tc.line}, "", false)
 			if res.Error != "" {
 				t.Fatalf("error: %s", res.Error)
 			}
@@ -365,8 +366,8 @@ func TestTestLineStartsFromSavedState(t *testing.T) {
 	}
 	e.HandleLine(t0, "Ann tells the guild, '10'")
 	before := hub.count()
-	res := e.TestLine(o.Def, "Bob tells the guild, '20'", "")
-	if strings.Join(res.Matched, ",") != "bid" || len(res.State.Widgets["bids"].Rows) != 2 {
+	res := e.TestLines(o.Def, []string{"Bob tells the guild, '20'"}, "", true)
+	if strings.Join(res.Steps[0].Matched, ",") != "bid" || len(res.State.Widgets["bids"].Rows) != 2 {
 		t.Errorf("test result = %+v", res)
 	}
 	if hub.count() != before || len(e.State().Overlays[0].State.Widgets["bids"].Rows) != 1 {
@@ -466,5 +467,82 @@ func TestReplayRestoresState(t *testing.T) {
 	disk2, _ := newTestEngine(t, store, "Me")
 	if n := len(disk2.State().Overlays[0].State.Widgets["bids"].Rows); n != 2 {
 		t.Errorf("saving didn't resume after replay: rows on disk = %d", n)
+	}
+}
+
+func TestSimplePattern(t *testing.T) {
+	tests := []struct {
+		name    string
+		m       SimpleMatch
+		line    string
+		want    map[string]string // nil = no match
+		wantErr string
+	}{
+		{"starts with trailing text", SimpleMatch{SimpleStarts, "Bids open on {item}"}, "bids open on Robe of the Oracle", map[string]string{"item": "Robe of the Oracle"}, ""},
+		{"starts rejects middle", SimpleMatch{SimpleStarts, "Bids open"}, "Now Bids open", nil, ""},
+		{"contains", SimpleMatch{SimpleContains, "CLOSING"}, "Robe CLOSING in 10", map[string]string{}, ""},
+		{"exact number", SimpleMatch{SimpleExact, "{amount:number}"}, "1,250", map[string]string{"amount": "1,250"}, ""},
+		{"exact rejects extra", SimpleMatch{SimpleExact, "{amount:number}"}, "125 for robe", nil, ""},
+		{"sold", SimpleMatch{SimpleStarts, "SOLD! {item} to {winner} for {amount:number}"}, "SOLD! Shiny Brass Idol to Annalise for 25 dkp", map[string]string{"item": "Shiny Brass Idol", "winner": "Annalise", "amount": "25"}, ""},
+		{"word", SimpleMatch{SimpleStarts, "{who:word} rolls"}, "Bob rolls a 5", map[string]string{"who": "Bob"}, ""},
+		{"regex chars are literal", SimpleMatch{SimpleExact, "x+y (z)? {n:number}"}, "x+y (z)? 3", map[string]string{"n": "3"}, ""},
+		{"spaces stretch", SimpleMatch{SimpleStarts, "Bids open"}, "Bids   open now", map[string]string{}, ""},
+		{"duplicate placeholder", SimpleMatch{SimpleStarts, "{a} and {a}"}, "", nil, "used twice"},
+		{"bad type", SimpleMatch{SimpleStarts, "{a:date}"}, "", nil, "type must be"},
+		{"empty", SimpleMatch{SimpleStarts, "  "}, "", nil, "required"},
+		{"bad kind", SimpleMatch{"regex", "x"}, "", nil, "unknown match kind"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			p, err := simplePattern(tc.m)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("err = %v, want %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			re := regexp.MustCompile(p)
+			m := re.FindStringSubmatch(tc.line)
+			if (m == nil) != (tc.want == nil) {
+				t.Fatalf("pattern %s on %q: match=%v, want match=%v", p, tc.line, m != nil, tc.want != nil)
+			}
+			for k, v := range tc.want {
+				if got := m[re.SubexpIndex(k)]; got != v {
+					t.Errorf("{%s} = %q, want %q (pattern %s)", k, got, v, p)
+				}
+			}
+		})
+	}
+}
+
+func TestTemplatesValidateAndRun(t *testing.T) {
+	for _, tpl := range Templates() {
+		if _, err := Validate(tpl.Def); err != nil {
+			t.Fatalf("template %s invalid: %v", tpl.Key, err)
+		}
+	}
+	e, _ := newTestEngine(t, nil, "Me")
+	res := e.TestLines(Templates()[0].Def, []string{
+		"[Fri Nov 13 21:00:00 2026] Lootmaster tells the guild, 'Bids open on Cloak of Flames'",
+		"Bob tells the guild, '40'",
+		"",
+		"Ann tells the guild, '1,200'",
+		"Lootmaster tells the guild, 'SOLD! Cloak of Flames to Ann for 1,200'",
+	}, "", false)
+	if res.Error != "" {
+		t.Fatal(res.Error)
+	}
+	if len(res.Steps) != 4 || strings.Join(res.Steps[0].Matched, ",") != "open" || len(res.Steps[2].Matched) != 1 {
+		t.Fatalf("steps = %+v", res.Steps)
+	}
+	st := res.State.Widgets
+	if st["status"].Fields["winner"] != "Ann (1,200)" || st["bids"].Rows[0].Key != "Ann" {
+		t.Errorf("state = %+v %+v", st["status"].Fields, st["bids"].Rows)
+	}
+	if res.Def == nil || res.Def.Rules[0].Pattern == "" {
+		t.Error("normalized def with generated pattern not returned")
 	}
 }

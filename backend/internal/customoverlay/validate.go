@@ -185,6 +185,14 @@ func validateRule(r *Rule, widgets map[string]*Widget) error {
 	}
 	r.Speakers = speakers
 
+	if r.Simple != nil {
+		p, err := simplePattern(*r.Simple)
+		if err != nil {
+			return err
+		}
+		r.Simple = &SimpleMatch{Kind: r.Simple.Kind, Text: strings.TrimSpace(r.Simple.Text)}
+		r.Pattern = p
+	}
 	if r.Pattern == "" && r.Channel == "" {
 		return fmt.Errorf("pattern is required (or pick a channel)")
 	}

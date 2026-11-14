@@ -161,6 +161,9 @@ type Rule struct {
 	Direction string   `json:"direction,omitempty"` // "" | in | out
 	Speakers  []string `json:"speakers,omitempty"`  // case-insensitive; empty = anyone
 
+	// Simple, when set, is the plain-text form of the pattern; Validate
+	// builds Pattern from it (see SimpleMatch).
+	Simple *SimpleMatch `json:"simple,omitempty"`
 	// Pattern is an RE2 regex. Empty is allowed only with a Channel (match
 	// every message on it).
 	Pattern string `json:"pattern,omitempty"`
@@ -222,11 +225,20 @@ type State struct {
 	Now      int64     `json:"now"` // server unix ms, for countdown math
 }
 
-// TestResult is the outcome of a dry run of one line against a definition.
+// TestStep is one test line and the IDs of the rules it matched.
+type TestStep struct {
+	Line    string   `json:"line"`
+	Matched []string `json:"matched"`
+}
+
+// TestResult is the outcome of a dry run of some lines against a definition.
+// Def is the validated definition (generated IDs and Simple-mode patterns
+// filled in), so the editor can show what will be saved.
 type TestResult struct {
-	Matched []string     `json:"matched"` // IDs of the rules that matched
-	State   OverlayState `json:"state"`
-	Error   string       `json:"error,omitempty"`
+	Steps []TestStep   `json:"steps"`
+	State OverlayState `json:"state"`
+	Def   *OverlayDef  `json:"def,omitempty"`
+	Error string       `json:"error,omitempty"`
 }
 
 // ErrNotFound is returned for an unknown overlay ID.

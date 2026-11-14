@@ -105,21 +105,34 @@ func (h *customOverlaysHandler) action(w http.ResponseWriter, r *http.Request) {
 
 // customOverlayTestRequest is the body of POST /api/custom-overlays/test.
 type customOverlayTestRequest struct {
-	Def       customoverlay.OverlayDef `json:"def"`
-	Line      string                   `json:"line"`
-	Character string                   `json:"character,omitempty"`
+	Def         customoverlay.OverlayDef `json:"def"`
+	Lines       []string                 `json:"lines"`
+	Character   string                   `json:"character,omitempty"`
+	FromCurrent bool                     `json:"from_current,omitempty"`
 }
 
-// test dry-runs one log message against an unsaved definition for the
-// editor's "test a line" box. Validation problems come back in the result's
-// error field (200) so the editor can show them inline.
+// maxTestLines caps one test run (a pasted chunk of log).
+const maxTestLines = 2000
+
+// test dry-runs pasted log lines against an unsaved definition for the
+// editor's test box. Validation problems come back in the result's error
+// field (200) so the editor can show them inline; a draft that validates
+// also comes back normalized in def.
 func (h *customOverlaysHandler) test(w http.ResponseWriter, r *http.Request) {
 	var req customOverlayTestRequest
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2<<20)).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
-	writeJSON(w, http.StatusOK, h.engine.TestLine(req.Def, req.Line, req.Character))
+	if len(req.Lines) > maxTestLines {
+		req.Lines = req.Lines[:maxTestLines]
+	}
+	writeJSON(w, http.StatusOK, h.engine.TestLines(req.Def, req.Lines, req.Character, req.FromCurrent))
+}
+
+// templates lists the built-in overlay templates for "+ New custom overlay".
+func (h *customOverlaysHandler) templates(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"templates": customoverlay.Templates()})
 }
 
 func (h *customOverlaysHandler) fail(w http.ResponseWriter, err error) {

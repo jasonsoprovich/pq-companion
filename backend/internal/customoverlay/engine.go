@@ -856,22 +856,26 @@ func (e *Engine) SetReplaying(active bool) {
 	e.broadcast()
 }
 
-// TestLine dry-runs one log message against an unsaved definition, starting
-// from the saved overlay's current contents when def.ID names one (so the
-// editor shows what the line would do right now) and from empty otherwise.
-// Nothing is stored or broadcast. character overrides the active character
-// for {c} and the Characters filter is ignored.
-func (e *Engine) TestLine(def OverlayDef, line, character string) TestResult {
+// logPrefixRe strips a pasted "[Fri Nov 13 21:00:00 2026] " log timestamp.
+var logPrefixRe = regexp.MustCompile(`^\[[^\]]*\d{4}\]\s*`)
+
+// TestLines dry-runs log messages, in order, against an unsaved definition.
+// Pasted lines may keep their [timestamp] prefix; blank lines are skipped.
+// fromCurrent starts from the saved overlay's current contents when def.ID
+// names one (so the editor shows what the lines would do right now);
+// otherwise it starts empty. Nothing is stored or broadcast. character
+// overrides the active character for {c}; the Characters filter is ignored.
+func (e *Engine) TestLines(def OverlayDef, lines []string, character string, fromCurrent bool) TestResult {
 	id := def.ID
 	def, err := Validate(def)
 	if err != nil {
-		return TestResult{Matched: []string{}, Error: err.Error()}
+		return TestResult{Steps: []TestStep{}, Error: err.Error()}
 	}
 	if character == "" {
 		character = e.self()
 	}
 	st := OverlayState{Widgets: map[string]*WidgetState{}}
-	if id != "" {
+	if fromCurrent && id != "" {
 		e.mu.Lock()
 		if o := e.findLocked(id); o != nil {
 			st = cloneState(o.State)
@@ -879,15 +883,25 @@ func (e *Engine) TestLine(def OverlayDef, line, character string) TestResult {
 		e.mu.Unlock()
 		pruneState(&st, def)
 	}
-	lc := &lineCtx{ts: e.now(), msg: line, self: character}
-	res := TestResult{Matched: []string{}}
-	for _, cr := range compileRules(def) {
-		tok, ok := cr.match(lc)
-		if !ok {
+	rules := compileRules(def)
+	res := TestResult{Steps: []TestStep{}, Def: &def}
+	now := e.now()
+	for _, raw := range lines {
+		line := strings.TrimSpace(logPrefixRe.ReplaceAllString(strings.TrimRight(raw, "\r"), ""))
+		if line == "" {
 			continue
 		}
-		res.Matched = append(res.Matched, cr.rule.ID)
-		applyOps(&def, &st, cr.rule.Ops, tok, lc.ts)
+		step := TestStep{Line: line, Matched: []string{}}
+		lc := &lineCtx{ts: now, msg: line, self: character}
+		for i := range rules {
+			tok, ok := rules[i].match(lc)
+			if !ok {
+				continue
+			}
+			step.Matched = append(step.Matched, rules[i].rule.ID)
+			applyOps(&def, &st, rules[i].rule.Ops, tok, now)
+		}
+		res.Steps = append(res.Steps, step)
 	}
 	snap := snapshot(&Overlay{Def: def, State: st})
 	res.State = snap.State
