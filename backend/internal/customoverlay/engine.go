@@ -39,6 +39,11 @@ type Engine struct {
 	mu       sync.Mutex
 	overlays []*Overlay
 	comp     map[string][]compiledRule
+	// replaySaved holds each overlay's pre-replay contents while a Log Feed
+	// replay runs (nil otherwise). Replayed lines still update the overlays
+	// on screen so a new overlay can be tested against an old log, but
+	// nothing is written, and SetReplaying(false) puts these back.
+	replaySaved map[string]OverlayState
 }
 
 // NewEngine loads stored overlays. store and hub may be nil (in-memory only,
@@ -531,7 +536,7 @@ func (e *Engine) HandleLine(ts time.Time, msg string) {
 // batched write would lose the last changes on every quit; rules fire at
 // chat speed, so writing each change is cheap.
 func (e *Engine) saveStateLocked(o *Overlay) {
-	if e.store == nil {
+	if e.store == nil || e.replaySaved != nil {
 		return
 	}
 	if err := e.store.SaveState(o.Def.ID, o.State, o.UpdatedAt); err != nil {
@@ -660,6 +665,13 @@ func (e *Engine) saveLocked(o *Overlay) {
 	if e.store == nil {
 		return
 	}
+	if e.replaySaved != nil {
+		// Mid-replay definition edits still save, with the pre-replay
+		// contents rather than the replayed ones.
+		cp := *o
+		cp.State = e.replaySaved[o.Def.ID]
+		o = &cp
+	}
 	if err := e.store.Save(o, e.indexLocked(o.Def.ID)); err != nil {
 		slog.Warn("customoverlay: save", "id", o.Def.ID, "err", err)
 	}
@@ -677,6 +689,9 @@ func (e *Engine) Create(def OverlayDef) (Overlay, error) {
 	e.mu.Lock()
 	e.overlays = append(e.overlays, o)
 	e.comp[def.ID] = compileRules(def)
+	if e.replaySaved != nil {
+		e.replaySaved[def.ID] = OverlayState{Widgets: map[string]*WidgetState{}}
+	}
 	e.saveLocked(o)
 	snap := snapshot(o)
 	e.mu.Unlock()
@@ -810,6 +825,35 @@ func (e *Engine) SetEnabled(id string, enabled bool) error {
 		o.Def.Enabled = enabled
 		return true
 	})
+}
+
+// SetReplaying is called when a Log Feed replay starts and stops. While it
+// runs, overlays react to replayed lines but nothing is saved; when it stops,
+// every overlay returns to its pre-replay contents.
+func (e *Engine) SetReplaying(active bool) {
+	e.mu.Lock()
+	if active == (e.replaySaved != nil) {
+		e.mu.Unlock()
+		return
+	}
+	if active {
+		e.replaySaved = make(map[string]OverlayState, len(e.overlays))
+		for _, o := range e.overlays {
+			e.replaySaved[o.Def.ID] = cloneState(o.State)
+		}
+		e.mu.Unlock()
+		return
+	}
+	for _, o := range e.overlays {
+		o.State = e.replaySaved[o.Def.ID]
+		if o.State.Widgets == nil {
+			o.State.Widgets = map[string]*WidgetState{}
+		}
+		pruneState(&o.State, o.Def)
+	}
+	e.replaySaved = nil
+	e.mu.Unlock()
+	e.broadcast()
 }
 
 // TestLine dry-runs one log message against an unsaved definition, starting

@@ -2510,6 +2510,7 @@ func main() {
 	replayer := logparser.NewReplayer(dispatchEvent, dispatchLine, func(active bool) {
 		tailer.SetPaused(active)
 		triggerEngine.SetReplaying(active)
+		customOverlays.SetReplaying(active)
 		replaying.Store(active)
 		if !active {
 			timerEngine.ClearAll()

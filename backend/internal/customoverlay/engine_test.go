@@ -428,3 +428,43 @@ func TestValidate(t *testing.T) {
 		t.Errorf("normalization: %+v", got)
 	}
 }
+
+func TestReplayRestoresState(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "user.db")
+	store := openTestStore(t, path)
+	e, _ := newTestEngine(t, store, "Me")
+	o, err := e.Create(dkpDef())
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	e.HandleLine(t0, "Ann tells the guild, '10'")
+
+	e.SetReplaying(true)
+	e.SetReplaying(true) // pause/resume style repeat is a no-op
+	e.HandleLine(t0, "Old tells the guild, '99'")
+	if n := len(e.State().Overlays[0].State.Widgets["bids"].Rows); n != 2 {
+		t.Fatalf("replayed line not shown live: rows = %d", n)
+	}
+	// A definition edit mid-replay saves, but with pre-replay contents.
+	def := o.Def
+	def.Name = "Renamed"
+	if _, err := e.Update(def); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	e.HandleLine(t0, "Older tells the guild, '5'")
+	disk, _ := newTestEngine(t, store, "Me")
+	if rows := disk.State().Overlays[0].State.Widgets["bids"].Rows; len(rows) != 1 || disk.State().Overlays[0].Def.Name != "Renamed" {
+		t.Errorf("disk during replay: name=%q rows=%+v", disk.State().Overlays[0].Def.Name, rows)
+	}
+
+	e.SetReplaying(false)
+	rows := e.State().Overlays[0].State.Widgets["bids"].Rows
+	if len(rows) != 1 || rows[0].Key != "Ann" {
+		t.Errorf("after replay rows = %+v, want just Ann", rows)
+	}
+	e.HandleLine(t0, "Bob tells the guild, '20'")
+	disk2, _ := newTestEngine(t, store, "Me")
+	if n := len(disk2.State().Overlays[0].State.Widgets["bids"].Rows); n != 2 {
+		t.Errorf("saving didn't resume after replay: rows on disk = %d", n)
+	}
+}
