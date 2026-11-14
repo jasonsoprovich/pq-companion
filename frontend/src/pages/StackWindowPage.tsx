@@ -37,6 +37,7 @@ import { setStackPrefFallback, type OverlayName } from '../lib/overlays'
 import { WSEvent } from '../lib/wsEvents'
 import { getConfig, saveConfigChanges } from '../services/api'
 import type { StackInfo } from '../types/electron'
+import { instanceId, instanceKind, isInstanceKey } from '../lib/instanceKeys'
 
 const PAGES: Record<string, React.LazyExoticComponent<React.ComponentType<{ groupId?: string }>>> = {
   dps: lazy(() => import('./DPSOverlayWindowPage')),
@@ -49,6 +50,7 @@ const PAGES: Record<string, React.LazyExoticComponent<React.ComponentType<{ grou
   itemInfo: lazy(() => import('./ItemInfoWindowPage')),
   detrimTimer: lazy(() => import('./DetrimTimerWindowPage')),
   customTimer: lazy(() => import('./CustomTimerWindowPage')),
+  customOverlay: lazy(() => import('./CustomOverlayWindowPage')),
   npc: lazy(() => import('./NPCOverlayWindowPage')),
   threat: lazy(() => import('./ThreatOverlayWindowPage')),
   rollTracker: lazy(() => import('./RollTrackerWindowPage')),
@@ -83,14 +85,15 @@ const TAB_LABELS: Record<string, string> = {
   chMetronome: 'Metronome',
 }
 
-const GROUP_PREFIX = 'customTimer:'
-
+// Instance tabs (`customTimer:<id>`, `customOverlay:<id>`) render their
+// kind's page with the id as its groupId prop.
 function baseKey(tab: string): string {
-  return tab.startsWith(GROUP_PREFIX) ? 'customTimer' : tab
+  return instanceKind(tab) ?? tab
 }
 
 function tabLabel(tab: string, info: StackInfo): string {
-  if (tab.startsWith(GROUP_PREFIX)) return info.groupNames[tab] || 'Timers'
+  const kind = instanceKind(tab)
+  if (kind) return info.groupNames[tab] || (kind === 'customTimer' ? 'Timers' : 'Overlay')
   return TAB_LABELS[tab] ?? tab
 }
 
@@ -414,7 +417,7 @@ function StackWindow({ info }: { info: StackInfo }): React.ReactElement {
             >
               <ErrorBoundary label={`${tabLabel(tab, info)} tab`}>
                 <Suspense fallback={null}>
-                  <Page {...(tab.startsWith(GROUP_PREFIX) ? { groupId: tab.slice(GROUP_PREFIX.length) } : {})} />
+                  <Page {...(isInstanceKey(tab) ? { groupId: instanceId(tab) } : {})} />
                 </Suspense>
               </ErrorBoundary>
             </div>

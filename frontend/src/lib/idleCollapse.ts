@@ -4,9 +4,11 @@
  * keyed by window key; missing/0 = off). See hooks/useIdleCollapse.
  */
 import type { Config } from '../types/config'
+import { isInstanceKey } from './instanceKeys'
 
-// Overlays with a clear "nothing to show" state. Custom timer windows
-// (customTimer:<groupId>) offer it too.
+// Overlays with a clear "nothing to show" state. Instance windows — named
+// custom timer windows (customTimer:<groupId>) and custom overlays
+// (customOverlay:<id>) — offer it too.
 export const IDLE_COLLAPSE_OVERLAYS: readonly string[] = [
   'buffTimer',
   'detrimTimer',
@@ -36,7 +38,7 @@ export const IDLE_DELAY_OPTIONS: ReadonlyArray<{ secs: number; label: string }> 
 ]
 
 export function supportsIdleCollapse(key: string): boolean {
-  return key.startsWith('customTimer:') || IDLE_COLLAPSE_OVERLAYS.includes(key)
+  return isInstanceKey(key) || IDLE_COLLAPSE_OVERLAYS.includes(key)
 }
 
 export function idleCollapseSecs(config: Config | null | undefined, key: string): number {

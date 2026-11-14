@@ -76,6 +76,7 @@ const CHChainOverlayWindowPage = lazy(() => import('./pages/CHChainOverlayWindow
 const CHMetronomeOverlayWindowPage = lazy(() => import('./pages/CHMetronomeOverlayWindowPage'))
 const DetrimTimerWindowPage = lazy(() => import('./pages/DetrimTimerWindowPage'))
 const CustomTimerWindowPage = lazy(() => import('./pages/CustomTimerWindowPage'))
+const CustomOverlayWindowPage = lazy(() => import('./pages/CustomOverlayWindowPage'))
 const OverlaysHub = lazy(() => import('./pages/OverlaysHub'))
 const CombatLogPage = lazy(() => import('./pages/CombatLogPage'))
 const CombatHistoryPage = lazy(() => import('./pages/CombatHistoryPage'))
@@ -363,6 +364,7 @@ export default function App(): React.ReactElement {
         <Route path="item-info-window" element={<OverlayPage overlayKey="itemInfo"><ItemInfoWindowPage /></OverlayPage>} />
         <Route path="detrim-timer-window" element={<OverlayPage overlayKey="detrimTimer"><DetrimTimerWindowPage /></OverlayPage>} />
         <Route path="custom-timer-window" element={<OverlayPage overlayKey="customTimer"><CustomTimerWindowPage /></OverlayPage>} />
+        <Route path="custom-overlay-window" element={<OverlayPage overlayKey="customOverlay"><CustomOverlayWindowPage /></OverlayPage>} />
         <Route path="trigger-overlay-window" element={<OverlayPage><TriggerOverlayWindowPage /></OverlayPage>} />
         <Route path="npc-overlay-window" element={<OverlayPage overlayKey="npc"><NPCOverlayWindowPage /></OverlayPage>} />
         <Route path="discord-voice-overlay-window" element={<OverlayPage overlayKey="discordVoice"><DiscordVoiceOverlayWindowPage /></OverlayPage>} />

@@ -20,6 +20,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import { Layers } from 'lucide-react'
 import { OVERLAY_CATALOG, overlayWindowLabel } from '../../lib/overlayCatalog'
 import type { ArrangeRect, ArrangeState, ArrangeWindow } from '../../types/electron'
+import { INSTANCE_COLOR, INSTANCE_FALLBACK_LABEL, instanceKind } from '../../lib/instanceKeys'
 
 const POLL_MS = 1000
 const CLICK_SLOP_PX = 3
@@ -28,18 +29,21 @@ const PAD = 12
 const UNSTACKABLE = new Set(['discordVoice'])
 
 function tabLabel(w: ArrangeWindow, tab: string): string {
-  return tab.startsWith('customTimer:') ? w.groupNames?.[tab] || 'Timer window' : overlayWindowLabel(tab, [])
+  const kind = instanceKind(tab)
+  return kind ? w.groupNames?.[tab] || INSTANCE_FALLBACK_LABEL[kind] : overlayWindowLabel(tab, [])
 }
 
 function windowLabel(w: ArrangeWindow): string {
   if (w.tabs) return w.tabs.map((t) => tabLabel(w, t)).join(' + ')
-  if (w.key.startsWith('customTimer:')) return w.groupName || 'Timer window'
+  const kind = instanceKind(w.key)
+  if (kind) return w.groupName || INSTANCE_FALLBACK_LABEL[kind]
   return overlayWindowLabel(w.key, [])
 }
 
 function colorFor(key: string, isStack: boolean): string {
   if (isStack) return '#c9a84c'
-  if (key.startsWith('customTimer:')) return '#38bdf8'
+  const kind = instanceKind(key)
+  if (kind) return INSTANCE_COLOR[kind]
   return OVERLAY_CATALOG.find((e) => e.name === key)?.color ?? '#c9a84c'
 }
 

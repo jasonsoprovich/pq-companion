@@ -32,6 +32,8 @@ export const WSEvent = {
   // counter state (killtracker.CountersState) whenever any counter changes.
   KillsNew: 'kills:new',
   KillCounters: 'killcounters:state',
+  // Full snapshot of every custom overlay (customoverlay.State).
+  CustomOverlays: 'customoverlays:state',
   // Pet overlay: the active character's pet (petoverlay.State) on every
   // meaningful change — appear/break, HP, resolved stats, /pet health.
   PetState: 'pet:state',

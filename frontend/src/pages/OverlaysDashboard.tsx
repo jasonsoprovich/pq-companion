@@ -31,6 +31,9 @@ import DiscordVoicePanel from '../components/overlays/DiscordVoicePanel'
 import LiveMapPanel from '../components/overlays/LiveMapPanel'
 import { ConfirmModal } from '../components/ConfirmModal'
 import { listTimerGroups, getConfig } from '../services/api'
+import CustomOverlayPanel from '../components/overlays/CustomOverlayPanel'
+import { useCustomOverlays } from '../hooks/useCustomOverlays'
+import { customOverlayWindowKey } from '../lib/customOverlay'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useItemInfoOffered } from '../hooks/useItemDisplay'
 import { WSEvent } from '../lib/wsEvents'
@@ -76,7 +79,9 @@ function PanelsPicker({
   lockedHints: Partial<Record<DashboardPanelKey, string>>
   layout: DashboardLayout
   onToggleVisible: (key: DashboardPanelKey) => void
-  groups: TimerGroup[]
+  // "Your windows": named timer windows (keyed by group id) and custom
+  // overlays (keyed customOverlay:<id>), each with a groupLayout entry.
+  groups: Array<{ id: string; name: string }>
   groupLayout: GroupPanelLayouts
   onToggleGroupVisible: (id: string) => void
 }): React.ReactElement {
@@ -300,6 +305,17 @@ export default function OverlaysDashboard(): React.ReactElement {
 
   useEffect(() => { reloadTimerGroups() }, [reloadTimerGroups])
 
+  // Custom overlays share the group panel map, keyed customOverlay:<id> so
+  // they can't collide with a timer group's id.
+  const co = useCustomOverlays()
+  const yourWindows = useMemo(
+    () => [
+      ...timerGroups.map((g) => ({ id: g.id, name: g.name })),
+      ...co.overlays.map((o) => ({ id: customOverlayWindowKey(o.def.id), name: o.def.name })),
+    ],
+    [timerGroups, co.overlays],
+  )
+
   // A group the dashboard hasn't seen before (just created, new to this
   // layout, or after a reset) gets a default hidden panel layout.
   useEffect(() => {
@@ -307,7 +323,7 @@ export default function OverlaysDashboard(): React.ReactElement {
     updateDashboardGroups((prev) => {
       let changed = false
       const next = { ...prev }
-      timerGroups.forEach((g, i) => {
+      yourWindows.forEach((g, i) => {
         if (!next[g.id]) {
           next[g.id] = defaultGroupPanelLayout(i)
           changed = true
@@ -315,7 +331,7 @@ export default function OverlaysDashboard(): React.ReactElement {
       })
       return changed ? next : prev
     })
-  }, [timerGroups, ready, groupLayout])
+  }, [yourWindows, ready, groupLayout])
 
   const updateGroupPanel = useCallback((id: string, patch: Partial<PanelLayout>) => {
     updateDashboardGroups((prev) => ({
@@ -346,14 +362,14 @@ export default function OverlaysDashboard(): React.ReactElement {
       if (p.x + p.width > maxRight) maxRight = p.x + p.width
       if (p.y + p.height > maxBottom) maxBottom = p.y + p.height
     }
-    for (const g of timerGroups) {
+    for (const g of yourWindows) {
       const p = groupLayout[g.id]
       if (!p?.visible) continue
       if (p.x + p.width > maxRight) maxRight = p.x + p.width
       if (p.y + p.height > maxBottom) maxBottom = p.y + p.height
     }
     return { width: maxRight + CANVAS_PADDING, height: maxBottom + CANVAS_PADDING }
-  }, [layout, visiblePanelKeys, timerGroups, groupLayout])
+  }, [layout, visiblePanelKeys, yourWindows, groupLayout])
 
   return (
     <div
@@ -392,7 +408,7 @@ export default function OverlaysDashboard(): React.ReactElement {
           labels={DASHBOARD_PANEL_LABELS}
           layout={layout}
           onToggleVisible={toggleVisible}
-          groups={timerGroups}
+          groups={yourWindows}
           groupLayout={groupLayout}
           onToggleGroupVisible={toggleGroupVisible}
         />
@@ -665,6 +681,24 @@ export default function OverlaysDashboard(): React.ReactElement {
               defaultHeight={p.height}
               snapGridSize={SNAP_GRID}
               onLayoutChange={handleGroupLayoutChange(g.id)}
+            />
+          )
+        })}
+        {co.overlays.map((o) => {
+          const key = customOverlayWindowKey(o.def.id)
+          const p = groupLayout[key]
+          if (!p?.visible) return null
+          return (
+            <CustomOverlayPanel
+              key={`${key}-${layoutVersion}`}
+              overlay={o}
+              co={co}
+              defaultX={p.x}
+              defaultY={p.y}
+              defaultWidth={p.width}
+              defaultHeight={p.height}
+              snapGridSize={SNAP_GRID}
+              onLayoutChange={handleGroupLayoutChange(key)}
             />
           )
         })}

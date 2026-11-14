@@ -63,6 +63,9 @@ const OVERLAY_POPOUT_TOGGLE: Record<OverlayName, () => void> = {
   itemInfo:     () => { window.electron?.overlay?.toggleItemInfo() },
   pet:          () => { window.electron?.overlay?.togglePet() },
   deathRecap:   () => { window.electron?.overlay?.toggleDeathRecap() },
+  // Not listed in OVERLAY_DEFS, so never offered here: each custom overlay
+  // pops out from its own hub card.
+  customOverlay: () => {},
 }
 
 // The HPS overlay can't be implemented correctly until EQ logs expose real

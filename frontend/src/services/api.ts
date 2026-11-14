@@ -1720,6 +1720,43 @@ export function clearKills(character?: string): Promise<{ deleted: number }> {
   return post<{ deleted: number }>(`/api/kills/clear${qs}`)
 }
 
+// Custom overlays: user-built widget windows driven by regex rules. Live
+// updates arrive as customoverlays:state broadcasts.
+type CustomOverlaysState = import('../types/customOverlay').CustomOverlaysState
+type CustomOverlay = import('../types/customOverlay').CustomOverlay
+type CustomOverlayDef = import('../types/customOverlay').CustomOverlayDef
+
+export function getCustomOverlays(): Promise<CustomOverlaysState> {
+  return get<CustomOverlaysState>('/api/custom-overlays')
+}
+
+export function createCustomOverlay(def: CustomOverlayDef): Promise<CustomOverlay> {
+  return post<CustomOverlay>('/api/custom-overlays', def)
+}
+
+export function updateCustomOverlay(def: CustomOverlayDef): Promise<CustomOverlay> {
+  return put<CustomOverlay>(`/api/custom-overlays/${encodeURIComponent(def.id)}`, def)
+}
+
+export function deleteCustomOverlay(id: string): Promise<void> {
+  return del(`/api/custom-overlays/${encodeURIComponent(id)}`)
+}
+
+export function customOverlayAction(
+  id: string,
+  body: import('../types/customOverlay').CustomOverlayAction,
+): Promise<CustomOverlaysState> {
+  return post<CustomOverlaysState>(`/api/custom-overlays/${encodeURIComponent(id)}/action`, body)
+}
+
+export function testCustomOverlayLine(
+  def: CustomOverlayDef,
+  line: string,
+  character?: string,
+): Promise<import('../types/customOverlay').CustomOverlayTestResult> {
+  return post('/api/custom-overlays/test', { def, line, character })
+}
+
 type KillCountersState = import('../types/kills').KillCountersState
 type KillCounterDef = import('../types/kills').KillCounterDef
 

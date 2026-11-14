@@ -32,6 +32,10 @@ export type OverlayName =
   | 'itemInfo'
   | 'pet'
   | 'deathRecap'
+  // Every Custom Overlay window shares this key for lock mode, opacity, fade
+  // and zoom. Deliberately not in OVERLAY_DEFS: it has no single window to
+  // pop out and no single hotkey (each overlay is `customOverlay:<id>`).
+  | 'customOverlay'
 
 /**
  * How an overlay behaves while locked.

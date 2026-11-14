@@ -5,7 +5,7 @@ import { useOverlayPopouts } from '../hooks/useOverlayPopouts'
 import { useOverlayLayouts } from '../hooks/useOverlayLayouts'
 import { PANEL_POPOUT, overlayWindowLabel } from '../lib/overlayCatalog'
 import type { DashboardPanelKey } from '../services/dashboardLayout'
-import { listTimerGroups } from '../services/api'
+import { listTimerGroups, getCustomOverlays } from '../services/api'
 import type { TimerGroup } from '../types/trigger'
 
 // Sidebar quick-toggle for overlays, next to the character switcher — that
@@ -21,10 +21,18 @@ type WinState = 'open' | 'hidden' | 'closed'
 
 const POLL_MS = 1000
 const GROUP_PREFIX = 'customTimer:'
+const CUSTOM_OVERLAY_PREFIX = 'customOverlay:'
 
 // Pops out, shows or closes one window. Main's per-window toggle brings back
 // a window hidden by the hotkey rather than closing it.
-function toggleWindow(key: string, groups: TimerGroup[]): void {
+type Named = { id: string; name: string }
+
+function toggleWindow(key: string, groups: TimerGroup[], customs: Named[]): void {
+  if (key.startsWith(CUSTOM_OVERLAY_PREFIX)) {
+    const id = key.slice(CUSTOM_OVERLAY_PREFIX.length)
+    window.electron?.overlay?.toggleCustomOverlay(id, customs.find((o) => o.id === id)?.name ?? '')
+    return
+  }
   if (key.startsWith(GROUP_PREFIX)) {
     const id = key.slice(GROUP_PREFIX.length)
     window.electron?.overlay?.toggleCustomTimerGroup(id, groups.find((g) => g.id === id)?.name ?? '')
@@ -60,6 +68,7 @@ function QuickSwitcher({
   }, [anchor])
   const { state, switchTo } = useOverlayLayouts()
   const [groups, setGroups] = useState<TimerGroup[]>([])
+  const [customs, setCustoms] = useState<Named[]>([])
   const [states, setStates] = useState<Record<string, 'open' | 'hidden'>>({})
   // Closing a window takes it out of the active layout. Rows stay listed
   // until the switcher closes, as "closed", so they can be popped back out.
@@ -69,6 +78,9 @@ function QuickSwitcher({
 
   useEffect(() => {
     listTimerGroups().then(setGroups).catch(() => {})
+    getCustomOverlays()
+      .then((s) => setCustoms((s.overlays ?? []).map((o) => ({ id: o.def.id, name: o.def.name }))))
+      .catch(() => {})
   }, [])
 
   const refresh = useCallback(() => {
@@ -149,7 +161,7 @@ function QuickSwitcher({
       <div className="flex max-h-[50vh] flex-col overflow-y-auto">
         {rows.map((key) => {
           const st = stateOf(key)
-          const label = overlayWindowLabel(key, groups)
+          const label = overlayWindowLabel(key, groups, customs)
           const action = st === 'open' ? 'Close' : st === 'hidden' ? 'Show' : 'Pop out'
           return (
             <div key={key} className="flex items-center gap-2 rounded px-2 py-0.5 text-xs">
@@ -169,7 +181,7 @@ function QuickSwitcher({
               </span>
               <button
                 onClick={() => {
-                  toggleWindow(key, groups)
+                  toggleWindow(key, groups, customs)
                   setTimeout(refresh, 250)
                   setTimeout(refresh, 900)
                 }}

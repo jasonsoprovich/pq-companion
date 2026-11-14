@@ -8,10 +8,12 @@ import React, { useEffect, useState } from 'react'
 import { Layers } from 'lucide-react'
 import { overlayWindowLabel } from '../lib/overlayCatalog'
 import type { StackDropHint as Hint } from '../types/electron'
+import { instanceKind } from '../lib/instanceKeys'
 
 function label(hint: NonNullable<Hint>): string {
   if (hint.key.startsWith('stack:')) return 'the stack'
-  if (hint.key.startsWith('customTimer:')) return hint.name || 'the timer window'
+  const kind = instanceKind(hint.key)
+  if (kind) return hint.name || (kind === 'customTimer' ? 'the timer window' : 'the custom overlay')
   return overlayWindowLabel(hint.key, [])
 }
 

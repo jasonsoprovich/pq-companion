@@ -239,12 +239,20 @@ export const CUSTOM_GROUP_INFO = {
     'Custom Timers window.',
 }
 
-// A window key's display name: an overlay's label, or a named timer window's
-// name from groups.
-export function overlayWindowLabel(key: string, groups: Array<{ id: string; name: string }>): string {
+// A window key's display name: an overlay's label, a named timer window's
+// name from groups, or a custom overlay's name from customOverlays.
+export function overlayWindowLabel(
+  key: string,
+  groups: Array<{ id: string; name: string }>,
+  customOverlays: Array<{ id: string; name: string }> = [],
+): string {
   if (key.startsWith('customTimer:')) {
     const id = key.slice('customTimer:'.length)
     return groups.find((g) => g.id === id)?.name ?? 'Timer window'
+  }
+  if (key.startsWith('customOverlay:')) {
+    const id = key.slice('customOverlay:'.length)
+    return customOverlays.find((o) => o.id === id)?.name ?? 'Custom overlay'
   }
   const entry = OVERLAY_CATALOG.find((e) => e.name === key)
   if (entry) return entry.label
