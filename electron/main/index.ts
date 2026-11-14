@@ -368,11 +368,15 @@ type Bounds = { x: number; y: number; width: number; height: number }
 // still the original/default window, so existing users' saved position and
 // lock state carry over untouched. Named-group windows are additive and
 // deliberately excluded from the OverlayName-keyed systems below (auto-open
-// on launch, move-to-display, reset-position) — see createCustomTimerGroupOverlay.
+// on launch, move-to-display, reset-position) — see createInstanceOverlay.
+// Custom Overlays (user-built widget windows) are instances too, keyed
+// `customOverlay:<overlayId>`; INSTANCE_KINDS describes each instance kind.
 //
 // A stack (several overlays as tabs in one window) is keyed `stack:<id>`. Its
 // member overlays have no windows of their own while stacked.
-type WindowKey = OverlayName | `customTimer:${string}` | `stack:${string}`
+type InstanceKind = 'customTimer' | 'customOverlay'
+type InstanceKey = `${InstanceKind}:${string}`
+type WindowKey = OverlayName | InstanceKey | `stack:${string}`
 
 type BoundsStore = Partial<Record<WindowKey, Bounds>>
 type LockStore = Partial<Record<WindowKey, boolean>>
@@ -405,6 +409,29 @@ const OVERLAY_DEFAULTS: Record<Exclude<OverlayName, 'trigger'>, Bounds> = {
   itemInfo: { x: 0, y: 0, width: 380, height: 460 },
   pet: { x: 0, y: 0, width: 300, height: 420 },
   deathRecap: { x: 0, y: 0, width: 340, height: 360 },
+}
+
+// Overlay types that can have many windows, one per user-created item. The
+// key is `<kind>:<id>`; the id reaches the renderer as the `param` query
+// value along with the display name (`name`).
+const INSTANCE_KINDS: Record<InstanceKind, { route: string; param: string; defaults: Bounds; minWidth: number; minHeight: number }> = {
+  customTimer: { route: 'custom-timer-window', param: 'group', defaults: OVERLAY_DEFAULTS.customTimer, minWidth: 200, minHeight: 140 },
+  customOverlay: { route: 'custom-overlay-window', param: 'id', defaults: { x: 0, y: 0, width: 300, height: 380 }, minWidth: 180, minHeight: 100 },
+}
+
+function instanceKind(key: string): InstanceKind | null {
+  const i = key.indexOf(':')
+  if (i <= 0 || i === key.length - 1) return null
+  const kind = key.slice(0, i)
+  return Object.prototype.hasOwnProperty.call(INSTANCE_KINDS, kind) ? (kind as InstanceKind) : null
+}
+
+function isInstanceKey(key: string): key is InstanceKey {
+  return instanceKind(key) !== null
+}
+
+function instanceId(key: InstanceKey): string {
+  return key.slice(key.indexOf(':') + 1)
 }
 
 function boundsFilePath(): string {
@@ -472,7 +499,7 @@ function setOverlayLocked(name: WindowKey, locked: boolean): void {
 // backend — not reachable this early in boot — would otherwise have to supply).
 // So an entry is either a plain OverlayName (unchanged, existing behavior) or an
 // object carrying the group's WindowKey + the name last seen when it was open.
-type AutoOpenGroupEntry = { key: `customTimer:${string}`; groupName: string }
+type AutoOpenGroupEntry = { key: InstanceKey; groupName: string }
 type AutoOpenEntry = OverlayName | AutoOpenGroupEntry
 type AutoOpenStore = { enabled: boolean; overlays: AutoOpenEntry[] }
 
@@ -1053,13 +1080,13 @@ function createStandardOverlay(name: StandardOverlay): void {
 // Named windows get full parity with every other overlay — auto-open on
 // launch, move-to-display, reset-position — via the WindowKey-aware
 // versions of those systems below (see overlayWindowByName, isValidWindowKey).
-const customTimerGroupWindows = new Map<string, BrowserWindow>()
-// Group name for each currently-open group window, tracked alongside the
-// window itself so "restore on launch" can re-create it (createCustomTimerGroupOverlay
+const instanceWindows = new Map<InstanceKey, BrowserWindow>()
+// Display name for each instance window, tracked alongside the
+// window itself so "restore on launch" can re-create it (createInstanceOverlay
 // needs a display name, not just the id) without querying the Go backend —
 // which isn't up yet this early in boot. Refreshed every time the window is
 // (re)opened, so it's current as of the last open even across a rename.
-const customTimerGroupNames = new Map<string, string>()
+const instanceNames = new Map<InstanceKey, string>()
 let triggerOverlayWindow: BrowserWindow | null = null
 // Periodically reasserts the trigger overlay's z-order while it's visible
 // (passthrough or interactive mode). Unlike every other overlay — which is
@@ -1477,7 +1504,7 @@ function closeAllOverlays(): void {
     if (win && !win.isDestroyed()) win.destroy()
   }
   if (triggerOverlayWindow && !triggerOverlayWindow.isDestroyed()) triggerOverlayWindow.destroy()
-  for (const win of customTimerGroupWindows.values()) {
+  for (const win of instanceWindows.values()) {
     if (win && !win.isDestroyed()) win.destroy()
   }
 }
@@ -1601,31 +1628,32 @@ function customTimerWindowKey(groupId: string): `customTimer:${string}` {
   return `customTimer:${groupId}`
 }
 
-// Opens (or focuses) a named Custom Timers window for the given TimerGroup.
-// Mirrors createStandardOverlay('customTimer') but keyed by groupId so multiple can
-// coexist alongside the original/default window. groupName is passed through
-// to the renderer via the URL only for a window-title-ish display; the
-// renderer fetches the authoritative group list itself.
-function createCustomTimerGroupOverlay(groupId: string, groupName: string): void {
-  if (!groupId) return
-  customTimerGroupNames.set(groupId, groupName)
-  if (openStackFor(customTimerWindowKey(groupId))) return
-  const existing = customTimerGroupWindows.get(groupId)
+// Opens (or focuses) an instance window: a named Custom Timers window for a
+// TimerGroup, or a Custom Overlay. Mirrors createStandardOverlay but keyed by
+// `<kind>:<id>` so many can coexist. name is passed through to the renderer
+// via the URL only for a title-ish display; the renderer fetches the
+// authoritative data itself.
+function createInstanceOverlay(key: InstanceKey, name: string): void {
+  const kind = instanceKind(key)
+  if (!kind) return
+  const spec = INSTANCE_KINDS[kind]
+  instanceNames.set(key, name)
+  if (openStackFor(key)) return
+  const existing = instanceWindows.get(key)
   if (existing && !existing.isDestroyed()) {
     // Bring forward without taking focus (see createStandardOverlay).
     showOverlayWindow(existing)
     return
   }
 
-  const key = customTimerWindowKey(groupId)
-  const { x, y, width, height } = getRestoredBounds(key, OVERLAY_DEFAULTS.customTimer)
+  const { x, y, width, height } = getRestoredBounds(key, spec.defaults)
   const win = new BrowserWindow({
     x,
     y,
     width,
     height,
-    minWidth: 200,
-    minHeight: 140,
+    minWidth: spec.minWidth,
+    minHeight: spec.minHeight,
     transparent: true,
     backgroundColor: '#00000000',
     frame: false,
@@ -1640,7 +1668,7 @@ function createCustomTimerGroupOverlay(groupId: string, groupName: string): void
       nodeIntegration: false
     },
   })
-  customTimerGroupWindows.set(groupId, win)
+  instanceWindows.set(key, win)
 
   win.once('ready-to-show', () => {
     if (!win.isDestroyed()) win.showInactive()
@@ -1653,23 +1681,39 @@ function createCustomTimerGroupOverlay(groupId: string, groupName: string): void
   trackOverlayBounds(key, win)
   restoreCollapsedState(win, key)
 
-  const query = `group=${encodeURIComponent(groupId)}&name=${encodeURIComponent(groupName)}`
+  const query = `${spec.param}=${encodeURIComponent(instanceId(key))}&name=${encodeURIComponent(name)}`
   if (isDev) {
     const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
-    win.loadURL(`${rendererUrl}/#/custom-timer-window?${query}`)
+    win.loadURL(`${rendererUrl}/#/${spec.route}?${query}`)
   } else {
     win.loadFile(join(__dirname, '../renderer/index.html'), {
-      hash: `/custom-timer-window?${query}`,
+      hash: `/${spec.route}?${query}`,
     })
   }
 
   win.on('closed', () => {
-    customTimerGroupWindows.delete(groupId)
+    instanceWindows.delete(key)
     // Name is kept even after close — resetOverlayPosition/move-to-display
     // work on closed overlays too (matching every other overlay type), and
-    // a closed-but-still-in-the-auto-open-snapshot group needs its name to
-    // survive until the next explicit open/snapshot overwrites it.
+    // a closed-but-still-in-the-auto-open-snapshot instance needs its name
+    // to survive until the next explicit open/snapshot overwrites it.
   })
+}
+
+function createCustomTimerGroupOverlay(groupId: string, groupName: string): void {
+  if (groupId) createInstanceOverlay(customTimerWindowKey(groupId), groupName)
+}
+
+function closeInstanceOverlay(key: InstanceKey): void {
+  if (removeFromStack(key)) return
+  const win = instanceWindows.get(key)
+  if (win && !win.isDestroyed()) win.close()
+}
+
+function toggleInstanceOverlay(key: InstanceKey, name: string): void {
+  instanceNames.set(key, name)
+  if (toggleStacked(key)) return
+  toggleOverlayWindow(instanceWindows.get(key) ?? null, () => createInstanceOverlay(key, name))
 }
 
 // ── Trigger Overlay window ────────────────────────────────────────────────────
@@ -2150,17 +2194,28 @@ ipcMain.handle('overlay:customtimer:group:open', (_event, groupId: string, group
 })
 
 ipcMain.handle('overlay:customtimer:group:close', (_event, groupId: string) => {
-  if (removeFromStack(customTimerWindowKey(groupId))) return
-  const win = customTimerGroupWindows.get(groupId)
-  if (win && !win.isDestroyed()) win.close()
+  if (groupId) closeInstanceOverlay(customTimerWindowKey(groupId))
 })
 
 ipcMain.handle('overlay:customtimer:group:toggle', (_event, groupId: string, groupName: string) => {
-  customTimerGroupNames.set(groupId, groupName)
-  if (toggleStacked(customTimerWindowKey(groupId))) return
-  toggleOverlayWindow(customTimerGroupWindows.get(groupId) ?? null, () =>
-    createCustomTimerGroupOverlay(groupId, groupName),
-  )
+  if (groupId) toggleInstanceOverlay(customTimerWindowKey(groupId), groupName)
+})
+
+// Custom Overlay windows, keyed by the backend overlay id.
+function customOverlayWindowKey(id: string): InstanceKey {
+  return `customOverlay:${id}`
+}
+
+ipcMain.handle('overlay:customoverlay:open', (_event, id: string, name: string) => {
+  if (typeof id === 'string' && id) createInstanceOverlay(customOverlayWindowKey(id), String(name ?? ''))
+})
+
+ipcMain.handle('overlay:customoverlay:close', (_event, id: string) => {
+  if (typeof id === 'string' && id) closeInstanceOverlay(customOverlayWindowKey(id))
+})
+
+ipcMain.handle('overlay:customoverlay:toggle', (_event, id: string, name: string) => {
+  if (typeof id === 'string' && id) toggleInstanceOverlay(customOverlayWindowKey(id), String(name ?? ''))
 })
 
 ipcMain.handle('overlay:trigger:open', () => {
@@ -2358,7 +2413,7 @@ function userPopoutWindows(): BrowserWindow[] {
     ...standardWindows.values(),
     discordVoiceOverlayWindow,
   ].filter((w): w is BrowserWindow => !!w && !w.isDestroyed())
-  return [...fixed, ...customTimerGroupWindows.values(), ...stackWindows.values()].filter((w) => !w.isDestroyed())
+  return [...fixed, ...instanceWindows.values(), ...stackWindows.values()].filter((w) => !w.isDestroyed())
 }
 
 ipcMain.handle('overlay:popouts:any-open', () => userPopoutWindows().length > 0)
@@ -2523,8 +2578,9 @@ function collapsedEntry(name: WindowKey): CollapseEntry | null {
 
 function minSizeFor(name: WindowKey): { minWidth: number; minHeight: number } {
   if (isStackKey(name)) return stackMinSize(stackSpec(name.slice(STACK_PREFIX.length))?.tabs ?? [])
-  const base = name.startsWith('customTimer:') ? 'customTimer' : name
-  return isStandardOverlay(base) ? STANDARD_OVERLAYS[base] : { minWidth: 180, minHeight: 120 }
+  const kind = instanceKind(name)
+  if (kind) return INSTANCE_KINDS[kind]
+  return isStandardOverlay(name) ? STANDARD_OVERLAYS[name] : { minWidth: 180, minHeight: 120 }
 }
 
 function applyCollapsedSize(win: BrowserWindow, name: WindowKey, headerHeight: number): void {
@@ -2850,7 +2906,7 @@ const MAX_LAYOUT_NAME = 40
 
 // A window as the renderer names it: a dashboard panel key, or a named timer
 // group's window key plus its display name (main has no other way to know it).
-type PopoutRequestEntry = string | { key: `customTimer:${string}`; name: string }
+type PopoutRequestEntry = string | { key: InstanceKey; name: string }
 
 function layoutsFilePath(): string {
   return join(app.getPath('userData'), 'overlay-layouts.json')
@@ -2910,7 +2966,7 @@ function layoutWindowFromRequest(entry: PopoutRequestEntry): LayoutWindow | null
     // isValidWindowKey already excludes the trigger overlay.
     return isValidWindowKey(name) ? { key: name } : null
   }
-  return entry?.key?.startsWith('customTimer:') ? { key: entry.key, groupName: entry.name ?? '' } : null
+  return typeof entry?.key === 'string' && isInstanceKey(entry.key) ? { key: entry.key, groupName: entry.name ?? '' } : null
 }
 
 // First run with layouts: seed "Default" from the restore-on-launch set when
@@ -3035,7 +3091,7 @@ function closePopoutsInBulk(wins: BrowserWindow[]): void {
 }
 
 function groupNameFor(key: WindowKey): string | undefined {
-  return key.startsWith('customTimer:') ? customTimerGroupNames.get(key.slice('customTimer:'.length)) : undefined
+  return isInstanceKey(key) ? instanceNames.get(key) : undefined
 }
 
 // Called for every popout as it's created (from trackOverlayBounds).
@@ -3104,8 +3160,8 @@ function openLayoutWindows(layout: OverlayLayout, place = false): void {
       else showOverlayWindow(win)
     } else if (isStackKey(w.key)) {
       createStackWindow(w.key.slice(STACK_PREFIX.length))
-    } else if (w.key.startsWith('customTimer:')) {
-      createCustomTimerGroupOverlay(w.key.slice('customTimer:'.length), w.groupName ?? '')
+    } else if (isInstanceKey(w.key)) {
+      createInstanceOverlay(w.key, w.groupName ?? '')
     } else {
       createOverlayByName(w.key as OverlayName)
     }
@@ -3291,7 +3347,7 @@ function liveBounds(key: WindowKey): Bounds | undefined {
 }
 
 function openWindowFor(key: WindowKey, groupName?: string): void {
-  if (key.startsWith('customTimer:')) createCustomTimerGroupOverlay(key.slice('customTimer:'.length), groupName ?? '')
+  if (isInstanceKey(key)) createInstanceOverlay(key, groupName ?? '')
   else createOverlayByName(key as OverlayName)
 }
 
@@ -3310,7 +3366,7 @@ function mergeIntoStack(target: WindowKey, source: WindowKey): boolean {
 
   const names: Record<string, string> = {}
   const nameOf = (k: WindowKey): void => {
-    if (!k.startsWith('customTimer:')) return
+    if (!isInstanceKey(k)) return
     const n = groupNameFor(k) ?? layout.windows.find((w) => w.key === k)?.groupName
       ?? layout.windows.find((w) => w.stack?.groupNames?.[k])?.stack?.groupNames?.[k]
     if (n !== undefined) names[k] = n
@@ -3518,7 +3574,7 @@ ipcMain.handle('overlay:arrange:get', () => {
       bounds: { ...bounds },
       state,
       collapsed: !!collapsedEntry(w.key),
-      ...(w.key.startsWith('customTimer:') ? { groupName: groupNameFor(w.key) ?? w.groupName ?? '' } : {}),
+      ...(isInstanceKey(w.key) ? { groupName: groupNameFor(w.key) ?? w.groupName ?? '' } : {}),
       ...(w.stack ? { tabs: [...w.stack.tabs], groupNames: { ...(w.stack.groupNames ?? {}) } } : {}),
     }
   })
@@ -3880,8 +3936,8 @@ ipcMain.handle('overlay:popouts:states', () => {
   // Only currently-open named groups can be reported — Electron doesn't know
   // the full group list (that's backend/renderer state), just which windows
   // it has actually created this session.
-  for (const [groupId, win] of customTimerGroupWindows) {
-    states[customTimerWindowKey(groupId)] = !win.isDestroyed() && !userHiddenOverlays.has(win)
+  for (const [key, win] of instanceWindows) {
+    states[key] = !win.isDestroyed() && !userHiddenOverlays.has(win)
   }
   return states
 })
@@ -3988,7 +4044,7 @@ const RESETTABLE_OVERLAYS = Object.keys(OVERLAY_DEFAULTS) as Array<Exclude<Overl
 // below (reset-position, move-to-display, placing mode) so a bogus/unrelated
 // name string can't reach overlayWindowByName.
 function isValidWindowKey(name: string): name is WindowKey {
-  return (RESETTABLE_OVERLAYS as string[]).includes(name) || name.startsWith('customTimer:') || isStackKey(name)
+  return (RESETTABLE_OVERLAYS as string[]).includes(name) || isInstanceKey(name) || isStackKey(name)
 }
 
 // Default bounds for a fresh/reset window. Named groups all share the plain
@@ -3998,15 +4054,14 @@ function defaultBoundsFor(name: WindowKey): Bounds {
     const first = stackSpec(name.slice(STACK_PREFIX.length))?.tabs[0]
     return first && !isStackKey(first) ? defaultBoundsFor(first) : OVERLAY_DEFAULTS.buffTimer
   }
-  if (name.startsWith('customTimer:')) return OVERLAY_DEFAULTS.customTimer
+  const kind = instanceKind(name)
+  if (kind) return INSTANCE_KINDS[kind].defaults
   return OVERLAY_DEFAULTS[name as Exclude<OverlayName, 'trigger'>]
 }
 
 function overlayWindowByName(name: WindowKey): BrowserWindow | null {
   if (isStackKey(name)) return stackWindows.get(name.slice(STACK_PREFIX.length)) ?? null
-  if (name.startsWith('customTimer:')) {
-    return customTimerGroupWindows.get(name.slice('customTimer:'.length)) ?? null
-  }
+  if (isInstanceKey(name)) return instanceWindows.get(name) ?? null
   if (isStandardOverlay(name)) return standardWindows.get(name) ?? null
   switch (name) {
     case 'trigger': return triggerOverlayWindow
@@ -4038,9 +4093,9 @@ function currentlyOpenAutoOpenEntries(): AutoOpenEntry[] {
     return !!win && !win.isDestroyed()
   })
   const groups: AutoOpenEntry[] = []
-  for (const [groupId, win] of customTimerGroupWindows) {
+  for (const [key, win] of instanceWindows) {
     if (win && !win.isDestroyed()) {
-      groups.push({ key: customTimerWindowKey(groupId), groupName: customTimerGroupNames.get(groupId) ?? '' })
+      groups.push({ key, groupName: instanceNames.get(key) ?? '' })
     }
   }
   return [...fixed, ...groups]
@@ -4112,8 +4167,8 @@ ipcMain.handle('overlay:reset-all-positions', () => {
   // that's never been opened this session (that list lives in the Go
   // backend). A closed group's stale position can still be reset
   // individually once it's known to the frontend (Timer Groups screen).
-  for (const groupId of customTimerGroupWindows.keys()) {
-    resetOverlayPosition(customTimerWindowKey(groupId))
+  for (const key of instanceWindows.keys()) {
+    resetOverlayPosition(key)
   }
 })
 
@@ -4144,10 +4199,10 @@ ipcMain.handle('overlay:display-ids', () => {
   // or closed), same as fixed overlays above, so a closed group's monitor
   // picker still shows where it'll reopen.
   for (const key of Object.keys(store)) {
-    if (!key.startsWith('customTimer:') && !isStackKey(key)) continue
+    if (!isInstanceKey(key) && !isStackKey(key)) continue
     const windowKey = key as WindowKey
     const win = overlayWindowByName(windowKey)
-    const b = win && !win.isDestroyed() ? win.getBounds() : store[windowKey] ?? OVERLAY_DEFAULTS.customTimer
+    const b = win && !win.isDestroyed() ? win.getBounds() : store[windowKey] ?? defaultBoundsFor(windowKey)
     out[key] = screen.getDisplayMatching(b).id
   }
   // A stacked overlay is wherever its stack is.
@@ -4266,7 +4321,7 @@ ipcMain.handle('overlay:lock:set', (event, locked: boolean) => {
 function broadcastPositionMode(): void {
   const targets: Array<BrowserWindow | null> = [mainWindow]
   for (const name of RESETTABLE_OVERLAYS) targets.push(overlayWindowByName(name))
-  for (const win of customTimerGroupWindows.values()) targets.push(win)
+  for (const win of instanceWindows.values()) targets.push(win)
   for (const win of targets) {
     if (win && !win.isDestroyed()) {
       win.webContents.send('overlay:position-mode-changed', overlayPositionMode)
@@ -4310,7 +4365,7 @@ let lastRaidSelection = ''
 function broadcastRaidSelection(id: string): void {
   lastRaidSelection = id
   const targets: Array<BrowserWindow | null> = [mainWindow, stdWin('raidReadiness')]
-  for (const win of customTimerGroupWindows.values()) targets.push(win)
+  for (const win of instanceWindows.values()) targets.push(win)
   for (const win of targets) {
     if (win && !win.isDestroyed()) {
       win.webContents.send('overlay:raid-selection-changed', id)
