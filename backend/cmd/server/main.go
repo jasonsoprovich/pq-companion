@@ -30,6 +30,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/chchain"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/combat"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/customoverlay"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/emote"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/factiontracker"
@@ -1810,6 +1811,16 @@ func main() {
 	}
 
 	killCounters := killtracker.NewEngine(killStore, hub)
+	// Custom overlays: user-built widget windows driven by regex rules over
+	// log lines. Non-fatal — failing to open the store keeps them in memory.
+	var customOverlayStore *customoverlay.Store
+	if st, err := customoverlay.OpenStore(filepath.Join(home, ".pq-companion", "user.db")); err != nil {
+		slog.Warn("open custom overlays store (in-memory only)", "err", err)
+	} else {
+		customOverlayStore = st
+		defer customOverlayStore.Close()
+	}
+	customOverlays := customoverlay.NewEngine(customOverlayStore, hub, activeChar)
 	zoneCopyKills.Store(killCounters)
 	if c := zoneCopyReader.Current(); c.Token != "" {
 		killCounters.SetZoneCopy(zoneCopyLong(c.Zone), c.Token)
@@ -2409,6 +2420,7 @@ func main() {
 		guard.run("chMetronomeSelfCastWatcher", func() { chMetronomeSelfCastWatcher.HandleLine(ts, msg) })
 		guard.run("rollTracker", func() { rollTracker.HandleLine(ts, msg) })
 		durable("killCounters", func() { killCounters.HandleLine(ts, msg) })
+		guard.run("customOverlays", func() { customOverlays.HandleLine(ts, msg) })
 		if raidRecorder != nil {
 			durable("raidRecorderLines", func() { raidRecorder.HandleLine(ts, msg) })
 		}
@@ -2620,7 +2632,7 @@ func main() {
 	}
 	defer mapStore.Close()
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, replayer, npcTracker, combatTracker, historyStore, threatTracker, raidThreatAssembler, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, blockbuffStore, sb, savedQueryStore, skillsStore, traderStore, traderCapturer, popflagStore, wishlistWatcher, changelogEntries, factionEngine, emoteService, mapStore, mapAnnotations, progressStore, mystatsStore, raidStore, rosterKeeper, killStore, killCounters, itemDisplayTracker, petTracker, regenTracker, raidTrackStore, liveZoneFn, actualPort)
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, replayer, npcTracker, combatTracker, historyStore, threatTracker, raidThreatAssembler, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, blockbuffStore, sb, savedQueryStore, skillsStore, traderStore, traderCapturer, popflagStore, wishlistWatcher, changelogEntries, factionEngine, emoteService, mapStore, mapAnnotations, progressStore, mystatsStore, raidStore, rosterKeeper, killStore, killCounters, customOverlays, itemDisplayTracker, petTracker, regenTracker, raidTrackStore, liveZoneFn, actualPort)
 
 	// Raid disband watcher. Zeal emits MsgRaid only while is_in_raid(); on
 	// disband the envelopes just STOP — there is no "raid over" message on the
