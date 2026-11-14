@@ -533,16 +533,22 @@ export const IDLE_COLLAPSE_HINT =
  */
 export function OverlayWindowControls({
   name,
+  windowKey: windowKeyProp,
   label,
   config,
   setConfig,
 }: {
   name: OverlayName
+  // The window's own key when it differs from the settings key: every
+  // custom overlay shares 'customOverlay' lock/opacity/fade settings, but
+  // collapse-when-idle and the monitor are per window (customOverlay:<id>).
+  windowKey?: string
   label: string
   config: Config
   setConfig: (c: Config) => void
 }): React.ReactElement {
   const prefs = config.preferences
+  const windowKey = windowKeyProp ?? name
   const isStack = name.startsWith('stack:')
   const [displays, setDisplays] = useState<Array<{ id: number; label: string; isPrimary: boolean }>>([])
   const [displayId, setDisplayId] = useState<number | undefined>(undefined)
@@ -552,10 +558,10 @@ export function OverlayWindowControls({
       .then((list) => { if (!cancelled) setDisplays(list ?? []) })
       .catch(() => {})
     window.electron?.overlay?.displayIds?.()
-      .then((m) => { if (!cancelled && m) setDisplayId(m[name]) })
+      .then((m) => { if (!cancelled && m) setDisplayId(m[windowKey]) })
       .catch(() => {})
     return () => { cancelled = true }
-  }, [name])
+  }, [windowKey])
 
   const patch = (p: Partial<Config['preferences']>): void =>
     setConfig({ ...config, preferences: { ...prefs, ...p } })
@@ -600,10 +606,10 @@ export function OverlayWindowControls({
           onChange={(v) => patch({ overlay_fade_modes: { ...(prefs.overlay_fade_modes ?? {}), [name]: v } })}
         />,
       )}
-      {(supportsIdleCollapse(name) || isStack) &&
+      {(supportsIdleCollapse(windowKey) || isStack) &&
         row(
           'Collapse when idle',
-          <IdleCollapseSelect windowKey={name} label={label} config={config} setConfig={setConfig} followTabs={isStack} />,
+          <IdleCollapseSelect windowKey={windowKey} label={label} config={config} setConfig={setConfig} followTabs={isStack} />,
           isStack
             ? 'Folds to the title bar once every tab is idle. Follow its tabs uses the longest delay set on them.'
             : IDLE_COLLAPSE_HINT,
@@ -615,7 +621,7 @@ export function OverlayWindowControls({
             value={displayId ?? ''}
             onChange={(e) => {
               const id = Number(e.target.value)
-              window.electron?.overlay?.moveToDisplay?.(name, id)
+              window.electron?.overlay?.moveToDisplay?.(windowKey, id)
               setDisplayId(id)
             }}
             className="rounded px-1.5 py-1 outline-none"

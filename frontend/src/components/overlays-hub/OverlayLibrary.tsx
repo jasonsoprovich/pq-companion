@@ -5,14 +5,15 @@
  * details on the right. Overlays that can't be used right now stay listed,
  * greyed, with the reason. Custom timer windows and stacks (several overlays
  * as tabs in one window) close the list under "Your windows". A stacked
- * overlay's Move and Reset act on its stack.
+ * overlay's Move and Reset act on its stack. Custom overlays (user-built
+ * widget windows driven by log rules) are listed there too.
  *
  * Dashboard visibility is written straight to the dashboard's saved layout;
  * the Dashboard tab reads it fresh when it mounts.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Bell, ExternalLink, Eye, Hourglass, Keyboard, Layers, LayoutDashboard, Move, Plus, RotateCcw, Settings2, SquareArrowOutUpRight, X } from 'lucide-react'
+import { Bell, ExternalLink, Eye, Hourglass, Keyboard, Layers, LayoutDashboard, LayoutTemplate, Move, Plus, RotateCcw, Settings2, SquareArrowOutUpRight, Trash2, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import {
   CUSTOM_GROUP_INFO,
@@ -48,6 +49,17 @@ import { SettingsSection } from './settings/SettingsSection'
 import { OVERLAY_SETTINGS } from './settings/OverlaySpecificSettings'
 import { sameSelection, type HubSelection } from './selection'
 import type { TimerGroup } from '../../types/trigger'
+import type { CustomOverlay } from '../../types/customOverlay'
+import { useCustomOverlays } from '../../hooks/useCustomOverlays'
+import { customOverlayWindowKey } from '../../lib/customOverlay'
+import { deleteCustomOverlay } from '../../services/api'
+import { ConfirmModal } from '../ConfirmModal'
+import {
+  CUSTOM_OVERLAY_INFO,
+  CustomOverlayRulesSection,
+  NewCustomOverlayModal,
+  ResetContentsButton,
+} from './CustomOverlayHub'
 
 type WindowState = 'open' | 'hidden' | undefined
 type Selection = HubSelection
@@ -380,6 +392,15 @@ const STACK_INFO = {
     'own position, lock, opacity and fade; each tab keeps its zoom and its own settings.',
 }
 
+const CUSTOM_OVERLAY_COLOR = '#a78bfa'
+
+function customOverlayBlurb(o: CustomOverlay): string {
+  if (!o.def.enabled) return 'Rules paused.'
+  const w = o.def.widgets.length
+  const r = o.def.rules.length
+  return `${w} ${w === 1 ? 'widget' : 'widgets'} · ${r} ${r === 1 ? 'rule' : 'rules'}`
+}
+
 const GRID_STYLE: React.CSSProperties = {
   display: 'grid',
   gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
@@ -406,6 +427,13 @@ export default function OverlayLibrary({
   const [discordEnabled, setDiscordEnabled] = useState(false)
   const [groups, setGroups] = useState<TimerGroup[]>([])
   const [showGroupsModal, setShowGroupsModal] = useState(false)
+  const customOverlays = useCustomOverlays()
+  const [showNewCustom, setShowNewCustom] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState<CustomOverlay | null>(null)
+  const coNames = useMemo(
+    () => customOverlays.overlays.map((o) => ({ id: o.def.id, name: o.def.name })),
+    [customOverlays.overlays],
+  )
   const setSelected = onSelect
   const { config, setConfig, saveState } = useConfigDraft()
   const { state: layoutState } = useOverlayLayouts()
@@ -415,7 +443,9 @@ export default function OverlayLibrary({
   )
   const stackOf = (key: string): OverlayStackSummary | undefined => stacks.find((s) => s.tabs.includes(key))
   const tabName = (s: OverlayStackSummary, tab: string): string =>
-    tab.startsWith('customTimer:') ? s.groupNames[tab] || overlayWindowLabel(tab, groups) : overlayWindowLabel(tab, groups)
+    tab.startsWith('customTimer:')
+      ? s.groupNames[tab] || overlayWindowLabel(tab, groups)
+      : overlayWindowLabel(tab, groups, coNames)
   const stackTitle = (s: OverlayStackSummary): string => s.tabs.map((t) => tabName(s, t)).join(' + ')
 
   const refreshStates = useCallback(() => {
@@ -503,6 +533,39 @@ export default function OverlayLibrary({
       return { ...prev, [id]: { ...cur, visible: !cur.visible } }
     })
   }, [])
+
+  const toggleCustomPopout = useCallback(
+    (o: CustomOverlay) => {
+      window.electron?.overlay?.toggleCustomOverlay(o.def.id, o.def.name)
+      afterToggle()
+    },
+    [afterToggle],
+  )
+
+  // Custom overlays share the dashboard's group panel map under their window
+  // key; place them after the timer windows when first shown.
+  const toggleCustomDashboard = useCallback((o: CustomOverlay, index: number) => {
+    const key = customOverlayWindowKey(o.def.id)
+    updateDashboardGroups((prev) => {
+      const cur = prev[key] ?? defaultGroupPanelLayout(index)
+      return { ...prev, [key]: { ...cur, visible: !cur.visible } }
+    })
+  }, [])
+
+  const doDelete = (o: CustomOverlay): void => {
+    window.electron?.overlay?.closeCustomOverlay(o.def.id)
+    deleteCustomOverlay(o.def.id)
+      .then(() => {
+        updateDashboardGroups((prev) => {
+          const next = { ...prev }
+          delete next[customOverlayWindowKey(o.def.id)]
+          return next
+        })
+        if (selected?.kind === 'custom' && selected.id === o.def.id) setSelected(null)
+      })
+      .catch(() => {})
+    setConfirmDelete(null)
+  }
 
   const openHotkeys = useCallback(() => navigate('/settings?tab=hotkeys'), [navigate])
 
@@ -653,6 +716,57 @@ export default function OverlayLibrary({
                   <IdleCollapseSelect windowKey={key} label={g.name} config={config} setConfig={setConfig} />
                 </div>
               </div>
+            </SettingsSection>
+          )}
+        </Drawer>
+      )
+    }
+  }
+
+  if (selected?.kind === 'custom') {
+    const o = customOverlays.overlays.find((x) => x.def.id === selected.id)
+    if (o) {
+      const key = customOverlayWindowKey(o.def.id)
+      const state = windowStates[key]
+      details = (
+        <Drawer
+          icon={LayoutTemplate}
+          color={CUSTOM_OVERLAY_COLOR}
+          title={o.def.name}
+          details={CUSTOM_OVERLAY_INFO.details}
+          status={<StatusText state={state} />}
+          saveState={saveState}
+          onClose={close}
+          actions={
+            <>
+              <PopButton state={state} onClick={() => toggleCustomPopout(o)} />
+              {moveButton(key, o.def.name, () => toggleCustomPopout(o))}
+              {resetButton(key, o.def.name)}
+              <ResetContentsButton onReset={() => customOverlays.act(o.def.id, { action: 'reset' })} />
+              <SecondaryButton
+                icon={Trash2}
+                label="Delete"
+                onClick={() => setConfirmDelete(o)}
+                title="Delete this overlay and its contents"
+              />
+            </>
+          }
+        >
+          <SettingsSection title="Rules">
+            <CustomOverlayRulesSection overlay={o} />
+          </SettingsSection>
+          {config && (
+            <SettingsSection title="Window">
+              <p className="pb-1 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                Lock, opacity, fade and zoom are shared by every custom overlay.
+              </p>
+              <OverlayWindowControls
+                name="customOverlay"
+                windowKey={key}
+                label={o.def.name}
+                config={config}
+                setConfig={setConfig}
+              />
             </SettingsSection>
           )}
         </Drawer>
@@ -816,6 +930,33 @@ export default function OverlayLibrary({
                   />
                 )
               })}
+              {customOverlays.overlays.map((o, i) => {
+                const key = customOverlayWindowKey(o.def.id)
+                const state = windowStates[key]
+                const sel: Selection = { kind: 'custom', id: o.def.id }
+                return (
+                  <Card
+                    key={key}
+                    icon={LayoutTemplate}
+                    color={CUSTOM_OVERLAY_COLOR}
+                    title={o.def.name}
+                    blurb={customOverlayBlurb(o)}
+                    selected={isSel(sel)}
+                    onSelect={() => setSelected(sel)}
+                    footer={
+                      <>
+                        <PopButton state={state} onClick={() => toggleCustomPopout(o)} />
+                        <DashboardSwitch
+                          on={groupLayout[key]?.visible ?? false}
+                          onClick={() => toggleCustomDashboard(o, groups.length + i)}
+                        />
+                        <span className="flex-1" />
+                        <StatusText state={state} />
+                      </>
+                    }
+                  />
+                )
+              })}
               {stacks.map((s) => {
                 const state = windowStates[s.key]
                 const sel: Selection = { kind: 'stack', key: s.key }
@@ -850,6 +991,18 @@ export default function OverlayLibrary({
                 <Plus size={16} />
                 New timer window
               </button>
+              <button
+                onClick={() => setShowNewCustom(true)}
+                className="flex min-h-[112px] flex-col items-center justify-center gap-1.5 rounded-lg p-3 text-xs"
+                style={{
+                  border: '1px dashed var(--color-border)',
+                  color: 'var(--color-muted-foreground)',
+                }}
+                title={CUSTOM_OVERLAY_INFO.blurb}
+              >
+                <Plus size={16} />
+                New custom overlay
+              </button>
             </div>
           </section>
         </div>
@@ -858,6 +1011,25 @@ export default function OverlayLibrary({
       {details && <React.Fragment key={JSON.stringify(selected)}>{details}</React.Fragment>}
       {showGroupsModal && (
         <TimerGroupsModal groups={groups} onChanged={reloadGroups} onClose={() => setShowGroupsModal(false)} />
+      )}
+      {showNewCustom && (
+        <NewCustomOverlayModal
+          onClose={() => setShowNewCustom(false)}
+          onCreated={(o) => {
+            setShowNewCustom(false)
+            setSelected({ kind: 'custom', id: o.def.id })
+          }}
+        />
+      )}
+      {confirmDelete && (
+        <ConfirmModal
+          title="Delete custom overlay?"
+          message={`“${confirmDelete.def.name}” and everything in it will be deleted. This can’t be undone.`}
+          confirmLabel="Delete"
+          tone="danger"
+          onConfirm={() => doDelete(confirmDelete)}
+          onCancel={() => setConfirmDelete(null)}
+        />
       )}
     </div>
   )

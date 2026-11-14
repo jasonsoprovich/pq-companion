@@ -59,6 +59,15 @@ export interface CustomOp {
   amount?: number
 }
 
+export type CustomSimpleKind = 'starts' | 'contains' | 'exact'
+
+// Plain-text pattern with {placeholders}; the backend builds `pattern` from
+// it on save (see backend SimpleMatch).
+export interface CustomSimpleMatch {
+  kind: CustomSimpleKind
+  text: string
+}
+
 export interface CustomRule {
   id: string
   name?: string
@@ -66,6 +75,7 @@ export interface CustomRule {
   channel?: string
   direction?: '' | 'in' | 'out'
   speakers?: string[]
+  simple?: CustomSimpleMatch
   pattern?: string
   ops: CustomOp[]
 }
@@ -115,10 +125,23 @@ export interface CustomOverlaysState {
   now: number // server unix ms
 }
 
+export interface CustomOverlayTestStep {
+  line: string
+  matched: string[] // rule ids
+}
+
 export interface CustomOverlayTestResult {
-  matched: string[]
+  steps: CustomOverlayTestStep[]
   state: CustomOverlayState
+  def?: CustomOverlayDef // normalized (generated ids and patterns)
   error?: string
+}
+
+export interface CustomOverlayTemplate {
+  key: string
+  name: string
+  description: string
+  def: CustomOverlayDef
 }
 
 export type CustomOverlayAction =

@@ -1749,12 +1749,19 @@ export function customOverlayAction(
   return post<CustomOverlaysState>(`/api/custom-overlays/${encodeURIComponent(id)}/action`, body)
 }
 
-export function testCustomOverlayLine(
+export function testCustomOverlayLines(
   def: CustomOverlayDef,
-  line: string,
+  lines: string[],
+  fromCurrent: boolean,
   character?: string,
 ): Promise<import('../types/customOverlay').CustomOverlayTestResult> {
-  return post('/api/custom-overlays/test', { def, line, character })
+  return post('/api/custom-overlays/test', { def, lines, from_current: fromCurrent, character })
+}
+
+export function getCustomOverlayTemplates(): Promise<{
+  templates: import('../types/customOverlay').CustomOverlayTemplate[]
+}> {
+  return get('/api/custom-overlays/templates')
 }
 
 type KillCountersState = import('../types/kills').KillCountersState
