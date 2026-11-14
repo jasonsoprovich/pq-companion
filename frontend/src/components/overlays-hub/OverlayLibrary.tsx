@@ -13,7 +13,7 @@
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Bell, ExternalLink, Eye, Hourglass, Keyboard, Layers, LayoutDashboard, LayoutTemplate, Move, Plus, RotateCcw, Settings2, SquareArrowOutUpRight, Trash2, X } from 'lucide-react'
+import { Bell, ExternalLink, Eye, Hourglass, Keyboard, Layers, LayoutDashboard, LayoutTemplate, Move, Pencil, Plus, RotateCcw, Settings2, SquareArrowOutUpRight, Trash2, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import {
   CUSTOM_GROUP_INFO,
@@ -60,6 +60,7 @@ import {
   NewCustomOverlayModal,
   ResetContentsButton,
 } from './CustomOverlayHub'
+import CustomOverlayEditor from './customOverlayEditor/CustomOverlayEditor'
 
 type WindowState = 'open' | 'hidden' | undefined
 type Selection = HubSelection
@@ -430,6 +431,8 @@ export default function OverlayLibrary({
   const customOverlays = useCustomOverlays()
   const [showNewCustom, setShowNewCustom] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<CustomOverlay | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const editing = customOverlays.overlays.find((o) => o.def.id === editingId)
   const coNames = useMemo(
     () => customOverlays.overlays.map((o) => ({ id: o.def.id, name: o.def.name })),
     [customOverlays.overlays],
@@ -742,6 +745,7 @@ export default function OverlayLibrary({
               <PopButton state={state} onClick={() => toggleCustomPopout(o)} />
               {moveButton(key, o.def.name, () => toggleCustomPopout(o))}
               {resetButton(key, o.def.name)}
+              <SecondaryButton icon={Pencil} label="Edit overlay" onClick={() => setEditingId(o.def.id)} />
               <ResetContentsButton onReset={() => customOverlays.act(o.def.id, { action: 'reset' })} />
               <SecondaryButton
                 icon={Trash2}
@@ -1018,7 +1022,16 @@ export default function OverlayLibrary({
           onCreated={(o) => {
             setShowNewCustom(false)
             setSelected({ kind: 'custom', id: o.def.id })
+            setEditingId(o.def.id)
           }}
+        />
+      )}
+      {editing && (
+        <CustomOverlayEditor
+          key={editing.def.id}
+          overlay={editing}
+          skewMs={customOverlays.skewMs}
+          onClose={() => setEditingId(null)}
         />
       )}
       {confirmDelete && (
