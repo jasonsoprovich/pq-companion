@@ -130,6 +130,49 @@ func (h *customOverlaysHandler) test(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, h.engine.TestLines(req.Def, req.Lines, req.Character, req.FromCurrent))
 }
 
+// export returns an overlay's share file (no ID or character filter).
+func (h *customOverlaysHandler) export(w http.ResponseWriter, r *http.Request) {
+	sh, err := h.engine.Export(chi.URLParam(r, "id"))
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, sh)
+}
+
+// customOverlayImportRequest is the body of POST /api/custom-overlays/import.
+// Text is the pasted or loaded share (a code fence is fine).
+type customOverlayImportRequest struct {
+	Text    string `json:"text"`
+	Preview bool   `json:"preview,omitempty"`
+}
+
+// importShare reads a share. With preview it only returns the validated
+// definition, for the import dialog to show before anything is saved;
+// otherwise it creates the overlay and returns it.
+func (h *customOverlaysHandler) importShare(w http.ResponseWriter, r *http.Request) {
+	var req customOverlayImportRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2<<20)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	def, err := customoverlay.ParseShare([]byte(req.Text))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if req.Preview {
+		writeJSON(w, http.StatusOK, map[string]any{"def": def})
+		return
+	}
+	o, err := h.engine.Create(def)
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, o)
+}
+
 // templates lists the built-in overlay templates for "+ New custom overlay".
 func (h *customOverlaysHandler) templates(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"templates": customoverlay.Templates()})

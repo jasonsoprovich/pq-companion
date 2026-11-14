@@ -57,8 +57,10 @@ import { ConfirmModal } from '../ConfirmModal'
 import {
   CUSTOM_OVERLAY_INFO,
   CustomOverlayRulesSection,
+  ImportCustomOverlayModal,
   NewCustomOverlayModal,
   ResetContentsButton,
+  ShareButtons,
 } from './CustomOverlayHub'
 import CustomOverlayEditor from './customOverlayEditor/CustomOverlayEditor'
 
@@ -430,6 +432,7 @@ export default function OverlayLibrary({
   const [showGroupsModal, setShowGroupsModal] = useState(false)
   const customOverlays = useCustomOverlays()
   const [showNewCustom, setShowNewCustom] = useState(false)
+  const [showImport, setShowImport] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<CustomOverlay | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const editing = customOverlays.overlays.find((o) => o.def.id === editingId)
@@ -759,6 +762,13 @@ export default function OverlayLibrary({
           <SettingsSection title="Rules">
             <CustomOverlayRulesSection overlay={o} />
           </SettingsSection>
+          <SettingsSection title="Share">
+            <p className="pb-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+              Share this overlay’s widgets and rules with your guild. Its contents and character
+              filter stay here.
+            </p>
+            <ShareButtons overlay={o} />
+          </SettingsSection>
           {config && (
             <SettingsSection title="Window">
               <p className="pb-1 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
@@ -1019,10 +1029,21 @@ export default function OverlayLibrary({
       {showNewCustom && (
         <NewCustomOverlayModal
           onClose={() => setShowNewCustom(false)}
+          onImport={() => { setShowNewCustom(false); setShowImport(true) }}
           onCreated={(o) => {
             setShowNewCustom(false)
             setSelected({ kind: 'custom', id: o.def.id })
             setEditingId(o.def.id)
+          }}
+        />
+      )}
+      {showImport && (
+        <ImportCustomOverlayModal
+          existingNames={customOverlays.overlays.map((o) => o.def.name)}
+          onClose={() => setShowImport(false)}
+          onImported={(o) => {
+            setShowImport(false)
+            setSelected({ kind: 'custom', id: o.def.id })
           }}
         />
       )}

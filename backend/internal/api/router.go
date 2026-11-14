@@ -536,9 +536,11 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Post("/", customOverlaysH.create)
 			r.Post("/test", customOverlaysH.test)
 			r.Get("/templates", customOverlaysH.templates)
+			r.Post("/import", customOverlaysH.importShare)
 			r.Put("/{id}", customOverlaysH.update)
 			r.Delete("/{id}", customOverlaysH.remove)
 			r.Post("/{id}/action", customOverlaysH.action)
+			r.Get("/{id}/export", customOverlaysH.export)
 		})
 		r.Route("/backfill", func(r chi.Router) {
 			r.Get("/", backfillH.info)

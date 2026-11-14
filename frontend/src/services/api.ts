@@ -1758,6 +1758,27 @@ export function testCustomOverlayLines(
   return post('/api/custom-overlays/test', { def, lines, from_current: fromCurrent, character })
 }
 
+// Share file for one overlay (no ID or character filter).
+export function exportCustomOverlay(
+  id: string,
+): Promise<import('../types/customOverlay').CustomOverlayShare> {
+  return get(`/api/custom-overlays/${encodeURIComponent(id)}/export`)
+}
+
+// Reads pasted/loaded share text. preview only validates and returns the
+// definition; otherwise the overlay is created.
+export function previewCustomOverlayImport(
+  text: string,
+): Promise<{ def: CustomOverlayDef }> {
+  return post('/api/custom-overlays/import', { text, preview: true })
+}
+
+export function importCustomOverlay(
+  text: string,
+): Promise<import('../types/customOverlay').CustomOverlay> {
+  return post('/api/custom-overlays/import', { text })
+}
+
 export function getCustomOverlayTemplates(): Promise<{
   templates: import('../types/customOverlay').CustomOverlayTemplate[]
 }> {

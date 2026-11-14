@@ -172,7 +172,7 @@ type Rule struct {
 
 // OverlayDef is the user-editable definition of one custom overlay.
 type OverlayDef struct {
-	ID      string `json:"id"`
+	ID      string `json:"id,omitempty"` // empty in a share
 	Name    string `json:"name"`
 	Enabled bool   `json:"enabled"`
 	// Characters limits the overlay to these characters' logs; empty = all.

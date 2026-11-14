@@ -150,3 +150,11 @@ export type CustomOverlayAction =
   | { action: 'remove_row'; widget: string; key: string }
   | { action: 'enable'; enabled: boolean }
   | { action: 'move'; value: -1 | 1 }
+
+// Exported share file (backend Share): a definition without its ID or
+// character filter, tagged so imports can check what they're reading.
+export interface CustomOverlayShare {
+  format: 'pq-companion-custom-overlay'
+  version: number
+  overlay: CustomOverlayDef
+}
