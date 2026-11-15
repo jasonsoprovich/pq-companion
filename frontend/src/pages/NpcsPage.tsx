@@ -24,6 +24,7 @@ import {
   mapShowZoneCommand,
 } from '../lib/zealMap'
 import { NPCSpawnMap } from '../components/maps/NPCSpawnMap'
+import NpcModelPreview from '../components/models/NpcModelPreview'
 import { NPCZoneLinks, zoneListLabel } from '../components/NPCZoneLinks'
 import CreateTriggerModal, { type TriggerPrefill } from '../components/CreateTriggerModal'
 import { ItemIcon } from '../components/Icon'
@@ -1027,6 +1028,11 @@ function DetailPanel({ npc }: DetailPanelProps): React.ReactElement {
 
       {/* Tab content */}
       <div className="flex-1 overflow-y-auto px-5 py-4">
+      {activeTab === 'overview' && (
+        <div className="float-right mb-3 ml-4">
+          <NpcModelPreview npcID={npc.id} />
+        </div>
+      )}
       {activeTab === 'overview' && (
       <div className="flex flex-col gap-3">
         {/* Combat */}

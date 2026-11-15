@@ -3,6 +3,7 @@ import { RotateCcw, Search, Shirt, X } from 'lucide-react'
 import {
   DEFAULT_LOOKS,
   getCharacterAppearance,
+  getIllusions,
   getCharacterTextureUrl,
   getModelLooks,
   listCharacters,
@@ -10,6 +11,7 @@ import {
   setCharacterAppearance,
   type Character,
   type CharacterModelRef,
+  type Illusion,
   type ItemAppearance,
   type ModelLookOptions,
   type ModelLooks,
@@ -20,7 +22,7 @@ import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
 import { useCachedState } from '../hooks/useCachedState'
 import { charRaceLabel } from '../lib/enumsCache'
 import type { DressInfo } from '../components/models/ModelViewer'
-import { DRESS_SLOTS, MONK_CLASS, dressFor, loadEquippedItems } from '../lib/characterDress'
+import { DRESS_SLOTS, MONK_CLASS, PLAYER_RACES, dressFor, isPlayerRace, loadEquippedItems } from '../lib/characterDress'
 import type { DressSlot, ModelDress } from '../lib/characterDress'
 
 const ModelViewer = lazy(() => import('../components/models/ModelViewer'))
@@ -29,7 +31,8 @@ const ModelViewer = lazy(() => import('../components/models/ModelViewer'))
 // client, in the gear from their last Zeal inventory export, with any other
 // item tried on in its place. The game logs neither gender nor face, so
 // gender and looks (face, hair, eyes) are picked here and saved per
-// character.
+// character. Another race can be previewed too (a race change, or an
+// illusion), with its own gender and looks that aren't saved.
 
 type SlotDef = DressSlot
 const SLOTS = DRESS_SLOTS
@@ -37,6 +40,14 @@ const SLOTS = DRESS_SLOTS
 // Try-ons per slot: an item, or null for nothing; a slot not in the map
 // shows what's equipped.
 type TryOns = Record<string, ItemAppearance | null>
+
+// Preview is another race shown in the character's gear, with its own
+// gender and looks, kept only while it's shown.
+interface Preview {
+  race: number
+  gender: number
+  looks: ModelLooks
+}
 
 export default function DressingRoomPage(): React.ReactElement {
   const { active } = useActiveCharacter()
@@ -50,6 +61,12 @@ export default function DressingRoomPage(): React.ReactElement {
   const [tryOns, setTryOns] = useState<TryOns>({})
   const [picking, setPicking] = useState<string | null>(null)
   const [info, setInfo] = useState<DressInfo | null>(null)
+  const [preview, setPreview] = useState<Preview | null>(null)
+  const [illusions, setIllusions] = useState<Illusion[]>([])
+
+  useEffect(() => {
+    getIllusions().then(setIllusions).catch(() => setIllusions([]))
+  }, [])
 
   useEffect(() => {
     listCharacters().then((r) => setCharacters(r.characters)).catch(() => setCharacters([]))
@@ -62,6 +79,7 @@ export default function DressingRoomPage(): React.ReactElement {
     let live = true
     setTryOns({})
     setPicking(null)
+    setPreview(null)
     setEquipped({})
     setExported(null)
     getCharacterAppearance(viewed)
@@ -99,17 +117,41 @@ export default function DressingRoomPage(): React.ReactElement {
     setCharacterAppearance({ name: viewed, gender: g, luclin: l, ...lk }).catch(() => {})
   }, [viewed, gender, luclin, looks])
 
+  // change applies a pick: to the preview while one is shown (the era
+  // is still the character's), else saved to the character.
+  const change = useCallback((next: { gender?: number; luclin?: boolean } & Partial<ModelLooks>) => {
+    if (!preview) {
+      saveAppearance(next)
+      return
+    }
+    const { gender: ng, luclin: nl, ...nextLooks } = next
+    setPreview({ ...preview, gender: ng ?? preview.gender, looks: { ...preview.looks, ...nextLooks } })
+    if (nl !== undefined) saveAppearance({ luclin: nl })
+  }, [preview, saveAppearance])
+
   const worn = useCallback(
     (key: string): ItemAppearance | null => (key in tryOns ? tryOns[key] : equipped[key] ?? null),
     [tryOns, equipped],
   )
 
-  const dress = useMemo(
-    (): ModelDress => ({ ...dressFor(worn, character?.class === MONK_CLASS), looks }),
-    [worn, character?.class, looks],
-  )
+  const ownRace = character?.race ?? -1
+  const race = preview?.race ?? ownRace
+  const shownGender = preview?.gender ?? gender
+  const shownLooks = preview?.looks ?? looks
+  const player = isPlayerRace(race)
 
-  const race = character?.race ?? -1
+  // Other races than the player ones keep their own skin: only what's in
+  // their hands carries over, as with an illusion in game.
+  const dress = useMemo((): ModelDress => {
+    const d = dressFor(worn, character?.class === MONK_CLASS)
+    if (!player) return { mats: [0, 0, 0, 0, 0, 0, 0], tints: [0, 0, 0, 0, 0, 0, 0], primary: d.primary, secondary: d.secondary, shield: d.shield }
+    return { ...d, looks: shownLooks }
+  }, [worn, character?.class, shownLooks, player])
+
+  const pickRace = (r: number): void => {
+    if (r === ownRace) setPreview(null)
+    else setPreview({ race: r, gender: shownGender, looks: DEFAULT_LOOKS })
+  }
   const tried = Object.keys(tryOns).length
 
   return (
@@ -123,20 +165,58 @@ export default function DressingRoomPage(): React.ReactElement {
             <div className="mr-auto">
               <h1 className="text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>Dressing Room</h1>
               <p className="text-[11px]" style={{ color: 'var(--color-muted-foreground)' }}>
-                {character && race > 0
-                  ? `${character.name} · ${charRaceLabel(race)}`
+                {character && ownRace > 0
+                  ? `${character.name} · ${charRaceLabel(ownRace)}`
                   : 'Your character, drawn from your own EverQuest client.'}
+                {preview && (
+                  <>
+                    {' · previewing '}
+                    <span style={{ color: 'var(--color-warning, #f59e0b)' }}>{raceName(preview.race, illusions)}</span>
+                    {' '}
+                    <button
+                      type="button"
+                      onClick={() => setPreview(null)}
+                      className="underline"
+                      style={{ color: 'var(--color-muted-foreground)' }}
+                    >
+                      back to {charRaceLabel(ownRace)}
+                    </button>
+                  </>
+                )}
               </p>
             </div>
+            {ownRace > 0 && (
+              <select
+                value={race}
+                onChange={(e) => pickRace(Number(e.target.value))}
+                className="rounded px-2 py-1 text-[11px]"
+                style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
+                title="Preview another race in this gear: a race change, or an illusion"
+              >
+                <option value={ownRace}>{charRaceLabel(ownRace)} (yours)</option>
+                <optgroup label="Races">
+                  {PLAYER_RACES.filter((r) => r !== ownRace).map((r) => (
+                    <option key={r} value={r}>{charRaceLabel(r)}</option>
+                  ))}
+                </optgroup>
+                {illusions.some((il) => !isPlayerRace(il.race)) && (
+                  <optgroup label="Illusions">
+                    {illusions.filter((il) => !isPlayerRace(il.race)).map((il) => (
+                      <option key={il.race} value={il.race} title={il.spells.join(', ')}>{il.name}</option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+            )}
             <Toggle
               options={[{ value: 0, label: 'Male' }, { value: 1, label: 'Female' }]}
-              value={gender}
-              onChange={(g) => saveAppearance({ gender: g })}
+              value={shownGender}
+              onChange={(g) => change({ gender: g })}
             />
             <Toggle
               options={[{ value: 0, label: 'Original' }, { value: 1, label: 'Luclin' }]}
               value={luclin ? 1 : 0}
-              onChange={(v) => saveAppearance({ luclin: v === 1 })}
+              onChange={(v) => change({ luclin: v === 1 })}
             />
           </div>
           <div className="relative min-h-0 flex-1">
@@ -150,23 +230,23 @@ export default function DressingRoomPage(): React.ReactElement {
               <Suspense fallback={null}>
                 <ModelViewer
                   className="h-full w-full"
-                  model={{ race, gender, luclin }}
+                  model={{ race, gender: shownGender, luclin }}
                   dress={dress}
                   onDressed={setInfo}
                 />
               </Suspense>
             )}
           </div>
-          <DressNotes info={info} luclin={luclin} hair={looks.hair} />
+          <DressNotes info={info} luclin={luclin} player={player} hair={shownLooks.hair} />
         </div>
 
         <div className="flex w-80 shrink-0 flex-col gap-3 overflow-y-auto">
-          {race > 0 && info && (
+          {race > 0 && player && info && (
             <LooksPanel
               model={info.ref}
               luclin={luclin}
-              looks={looks}
-              onChange={(l) => saveAppearance(l)}
+              looks={shownLooks}
+              onChange={(l) => change(l)}
             />
           )}
           <div className="rounded-lg"
@@ -243,6 +323,12 @@ export default function DressingRoomPage(): React.ReactElement {
       </div>
     </div>
   )
+}
+
+// raceName names a race: a player race, or an illusion's.
+function raceName(race: number, illusions: Illusion[]): string {
+  if (isPlayerRace(race)) return charRaceLabel(race)
+  return illusions.find((il) => il.race === race)?.name ?? `Race ${race}`
 }
 
 function Toggle({ options, value, onChange }: {
@@ -475,9 +561,12 @@ function Swatches({ colors, value, onChange }: {
 
 const MATERIAL_SLOT_NAMES = ['head', 'chest', 'arms', 'wrists', 'hands', 'legs', 'feet']
 
-function DressNotes({ info, luclin, hair }: {
+function DressNotes({ info, luclin, player, hair }: {
   info: DressInfo | null
   luclin: boolean
+  // Only the player races wear armor and hair, or hold items for sure;
+  // other races' notes about them would mislead.
+  player: boolean
   hair: number
 }): React.ReactElement | null {
   const notes: string[] = []
@@ -488,11 +577,11 @@ function DressNotes({ info, luclin, hair }: {
   if (info?.fallback.length) {
     notes.push(`Your client has no texture for this model's ${names(info.fallback)}; a near one stands in.`)
   }
-  if (info?.missingItems.length) {
+  if (player && info?.missingItems.length) {
     notes.push(`No model in your client for the ${info.missingItems.join(' and ')} item.`)
   }
   const onHead = info?.wear.some((w) => w.point === 'HAIR_POINT' || w.point === 'HEAD_POINT')
-  if (luclin && info && hair >= 0 && !onHead) {
+  if (player && luclin && info && hair >= 0 && !onHead) {
     notes.push('Your client has no hairstyle for this model, so it’s drawn bald (as the game does).')
   }
   if (!notes.length) return null

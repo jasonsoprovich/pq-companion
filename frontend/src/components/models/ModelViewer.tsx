@@ -1,14 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-import { buildCharacter, onCharacterTexture } from '../../lib/characterModels'
-import type { DressedCharacter, CharacterModelRequest } from '../../lib/characterModels'
+import { buildCharacter, buildItem, onCharacterTexture } from '../../lib/characterModels'
+import type { CharacterModelRequest } from '../../lib/characterModels'
 import type { CharacterModelRef, WornModel } from '../../services/api'
 import type { ModelDress } from '../../lib/characterDress'
 
 // ModelViewer shows one character model on its own, to turn around and zoom
-// into, optionally dressed (the dressing room). three.js is large, so pages
-// should load this lazily.
+// into, optionally dressed (the dressing room), or one item's model. three.js
+// is large, so pages should load this lazily. It draws only when something
+// changes (a drag, a texture arriving), so an untouched viewer costs no GPU
+// time, and gives its WebGL context back as soon as it's closed.
 
 export type { ModelDress } from '../../lib/characterDress'
 
@@ -35,14 +37,16 @@ interface Stage {
   render: () => void
   // The model and what it holds; replaced on every change.
   group: THREE.Group
-  // The character shown, disposed when replaced.
-  shown: DressedCharacter | null
+  // What's shown, disposed when replaced.
+  shown: { dispose: () => void } | null
   // The model framed last, so a change of outfit keeps the user's view.
   framed: string
 }
 
-export default function ModelViewer({ model, dress, onDressed, className }: {
-  model: CharacterModelRequest
+export default function ModelViewer({ model, item, dress, onDressed, className }: {
+  model?: CharacterModelRequest
+  /** An item model to show instead (idfile, "IT10"). */
+  item?: string
   dress?: ModelDress
   onDressed?: (info: DressInfo) => void
   className?: string
@@ -51,7 +55,7 @@ export default function ModelViewer({ model, dress, onDressed, className }: {
   const stage = useRef<Stage | null>(null)
   const [status, setStatus] = useState<Status>('loading')
   const [label, setLabel] = useState('')
-  const { race, gender, zone, luclin } = model
+  const { race = 0, gender = 0, zone, luclin } = model ?? {}
   const dressKey = dress ? JSON.stringify(dress) : ''
   const onDressedRef = useRef(onDressed)
   onDressedRef.current = onDressed
@@ -67,7 +71,8 @@ export default function ModelViewer({ model, dress, onDressed, className }: {
       setStatus('webgl')
       return
     }
-    renderer.setPixelRatio(window.devicePixelRatio)
+    // Past 2× the extra pixels cost more than they show.
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     el.appendChild(renderer.domElement)
 
     const scene = new THREE.Scene()
@@ -116,14 +121,59 @@ export default function ModelViewer({ model, dress, onDressed, className }: {
       stage.current?.shown?.dispose()
       stage.current = null
       renderer.dispose()
+      // Browsers allow only a handful of WebGL contexts; don't wait for
+      // garbage collection to give this one back.
+      renderer.forceContextLoss()
       renderer.domElement.remove()
     }
   }, [])
 
+  // An item on its own, framed whole whichever way it lies.
+  useEffect(() => {
+    const s = stage.current
+    if (!s || !item) return
+    let live = true
+    setStatus('loading')
+    ;(async () => {
+      const it = await buildItem(item)
+      if (!live) {
+        it?.dispose()
+        return
+      }
+      s.group.clear()
+      s.shown?.dispose()
+      s.shown = it
+      if (!it) {
+        setStatus('none')
+        return
+      }
+      const box = new THREE.Box3().setFromObject(it.object)
+      const centre = box.getCenter(new THREE.Vector3())
+      it.object.position.sub(centre)
+      const r = Math.max(box.getSize(new THREE.Vector3()).length() / 2, 0.1)
+      s.group.add(it.object)
+      s.controls.target.set(0, 0, 0)
+      s.camera.position.set(r * 1.4, r * 3.6, r * 1.2)
+      s.camera.near = r / 100
+      s.camera.far = r * 100
+      s.camera.updateProjectionMatrix()
+      s.controls.minDistance = r * 0.8
+      s.controls.maxDistance = r * 10
+      s.controls.update()
+      s.framed = ''
+      setLabel(`${it.asset.ref.code} · ${it.asset.ref.archive}`)
+      setStatus('ready')
+      s.render()
+    })().catch(() => live && setStatus('error'))
+    return () => {
+      live = false
+    }
+  }, [item])
+
   // The model, dressed.
   useEffect(() => {
     const s = stage.current
-    if (!s) return
+    if (!s || item || !model) return
     let live = true
     setStatus((st) => (st === 'ready' ? st : 'loading'))
     ;(async () => {
@@ -144,12 +194,23 @@ export default function ModelViewer({ model, dress, onDressed, className }: {
       const refKey = `${c.base.ref.archive}|${c.base.ref.code}`
       if (s.framed !== refKey) {
         // Models face world +y (raw +x after the map-space swap and the y
-        // flip), so the camera starts in front, a little to the side.
-        const h = c.asset.height
-        s.controls.target.set(0, 0, h * 0.5)
-        s.camera.position.set(h * 0.55, h * 2.6, h * 0.75)
-        s.controls.minDistance = h * 0.6
-        s.controls.maxDistance = h * 8
+        // flip), so the camera starts in front, a little to the side, back
+        // far enough to fit the model's whole box in view: its height, or
+        // its width on a narrow viewer, plus half its depth for the parts
+        // reaching toward the camera (a hunched werewolf).
+        const size = new THREE.Box3().setFromObject(c.object).getSize(new THREE.Vector3())
+        const spread = Math.max(size.x, size.y)
+        const fit = Math.max(size.z, spread / s.camera.aspect)
+        const half = THREE.MathUtils.degToRad(s.camera.fov) / 2
+        const d = 1.3 * (fit / 2 / Math.tan(half) + spread / 2)
+        s.camera.near = Math.max(0.05, d / 1000)
+        s.camera.far = d * 20
+        s.camera.updateProjectionMatrix()
+        s.controls.target.set(0, 0, size.z * 0.5)
+        const dir = new THREE.Vector3(0.2, 1, 0.1).normalize()
+        s.camera.position.copy(s.controls.target).addScaledVector(dir, d)
+        s.controls.minDistance = d * 0.2
+        s.controls.maxDistance = d * 3
         s.controls.update()
         s.framed = refKey
       }
@@ -164,7 +225,9 @@ export default function ModelViewer({ model, dress, onDressed, className }: {
     return () => {
       live = false
     }
-  }, [race, gender, zone, luclin, dressKey])
+    // model is read for whether it's set; its fields are the deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [race, gender, zone, luclin, dressKey, item, !model])
 
   const message: Partial<Record<Status, string>> = {
     loading: 'Loading model…',

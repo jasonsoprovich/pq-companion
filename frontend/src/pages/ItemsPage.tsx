@@ -3,6 +3,7 @@ import { useEscapeToClose } from '../hooks/useEscapeToClose'
 import { useCachedState } from '../hooks/useCachedState'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Check, Copy, Filter, Search, X } from 'lucide-react'
+import ItemModelPreview from '../components/models/ItemModelPreview'
 import { searchItems, getItem, getItemSources, getItemQuests, getItemRaw } from '../services/api'
 import type { ItemSearchFilter } from '../services/api'
 import { findItemHoldings, type ItemHolding } from '../services/itemHoldings'
@@ -1065,6 +1066,11 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
 
       {/* Tab content */}
       <div className="flex-1 overflow-y-auto px-5 py-4">
+        {activeTab === 'overview' && (
+          <div className="float-right mb-3 ml-4">
+            <ItemModelPreview item={item} />
+          </div>
+        )}
         {activeTab === 'overview' && (
           <OverviewTab item={item} copied={copied} onCopy={copyIngameLink} />
         )}

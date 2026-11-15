@@ -5,6 +5,7 @@
 
 import { getItemAppearances, getZealInventory } from '../services/api'
 import type { ItemAppearance, ModelLooks } from '../services/api'
+import type { NPCLook } from '../types/map'
 
 /** ModelDress is what a model wears. */
 export interface ModelDress {
@@ -106,4 +107,56 @@ export async function loadEquippedItems(character: string): Promise<EquippedItem
     if (it) items[slot] = it
   }
   return { items, exportedAt: inv.exported_at }
+}
+
+/** The player races, in the order of items' race bits (items.races bit 0
+ * is Human … bit 13 Vah Shir). */
+export const PLAYER_RACES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 128, 130]
+
+/** isPlayerRace is whether race has the player models (and so wears
+ * armor piece by piece). */
+export function isPlayerRace(race: number): boolean {
+  return PLAYER_RACES.includes(race) || race === 330
+}
+
+/** racesForMask is the player races an item's race bits allow (all of
+ * them for 0 or the all-races sentinels). */
+export function racesForMask(mask: number): number[] {
+  if (mask <= 0 || mask >= 16383) return PLAYER_RACES
+  return PLAYER_RACES.filter((_, i) => mask & (1 << i))
+}
+
+/** armorSlots is the material slots (0 head … 6 feet) an item's slot bits
+ * cover. */
+export function armorSlots(slotMask: number): number[] {
+  return DRESS_SLOTS.filter((s) => s.material >= 0 && slotMask & s.mask).map((s) => s.material)
+}
+
+/** isHeldModel is whether an item's idfile is a model drawn in the hand
+ * (IT63, the bag every other item drops as, isn't). */
+export function isHeldModel(idfile: string | undefined): boolean {
+  const f = heldModel(idfile ? { id_file: idfile } as ItemAppearance : null)
+  return !!f && f !== 'IT63'
+}
+
+/**
+ * npcDress is what an NPC wears as the character models draw it: player
+ * races dressed piece by piece as the server sends it, other races in
+ * their texture set. dress is null when it wears nothing.
+ */
+export function npcDress(l: NPCLook): { dress: ModelDress | null; looks?: ModelLooks; player: boolean } {
+  const player = isPlayerRace(l.race)
+  const mats = player ? l.mats : [0, ...Array(6).fill(l.texture)]
+  const dressed = mats.some((m) => m > 0) || l.tints.some((t) => t > 0) || !!l.primary || !!l.secondary
+  const looks = player
+    ? {
+        face: l.face, hair: l.hair, hair_color: l.hair_color,
+        beard: l.beard, beard_color: l.beard_color, eyes: l.eyes,
+      }
+    : undefined
+  return {
+    dress: dressed ? { mats, tints: l.tints, primary: l.primary, secondary: l.secondary } : null,
+    looks,
+    player,
+  }
 }

@@ -4,7 +4,7 @@ import type { Item, ItemSources, ItemQuests, QuestSummary, SearchResult, ItemSho
 import type { NPC, NPCSpawns, NPCLootTable, NPCFaction, NPCSpells, NPCMerchant, PatrolRoute } from '../types/npc'
 import type {
   MapStatus, MapZone, MapZoneDetail, MapGeometry, UserAnnotation,
-  GameMapExportStatus, GameMapExportResult, ZoneNPCLocation, ZoneSpawnPoint, ExternalMapStatus,
+  GameMapExportStatus, GameMapExportResult, ZoneNPCLocation, ZoneSpawnPoint, ExternalMapStatus, NPCLook,
 } from '../types/map'
 import type { BuffStatDelta, Spell, SpellCrossRefs, ShoppingRoute, ShoppingRouteOptions } from '../types/spell'
 import type { EmoteColumnsPatch, EmoteStatus, SpellEmote, SpellEmoteDiff } from '../types/emote'
@@ -809,6 +809,27 @@ export interface ItemAppearance {
   material: number
   color: number
   id_file: string
+}
+
+// NPCModelLook is how an NPC is drawn (db.NPCLook) and the zone whose
+// version of its model to prefer ("" for none).
+export interface NPCModelLook extends NPCLook {
+  zone: string
+}
+
+export function getNPCModelLook(id: number): Promise<NPCModelLook> {
+  return get<NPCModelLook>(`/api/models/npc/${id}`)
+}
+
+// Illusion is a race illusion spells turn their target into.
+export interface Illusion {
+  race: number
+  name: string
+  spells: string[]
+}
+
+export function getIllusions(): Promise<Illusion[]> {
+  return get<Illusion[]>('/api/models/illusions')
 }
 
 export function getItemAppearances(ids: number[]): Promise<ItemAppearance[]> {

@@ -59,6 +59,13 @@ var (
 // zone of NPCs uses a few dozen distinct models at most.
 const modelMeshCacheSize = 48
 
+// modelMeshCacheBytes and modelTextureCacheBytes bound what the model
+// caches hold in memory, whatever their counts.
+const (
+	modelMeshCacheBytes    = 48 << 20
+	modelTextureCacheBytes = 64 << 20
+)
+
 // modelTextureArchives is how many character archives' directories are
 // kept open for texture reads.
 const modelTextureArchives = 6
@@ -91,7 +98,9 @@ type modelsHandler struct {
 func newModelsHandler(cfg *config.Manager, database *db.DB, chars *character.Store, playerStore *players.Store) *modelsHandler {
 	h := &modelsHandler{cfg: cfg, db: database, chars: chars, players: playerStore}
 	h.meshes.size = modelMeshCacheSize
+	h.meshes.maxBytes = modelMeshCacheBytes
 	h.pngs.size = 512
+	h.pngs.maxBytes = modelTextureCacheBytes
 	if home, err := os.UserHomeDir(); err == nil {
 		h.indexPath = filepath.Join(home, ".pq-companion", "cache", "model-index.json")
 	}
@@ -668,6 +677,47 @@ func (h *modelsHandler) people(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		out = append(out, p)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// npcLookResponse is how an NPC is drawn, and the zone whose version of
+// its model to prefer.
+type npcLookResponse struct {
+	db.NPCLook
+	Zone string `json:"zone"`
+}
+
+// npc handles GET /api/models/npc/{id}: how NPC id is drawn (db.NPCLook),
+// for its page's model. 404 when there's no such NPC.
+func (h *modelsHandler) npc(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid npc id")
+		return
+	}
+	look, zone, ok, err := h.db.GetNPCLook(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusNotFound, "no such npc")
+		return
+	}
+	writeJSON(w, http.StatusOK, npcLookResponse{NPCLook: look, Zone: zone})
+}
+
+// illusions handles GET /api/models/illusions: the races illusion spells
+// turn their target into, for the dressing room.
+func (h *modelsHandler) illusions(w http.ResponseWriter, r *http.Request) {
+	out, err := h.db.Illusions()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if out == nil {
+		out = []db.Illusion{}
 	}
 	writeJSON(w, http.StatusOK, out)
 }

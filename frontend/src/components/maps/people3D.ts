@@ -7,6 +7,7 @@
 import * as THREE from 'three'
 import { buildCharacter, raceHeight } from '../../lib/characterModels'
 import type { DressedCharacter } from '../../lib/characterModels'
+import { npcDress } from '../../lib/characterDress'
 import type { Map3DPeople } from '../../hooks/useMap3DPrefs'
 import type { MarkerModel, RaiderMarker, SpawnDot } from './ZoneMap'
 
@@ -112,7 +113,7 @@ export function npcMarkers(dots: SpawnDot[], zone: string): RaiderMarker[] {
   for (const d of dots) {
     const l = d.look
     if (!l || d.down || d.id === undefined || l.race <= 0) continue
-    const player = raceHeight(l.race) !== null
+    const { dress, looks, player } = npcDress(l)
     const model: MarkerModel = { race: l.race, gender: l.gender, zone }
     if (l.size > 0) {
       if (player) model.height = l.size
@@ -120,19 +121,8 @@ export function npcMarkers(dots: SpawnDot[], zone: string): RaiderMarker[] {
     } else if (!player) {
       model.scale = 1
     }
-    const mats = player ? l.mats : [0, ...Array(6).fill(l.texture)]
-    const dressed = mats.some((m) => m > 0) || l.tints.some((t) => t > 0) || l.primary || l.secondary
-    if (dressed) {
-      model.dress = {
-        mats, tints: l.tints, primary: l.primary, secondary: l.secondary,
-      }
-    }
-    if (player) {
-      model.looks = {
-        face: l.face, hair: l.hair, hair_color: l.hair_color,
-        beard: l.beard, beard_color: l.beard_color, eyes: l.eyes,
-      }
-    }
+    if (dress) model.dress = dress
+    if (looks) model.looks = looks
     out.push({
       x: d.x, y: d.y, z: d.z, heading: d.heading ?? 0, color: d.color,
       label: `spawn:${d.id}`, model,

@@ -239,6 +239,8 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/items", modelsH.items)
 			r.Get("/wearables", modelsH.wearables)
 			r.Get("/people", modelsH.people)
+			r.Get("/npc/{id}", modelsH.npc)
+			r.Get("/illusions", modelsH.illusions)
 			r.Get("/appearance/{name}", modelsH.appearance)
 			r.Put("/appearance/{name}", modelsH.setAppearance)
 		})

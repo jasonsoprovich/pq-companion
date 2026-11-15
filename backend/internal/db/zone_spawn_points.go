@@ -1,6 +1,8 @@
 package db
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -102,20 +104,7 @@ func (db *DB) GetZoneSpawnPoints(shortName string) ([]ZoneSpawnPoint, error) {
 		       n.id, n.name, n.level, n.maxlevel, n.aggroradius,
 		       n.see_invis, n.see_invis_undead, n.bodytype, n.aggro_pc,
 		       e.chance * 100.0 / tot.t,
-		       n.race, n.gender, n.texture, n.helmtexture, n.size,
-		       n.chesttexture, n.armtexture, n.bracertexture, n.handtexture,
-		       n.legtexture, n.feettexture,
-		       n.armortint_red, n.armortint_green, n.armortint_blue,
-		       COALESCE(t.red1h, -1), COALESCE(t.grn1h, 0), COALESCE(t.blu1h, 0),
-		       COALESCE(t.red2c, 0), COALESCE(t.grn2c, 0), COALESCE(t.blu2c, 0),
-		       COALESCE(t.red3a, 0), COALESCE(t.grn3a, 0), COALESCE(t.blu3a, 0),
-		       COALESCE(t.red4b, 0), COALESCE(t.grn4b, 0), COALESCE(t.blu4b, 0),
-		       COALESCE(t.red5g, 0), COALESCE(t.grn5g, 0), COALESCE(t.blu5g, 0),
-		       COALESCE(t.red6l, 0), COALESCE(t.grn6l, 0), COALESCE(t.blu6l, 0),
-		       COALESCE(t.red7f, 0), COALESCE(t.grn7f, 0), COALESCE(t.blu7f, 0),
-		       n.d_melee_texture1, n.d_melee_texture2,
-		       n.face, n.luclin_hairstyle, n.luclin_haircolor, n.luclin_beard,
-		       n.luclin_beardcolor, n.luclin_eyecolor
+		       `+npcLookColumns+`
 		FROM pts p
 		JOIN ents e ON e.spawngroupID = p.spawngroupID
 		JOIN tot ON tot.spawngroupID = p.spawngroupID
@@ -136,27 +125,16 @@ func (db *DB) GetZoneSpawnPoints(shortName string) ([]ZoneSpawnPoint, error) {
 			x, y, z, heading  float64
 			n                 SpawnPointNPC
 			bodyType, aggroPC int
-			helm              int
-			slotTex           [6]int
-			tintRGB           [3]int
-			set               [21]int
-			melee1, melee2    int
+			lk                lookScan
 		)
 		l := &n.Look
-		if err := rows.Scan(&id, &x, &y, &z, &heading,
+		if err := rows.Scan(append([]any{&id, &x, &y, &z, &heading,
 			&n.NPCID, &n.Name, &n.Level, &n.MaxLevel, &n.AggroRadius,
-			&n.SeeInvis, &n.SeeInvisUndead, &bodyType, &aggroPC, &n.Pct,
-			&l.Race, &l.Gender, &l.Texture, &helm, &l.Size,
-			&slotTex[0], &slotTex[1], &slotTex[2], &slotTex[3], &slotTex[4], &slotTex[5],
-			&tintRGB[0], &tintRGB[1], &tintRGB[2],
-			&set[0], &set[1], &set[2], &set[3], &set[4], &set[5], &set[6],
-			&set[7], &set[8], &set[9], &set[10], &set[11], &set[12], &set[13],
-			&set[14], &set[15], &set[16], &set[17], &set[18], &set[19], &set[20],
-			&melee1, &melee2,
-			&l.Face, &l.Hair, &l.HairColor, &l.Beard, &l.BeardColor, &l.Eyes); err != nil {
+			&n.SeeInvis, &n.SeeInvisUndead, &bodyType, &aggroPC, &n.Pct},
+			lk.dest(l)...)...); err != nil {
 			return nil, fmt.Errorf("scan zone spawn point: %w", err)
 		}
-		dressNPC(l, helm, slotTex, tintRGB, set, melee1, melee2)
+		lk.dress(l)
 		races[l.Race] = true
 		if n.AggroRadius <= 0 {
 			n.AggroRadius = defaultAggroRadius
@@ -184,6 +162,80 @@ func (db *DB) GetZoneSpawnPoints(shortName string) ([]ZoneSpawnPoint, error) {
 		}
 	}
 	return out, nil
+}
+
+// npcLookColumns are the npc_types (n) and npc_types_tint (t) columns an
+// NPCLook is made from, scanned by lookScan. The query joins
+// npc_types_tint t ON t.id = n.armortint_id AND n.armortint_id > 0.
+const npcLookColumns = `n.race, n.gender, n.texture, n.helmtexture, n.size,
+		       n.chesttexture, n.armtexture, n.bracertexture, n.handtexture,
+		       n.legtexture, n.feettexture,
+		       n.armortint_red, n.armortint_green, n.armortint_blue,
+		       COALESCE(t.red1h, -1), COALESCE(t.grn1h, 0), COALESCE(t.blu1h, 0),
+		       COALESCE(t.red2c, 0), COALESCE(t.grn2c, 0), COALESCE(t.blu2c, 0),
+		       COALESCE(t.red3a, 0), COALESCE(t.grn3a, 0), COALESCE(t.blu3a, 0),
+		       COALESCE(t.red4b, 0), COALESCE(t.grn4b, 0), COALESCE(t.blu4b, 0),
+		       COALESCE(t.red5g, 0), COALESCE(t.grn5g, 0), COALESCE(t.blu5g, 0),
+		       COALESCE(t.red6l, 0), COALESCE(t.grn6l, 0), COALESCE(t.blu6l, 0),
+		       COALESCE(t.red7f, 0), COALESCE(t.grn7f, 0), COALESCE(t.blu7f, 0),
+		       n.d_melee_texture1, n.d_melee_texture2,
+		       n.face, n.luclin_hairstyle, n.luclin_haircolor, n.luclin_beard,
+		       n.luclin_beardcolor, n.luclin_eyecolor`
+
+// lookScan receives npcLookColumns.
+type lookScan struct {
+	helm           int
+	slotTex        [6]int
+	tintRGB        [3]int
+	set            [21]int
+	melee1, melee2 int
+}
+
+// dest is where npcLookColumns scan to, l's fields among them.
+func (k *lookScan) dest(l *NPCLook) []any {
+	out := []any{&l.Race, &l.Gender, &l.Texture, &k.helm, &l.Size}
+	for i := range k.slotTex {
+		out = append(out, &k.slotTex[i])
+	}
+	for i := range k.tintRGB {
+		out = append(out, &k.tintRGB[i])
+	}
+	for i := range k.set {
+		out = append(out, &k.set[i])
+	}
+	return append(out, &k.melee1, &k.melee2,
+		&l.Face, &l.Hair, &l.HairColor, &l.Beard, &l.BeardColor, &l.Eyes)
+}
+
+// dress finishes l from what was scanned (see dressNPC).
+func (k *lookScan) dress(l *NPCLook) {
+	dressNPC(l, k.helm, k.slotTex, k.tintRGB, k.set, k.melee1, k.melee2)
+}
+
+// GetNPCLook returns how NPC id is drawn, with the zone its id places it
+// in (Quarm numbers NPCs zoneidnumber*1000+n), "" when none. ok is false
+// when there's no such NPC.
+func (db *DB) GetNPCLook(id int) (look NPCLook, zone string, ok bool, err error) {
+	var lk lookScan
+	err = db.QueryRow(`
+		SELECT `+npcLookColumns+`, COALESCE(z.short_name, '')
+		FROM npc_types n
+		LEFT JOIN npc_types_tint t ON t.id = n.armortint_id AND n.armortint_id > 0
+		LEFT JOIN zone z ON z.zoneidnumber = n.id / 1000
+		WHERE n.id = ?`, id).Scan(append(lk.dest(&look), &zone)...)
+	if errors.Is(err, sql.ErrNoRows) {
+		return NPCLook{}, "", false, nil
+	}
+	if err != nil {
+		return NPCLook{}, "", false, fmt.Errorf("get npc look %d: %w", id, err)
+	}
+	lk.dress(&look)
+	base, err := db.raceBaseSizes(map[int]bool{look.Race: true})
+	if err != nil {
+		return NPCLook{}, "", false, err
+	}
+	look.BaseSize = base[look.Race]
+	return look, zone, true, nil
 }
 
 // noTexture is the texture an NPC's slots take for "none" (the client's
