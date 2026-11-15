@@ -120,8 +120,10 @@ func materialCandidates(mat int, code, part string, who Wearer) (mats []int, gue
 
 // DressTextures works out the texture swaps that dress a model, given the
 // textures it was loaded with (from its archive), the material in each
-// slot, and has, which reports whether an archive holds a file. Heads
-// aren't retextured: their textures are faces, and helms are meshes.
+// slot, and has, which reports whether an archive holds a file. A player
+// model's head isn't retextured (its textures are faces, and helms are
+// meshes); any other model's head takes its material like the rest (a
+// Greater Wolf's head is wolhe03).
 func DressTextures(archive string, who Wearer, textures []string, mats [MaterialSlots]int, has func(archive, name string) bool) OutfitResult {
 	var res OutfitResult
 	missing := map[int]bool{}
@@ -152,7 +154,7 @@ func DressTextures(archive string, who Wearer, textures []string, mats [Material
 		}
 		code, part, variant, ext := m[1], m[2], m[4], m[5]
 		slot := slotParts[part]
-		if slot == SlotHead {
+		if slot == SlotHead && isPlayerModel(code) {
 			continue
 		}
 		mat := mats[slot]
@@ -186,6 +188,12 @@ func DressTextures(archive string, who Wearer, textures []string, mats [Material
 		}
 	}
 	return res
+}
+
+// isPlayerModel reports whether a model code ("hum", "elf") is a player
+// race's: its race letters, then m or f ("ele", the elemental, isn't).
+func isPlayerModel(code string) bool {
+	return len(code) == 3 && modelRace(code) > 0 && (code[2] == 'm' || code[2] == 'f' || code[2] == 'M' || code[2] == 'F')
 }
 
 // findPartTexture looks for one body part texture: in the model's archive,

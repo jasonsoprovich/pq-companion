@@ -196,13 +196,13 @@ export default function ModelViewer({ model, item, dress, onDressed, className }
         // Models face world +y (raw +x after the map-space swap and the y
         // flip), so the camera starts in front, a little to the side, back
         // far enough to fit the model's whole box in view: its height, or
-        // its width on a narrow viewer, plus half its depth for the parts
-        // reaching toward the camera (a hunched werewolf).
+        // its width (with a little of its length, seen from the side) on a
+        // narrow viewer, plus half its length for the parts reaching
+        // toward the camera (a hunched werewolf, a wolf's snout).
         const size = new THREE.Box3().setFromObject(c.object).getSize(new THREE.Vector3())
-        const spread = Math.max(size.x, size.y)
-        const fit = Math.max(size.z, spread / s.camera.aspect)
+        const fit = Math.max(size.z, (size.x + size.y * 0.25) / s.camera.aspect)
         const half = THREE.MathUtils.degToRad(s.camera.fov) / 2
-        const d = 1.3 * (fit / 2 / Math.tan(half) + spread / 2)
+        const d = 1.3 * (fit / 2 / Math.tan(half) + size.y / 2)
         s.camera.near = Math.max(0.05, d / 1000)
         s.camera.far = d * 20
         s.camera.updateProjectionMatrix()

@@ -15,6 +15,8 @@ func TestDressTextures(t *testing.T) {
 		"global17_amr.s3d|humua1701.bmp":  true,
 		"globalhum_chr.s3d|humch0201.dds": true,
 		"globalhum_chr.s3d|humlg0301.dds": true,
+		"global6_chr.s3d|wolhe0301.dds":   true,
+		"global6_chr.s3d|wolch0301.dds":   true,
 	}
 	has := func(a, n string) bool { return files[a+"|"+n] }
 	old := []string{"humch0001.bmp", "humch0002.bmp", "humlg0001.bmp", "humua0001.bmp", "humhe0001.bmp", "humft0001.bmp"}
@@ -42,6 +44,15 @@ func TestDressTextures(t *testing.T) {
 		{
 			name: "nothing worn", archive: "global_chr.s3d", textures: old,
 			want: OutfitResult{},
+		},
+		{
+			// Another race's head is part of its texture set.
+			name: "wolf head", archive: "global6_chr.s3d", textures: []string{"wolhe0001.dds", "wolch0001.dds"},
+			mats: [MaterialSlots]int{SlotHead: 3, SlotChest: 3},
+			want: OutfitResult{Swaps: []TextureSwap{
+				{From: "wolhe0001.dds", Archive: "global6_chr.s3d", Name: "wolhe0301.dds", Slot: SlotHead},
+				{From: "wolch0001.dds", Archive: "global6_chr.s3d", Name: "wolch0301.dds", Slot: SlotChest},
+			}},
 		},
 		{
 			name: "no texture for the material", archive: "global_chr.s3d", textures: old,

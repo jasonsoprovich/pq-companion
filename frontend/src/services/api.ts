@@ -821,9 +821,14 @@ export function getNPCModelLook(id: number): Promise<NPCModelLook> {
   return get<NPCModelLook>(`/api/models/npc/${id}`)
 }
 
-// Illusion is a race illusion spells turn their target into.
+// Illusion is a look illusion spells give their target: a race in a
+// texture set (an elemental's earth, fire, water or air), and the gender
+// it's shown as (-1 for the target's own, on the player races; else 0
+// male, 1 female, 2 neutral).
 export interface Illusion {
   race: number
+  texture: number
+  gender: number
   name: string
   spells: string[]
 }

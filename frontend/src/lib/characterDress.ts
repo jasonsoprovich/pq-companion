@@ -146,7 +146,9 @@ export function isHeldModel(idfile: string | undefined): boolean {
  */
 export function npcDress(l: NPCLook): { dress: ModelDress | null; looks?: ModelLooks; player: boolean } {
   const player = isPlayerRace(l.race)
-  const mats = player ? l.mats : [0, ...Array(6).fill(l.texture)]
+  // Another race wears its texture set, with its own head texture
+  // (helmtexture, which the server keeps apart).
+  const mats = player ? l.mats : [l.mats[0] ?? 0, ...Array(6).fill(l.texture)]
   const dressed = mats.some((m) => m > 0) || l.tints.some((t) => t > 0) || !!l.primary || !!l.secondary
   const looks = player
     ? {

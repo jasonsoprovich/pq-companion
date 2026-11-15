@@ -42,11 +42,23 @@ const SLOTS = DRESS_SLOTS
 type TryOns = Record<string, ItemAppearance | null>
 
 // Preview is another race shown in the character's gear, with its own
-// gender and looks, kept only while it's shown.
+// gender and looks, kept only while it's shown. texture is the race's
+// texture set (an elemental's earth, fire, water or air); name is the
+// illusion it shows, if it's one.
 interface Preview {
   race: number
+  texture: number
   gender: number
   looks: ModelLooks
+  name?: string
+}
+
+// The race picker's values: a race ("r6"), or an illusion by its place
+// in the list ("i3").
+function pickValue(p: Preview | null, ownRace: number, illusions: Illusion[]): string {
+  if (!p) return `r${ownRace}`
+  const i = p.name ? illusions.findIndex((il) => il.name === p.name) : -1
+  return i >= 0 ? `i${i}` : `r${p.race}`
 }
 
 export default function DressingRoomPage(): React.ReactElement {
@@ -140,17 +152,36 @@ export default function DressingRoomPage(): React.ReactElement {
   const shownLooks = preview?.looks ?? looks
   const player = isPlayerRace(race)
 
-  // Other races than the player ones keep their own skin: only what's in
-  // their hands carries over, as with an illusion in game.
+  // Other races than the player ones keep their own skin, in the
+  // illusion's texture set: only what's in their hands carries over, as
+  // with an illusion in game.
+  const texture = preview?.texture ?? 0
   const dress = useMemo((): ModelDress => {
     const d = dressFor(worn, character?.class === MONK_CLASS)
-    if (!player) return { mats: [0, 0, 0, 0, 0, 0, 0], tints: [0, 0, 0, 0, 0, 0, 0], primary: d.primary, secondary: d.secondary, shield: d.shield }
+    if (!player) {
+      return {
+        // The head too: the server gives an illusion's head its texture.
+        mats: Array(7).fill(texture), tints: [0, 0, 0, 0, 0, 0, 0],
+        primary: d.primary, secondary: d.secondary, shield: d.shield,
+      }
+    }
     return { ...d, looks: shownLooks }
-  }, [worn, character?.class, shownLooks, player])
+  }, [worn, character?.class, shownLooks, player, texture])
 
-  const pickRace = (r: number): void => {
-    if (r === ownRace) setPreview(null)
-    else setPreview({ race: r, gender: shownGender, looks: DEFAULT_LOOKS })
+  const pick = (value: string): void => {
+    const n = Number(value.slice(1))
+    if (value[0] === 'i') {
+      const il = illusions[n]
+      if (!il) return
+      setPreview({
+        race: il.race, texture: il.texture, gender: il.gender >= 0 ? il.gender : shownGender,
+        looks: DEFAULT_LOOKS, name: il.name,
+      })
+    } else if (n === ownRace) {
+      setPreview(null)
+    } else {
+      setPreview({ race: n, texture: 0, gender: shownGender, looks: DEFAULT_LOOKS })
+    }
   }
   const tried = Object.keys(tryOns).length
 
@@ -171,7 +202,7 @@ export default function DressingRoomPage(): React.ReactElement {
                 {preview && (
                   <>
                     {' · previewing '}
-                    <span style={{ color: 'var(--color-warning, #f59e0b)' }}>{raceName(preview.race, illusions)}</span>
+                    <span style={{ color: 'var(--color-warning, #f59e0b)' }}>{preview.name ?? charRaceLabel(preview.race)}</span>
                     {' '}
                     <button
                       type="button"
@@ -187,32 +218,36 @@ export default function DressingRoomPage(): React.ReactElement {
             </div>
             {ownRace > 0 && (
               <select
-                value={race}
-                onChange={(e) => pickRace(Number(e.target.value))}
+                value={pickValue(preview, ownRace, illusions)}
+                onChange={(e) => pick(e.target.value)}
                 className="rounded px-2 py-1 text-[11px]"
                 style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-foreground)' }}
                 title="Preview another race in this gear: a race change, or an illusion"
               >
-                <option value={ownRace}>{charRaceLabel(ownRace)} (yours)</option>
+                <option value={`r${ownRace}`}>{charRaceLabel(ownRace)} (yours)</option>
                 <optgroup label="Races">
                   {PLAYER_RACES.filter((r) => r !== ownRace).map((r) => (
-                    <option key={r} value={r}>{charRaceLabel(r)}</option>
+                    <option key={r} value={`r${r}`}>{charRaceLabel(r)}</option>
                   ))}
                 </optgroup>
                 {illusions.some((il) => !isPlayerRace(il.race)) && (
                   <optgroup label="Illusions">
-                    {illusions.filter((il) => !isPlayerRace(il.race)).map((il) => (
-                      <option key={il.race} value={il.race} title={il.spells.join(', ')}>{il.name}</option>
+                    {illusions.map((il, i) => !isPlayerRace(il.race) && (
+                      <option key={il.name} value={`i${i}`} title={il.spells.join(', ')}>{il.name}</option>
                     ))}
                   </optgroup>
                 )}
               </select>
             )}
-            <Toggle
-              options={[{ value: 0, label: 'Male' }, { value: 1, label: 'Female' }]}
-              value={shownGender}
-              onChange={(g) => change({ gender: g })}
-            />
+            {/* An illusion into another race takes the gender the game
+                gives it (neutral, or the spell's), not a pick. */}
+            {player && (
+              <Toggle
+                options={[{ value: 0, label: 'Male' }, { value: 1, label: 'Female' }]}
+                value={shownGender}
+                onChange={(g) => change({ gender: g })}
+              />
+            )}
             <Toggle
               options={[{ value: 0, label: 'Original' }, { value: 1, label: 'Luclin' }]}
               value={luclin ? 1 : 0}
@@ -323,12 +358,6 @@ export default function DressingRoomPage(): React.ReactElement {
       </div>
     </div>
   )
-}
-
-// raceName names a race: a player race, or an illusion's.
-function raceName(race: number, illusions: Illusion[]): string {
-  if (isPlayerRace(race)) return charRaceLabel(race)
-  return illusions.find((il) => il.race === race)?.name ?? `Race ${race}`
 }
 
 function Toggle({ options, value, onChange }: {
