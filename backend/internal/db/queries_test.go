@@ -321,6 +321,30 @@ func TestGetNPCVariantsByNameInZone_ExcludesInvisibleManDecoy(t *testing.T) {
 	}
 }
 
+// A race=127 row with a targetable bodytype is a real mob drawn invisible,
+// not a decoy: "a conjured automoton" in the Tower of Solusek Ro (summoned
+// bodytype) showed as "No NPC database record" while the decoy filter
+// dropped every race=127 row. It must come back, in its zone and by name.
+func TestGetNPCVariantsByNameInZone_KeepsTargetableInvisibleMan(t *testing.T) {
+	d := openTestDB(t)
+	for _, zone := range []string{"solrotower", ""} {
+		variants, err := d.GetNPCVariantsByNameInZone("a_conjured_automoton", zone)
+		if err != nil {
+			t.Fatalf("GetNPCVariantsByNameInZone(zone %q): %v", zone, err)
+		}
+		if len(variants) != 1 || variants[0].NPC.ID != 212060 {
+			t.Errorf("zone %q: got %d variants, want npc 212060", zone, len(variants))
+		}
+	}
+	res, err := d.SearchNPCs("conjured automoton", 10, 0, false)
+	if err != nil {
+		t.Fatalf("SearchNPCs: %v", err)
+	}
+	if res.Total == 0 {
+		t.Error("SearchNPCs didn't find a conjured automoton")
+	}
+}
+
 // Empty result is not an error — the caller treats it like "no DB record",
 // the same as GetNPCByName returning sql.ErrNoRows today.
 func TestGetNPCVariantsByNameInZone_NoMatch(t *testing.T) {
