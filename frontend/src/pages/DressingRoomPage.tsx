@@ -47,6 +47,8 @@ const SLOTS: SlotDef[] = [
 ]
 
 const SHIELD_ITEM_TYPE = 8
+// The app's 0-based class index for Monk.
+const MONK_CLASS = 6
 
 // Try-ons per slot: an item, or null for nothing; a slot not in the map
 // shows what's equipped.
@@ -148,8 +150,9 @@ export default function DressingRoomPage(): React.ReactElement {
       primary: heldModel(worn('Primary')),
       secondary: heldModel(secondary),
       shield: secondary?.item_type === SHIELD_ITEM_TYPE,
+      monk: character?.class === MONK_CLASS,
     }
-  }, [worn])
+  }, [worn, character?.class])
 
   const race = character?.race ?? -1
   const tried = Object.keys(tryOns).length
@@ -316,7 +319,7 @@ function DressNotes({ info, luclin, headWorn }: {
     notes.push(`Your client has no texture for this model's ${names(info.missing)}, so they're shown bare.`)
   }
   if (info?.fallback.length) {
-    notes.push(`Luclin models have no plate chest in this client; chain stands in.`)
+    notes.push('Your client has no Luclin plate chest texture; chain stands in until we know what the game shows.')
   }
   if (info?.missingItems.length) {
     notes.push(`No model in your client for the ${info.missingItems.join(' and ')} item.`)

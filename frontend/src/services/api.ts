@@ -691,10 +691,16 @@ export interface ModelOutfit {
 }
 
 // getModelOutfit asks how a player model looks wearing mats, one material
-// per slot: head, chest, arms, wrist, hands, legs, feet.
-export async function getModelOutfit(ref: CharacterModelRef, mats: number[]): Promise<ModelOutfit> {
+// per slot: head, chest, arms, wrist, hands, legs, feet. monk matters
+// because only monks show the monk armor material.
+export async function getModelOutfit(
+  ref: CharacterModelRef,
+  mats: number[],
+  monk = false,
+): Promise<ModelOutfit> {
+  const m = monk ? '&monk=1' : ''
   return get<ModelOutfit>(
-    `/api/models/outfit/${encodeURIComponent(ref.archive)}/${encodeURIComponent(ref.code)}?mats=${mats.join(',')}`,
+    `/api/models/outfit/${encodeURIComponent(ref.archive)}/${encodeURIComponent(ref.code)}?mats=${mats.join(',')}${m}`,
   )
 }
 

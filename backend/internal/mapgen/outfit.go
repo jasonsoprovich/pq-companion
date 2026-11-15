@@ -48,10 +48,15 @@ var robeTextureRe = regexp.MustCompile(`^clk([0-9]{2})([0-9]{2})\.(bmp|dds)$`)
 func IsRobe(material int) bool { return material >= 10 && material <= 16 }
 
 // OriginalHelm picks the original models' helm mesh for a head material:
-// leather, chain and plate have their own; anything else is bare-headed.
-func OriginalHelm(material int) int {
-	if material >= 1 && material <= 3 {
-		return material
+// leather, chain and plate have their own, and other materials show as
+// one of them by the client's remaps (materialCandidates); anything else
+// is bare-headed.
+func OriginalHelm(material int, code string, who Wearer) int {
+	mats, _ := materialCandidates(material, strings.ToLower(code), "he", who)
+	for _, m := range mats {
+		if m >= 1 && m <= 3 {
+			return m
+		}
 	}
 	return 0
 }
@@ -63,7 +68,8 @@ type TextureSwap struct {
 	Name    string `json:"name"`
 	Slot    int    `json:"slot"`
 	// Fallback is set when the client has no texture for the material on
-	// this model and a near one stands in.
+	// this model and we pick a near one (the client's own remaps, such as
+	// Velious sets to plate, aren't fallbacks).
 	Fallback bool `json:"fallback,omitempty"`
 }
 
@@ -75,11 +81,56 @@ type OutfitResult struct {
 	Missing []int         `json:"missing"`
 }
 
+// Wearer is who a model is dressed for, as far as the client's material
+// rules care.
+type Wearer struct {
+	// Luclin is set for a Luclin-era model.
+	Luclin bool
+	// Monk: only monks show material 4 (the monk set); others get leather.
+	Monk bool
+}
+
+// materialCandidates is the materials the client tries for one, in order
+// (eqgame.exe's armor material setter, 0x4a1eb7): 4 is monk-only and
+// shows as leather on anyone else; 7 (scale) shows as chain, or plate on
+// an Iksar; the Velious sets fall back to leather, chain and plate when
+// their textures aren't there. guess marks a stand-in of ours, not the
+// client's: the TAKP Luclin models have no plate chest.
+func materialCandidates(mat int, code, part string, who Wearer) (mats []int, guess []bool) {
+	switch {
+	case mat == 4 && !who.Monk:
+		mat = 1
+	case mat == 7:
+		mat = 2
+		if strings.HasPrefix(code, "ik") {
+			mat = 3
+		}
+	}
+	mats, guess = []int{mat}, []bool{false}
+	if mat >= 17 && mat <= 23 {
+		base := []int{1, 2, 3, 1, 2, 3, 1}[mat-17]
+		if mat == 23 && who.Monk {
+			base = 4
+		}
+		mats, guess = append(mats, base), append(guess, false)
+	}
+	if who.Luclin && part == "ch" {
+		for i, m := range mats {
+			if m == 3 {
+				mats = append(mats[:i+1:i+1], append([]int{2}, mats[i+1:]...)...)
+				guess = append(guess[:i+1:i+1], append([]bool{true}, guess[i+1:]...)...)
+				break
+			}
+		}
+	}
+	return mats, guess
+}
+
 // DressTextures works out the texture swaps that dress a model, given the
 // textures it was loaded with (from its archive), the material in each
 // slot, and has, which reports whether an archive holds a file. Heads
 // aren't retextured: their textures are faces, and helms are meshes.
-func DressTextures(archive string, luclin bool, textures []string, mats [MaterialSlots]int, has func(archive, name string) bool) OutfitResult {
+func DressTextures(archive string, who Wearer, textures []string, mats [MaterialSlots]int, has func(archive, name string) bool) OutfitResult {
 	var res OutfitResult
 	missing := map[int]bool{}
 	done := map[string]bool{}
@@ -122,16 +173,17 @@ func DressTextures(archive string, luclin bool, textures []string, mats [Materia
 				continue
 			}
 		}
-		candidates := []int{mat}
-		if luclin && slot == SlotChest && mat == 3 {
-			// The Luclin models in the TAKP client have plate for every
-			// part but the chest; chain is the nearest look.
-			candidates = append(candidates, 2)
-		}
+		candidates, guess := materialCandidates(mat, code, part, who)
 		found := false
 		for i, c := range candidates {
+			if cur != "sk" {
+				if n, _ := strconv.Atoi(cur); n == c {
+					found = true // already wearing what it shows as
+					break
+				}
+			}
 			if a, name, ok := findPartTexture(archive, code, part, c, variant, ext, has); ok {
-				res.Swaps = append(res.Swaps, TextureSwap{From: tex, Archive: a, Name: name, Slot: slot, Fallback: i > 0})
+				res.Swaps = append(res.Swaps, TextureSwap{From: tex, Archive: a, Name: name, Slot: slot, Fallback: guess[i]})
 				found = true
 				break
 			}

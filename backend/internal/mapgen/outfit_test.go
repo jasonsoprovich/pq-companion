@@ -10,6 +10,7 @@ func TestDressTextures(t *testing.T) {
 		"global_chr.s3d|humch0301.bmp":    true,
 		"global_chr.s3d|humch0302.bmp":    true,
 		"global_chr.s3d|humlg0101.bmp":    true,
+		"global_chr.s3d|humua0301.bmp":    true,
 		"global_chr.s3d|clk0601.bmp":      true,
 		"global17_amr.s3d|humua1701.bmp":  true,
 		"globalhum_chr.s3d|humch0201.dds": true,
@@ -23,7 +24,7 @@ func TestDressTextures(t *testing.T) {
 	cases := []struct {
 		name     string
 		archive  string
-		luclin   bool
+		who      Wearer
 		textures []string
 		mats     [MaterialSlots]int
 		want     OutfitResult
@@ -44,8 +45,18 @@ func TestDressTextures(t *testing.T) {
 		},
 		{
 			name: "no texture for the material", archive: "global_chr.s3d", textures: old,
-			mats: [MaterialSlots]int{SlotFeet: 7},
+			mats: [MaterialSlots]int{SlotFeet: 9},
 			want: OutfitResult{Missing: []int{SlotFeet}},
+		},
+		{
+			// The client's remaps: monk armor is leather on others, scale
+			// is chain, a Velious set without its textures is plate.
+			name: "client remaps", archive: "global_chr.s3d", textures: old,
+			mats: [MaterialSlots]int{SlotLegs: 4, SlotChest: 7, SlotArms: 19},
+			want: OutfitResult{Swaps: []TextureSwap{
+				{From: "humlg0001.bmp", Archive: "global_chr.s3d", Name: "humlg0101.bmp", Slot: SlotLegs},
+				{From: "humua0001.bmp", Archive: "global_chr.s3d", Name: "humua0301.bmp", Slot: SlotArms},
+			}, Missing: []int{SlotChest}},
 		},
 		{
 			name: "robe", archive: "global_chr.s3d", textures: robe,
@@ -55,7 +66,7 @@ func TestDressTextures(t *testing.T) {
 			}},
 		},
 		{
-			name: "luclin plate: chain chest stands in", archive: "globalhum_chr.s3d", luclin: true, textures: luclin,
+			name: "luclin plate: chain chest stands in", archive: "globalhum_chr.s3d", who: Wearer{Luclin: true}, textures: luclin,
 			mats: [MaterialSlots]int{SlotChest: 3, SlotLegs: 3},
 			want: OutfitResult{Swaps: []TextureSwap{
 				{From: "humchsk01.dds", Archive: "globalhum_chr.s3d", Name: "humch0201.dds", Slot: SlotChest, Fallback: true},
@@ -65,7 +76,7 @@ func TestDressTextures(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := DressTextures(c.archive, c.luclin, c.textures, c.mats, has)
+			got := DressTextures(c.archive, c.who, c.textures, c.mats, has)
 			if !reflect.DeepEqual(got, c.want) {
 				t.Errorf("got %+v\nwant %+v", got, c.want)
 			}

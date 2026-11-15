@@ -28,6 +28,8 @@ export interface ModelDress {
   /** Model of the secondary hand's item; shield goes on the arm. */
   secondary?: string
   shield?: boolean
+  /** Only monks show the monk armor material (4). */
+  monk?: boolean
 }
 
 /** DressInfo reports how a dressing went, for the page to explain. */
@@ -154,7 +156,7 @@ export default function ModelViewer({ model, dress, onDressed, className }: {
       let asset: CharacterModelAsset = base
       let outfit: ModelOutfit | null = null
       if (parsed) {
-        outfit = await getModelOutfit(base.ref, parsed.mats)
+        outfit = await getModelOutfit(base.ref, parsed.mats, parsed.monk)
         asset = (await loadModelVariant(base.ref, { helm: outfit.helm, robe: outfit.robe })) ?? base
       }
       const held: { which: 'primary' | 'secondary'; item: CharacterModelAsset | null }[] = []

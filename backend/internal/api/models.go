@@ -263,9 +263,10 @@ type outfitResponse struct {
 	mapgen.OutfitResult
 }
 
-// outfit handles GET /api/models/outfit/{archive}/{code}?mats=h,c,a,w,g,l,f:
+// outfit handles GET /api/models/outfit/{archive}/{code}?mats=h,c,a,w,g,l,f[&monk=1]:
 // how a player model looks wearing those materials (head, chest, arms,
-// wrist, hands, legs, feet; 0 for nothing).
+// wrist, hands, legs, feet; 0 for nothing). monk matters because only
+// monks show the monk armor material.
 func (h *modelsHandler) outfit(w http.ResponseWriter, r *http.Request) {
 	archive := strings.ToLower(chi.URLParam(r, "archive"))
 	code := strings.ToUpper(chi.URLParam(r, "code"))
@@ -296,9 +297,13 @@ func (h *modelsHandler) outfit(w http.ResponseWriter, r *http.Request) {
 	// Only the original models swap meshes; a Luclin model is its race's
 	// own archive (globalhum_chr.s3d).
 	luclin := archive == "global"+strings.ToLower(code)+"_chr.s3d"
+	who := mapgen.Wearer{Luclin: luclin, Monk: r.URL.Query().Get("monk") == "1"}
 	var opts mapgen.ModelOptions
 	if !luclin {
-		opts = mapgen.ModelOptions{Helm: mapgen.OriginalHelm(mats[mapgen.SlotHead]), Robe: mapgen.IsRobe(mats[mapgen.SlotChest])}
+		opts = mapgen.ModelOptions{
+			Helm: mapgen.OriginalHelm(mats[mapgen.SlotHead], code, who),
+			Robe: mapgen.IsRobe(mats[mapgen.SlotChest]),
+		}
 	}
 	p, err := h.posedModel(eqPath, archive, code, opts)
 	if err != nil {
@@ -314,7 +319,7 @@ func (h *modelsHandler) outfit(w http.ResponseWriter, r *http.Request) {
 		arc, err := h.archive(eqPath, a)
 		return err == nil && arc.Has(name)
 	}
-	res := mapgen.DressTextures(archive, luclin, textures, mats, has)
+	res := mapgen.DressTextures(archive, who, textures, mats, has)
 	h.texMu.Unlock()
 	if res.Swaps == nil {
 		res.Swaps = []mapgen.TextureSwap{}
