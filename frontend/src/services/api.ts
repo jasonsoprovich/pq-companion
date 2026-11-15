@@ -2175,19 +2175,19 @@ export function clearDeaths(): Promise<void> {
   return del('/api/combat/deaths')
 }
 
-type RaidSession = import('../types/raidReplay').RaidSession
-type RaidRecording = import('../types/raidReplay').RaidRecording
+type RaidNight = import('../types/raidReplay').RaidNight
+type RaidNightData = import('../types/raidReplay').RaidNightData
 
-export function listRaidSessions(): Promise<RaidSession[]> {
-  return get<RaidSession[]>('/api/raidreplay/sessions')
+export function listRaidNights(): Promise<RaidNight[]> {
+  return get<RaidNight[]>('/api/raidreplay/nights')
 }
 
-export function getRaidRecording(id: number): Promise<RaidRecording> {
-  return get<RaidRecording>(`/api/raidreplay/sessions/${id}`)
+export function getRaidNight(id: number): Promise<RaidNightData> {
+  return get<RaidNightData>(`/api/raidreplay/nights/${id}`)
 }
 
-export function deleteRaidSession(id: number): Promise<void> {
-  return del(`/api/raidreplay/sessions/${id}`)
+export function deleteRaidNight(id: number): Promise<void> {
+  return del(`/api/raidreplay/nights/${id}`)
 }
 
 export function getTimerState(): Promise<TimerState> {

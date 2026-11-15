@@ -1,33 +1,38 @@
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Activity, Crosshair, Film, Flame, Gem, HeartPulse, Megaphone, MessageSquare, Pause, Play, Skull,
-  Sparkles, Sunrise, Swords, Trash2, Zap,
+  Activity, Crosshair, Film, Flame, Gem, HeartPulse, LogIn, LogOut, Megaphone, MessageSquare, Pause,
+  Play, Skull, SkipForward, Sparkles, Sunrise, Swords, Trash2, UserMinus, UserPlus, Zap,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { ZoneMapPanel } from '../components/maps/ZoneMapPanel'
+import { NightSummary } from '../components/raidReplay/NightSummary'
 import type { RaiderMarker, ReplayTarget } from '../components/maps/ZoneMap'
 import { useCachedState } from '../hooks/useCachedState'
 import { useStoredState } from '../hooks/useStoredState'
 import { useDPSClassColors } from '../hooks/useDPSClassColors'
 import { classColor } from '../lib/raidColors'
 import {
-  deleteRaidSession,
+  deleteRaidNight,
   getConfig,
-  getRaidRecording,
-  listRaidSessions,
+  getRaidNight,
+  listRaidNights,
   saveConfigChanges,
 } from '../services/api'
 import {
-  EVENT_GROUPS, RETENTION_CHOICES, groupsAt, lastSeenAt, lowHPEvents, raidersAt, recentDeaths, recentKills,
-  targetAt,
+  EVENT_GROUPS, RETENTION_CHOICES, buildSegments, groupsAt, lastSeenAt, lowHPEvents, raidersAt, recentDeaths,
+  recentKills, segmentAt, skipGap, targetAt,
 } from '../lib/raidReplay'
+import type { Segment } from '../lib/raidReplay'
 import type { Config } from '../types/config'
-import type { RaidEvent, RaidEventKind, RaidRecording, RaidSession } from '../types/raidReplay'
+import type { RaidEvent, RaidEventKind, RaidNight, RaidNightData, RaidRecording } from '../types/raidReplay'
 
 // RaidReplayPage plays back raids recorded from Zeal's raid frames (backend
-// package raidtrack) on the zone map: a session list, the map with every
-// raider at the playhead (and a line to the recorder's target), a scrubber
-// with the night's kills, deaths and CH chain calls, and the raid's groups.
+// package raidtrack) on the zone map. Recordings are grouped into raid
+// nights (raidtrack/night.go): a night's zones play back to back on one
+// timeline, skipping the gaps when the recorder was out of the raid's zone.
+// Beside the map: every raider at the playhead (and a line to the
+// recorder's target), a scrubber with the night's events, the raid's
+// groups, and a Summary view with each raider's night.
 
 // three.js is large; it loads only when the 3D view is opened.
 const ZoneMap3D = lazy(() => import('../components/maps/ZoneMap3D'))
@@ -43,8 +48,19 @@ function fmtDuration(ms: number): string {
   return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`
 }
 
-function sessionDate(s: RaidSession): string {
-  return new Date(s.started_at).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
+function nightDate(startedAt: string): string {
+  return new Date(startedAt).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
+}
+
+// zoneTrail is a night's zones in order, repeats in a row merged
+// ("Sebilis → Trakanon's Lair").
+function zoneTrail(n: RaidNight): string {
+  const names: string[] = []
+  for (const s of n.sessions) {
+    const name = s.zone_name || s.zone
+    if (names[names.length - 1] !== name) names.push(name)
+  }
+  return names.join(' → ')
 }
 
 function RecordingSettings(): React.ReactElement {
@@ -105,14 +121,14 @@ function RaiderRow({ name, color, focused, onFocus, right, compact }: {
   )
 }
 
-function SessionRow({ s, selected, onSelect, onDelete }: {
-  s: RaidSession
+function NightRow({ n, selected, onSelect, onDelete }: {
+  n: RaidNight
   selected: boolean
   onSelect: () => void
   onDelete: () => void
 }): React.ReactElement {
-  const start = Date.parse(s.started_at)
-  const end = Date.parse(s.ended_at)
+  const start = Date.parse(n.started_at)
+  const end = Date.parse(n.ended_at)
   return (
     <div
       className="group flex cursor-pointer items-start gap-2 px-3 py-2 text-left"
@@ -123,19 +139,19 @@ function SessionRow({ s, selected, onSelect, onDelete }: {
       onClick={onSelect}
     >
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm" style={{ color: selected ? 'var(--color-primary)' : 'var(--color-foreground)' }}>
-          {s.zone_name || s.zone}
+        <div className="text-sm" style={{ color: selected ? 'var(--color-primary)' : 'var(--color-foreground)' }}>
+          {zoneTrail(n)}
         </div>
         <div className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
-          {sessionDate(s)} · {fmtClock(start).slice(0, 5)} · {fmtDuration(end - start)}
+          {nightDate(n.started_at)} · {fmtClock(start).slice(0, 5)} · {fmtDuration(end - start)}
         </div>
         <div className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
-          {s.peak_members} raiders · {s.kills} kills · {s.deaths} deaths · {s.character}
+          {n.peak_members} raiders · {n.kills} kills · {n.deaths} deaths · {n.character}
         </div>
       </div>
       <button
         className="opacity-0 transition-opacity group-hover:opacity-100"
-        title="Delete this recording"
+        title="Delete this raid night"
         onClick={(e) => {
           e.stopPropagation()
           onDelete()
@@ -166,6 +182,10 @@ const EVENT_STYLE: Record<RaidEventKind, { color: string; icon: LucideIcon; lane
   loot: { color: '#34d399', icon: Gem, lane: 'short' },
   rez: { color: '#a3e635', icon: Sunrise, lane: 'tall' },
   low_hp: { color: '#fb7185', icon: Activity, lane: 'short' },
+  zone_out: { color: '#64748b', icon: LogOut, lane: 'none' },
+  zone_in: { color: '#64748b', icon: LogIn, lane: 'none' },
+  raid_join: { color: '#38bdf8', icon: UserPlus, lane: 'short' },
+  raid_leave: { color: '#a78bfa', icon: UserMinus, lane: 'short' },
 }
 
 // eventText is an event's line in the list: what happened, then detail.
@@ -185,21 +205,46 @@ function eventText(e: RaidEvent): [string, string] {
     case 'loot': return [`${e.name} looted`, o]
     case 'rez': return [`${e.name} rezzed`, '']
     case 'low_hp': return [`${e.name} low health`, o]
+    case 'zone_out': return [`${e.name} left the zone`, '']
+    case 'zone_in': return [`${e.name} entered the zone`, '']
+    case 'raid_join': return [`${e.name} joined the raid`, '']
+    case 'raid_leave': return [`${e.name} left the raid`, '']
   }
 }
 
-function Scrubber({ rec, events, t, onSeek }: {
-  rec: RaidRecording
+// Scrubber spans the whole night. Along the top, a band per segment named
+// for its zone; the gaps between are time nobody was recorded. Below it,
+// the event marks, then the slider.
+function Scrubber({ segs, events, start, end, t, onSeek }: {
+  segs: Segment[]
   events: RaidEvent[]
+  start: number
+  end: number
   t: number
   onSeek: (t: number) => void
 }): React.ReactElement {
-  const start = rec.frames[0]?.t ?? 0
-  const end = rec.frames[rec.frames.length - 1]?.t ?? start
   const span = Math.max(1, end - start)
+  const pct = (v: number): string => `${((v - start) / span) * 100}%`
   const lanes = { tall: [3, 7, 1], short: [5, 4, 0.7], faint: [0, 2, 0.35] } as const
+  const BAND = 11
   return (
-    <div className="relative h-7">
+    <div className="relative h-10">
+      {segs.map((sg) => (
+        <div
+          key={sg.rec.session.id}
+          className="absolute top-0 overflow-hidden whitespace-nowrap rounded-sm px-1 text-[9px] leading-[11px]"
+          style={{
+            left: pct(sg.start),
+            width: `max(2px, calc(${pct(sg.end)} - ${pct(sg.start)}))`,
+            height: BAND,
+            backgroundColor: 'var(--color-surface-2)',
+            color: 'var(--color-muted)',
+          }}
+          title={`${sg.rec.session.zone_name || sg.rec.session.zone} · ${fmtClock(sg.start).slice(0, 5)}–${fmtClock(sg.end).slice(0, 5)}`}
+        >
+          {sg.rec.session.zone_name || sg.rec.session.zone}
+        </div>
+      ))}
       {events.map((e, i) => {
         const { lane, color } = EVENT_STYLE[e.kind]
         if (lane === 'none') return null
@@ -208,7 +253,7 @@ function Scrubber({ rec, events, t, onSeek }: {
           <div
             key={i}
             className="pointer-events-none absolute w-px"
-            style={{ left: `${((e.t - start) / span) * 100}%`, top, height, opacity, backgroundColor: color }}
+            style={{ left: pct(e.t), top: top + BAND + 1, height, opacity, backgroundColor: color }}
           />
         )
       })}
@@ -227,27 +272,30 @@ function Scrubber({ rec, events, t, onSeek }: {
 
 export default function RaidReplayPage(): React.ReactElement {
   const palette = useDPSClassColors()
-  const [sessions, setSessions] = useState<RaidSession[] | null>(null)
-  const [selectedId, setSelectedId] = useCachedState<number | null>('raidReplay.session', null)
-  const [rec, setRec] = useState<RaidRecording | null>(null)
+  const [nights, setNights] = useState<RaidNight[] | null>(null)
+  const [selectedId, setSelectedId] = useCachedState<number | null>('raidReplay.night', null)
+  const [data, setData] = useState<RaidNightData | null>(null)
   const [loading, setLoading] = useState(false)
   const [t, setT] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [speed, setSpeed] = useCachedState('raidReplay.speed', 16)
-  const [focus, setFocus] = useState<number | null>(null)
+  // The highlighted raider, by lower-case name: frames index raiders per
+  // segment, so an index doesn't carry across zones.
+  const [focus, setFocus] = useState<string | null>(null)
   const [view3D, setView3D] = useStoredState('raidReplay.view3D', true)
+  const [mode, setMode] = useCachedState<'map' | 'summary'>('raidReplay.mode', 'map')
   const [side, setSide] = useCachedState<'list' | 'groups'>('raidReplay.side', 'list')
   // Which event groups (EVENT_GROUPS keys) the timeline and list show.
   const [shownGroups, setShownGroups] = useCachedState<string[]>(
     'raidReplay.eventGroups',
     EVENT_GROUPS.map((g) => g.key),
   )
-  // Why 3D fell back to 2D for this session, if it did.
+  // Why 3D fell back to 2D for this night, if it did.
   const [no3D, setNo3D] = useState<string | null>(null)
   useEffect(() => setNo3D(null), [selectedId])
 
   const refresh = useCallback(() => {
-    listRaidSessions().then(setSessions).catch(() => setSessions([]))
+    listRaidNights().then(setNights).catch(() => setNights([]))
   }, [])
   useEffect(refresh, [refresh])
 
@@ -255,38 +303,45 @@ export default function RaidReplayPage(): React.ReactElement {
     setPlaying(false)
     setFocus(null)
     if (selectedId == null) {
-      setRec(null)
+      setData(null)
       return
     }
     setLoading(true)
     let live = true
-    getRaidRecording(selectedId)
-      .then((r) => {
+    getRaidNight(selectedId)
+      .then((d) => {
         if (!live) return
-        setRec(r)
-        setT(r.frames[0]?.t ?? 0)
+        setData(d)
+        setT(buildSegments(d.recordings)[0]?.start ?? 0)
       })
-      .catch(() => live && setRec(null))
+      .catch(() => live && setData(null))
       .finally(() => live && setLoading(false))
     return () => {
       live = false
     }
   }, [selectedId])
 
-  const start = rec?.frames[0]?.t ?? 0
-  const end = rec?.frames[rec.frames.length - 1]?.t ?? 0
+  const segs = useMemo(() => (data ? buildSegments(data.recordings) : []), [data])
+  const start = segs[0]?.start ?? 0
+  const end = segs[segs.length - 1]?.end ?? 0
+  const recordedMs = useMemo(() => segs.reduce((n, sg) => n + (sg.end - sg.start), 0), [segs])
+  const { index: segIndex, inGap } = segmentAt(segs, t)
+  const seg: Segment | undefined = segs[segIndex]
+  const rec: RaidRecording | null = seg?.rec ?? null
+  const nextSeg = inGap ? segs[segIndex + 1] : undefined
 
-  // Playback ticks at 20 fps; the map redraws on each new playhead.
+  // Playback ticks at 20 fps; the map redraws on each new playhead. Gaps
+  // between segments are skipped.
   const last = useRef(0)
   useEffect(() => {
-    if (!playing || !rec) return
+    if (!playing || segs.length === 0) return
     last.current = performance.now()
     const id = setInterval(() => {
       const now = performance.now()
       const dt = now - last.current
       last.current = now
       setT((prev) => {
-        const next = prev + dt * speed
+        const next = skipGap(segs, prev + dt * speed)
         if (next >= end) {
           setPlaying(false)
           return end
@@ -295,7 +350,7 @@ export default function RaidReplayPage(): React.ReactElement {
       })
     }, 50)
     return () => clearInterval(id)
-  }, [playing, rec, speed, end])
+  }, [playing, segs, speed, end])
 
   const byIndex = useMemo(() => {
     const m = new Map<number, RaidRecording['members'][number]>()
@@ -307,11 +362,13 @@ export default function RaidReplayPage(): React.ReactElement {
     for (const mem of rec?.members ?? []) m.set(mem.name.toLowerCase(), mem.index)
     return m
   }, [rec])
+  const nameOf = (idx: number): string => byIndex.get(idx)?.name.toLowerCase() ?? ''
 
-  const present = useMemo(() => (rec ? raidersAt(rec.frames, t) : []), [rec, t])
+  // Nobody is drawn in a gap: the recorder wasn't in the zone.
+  const present = useMemo(() => (rec && !inGap ? raidersAt(rec.frames, t) : []), [rec, t, inGap])
 
   const raiders = useMemo((): RaiderMarker[] => {
-    if (!rec) return []
+    if (!rec || inGap) return []
     const out: RaiderMarker[] = []
     const shown = new Set<number>()
     // The recorder and their group are "mine", for Labels: Group.
@@ -331,7 +388,7 @@ export default function RaidReplayPage(): React.ReactElement {
       out.push({
         x: -at.x, y: -at.y, z: at.z, heading: at.heading,
         color: classColor(palette, mem?.class ?? 0), label: mem?.name ?? '?',
-        dead: true, focus: focus === idx, mine: idx === meIdx,
+        dead: true, focus: focus === e.name.toLowerCase(), mine: idx === meIdx,
       })
       shown.add(idx)
     }
@@ -342,16 +399,16 @@ export default function RaidReplayPage(): React.ReactElement {
         // Map space is the negated game position (see playerpos).
         x: -r.x, y: -r.y, z: r.z, heading: r.heading,
         color: classColor(palette, mem?.class ?? 0), label: mem?.name ?? '?',
-        focus: focus === r.index, mine: mine(r.index, r.group),
+        focus: !!mem && focus === mem.name.toLowerCase(), mine: mine(r.index, r.group),
       })
     }
     return out
-  }, [rec, t, present, byIndex, indexByName, palette, focus])
+  }, [rec, inGap, t, present, byIndex, indexByName, palette, focus])
 
   // The recorder's target: a line from them to it, ending on the raider when
   // they targeted one (a heal target), else at the mob's own position when
   // Zeal reported it.
-  const target = useMemo(() => (rec ? targetAt(rec.frames, t) : null), [rec, t])
+  const target = useMemo(() => (rec && !inGap ? targetAt(rec.frames, t) : null), [rec, inGap, t])
   const replayTarget = useMemo((): ReplayTarget | null => {
     if (!rec || !target) return null
     const meIdx = indexByName.get(rec.session.character.toLowerCase())
@@ -373,12 +430,12 @@ export default function RaidReplayPage(): React.ReactElement {
   // Kills placed where the mob was, for the 3D view.
   const killPins = useMemo(
     () =>
-      rec
+      rec && !inGap
         ? recentKills(rec.frames, rec.events, t).map((k) => ({
             x: -k.x, y: -k.y, z: k.z, color: '#c9a84c', label: `✕ ${k.name}`,
           }))
         : [],
-    [rec, t],
+    [rec, inGap, t],
   )
 
   const roster = useMemo(() => {
@@ -387,29 +444,56 @@ export default function RaidReplayPage(): React.ReactElement {
     return rows
   }, [present, byIndex])
 
-  // The recording's events plus low-health marks made from its frames, in
-  // time order, cut to the groups shown.
+  // Every segment's events, the night's derived roster and zoning events,
+  // and low-health marks made from the frames, in time order, cut to the
+  // groups shown.
   const events = useMemo(() => {
-    if (!rec) return []
+    if (!data) return []
     const kinds = new Set(EVENT_GROUPS.filter((g) => shownGroups.includes(g.key)).flatMap((g) => g.kinds))
-    return [...rec.events, ...lowHPEvents(rec.frames, rec.members)]
-      .filter((e) => kinds.has(e.kind))
-      .sort((a, b) => a.t - b.t)
-  }, [rec, shownGroups])
+    const all = [...data.events]
+    for (const r of data.recordings) all.push(...r.events, ...lowHPEvents(r.frames, r.members))
+    return all.filter((e) => kinds.has(e.kind)).sort((a, b) => a.t - b.t)
+  }, [data, shownGroups])
 
   const nearEvents = useMemo(
     () => events.filter((e) => e.t <= t).slice(-40).reverse(),
     [events, t],
   )
 
+  const seek = (v: number): void => setT(Math.max(start, Math.min(end, v)))
+
   const remove = (id: number): void => {
-    deleteRaidSession(id)
+    deleteRaidNight(id)
       .then(() => {
         if (selectedId === id) setSelectedId(null)
         refresh()
       })
       .catch(() => {})
   }
+
+  const toggle = (
+    value: string,
+    options: readonly { v: string; label: string }[],
+    set: (v: string) => void,
+  ): React.ReactElement => (
+    <div className="flex overflow-hidden rounded border text-[11px]" style={{ borderColor: 'var(--color-border)' }}>
+      {options.map((o) => (
+        <button
+          key={o.v}
+          className="px-2 py-0.5"
+          style={{
+            backgroundColor: value === o.v ? 'var(--color-surface-2)' : 'transparent',
+            color: value === o.v ? 'var(--color-primary)' : 'var(--color-muted)',
+          }}
+          onClick={() => set(o.v)}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  )
+
+  const zoneLabel = rec ? rec.session.zone_name || rec.session.zone : ''
 
   return (
     <div className="flex h-full">
@@ -422,19 +506,19 @@ export default function RaidReplayPage(): React.ReactElement {
           <RecordingSettings />
         </div>
         <div className="flex-1 overflow-y-auto">
-          {sessions === null ? null : sessions.length === 0 ? (
+          {nights === null ? null : nights.length === 0 ? (
             <p className="p-3 text-xs" style={{ color: 'var(--color-muted)' }}>
               No raids recorded yet. With Zeal running, raids are recorded
               automatically while you're in a raid.
             </p>
           ) : (
-            sessions.map((s) => (
-              <SessionRow
-                key={s.id}
-                s={s}
-                selected={s.id === selectedId}
-                onSelect={() => setSelectedId(s.id)}
-                onDelete={() => remove(s.id)}
+            nights.map((n) => (
+              <NightRow
+                key={n.id}
+                n={n}
+                selected={n.id === selectedId}
+                onSelect={() => setSelectedId(n.id)}
+                onDelete={() => remove(n.id)}
               />
             ))
           )}
@@ -442,75 +526,114 @@ export default function RaidReplayPage(): React.ReactElement {
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col gap-2 p-3">
-        {!rec ? (
+        {!data || !rec ? (
           <div className="flex flex-1 items-center justify-center text-sm" style={{ color: 'var(--color-muted)' }}>
-            {loading ? 'Loading…' : 'Pick a recording.'}
+            {loading ? 'Loading…' : 'Pick a raid night.'}
           </div>
         ) : (
           <>
             <div className="flex items-center gap-2">
-              <h2 className="text-sm font-semibold">{rec.session.zone_name || rec.session.zone}</h2>
+              <h2 className="text-sm font-semibold">{mode === 'summary' ? zoneTrail(data.night) : zoneLabel}</h2>
               <span className="text-xs" style={{ color: 'var(--color-muted)' }}>
-                {sessionDate(rec.session)} · {rec.session.character}
+                {nightDate(data.night.started_at)} · {data.night.character}
+                {mode === 'map' && segs.length > 1 && ` · zone ${segIndex + 1} of ${segs.length}`}
               </span>
-              {target && (
-                <span className="flex items-center gap-1 text-xs" style={{ color: '#f87171' }} title={`${rec.session.character}'s target`}>
+              {mode === 'map' && target && (
+                <span className="flex items-center gap-1 text-xs" style={{ color: '#f87171' }} title={`${data.night.character}'s target`}>
                   <Crosshair size={11} /> {target.n}
                 </span>
               )}
-              <div className="ml-auto flex overflow-hidden rounded border text-[11px]" style={{ borderColor: 'var(--color-border)' }}>
-                {([false, true] as const).map((v) => (
-                  <button
-                    key={String(v)}
-                    className="px-2 py-0.5"
-                    style={{
-                      backgroundColor: view3D === v ? 'var(--color-surface-2)' : 'transparent',
-                      color: view3D === v ? 'var(--color-primary)' : 'var(--color-muted)',
-                    }}
-                    onClick={() => {
-                      setNo3D(null)
-                      setView3D(v)
-                    }}
-                  >
-                    {v ? '3D' : '2D'}
-                  </button>
-                ))}
+              <div className="ml-auto flex items-center gap-2">
+                {toggle(mode, [{ v: 'map', label: 'Map' }, { v: 'summary', label: 'Summary' }], (v) =>
+                  setMode(v as 'map' | 'summary'),
+                )}
+                {mode === 'map' &&
+                  toggle(view3D ? '3d' : '2d', [{ v: '2d', label: '2D' }, { v: '3d', label: '3D' }], (v) => {
+                    setNo3D(null)
+                    setView3D(v === '3d')
+                  })}
               </div>
             </div>
-            {view3D && no3D && (
-              <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>{no3D} Showing the 2D map.</p>
-            )}
-            <div className="min-h-0 flex-1">
-              {view3D && !no3D ? (
-                <Suspense fallback={<div className="p-4 text-sm" style={{ color: 'var(--color-muted)' }}>Loading 3D…</div>}>
-                  <ZoneMap3D
-                    key={rec.session.id}
-                    zone={rec.session.zone}
-                    markers={raiders}
-                    target={replayTarget}
-                    pins={killPins}
-                    onUnavailable={(why) =>
-                      setNo3D(
-                        why === 'webgl'
-                          ? '3D needs WebGL, which isn’t available here.'
-                          : why === 'no-mesh'
-                            ? `No ${rec.session.zone}.s3d in your EverQuest folder.`
-                            : 'The 3D zone couldn’t be loaded.',
-                      )
+            {mode === 'summary' ? (
+              <div className="min-h-0 flex-1">
+                <NightSummary
+                  summary={data.summary}
+                  recordedMs={recordedMs}
+                  rosterTracked={data.roster_tracked}
+                  palette={palette}
+                  onPick={(r) => {
+                    // Show them where they were first seen in the zone.
+                    const key = r.name.toLowerCase()
+                    for (const sg of segs) {
+                      const idx = sg.rec.members.find((m) => m.name.toLowerCase() === key)?.index
+                      if (idx === undefined) continue
+                      const f = sg.rec.frames.find((fr) => fr.m.some((row) => row[0] === idx))
+                      if (f) {
+                        seek(f.t)
+                        break
+                      }
                     }
-                  />
-                </Suspense>
-              ) : (
-                <ZoneMapPanel
-                  key={rec.session.id}
-                  zoneShortName={rec.session.zone}
-                  showZoneButton={false}
-                  replay
-                  raiders={raiders}
-                  replayTarget={replayTarget}
+                    setFocus(key)
+                    setMode('map')
+                  }}
                 />
-              )}
-            </div>
+              </div>
+            ) : (
+              <>
+                {view3D && no3D && (
+                  <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>{no3D} Showing the 2D map.</p>
+                )}
+                <div className="relative min-h-0 flex-1">
+                  {view3D && !no3D ? (
+                    <Suspense fallback={<div className="p-4 text-sm" style={{ color: 'var(--color-muted)' }}>Loading 3D…</div>}>
+                      <ZoneMap3D
+                        key={rec.session.zone}
+                        zone={rec.session.zone}
+                        markers={raiders}
+                        target={replayTarget}
+                        pins={killPins}
+                        onUnavailable={(why) =>
+                          setNo3D(
+                            why === 'webgl'
+                              ? '3D needs WebGL, which isn’t available here.'
+                              : why === 'no-mesh'
+                                ? `No ${rec.session.zone}.s3d in your EverQuest folder.`
+                                : 'The 3D zone couldn’t be loaded.',
+                          )
+                        }
+                      />
+                    </Suspense>
+                  ) : (
+                    <ZoneMapPanel
+                      key={rec.session.zone}
+                      zoneShortName={rec.session.zone}
+                      showZoneButton={false}
+                      replay
+                      raiders={raiders}
+                      replayTarget={replayTarget}
+                    />
+                  )}
+                  {nextSeg && (
+                    <div
+                      className="absolute left-1/2 top-12 flex -translate-x-1/2 items-center gap-2 rounded border px-3 py-1.5 text-xs shadow"
+                      style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}
+                    >
+                      <span style={{ color: 'var(--color-muted)' }}>
+                        {data.night.character} was out of the raid&apos;s zone here. Next:{' '}
+                        {nextSeg.rec.session.zone_name || nextSeg.rec.session.zone} at {fmtClock(nextSeg.start).slice(0, 5)}
+                      </span>
+                      <button
+                        className="flex items-center gap-1"
+                        style={{ color: 'var(--color-primary)' }}
+                        onClick={() => seek(nextSeg.start)}
+                      >
+                        <SkipForward size={12} /> Skip
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
             <div className="flex items-center gap-3">
               <button
                 className="rounded border p-1.5"
@@ -542,7 +665,7 @@ export default function RaidReplayPage(): React.ReactElement {
                 {fmtClock(t)}
               </span>
               <div className="min-w-0 flex-1">
-                <Scrubber rec={rec} events={events} t={t} onSeek={setT} />
+                <Scrubber segs={segs} events={events} start={start} end={end} t={t} onSeek={seek} />
               </div>
               <span className="text-[11px] tabular-nums" style={{ color: 'var(--color-muted)' }}>
                 {fmtDuration(end - start)}
@@ -552,7 +675,7 @@ export default function RaidReplayPage(): React.ReactElement {
         )}
       </div>
 
-      {rec && (
+      {data && rec && (
         <div className="flex w-56 shrink-0 flex-col border-l" style={{ borderColor: 'var(--color-border)' }}>
           <div className="flex items-center border-b px-3 py-2 text-xs font-semibold" style={{ borderColor: 'var(--color-border)' }}>
             In zone ({roster.length})
@@ -574,16 +697,19 @@ export default function RaidReplayPage(): React.ReactElement {
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto py-1">
             {side === 'list'
-              ? roster.map((r) => (
-                  <RaiderRow
-                    key={r.index}
-                    name={r.mem?.name ?? '?'}
-                    color={classColor(palette, r.mem?.class ?? 0)}
-                    focused={focus === r.index}
-                    onFocus={() => setFocus(focus === r.index ? null : r.index)}
-                    right={r.group > 0 ? `G${r.group}` : ''}
-                  />
-                ))
+              ? roster.map((r) => {
+                  const key = nameOf(r.index)
+                  return (
+                    <RaiderRow
+                      key={r.index}
+                      name={r.mem?.name ?? '?'}
+                      color={classColor(palette, r.mem?.class ?? 0)}
+                      focused={focus === key}
+                      onFocus={() => setFocus(focus === key ? null : key)}
+                      right={r.group > 0 ? `G${r.group}` : ''}
+                    />
+                  )
+                })
               : groups.map(({ group, indexes }) => (
                   <div
                     key={group}
@@ -604,17 +730,21 @@ export default function RaidReplayPage(): React.ReactElement {
                     {indexes
                       .map((i) => byIndex.get(i))
                       .sort((a, b) => (a?.name ?? '').localeCompare(b?.name ?? ''))
-                      .map((mem) => mem && (
-                        <RaiderRow
-                          key={mem.index}
-                          name={mem.name}
-                          color={classColor(palette, mem.class)}
-                          focused={focus === mem.index}
-                          onFocus={() => setFocus(focus === mem.index ? null : mem.index)}
-                          right={mem.level > 0 ? String(mem.level) : ''}
-                          compact
-                        />
-                      ))}
+                      .map((mem) => {
+                        if (!mem) return null
+                        const key = mem.name.toLowerCase()
+                        return (
+                          <RaiderRow
+                            key={mem.index}
+                            name={mem.name}
+                            color={classColor(palette, mem.class)}
+                            focused={focus === key}
+                            onFocus={() => setFocus(focus === key ? null : key)}
+                            right={mem.level > 0 ? String(mem.level) : ''}
+                            compact
+                          />
+                        )
+                      })}
                   </div>
                 ))}
           </div>
@@ -649,7 +779,7 @@ export default function RaidReplayPage(): React.ReactElement {
                 <button
                   key={`${e.t}-${i}`}
                   className="flex w-full items-start gap-1.5 px-3 py-0.5 text-left text-[11px]"
-                  onClick={() => setT(e.t)}
+                  onClick={() => seek(e.t)}
                   title="Jump here"
                 >
                   <EventIcon kind={e.kind} />

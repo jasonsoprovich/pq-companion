@@ -3,7 +3,9 @@
 // recordings made before that are 3 s); positions in between are
 // interpolated so playback glides instead of jumping every sample.
 
-import type { RaidEvent, RaidEventKind, RaidFrame, RaidFrameTarget, RaidMemberInfo } from '../types/raidReplay'
+import type {
+  RaidEvent, RaidEventKind, RaidFrame, RaidFrameTarget, RaidMemberInfo, RaidRecording,
+} from '../types/raidReplay'
 
 // RETENTION_CHOICES are the "keep recordings for" options in days; -1 (keep
 // forever) is offered alongside.
@@ -172,4 +174,39 @@ export const EVENT_GROUPS: { key: string; label: string; kinds: RaidEventKind[] 
   { key: 'hp', label: 'Low HP & rez', kinds: ['low_hp', 'rez'] },
   { key: 'calls', label: 'Raid calls', kinds: ['call'] },
   { key: 'loot', label: 'Loot', kinds: ['loot'] },
+  { key: 'roster', label: 'Joins & zoning', kinds: ['raid_join', 'raid_leave', 'zone_out', 'zone_in'] },
 ]
+
+// A night plays its recordings back to back on one timeline. Each
+// Segment is one recording (one zone); between them are gaps, when the
+// recorder was out of the raid's zone and nothing could be recorded.
+export interface Segment {
+  rec: RaidRecording
+  start: number
+  end: number
+}
+
+// buildSegments orders a night's recordings, dropping empty ones.
+export function buildSegments(recs: RaidRecording[]): Segment[] {
+  return recs
+    .filter((r) => r.frames.length > 0)
+    .map((rec) => ({ rec, start: rec.frames[0].t, end: rec.frames[rec.frames.length - 1].t }))
+    .sort((a, b) => a.start - b.start)
+}
+
+// segmentAt returns the segment playing at t: the last one starting at or
+// before it (the first before the night starts). inGap is true when t is
+// past that segment's end, before the next one.
+export function segmentAt(segs: Segment[], t: number): { index: number; inGap: boolean } {
+  let index = 0
+  for (let i = 0; i < segs.length; i++) if (segs[i].start <= t) index = i
+  const seg = segs[index]
+  return { index, inGap: !!seg && t > seg.end && index < segs.length - 1 }
+}
+
+// skipGap moves t out of a gap to the start of the next segment, so
+// playback doesn't sit through time nothing was recorded.
+export function skipGap(segs: Segment[], t: number): number {
+  const { index, inGap } = segmentAt(segs, t)
+  return inGap ? segs[index + 1].start : t
+}

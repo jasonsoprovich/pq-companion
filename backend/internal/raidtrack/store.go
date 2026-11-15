@@ -160,6 +160,18 @@ func (s *Store) migrate() error {
 			other      TEXT    NOT NULL DEFAULT ''
 		)`,
 		`CREATE INDEX IF NOT EXISTS raid_track_events_session ON raid_track_events(session_id, at_ms)`,
+		// The raid roster log (roster.go): joins and leaves, kept apart
+		// from sessions since they're caught out of zone too.
+		`CREATE TABLE IF NOT EXISTS raid_track_roster (
+			id        INTEGER PRIMARY KEY AUTOINCREMENT,
+			at_ms     INTEGER NOT NULL,
+			kind      TEXT    NOT NULL,
+			name      TEXT    NOT NULL,
+			class     INTEGER NOT NULL DEFAULT 0,
+			level     INTEGER NOT NULL DEFAULT 0,
+			character TEXT    NOT NULL DEFAULT ''
+		)`,
+		`CREATE INDEX IF NOT EXISTS raid_track_roster_at ON raid_track_roster(character, at_ms)`,
 	}
 	for _, q := range stmts {
 		if _, err := s.db.Exec(q); err != nil {
@@ -219,6 +231,35 @@ func (s *Store) addEvent(session int64, ev Event) error {
 		`INSERT INTO raid_track_events (session_id, at_ms, kind, name, other) VALUES (?, ?, ?, ?, ?)`,
 		session, ev.T, ev.Kind, ev.Name, ev.Other)
 	return err
+}
+
+func (s *Store) addRosterEvent(ev RosterEvent) error {
+	_, err := s.db.Exec(
+		`INSERT INTO raid_track_roster (at_ms, kind, name, class, level, character) VALUES (?, ?, ?, ?, ?, ?)`,
+		ev.T, ev.Kind, ev.Name, ev.Class, ev.Level, ev.Character)
+	return err
+}
+
+// RosterBetween returns the observer character's roster events from from
+// to to (unix ms, inclusive), oldest first.
+func (s *Store) RosterBetween(character string, from, to int64) ([]RosterEvent, error) {
+	rows, err := s.db.Query(`
+		SELECT at_ms, kind, name, class, level, character FROM raid_track_roster
+		WHERE character = ? AND at_ms BETWEEN ? AND ?
+		ORDER BY at_ms, id`, character, from, to)
+	if err != nil {
+		return nil, fmt.Errorf("query roster: %w", err)
+	}
+	defer rows.Close()
+	out := []RosterEvent{}
+	for rows.Next() {
+		var ev RosterEvent
+		if err := rows.Scan(&ev.T, &ev.Kind, &ev.Name, &ev.Class, &ev.Level, &ev.Character); err != nil {
+			return nil, fmt.Errorf("scan roster: %w", err)
+		}
+		out = append(out, ev)
+	}
+	return out, rows.Err()
 }
 
 // ListSessions returns every session, newest first.
@@ -329,14 +370,21 @@ func (s *Store) DeleteSession(id int64) error {
 	return s.deleteWhere(`id = ?`, id)
 }
 
-// DeleteAll removes every recording.
+// DeleteAll removes every recording and the roster log.
 func (s *Store) DeleteAll() error {
-	return s.deleteWhere(`1 = 1`)
+	if err := s.deleteWhere(`1 = 1`); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(`DELETE FROM raid_track_roster`)
+	return err
 }
 
 // PruneOlderThan removes sessions that ended before cutoff and returns how
 // many went.
 func (s *Store) PruneOlderThan(cutoff time.Time) (int, error) {
+	if _, err := s.db.Exec(`DELETE FROM raid_track_roster WHERE at_ms < ?`, cutoff.UnixMilli()); err != nil {
+		return 0, err
+	}
 	var n int
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM raid_track_sessions WHERE ended_at < ?`,
 		cutoff.UnixMilli()).Scan(&n); err != nil {

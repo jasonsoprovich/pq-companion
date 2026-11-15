@@ -570,6 +570,9 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Delete("/sessions", raidReplayH.deleteAll)
 			r.Get("/sessions/{id}", raidReplayH.recording)
 			r.Delete("/sessions/{id}", raidReplayH.deleteSession)
+			r.Get("/nights", raidReplayH.nights)
+			r.Get("/nights/{id}", raidReplayH.night)
+			r.Delete("/nights/{id}", raidReplayH.deleteNight)
 		})
 		r.Route("/replay", func(r chi.Router) {
 			r.Get("/files", replayH.files)

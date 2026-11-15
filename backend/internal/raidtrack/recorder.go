@@ -93,6 +93,11 @@ type Recorder struct {
 	zone      string
 	sess      *session
 
+	// known is the raid roster as the roster log last saw it (raider name,
+	// lower case → member); nil until a roster arrives, and again after the
+	// roster has gone unseen for rosterReset.
+	known map[string]*rosterMember
+
 	// The observer's Zeal target: its name from the target label, and its
 	// position from the player snapshot when Zeal reports one.
 	targetName   string
@@ -333,6 +338,7 @@ func (r *Recorder) tick() {
 		r.endLocked()
 		return
 	}
+	r.trackRosterLocked(now)
 	live := !r.rosterAt.IsZero() && now.Sub(r.rosterAt) <= rosterFresh && r.zone != ""
 	if s := r.sess; s != nil {
 		moved := live && (s.zone != r.zone || s.character != r.character)
