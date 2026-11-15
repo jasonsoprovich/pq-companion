@@ -817,7 +817,7 @@ type Preferences struct {
 	NPCOverlayConsiderBorderOff bool `yaml:"npc_overlay_consider_border_off,omitempty" json:"npc_overlay_consider_border_off"`
 
 	// OverlayLockedModes maps each popout overlay (by its canonical name:
-	// "dps", "hps", "buffTimer", "detrimTimer", "npc", "rollTracker",
+	// "dps", "buffTimer", "detrimTimer", "npc", "rollTracker",
 	// "respawnTimer") to how it behaves while locked:
 	//   "interactive"  — hover the overlay to scroll / clear individual rows;
 	//                     move off and clicks pass through to the game (default)

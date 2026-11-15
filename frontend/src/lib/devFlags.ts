@@ -1,7 +1,3 @@
-// HPS tracking is disabled until healing events are present in EQ log files.
-// Set VITE_DEV_HPS=true in .env.local to re-enable during development.
-export const DEV_HPS = import.meta.env.VITE_DEV_HPS === 'true'
-
 // The Skill Tracker is disabled by default: skills can only be learned from
 // "You have become better at X!" log lines (deltas), and no full skill
 // snapshot is available from any source — the Quarmy/Zeal export carries no

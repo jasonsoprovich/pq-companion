@@ -7,7 +7,6 @@ import React, { useEffect, useState } from 'react'
 import { Crosshair, ExternalLink } from 'lucide-react'
 import { OVERLAY_DEFS, resolveLockedMode } from '../../../lib/overlays'
 import type { OverlayName, LockedMode, FadeMode } from '../../../lib/overlays'
-import { DEV_HPS } from '../../../lib/devFlags'
 import type { Config } from '../../../types/config'
 import { IDLE_DELAY_OPTIONS, idleCollapseSecs, supportsIdleCollapse } from '../../../lib/idleCollapse'
 
@@ -44,7 +43,6 @@ export const LOCK_MODE_OPTIONS: ReadonlyArray<{
 // persisted positions — as the Overlays tab.
 const OVERLAY_POPOUT_TOGGLE: Record<OverlayName, () => void> = {
   dps:          () => { window.electron?.overlay?.toggleDPS() },
-  hps:          () => { window.electron?.overlay?.toggleHPS() },
   buffTimer:    () => { window.electron?.overlay?.toggleBuffTimer() },
   filteredTimer: () => { window.electron?.overlay?.toggleFilteredTimer() },
   detrimTimer:  () => { window.electron?.overlay?.toggleDetrimTimer() },
@@ -68,12 +66,7 @@ const OVERLAY_POPOUT_TOGGLE: Record<OverlayName, () => void> = {
   customOverlay: () => {},
 }
 
-// The HPS overlay can't be implemented correctly until EQ logs expose real
-// heal data, so it's hidden everywhere (see DEV_HPS / SHOW_HPS) — including
-// this lock-behaviour list. Flip VITE_DEV_HPS to surface it during dev.
-const VISIBLE_OVERLAY_DEFS = DEV_HPS
-  ? OVERLAY_DEFS
-  : OVERLAY_DEFS.filter((def) => def.name !== 'hps')
+const VISIBLE_OVERLAY_DEFS = OVERLAY_DEFS
 
 // Per-overlay opacity steps. The global slider runs 10–100%, so these match.
 const OVERLAY_OPACITY_STEPS = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]

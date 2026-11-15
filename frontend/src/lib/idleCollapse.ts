@@ -16,7 +16,6 @@ export const IDLE_COLLAPSE_OVERLAYS: readonly string[] = [
   'customTimer',
   'respawnTimer',
   'dps',
-  'hps',
   'threat',
   'npc',
   'pet',

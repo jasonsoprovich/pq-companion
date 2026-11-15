@@ -357,7 +357,7 @@ function audioMimeType(ext: string): string {
 
 // ── Overlay bounds persistence ────────────────────────────────────────────────
 
-type OverlayName = 'dps' | 'hps' | 'buffTimer' | 'detrimTimer' | 'customTimer' | 'trigger' | 'npc' | 'threat' | 'rollTracker' | 'respawnTimer' | 'chChain' | 'chMetronome' | 'discordVoice' | 'liveMap' | 'zoneLockouts' | 'raidReadiness' | 'filteredTimer' | 'killCounter' | 'itemInfo' | 'pet' | 'deathRecap'
+type OverlayName = 'dps' | 'buffTimer' | 'detrimTimer' | 'customTimer' | 'trigger' | 'npc' | 'threat' | 'rollTracker' | 'respawnTimer' | 'chChain' | 'chMetronome' | 'discordVoice' | 'liveMap' | 'zoneLockouts' | 'raidReadiness' | 'filteredTimer' | 'killCounter' | 'itemInfo' | 'pet' | 'deathRecap'
 type Bounds = { x: number; y: number; width: number; height: number }
 
 // A window's identity for bounds/lock persistence and the generic per-window
@@ -388,7 +388,6 @@ type LockStore = Partial<Record<WindowKey, boolean>>
 // pass these straight into getRestoredBounds().
 const OVERLAY_DEFAULTS: Record<Exclude<OverlayName, 'trigger'>, Bounds> = {
   dps: { x: 0, y: 0, width: 420, height: 460 },
-  hps: { x: 0, y: 0, width: 420, height: 460 },
   buffTimer: { x: 0, y: 0, width: 280, height: 380 },
   detrimTimer: { x: 0, y: 0, width: 300, height: 320 },
   customTimer: { x: 0, y: 0, width: 280, height: 280 },
@@ -976,7 +975,6 @@ type StandardOverlaySpec = {
 
 const STANDARD_OVERLAYS: Record<StandardOverlay, StandardOverlaySpec> = {
   dps: { route: 'dps-overlay-window', minWidth: 260, minHeight: 180, ipc: 'dps' },
-  hps: { route: 'hps-overlay-window', minWidth: 260, minHeight: 180, ipc: 'hps' },
   buffTimer: { route: 'buff-timer-window', minWidth: 200, minHeight: 140, ipc: 'bufftimer' },
   filteredTimer: { route: 'filtered-timer-window', minWidth: 240, minHeight: 140, ipc: 'filteredtimer' },
   killCounter: { route: 'kill-counter-window', minWidth: 200, minHeight: 100, ipc: 'killcounter' },
@@ -2881,7 +2879,6 @@ function cleanCharacters(v: unknown): string[] {
 // dashboard's Pop Out All speak in panel keys.
 const PANEL_TO_OVERLAY: Record<string, Exclude<OverlayName, 'trigger'>> = {
   dps: 'dps',
-  hps: 'hps',
   buff: 'buffTimer',
   detrim: 'detrimTimer',
   custom: 'customTimer',

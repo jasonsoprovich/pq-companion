@@ -14,7 +14,6 @@ import type { Config, LogTrimSettings } from '../types/config'
 import { DEFAULT_LOG_TRIM } from '../types/config'
 import { mergeConfigEdits } from '../lib/configMerge'
 import { OVERLAY_DEFS, itemInfoOffered } from '../lib/overlays'
-import { DEV_HPS } from '../lib/devFlags'
 import type { LogFileInfo } from '../types/logEvent'
 import { applyContrast } from '../hooks/useHighContrast'
 import { applyZoom } from '../hooks/useZoom'
@@ -2143,8 +2142,7 @@ export default function SettingsPage(): React.ReactElement {
               You can also hold Ctrl and scroll over an overlay to resize it.
             </p>
             <div className="mt-2">
-              {OVERLAY_DEFS.filter((o) => o.name !== 'hps' || DEV_HPS)
-                .filter((o) => o.name !== 'itemInfo' || itemInfoOffered(config.preferences))
+              {OVERLAY_DEFS.filter((o) => o.name !== 'itemInfo' || itemInfoOffered(config.preferences))
                 .map((o) => {
                 const factor = config.preferences.overlay_zoom_factors?.[o.name] ?? 1
                 return (

@@ -33,7 +33,6 @@ import ItemsPage from './pages/ItemsPage'
 import CombatLayout from './components/CombatLayout'
 import CharactersLayout from './components/CharactersLayout'
 import RaidsLayout from './components/RaidsLayout'
-import { DEV_HPS } from './lib/devFlags'
 import { ActiveCharacterProvider } from './contexts/ActiveCharacterContext'
 import { BackfillProvider } from './contexts/BackfillContext'
 
@@ -64,7 +63,6 @@ const WishlistPage = lazy(() => import('./pages/WishlistPage'))
 const FactionsPage = lazy(() => import('./pages/FactionsPage'))
 const LogFeedPage = lazy(() => import('./pages/LogFeedPage'))
 const DPSOverlayWindowPage = lazy(() => import('./pages/DPSOverlayWindowPage'))
-const HPSOverlayWindowPage = lazy(() => import('./pages/HPSOverlayWindowPage'))
 const BuffTimerWindowPage = lazy(() => import('./pages/BuffTimerWindowPage'))
 const FilteredTimerWindowPage = lazy(() => import('./pages/FilteredTimerWindowPage'))
 const KillCounterWindowPage = lazy(() => import('./pages/KillCounterWindowPage'))
@@ -355,7 +353,6 @@ export default function App(): React.ReactElement {
       <Routes>
         {/* Standalone overlay windows — no sidebar/titlebar Layout */}
         <Route path="dps-overlay-window" element={<OverlayPage overlayKey="dps"><DPSOverlayWindowPage /></OverlayPage>} />
-        {DEV_HPS && <Route path="hps-overlay-window" element={<OverlayPage overlayKey="hps"><HPSOverlayWindowPage /></OverlayPage>} />}
         <Route path="buff-timer-window" element={<OverlayPage overlayKey="buffTimer"><BuffTimerWindowPage /></OverlayPage>} />
         <Route path="filtered-timer-window" element={<OverlayPage overlayKey="filteredTimer"><FilteredTimerWindowPage /></OverlayPage>} />
         <Route path="kill-counter-window" element={<OverlayPage overlayKey="killCounter"><KillCounterWindowPage /></OverlayPage>} />

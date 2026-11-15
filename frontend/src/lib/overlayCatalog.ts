@@ -58,7 +58,6 @@ export const PANEL_POPOUT: Record<DashboardPanelKey, { name: OverlayName; toggle
   dps:           { name: 'dps',           toggle: () => { o()?.toggleDPS() } },
   npc:           { name: 'npc',           toggle: () => { o()?.toggleNPC() } },
   threat:        { name: 'threat',        toggle: () => { o()?.toggleThreat() } },
-  hps:           { name: 'hps',           toggle: () => { o()?.toggleHPS() } },
   rolls:         { name: 'rollTracker',   toggle: () => { o()?.toggleRollTracker() } },
   respawn:       { name: 'respawnTimer',  toggle: () => { o()?.toggleRespawnTimer() } },
   chChain:       { name: 'chChain',       toggle: () => { o()?.toggleCHChain() } },

@@ -5,7 +5,6 @@
  * flags combos that are likely to clash with EverQuest.
  */
 import { OVERLAY_DEFS, type OverlayName } from './overlays'
-import { SHOW_HPS_PANEL } from '../services/dashboardLayout'
 
 export const TOGGLE_ALL_ACTION = 'toggleAll'
 export const overlayAction = (name: OverlayName): string => `overlay:${name}`
@@ -23,7 +22,7 @@ export function hotkeyActions(layouts: Array<{ id: string; name: string }> = [])
   return [
     { id: TOGGLE_ALL_ACTION, label: 'Show / hide all overlays', kind: 'all' },
     ...layouts.map((l) => ({ id: layoutAction(l.id), label: l.name, kind: 'layout' as const })),
-    ...OVERLAY_DEFS.filter((d) => d.name !== 'hps' || SHOW_HPS_PANEL).map((d) => ({
+    ...OVERLAY_DEFS.map((d) => ({
       id: overlayAction(d.name),
       label: d.label,
       kind: 'overlay' as const,

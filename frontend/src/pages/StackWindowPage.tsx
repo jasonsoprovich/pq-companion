@@ -41,7 +41,6 @@ import { instanceId, instanceKind, isInstanceKey } from '../lib/instanceKeys'
 
 const PAGES: Record<string, React.LazyExoticComponent<React.ComponentType<{ groupId?: string }>>> = {
   dps: lazy(() => import('./DPSOverlayWindowPage')),
-  hps: lazy(() => import('./HPSOverlayWindowPage')),
   buffTimer: lazy(() => import('./BuffTimerWindowPage')),
   filteredTimer: lazy(() => import('./FilteredTimerWindowPage')),
   killCounter: lazy(() => import('./KillCounterWindowPage')),
@@ -65,7 +64,6 @@ const PAGES: Record<string, React.LazyExoticComponent<React.ComponentType<{ grou
 // Short tab names, so a few tabs fit in the title bar.
 const TAB_LABELS: Record<string, string> = {
   dps: 'DPS',
-  hps: 'HPS',
   buffTimer: 'Buffs',
   filteredTimer: 'Filtered',
   killCounter: 'Kills',

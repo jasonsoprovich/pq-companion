@@ -13,7 +13,6 @@
 
 export type OverlayName =
   | 'dps'
-  | 'hps'
   | 'buffTimer'
   | 'detrimTimer'
   | 'customTimer'
@@ -91,7 +90,6 @@ export function itemInfoOffered(prefs: { zeal_item_display_seen?: boolean; devel
 
 export const OVERLAY_DEFS: { name: OverlayName; label: string }[] = [
   { name: 'dps', label: 'DPS Meter' },
-  { name: 'hps', label: 'HPS Meter' },
   { name: 'buffTimer', label: 'Buff Timers' },
   { name: 'detrimTimer', label: 'Detrimental Timers' },
   { name: 'filteredTimer', label: 'Filtered Timers' },

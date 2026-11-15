@@ -14,7 +14,6 @@ export type DashboardPanelKey =
   | 'dps'
   | 'npc'
   | 'threat'
-  | 'hps'
   | 'rolls'
   | 'respawn'
   | 'chChain'
@@ -48,7 +47,6 @@ export const DEFAULT_DASHBOARD_LAYOUT: DashboardLayout = {
   dps:    { x: 16,  y: 416, width: 624, height: 384, visible: true },
   npc:    { x: 656, y: 16,  width: 400, height: 784, visible: true },
   threat:  { x: 1072, y: 16, width: 288, height: 384, visible: true },
-  hps:     { x: 16,  y: 816, width: 624, height: 384, visible: true },
   rolls:   { x: 656, y: 816, width: 400, height: 384, visible: false },
   respawn: { x: 336, y: 416, width: 304, height: 384, visible: false },
   chChain:     { x: 656, y: 416, width: 304, height: 336, visible: false },
@@ -67,21 +65,7 @@ export const DEFAULT_DASHBOARD_LAYOUT: DashboardLayout = {
 }
 
 export const DASHBOARD_PANEL_KEYS: DashboardPanelKey[] =
-  ['buff', 'filtered', 'detrim', 'dps', 'npc', 'threat', 'hps', 'rolls', 'respawn', 'chChain', 'chMetronome', 'custom', 'discordVoice', 'liveMap', 'zoneLockouts', 'raidReadiness', 'kills', 'itemInfo', 'pet', 'deathRecap']
-
-// HPS tracking is wired up end-to-end (panel, dashboard layout, popout window)
-// but no log-parsing pipeline currently produces healer stats, so the UI is
-// hidden. Flip this flag to true once the backend emits real heal data.
-export const SHOW_HPS_PANEL = false
-
-// Panel keys actually offered in the UI — hps is gated by SHOW_HPS_PANEL.
-// discordVoice is further gated at render time in OverlaysDashboard.tsx by
-// the user's Settings → Overlays "Discord Voice" toggle (a runtime
-// preference, not a build-time flag like SHOW_HPS_PANEL), so it's left in
-// this static list and filtered reactively rather than here.
-export const VISIBLE_DASHBOARD_PANEL_KEYS: DashboardPanelKey[] = SHOW_HPS_PANEL
-  ? DASHBOARD_PANEL_KEYS
-  : DASHBOARD_PANEL_KEYS.filter((k) => k !== 'hps')
+  ['buff', 'filtered', 'detrim', 'dps', 'npc', 'threat', 'rolls', 'respawn', 'chChain', 'chMetronome', 'custom', 'discordVoice', 'liveMap', 'zoneLockouts', 'raidReadiness', 'kills', 'itemInfo', 'pet', 'deathRecap']
 
 export const DASHBOARD_PANEL_LABELS: Record<DashboardPanelKey, string> = {
   buff: 'Buff Timers',
@@ -89,7 +73,6 @@ export const DASHBOARD_PANEL_LABELS: Record<DashboardPanelKey, string> = {
   dps: 'DPS Meter',
   npc: 'NPC Overlay',
   threat: 'Threat Meter',
-  hps: 'HPS Meter',
   rolls: 'Roll Tracker',
   respawn: 'Respawn Timers',
   chChain: 'CH Chain',

@@ -4,7 +4,7 @@
  * layout keeps its own arrangement (see services/dashboardLayout.ts), so
  * switching layouts swaps the dashboard too. The toolbar only picks which
  * panels show and resets the arrangement; popouts are managed from the
- * Library tab. The only overlay without a panel is HPS (SHOW_HPS_PANEL).
+ * Library tab.
  * Drag/resize snaps to a 16px grid.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -17,7 +17,6 @@ import ItemInfoPanel from '../components/overlays/ItemInfoPanel'
 import PetPanel from '../components/overlays/PetPanel'
 import DetrimTimerPanel from '../components/overlays/DetrimTimerPanel'
 import DPSPanel from '../components/overlays/DPSPanel'
-import HPSPanel from '../components/overlays/HPSPanel'
 import NPCPanel from '../components/overlays/NPCPanel'
 import ThreatPanel from '../components/overlays/ThreatPanel'
 import RollTrackerPanel from '../components/overlays/RollTrackerPanel'
@@ -40,8 +39,7 @@ import { WSEvent } from '../lib/wsEvents'
 import type { TimerGroup } from '../types/trigger'
 import {
   DASHBOARD_PANEL_LABELS,
-  SHOW_HPS_PANEL,
-  VISIBLE_DASHBOARD_PANEL_KEYS,
+  DASHBOARD_PANEL_KEYS,
   defaultGroupPanelLayout,
   resetDashboard,
   updateDashboardGroups,
@@ -217,8 +215,7 @@ export default function OverlaysDashboard(): React.ReactElement {
   // Discord Voice only makes sense to offer here once the user has actually
   // turned it on in its Overlays hub settings — unlike the other panels, showing it
   // with nothing configured would just be dead weight in the menu. Read live
-  // (not a static build-time flag like SHOW_HPS_PANEL) since it's a runtime
-  // preference the user can flip at any time.
+  // since it's a runtime preference the user can flip at any time.
   const [discordVoiceEnabled, setDiscordVoiceEnabled] = useState(false)
   const refreshDiscordVoiceEnabled = useCallback(() => {
     getConfig()
@@ -239,12 +236,11 @@ export default function OverlaysDashboard(): React.ReactElement {
   // event (or Developer Mode is on) — see itemInfoOffered.
   const itemInfoOffered = useItemInfoOffered()
 
-  // Panel keys actually offered in the UI: hps is gated by SHOW_HPS_PANEL
-  // (shared with the sidebar's pop-out-all toggle); discordVoice is gated by
-  // the setting above; itemInfo by Zeal support; the rest (including Raid
+  // Panel keys actually offered in the UI: discordVoice is gated by the
+  // setting above; itemInfo by Zeal support; the rest (including Raid
   // Readiness, the Threat Meter and Pet) are always available.
   const visiblePanelKeys = useMemo(() => {
-    let keys = VISIBLE_DASHBOARD_PANEL_KEYS
+    let keys = DASHBOARD_PANEL_KEYS
     if (!discordVoiceEnabled) keys = keys.filter((k) => k !== 'discordVoice')
     if (!itemInfoOffered) keys = keys.filter((k) => k !== 'itemInfo')
     return keys
@@ -254,7 +250,7 @@ export default function OverlaysDashboard(): React.ReactElement {
   // detected, greyed with a hint, so users know the feature exists and how
   // to unlock it.
   const menuPanelKeys = useMemo(
-    () => VISIBLE_DASHBOARD_PANEL_KEYS.filter(
+    () => DASHBOARD_PANEL_KEYS.filter(
       (k) => k !== 'discordVoice' || discordVoiceEnabled,
     ),
     [discordVoiceEnabled],
@@ -555,17 +551,6 @@ export default function OverlaysDashboard(): React.ReactElement {
             defaultHeight={layout.threat.height}
             snapGridSize={SNAP_GRID}
             onLayoutChange={handleLayoutChange('threat')}
-          />
-        )}
-        {SHOW_HPS_PANEL && layout.hps.visible && (
-          <HPSPanel
-            key={`hps-${layoutVersion}`}
-            defaultX={layout.hps.x}
-            defaultY={layout.hps.y}
-            defaultWidth={layout.hps.width}
-            defaultHeight={layout.hps.height}
-            snapGridSize={SNAP_GRID}
-            onLayoutChange={handleLayoutChange('hps')}
           />
         )}
         {layout.rolls.visible && (
