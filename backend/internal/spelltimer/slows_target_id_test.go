@@ -164,6 +164,18 @@ func TestKeyTargetTokenLocked(t *testing.T) {
 			want:           "a gnoll",
 		},
 		{
+			// Log timestamps are whole seconds: a fast cast lands in its
+			// cast line's own second.
+			name:       "land in the cast's own second still tags",
+			target:     "a gnoll",
+			spell:      singleTarget,
+			castSpell:  shasAdvantageName,
+			castAt:     now.Truncate(time.Second).Add(700 * time.Millisecond),
+			castTarget: 101,
+			at:         now.Truncate(time.Second),
+			want:       "a gnoll#id:101",
+		},
+		{
 			name:           "pipe-recorded cast target agreeing with the landed target still tags",
 			target:         "a gnoll",
 			spell:          singleTarget,
@@ -181,6 +193,7 @@ func TestKeyTargetTokenLocked(t *testing.T) {
 			e := &Engine{
 				lastCastSpell:    tc.castSpell,
 				lastCastAt:       tc.castAt,
+				lastCastLogAt:    tc.castAt,
 				lastCastTargetID: tc.castTarget,
 				lastCastTarget:   tc.castTargetName,
 			}
