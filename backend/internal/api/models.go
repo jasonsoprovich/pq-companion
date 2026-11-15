@@ -47,7 +47,7 @@ var (
 	// shield, and the bones the Luclin worn models hang from.
 	attachPoints = map[string]bool{
 		"R_POINT": true, "L_POINT": true, "SHIELD_POINT": true,
-		"HAIR_POINT": true, "HEAD_POINT": true, "CHEST_POINT": true, "TUNIC_POINT": true,
+		"HAIR_POINT": true, "BEARD_POINT": true, "HEAD_POINT": true, "CHEST_POINT": true, "TUNIC_POINT": true,
 		"SHOULDR_POINT": true, "SHOULDL_POINT": true, "GAUNTR_POINT": true, "GAUNTL_POINT": true,
 		"PELVIS_POINT": true, "LEGL_POINT": true, "LEGR_POINT": true,
 	}
@@ -281,11 +281,12 @@ type wornModel struct {
 	Archive string `json:"archive"`
 }
 
-// outfit handles GET /api/models/outfit/{archive}/{code}?mats=h,c,a,w,g,l,f[&monk=1][&hair=n]:
+// outfit handles GET /api/models/outfit/{archive}/{code}?mats=h,c,a,w,g,l,f[&monk=1][&looks]:
 // how a player model looks wearing those materials (head, chest, arms,
 // wrist, hands, legs, feet; 0 for nothing). monk matters because only
-// monks show the monk armor material; hair is a Luclin model's hairstyle
-// (0-2, -1 for none; 0 when left out).
+// monks show the monk armor material. The looks (mapgen.Looks) are face,
+// hair, haircolor, beard, beardcolor and eyes, each its default when left
+// out.
 func (h *modelsHandler) outfit(w http.ResponseWriter, r *http.Request) {
 	archive := strings.ToLower(chi.URLParam(r, "archive"))
 	code := strings.ToUpper(chi.URLParam(r, "code"))
@@ -333,19 +334,17 @@ func (h *modelsHandler) outfit(w http.ResponseWriter, r *http.Request) {
 	for _, m := range p.Mesh.Materials {
 		textures = append(textures, m.Texture)
 	}
+	looks := parseLooks(r.URL.Query())
 	h.texMu.Lock()
 	has := func(a, name string) bool {
 		arc, err := h.archive(eqPath, a)
 		return err == nil && arc.Has(name)
 	}
 	res := mapgen.DressTextures(archive, who, textures, mats, has)
+	res.Swaps = append(res.Swaps, mapgen.LookTextures(archive, code, luclin, textures, looks, has)...)
 	h.texMu.Unlock()
 	wear := []wornModel{}
 	if luclin {
-		hair, err := strconv.Atoi(r.URL.Query().Get("hair"))
-		if err != nil || hair < mapgen.NoHair || hair > 9 {
-			hair = 0
-		}
 		ix, err := h.modelIndex(eqPath)
 		if err != nil {
 			writeModelError(w, err, "model index")
@@ -360,7 +359,7 @@ func (h *modelsHandler) outfit(w http.ResponseWriter, r *http.Request) {
 			return false
 		}
 		covered := map[int]bool{}
-		for _, wm := range mapgen.LuclinWear(code, mats, hair, who, find) {
+		for _, wm := range mapgen.LuclinWear(code, mats, looks, who, find) {
 			wear = append(wear, wornModel{Wearable: wm, Archive: located[wm.Item]})
 			covered[wm.Slot] = true
 		}
@@ -381,6 +380,67 @@ func (h *modelsHandler) outfit(w http.ResponseWriter, r *http.Request) {
 		res.Missing = []int{}
 	}
 	writeJSON(w, http.StatusOK, outfitResponse{Helm: opts.Helm, Robe: opts.Robe, OutfitResult: res, Wear: wear})
+}
+
+// parseLooks reads a character's looks from the query, each left out or
+// out of range being its default.
+func parseLooks(q url.Values) mapgen.Looks {
+	l := mapgen.DefaultLooks
+	get := func(key string, v *int, lo, hi int) {
+		if n, err := strconv.Atoi(q.Get(key)); err == nil && n >= lo && n <= hi {
+			*v = n
+		}
+	}
+	get("face", &l.Face, 0, 9)
+	get("hair", &l.Hair, mapgen.NoHair, 9)
+	get("haircolor", &l.HairColor, -1, 23)
+	get("beard", &l.Beard, -1, 9)
+	get("beardcolor", &l.BeardColor, -1, 23)
+	get("eyes", &l.Eyes, 0, 10)
+	return l
+}
+
+// looks handles GET /api/models/looks/{archive}/{code}: the faces,
+// hairstyles, beards, hair colours and eye colours a player model can
+// have in this client.
+func (h *modelsHandler) looks(w http.ResponseWriter, r *http.Request) {
+	archive := strings.ToLower(chi.URLParam(r, "archive"))
+	code := strings.ToUpper(chi.URLParam(r, "code"))
+	if !modelArchiveRe.MatchString(archive) || !modelCodeRe.MatchString(code) {
+		writeError(w, http.StatusBadRequest, "invalid model")
+		return
+	}
+	eqPath, ok := h.eqPath(w)
+	if !ok {
+		return
+	}
+	luclin := archive == "global"+strings.ToLower(code)+"_chr.s3d"
+	p, err := h.posedModel(eqPath, archive, code, mapgen.ModelOptions{})
+	if err != nil {
+		writeModelError(w, err, code+" in "+archive)
+		return
+	}
+	textures := make([]string, 0, len(p.Mesh.Materials))
+	for _, m := range p.Mesh.Materials {
+		textures = append(textures, m.Texture)
+	}
+	ix, err := h.modelIndex(eqPath)
+	if err != nil {
+		writeModelError(w, err, "model index")
+		return
+	}
+	hasItem := func(item string) bool {
+		a, ok := ix.Locate(item, "", false)
+		return ok && strings.HasPrefix(a, "lgequip")
+	}
+	h.texMu.Lock()
+	has := func(a, name string) bool {
+		arc, err := h.archive(eqPath, a)
+		return err == nil && arc.Has(name)
+	}
+	opts := mapgen.AvailableLooks(archive, code, luclin, textures, has, hasItem)
+	h.texMu.Unlock()
+	writeJSON(w, http.StatusOK, opts)
 }
 
 // locate handles GET /api/models/locate/{code}: the archive holding an
@@ -518,9 +578,8 @@ type personModel struct {
 	Name   string `json:"name"`
 	Race   int    `json:"race"`
 	Gender int    `json:"gender"`
-	// Hair is the Luclin hairstyle picked in the dressing room (0 unless
-	// picked).
-	Hair  int  `json:"hair"`
+	// Looks are picked in the dressing room (the defaults unless picked).
+	mapgen.Looks
 	Known bool `json:"known"`
 }
 
@@ -542,13 +601,17 @@ func (h *modelsHandler) people(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]personModel, 0, len(names))
 	for _, n := range names {
-		p := personModel{Name: n}
+		p := personModel{Name: n, Looks: mapgen.DefaultLooks}
 		if h.chars != nil {
 			if c, ok, err := h.chars.GetByName(n); err == nil && ok && c.Race > 0 {
 				p.Race, p.Known = c.Race, true
 			}
 			if a, ok, err := h.chars.GetAppearance(n); err == nil && ok {
-				p.Gender, p.Hair = a.Gender, a.Hair
+				p.Gender = a.Gender
+				p.Looks = mapgen.Looks{
+					Face: a.Face, Hair: a.Hair, HairColor: a.HairColor,
+					Beard: a.Beard, BeardColor: a.BeardColor, Eyes: a.Eyes,
+				}
 			}
 		}
 		if !p.Known && h.players != nil {

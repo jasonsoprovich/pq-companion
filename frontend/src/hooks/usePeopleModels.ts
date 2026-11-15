@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getPeopleModels, listCharacters } from '../services/api'
-import type { PersonModel } from '../services/api'
+import type { ModelLooks, PersonModel } from '../services/api'
 import { MONK_CLASS, dressFor, loadEquippedItems } from '../lib/characterDress'
 import type { ModelDress } from '../lib/characterDress'
 import type { MarkerModel } from '../components/maps/ZoneMap'
@@ -93,10 +93,18 @@ export function usePeopleModels(names: string[], self: string, enabled: boolean)
       const p = known.get(n.toLowerCase())
       if (!p?.known) continue
       const isSelf = n.toLowerCase() === self.toLowerCase()
-      out.set(n.toLowerCase(), { race: p.race, gender: p.gender, hair: p.hair, dress: isSelf ? dress : null })
+      out.set(n.toLowerCase(), { race: p.race, gender: p.gender, looks: lookOf(p), dress: isSelf ? dress : null })
     }
     return out
     // tick: lookups landed in the module cache.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, all, self, dress, tick])
+}
+
+// lookOf is the looks part of a person.
+function lookOf(p: PersonModel): ModelLooks {
+  return {
+    face: p.face, hair: p.hair, hair_color: p.hair_color,
+    beard: p.beard, beard_color: p.beard_color, eyes: p.eyes,
+  }
 }

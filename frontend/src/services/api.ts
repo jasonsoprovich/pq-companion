@@ -682,12 +682,49 @@ export interface ModelTextureSwap {
 
 // WornModel is a model a Luclin character wears (hair, robe, a piece of
 // plate): item model `item` in `archive`, hung from bone `point`. slot is
-// the material slot whose tint it takes, -1 for hair.
+// the material slot whose tint it takes, -1 for hair and beards; tint is
+// a hair or beard's own colour (0xRRGGBB).
 export interface WornModel {
   item: string
   archive: string
   point: AttachPoint
   slot: number
+  tint?: number
+}
+
+// ModelLooks is a character's face, hair and eyes, picked by hand (the
+// game logs none of them). -1 is "none" for hair and beard, and "the
+// default" for the colours; eyes 0 keeps the model's own.
+export interface ModelLooks {
+  face: number
+  hair: number
+  hair_color: number
+  beard: number
+  beard_color: number
+  eyes: number
+}
+
+export const DEFAULT_LOOKS: ModelLooks = {
+  face: 0, hair: 0, hair_color: -1, beard: -1, beard_color: -1, eyes: 0,
+}
+
+// ModelLookOptions is what a model's looks can be in this client: faces
+// 0..faces-1, the hairstyles and beards it has models for, its race's
+// hair colours (0xRRGGBB) and the eye colours, each with its texture in
+// lgequip.s3d.
+export interface ModelLookOptions {
+  faces: number
+  hair: number[]
+  beards: number[]
+  hair_colors: { index: number; rgb: number }[]
+  default_hair_color: number
+  eyes: { index: number; texture: string }[]
+}
+
+export function getModelLooks(ref: CharacterModelRef): Promise<ModelLookOptions> {
+  return get<ModelLookOptions>(
+    `/api/models/looks/${encodeURIComponent(ref.archive)}/${encodeURIComponent(ref.code)}`,
+  )
 }
 
 // ModelOutfit is how to dress a model: load it with helm and robe, then
@@ -704,17 +741,26 @@ export interface ModelOutfit {
 
 // getModelOutfit asks how a player model looks wearing mats, one material
 // per slot: head, chest, arms, wrist, hands, legs, feet. monk matters
-// because only monks show the monk armor material; hair is a Luclin
-// model's hairstyle (0-2, -1 for none).
+// because only monks show the monk armor material; looks are the face,
+// hair and eyes.
 export async function getModelOutfit(
   ref: CharacterModelRef,
   mats: number[],
   monk = false,
-  hair = 0,
+  looks: ModelLooks = DEFAULT_LOOKS,
 ): Promise<ModelOutfit> {
-  const m = monk ? '&monk=1' : ''
+  const qs = new URLSearchParams({
+    mats: mats.join(','),
+    face: String(looks.face),
+    hair: String(looks.hair),
+    haircolor: String(looks.hair_color),
+    beard: String(looks.beard),
+    beardcolor: String(looks.beard_color),
+    eyes: String(looks.eyes),
+  })
+  if (monk) qs.set('monk', '1')
   return get<ModelOutfit>(
-    `/api/models/outfit/${encodeURIComponent(ref.archive)}/${encodeURIComponent(ref.code)}?mats=${mats.join(',')}${m}&hair=${hair}`,
+    `/api/models/outfit/${encodeURIComponent(ref.archive)}/${encodeURIComponent(ref.code)}?${qs}`,
   )
 }
 
@@ -732,7 +778,7 @@ export async function locateItemModel(idfile: string): Promise<CharacterModelRef
 // bones of the Luclin worn models.
 export type AttachPoint =
   | 'R_POINT' | 'L_POINT' | 'SHIELD_POINT'
-  | 'HAIR_POINT' | 'HEAD_POINT' | 'CHEST_POINT' | 'TUNIC_POINT'
+  | 'HAIR_POINT' | 'BEARD_POINT' | 'HEAD_POINT' | 'CHEST_POINT' | 'TUNIC_POINT'
   | 'SHOULDR_POINT' | 'SHOULDL_POINT' | 'GAUNTR_POINT' | 'GAUNTL_POINT'
   | 'PELVIS_POINT' | 'LEGL_POINT' | 'LEGR_POINT'
 
@@ -776,22 +822,19 @@ export function searchWearables(slots: number, q: string, signal?: AbortSignal):
 }
 
 // CharacterAppearance is the gender (0 male, 1 female), model era and
-// Luclin hairstyle (0-2, -1 for none) saved for a character; the game logs
-// none of them.
-export interface CharacterAppearance {
+// looks saved for a character; the game logs none of them.
+export interface CharacterAppearance extends ModelLooks {
   name: string
   gender: number
   luclin: boolean
-  hair: number
 }
 
-// PersonModel is the race, gender and Luclin hairstyle to draw a player
-// as; known is false when nothing says which race they are.
-export interface PersonModel {
+// PersonModel is the race, gender and looks to draw a player as; known is
+// false when nothing says which race they are.
+export interface PersonModel extends ModelLooks {
   name: string
   race: number
   gender: number
-  hair: number
   known: boolean
 }
 

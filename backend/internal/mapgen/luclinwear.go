@@ -36,18 +36,20 @@ type Wearable struct {
 	Item string `json:"item"`
 	// Point is the body's bone it hangs from ("TUNIC_POINT").
 	Point string `json:"point"`
-	// Slot is the material slot it belongs to, for its tint; -1 for hair.
+	// Slot is the material slot it belongs to, for its tint; -1 for hair
+	// and beards.
 	Slot int `json:"slot"`
+	// Tint is a hair or beard's colour (0xRRGGBB), 0 for none.
+	Tint uint32 `json:"tint,omitempty"`
 }
 
 // NoHair is the hairstyle for a bald character.
 const NoHair = -1
 
 // LuclinWear lists the models a Luclin model (code, "HUM") wears for its
-// materials, hairstyle (0-2 on most models; NoHair for none) and class,
-// keeping those has finds in the client. nil for a code that isn't a
-// Luclin player model.
-func LuclinWear(code string, mats [MaterialSlots]int, hair int, who Wearer, has func(item string) bool) []Wearable {
+// materials, looks (hair and beard) and class, keeping those has finds in
+// the client. nil for a code that isn't a Luclin player model.
+func LuclinWear(code string, mats [MaterialSlots]int, looks Looks, who Wearer, has func(item string) bool) []Wearable {
 	code = strings.ToUpper(code)
 	off, ok := luclinWearOffsets[code]
 	if !ok {
@@ -119,9 +121,24 @@ func LuclinWear(code string, mats [MaterialSlots]int, hair int, who Wearer, has 
 		pair(9000, m[SlotFeet], "LEGL_POINT", "LEGR_POINT", SlotFeet)
 	}
 
-	// Hair, unless something's on the head (Vah Shir have none).
-	if hair >= 0 && !helm && !strings.HasPrefix(code, "KE") {
-		add(1000+hair, "HAIR_POINT", -1)
+	// Hair, unless something's on the head (Vah Shir have none), and the
+	// beard, both in the hair colour unless the beard has its own.
+	tint := func(idx int) {
+		out[len(out)-1].Tint = hairTint(code, idx)
+	}
+	if looks.Hair >= 0 && !helm && !strings.HasPrefix(code, "KE") {
+		if add(1000+looks.Hair, "HAIR_POINT", -1) {
+			tint(looks.HairColor)
+		}
+	}
+	if looks.Beard >= 0 {
+		bc := looks.BeardColor
+		if bc < 0 {
+			bc = looks.HairColor
+		}
+		if add(2000+looks.Beard, "BEARD_POINT", -1) {
+			tint(bc)
+		}
 	}
 	return out
 }

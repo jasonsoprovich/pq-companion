@@ -23,6 +23,7 @@ import type {
   AttachPoint,
   CharacterMeshOptions,
   CharacterModelRef,
+  ModelLooks,
   ModelOutfit,
   WornModel,
   ZoneMesh3D,
@@ -37,8 +38,8 @@ export interface CharacterModelRequest {
   zone?: string
   /** The Luclin-era model, for player races. */
   luclin?: boolean
-  /** Luclin hairstyle (0-2, -1 for none) when the dress doesn't say. */
-  hair?: number
+  /** Face, hair and eyes when the dress doesn't say. */
+  looks?: ModelLooks
 }
 
 /**
@@ -194,12 +195,13 @@ function tintColor(tint: number): THREE.Color {
 const partTextureRe = /^[a-z]{3}(ch|fa|ft|hn|lg|ua|he)(?:[0-9]{2}|sk)[0-9]{2}\.(?:bmp|dds)$/
 const partSlots: Record<string, number> = { he: 0, ch: 1, ua: 2, fa: 3, hn: 4, lg: 5, ft: 6 }
 
-/** textureSlot is the material slot a body texture belongs to, or -1. */
+/** textureSlot is the material slot a body texture belongs to, or -1.
+ * Heads take no tint: their textures are faces (helms are models). */
 function textureSlot(name: string): number {
   const lower = name.toLowerCase()
   if (/^clk[0-9]{4}\.(?:bmp|dds)$/.test(lower)) return 1 // the robed body
   const m = partTextureRe.exec(lower)
-  return m ? partSlots[m[1]] : -1
+  return m && m[1] !== 'he' ? partSlots[m[1]] : -1
 }
 
 /**
@@ -368,12 +370,16 @@ export async function buildCharacter(
   let dress = given ?? null
   if (base.ref.archive === `global${base.ref.code.toLowerCase()}_chr.s3d`) {
     dress = dress ?? { mats: [0, 0, 0, 0, 0, 0, 0], tints: [0, 0, 0, 0, 0, 0, 0] }
-    if (dress.hair === undefined && req.hair !== undefined) dress = { ...dress, hair: req.hair }
+  }
+  if (dress && !dress.looks && req.looks) dress = { ...dress, looks: req.looks }
+  else if (!dress && req.looks && req.looks.face > 0) {
+    // An original model takes a face too.
+    dress = { mats: [0, 0, 0, 0, 0, 0, 0], tints: [0, 0, 0, 0, 0, 0, 0], looks: req.looks }
   }
   let asset = base
   let outfit: ModelOutfit | null = null
   if (dress) {
-    outfit = await getModelOutfit(base.ref, dress.mats, dress.monk, dress.hair ?? 0)
+    outfit = await getModelOutfit(base.ref, dress.mats, dress.monk, dress.looks)
     asset = (await loadModelVariant(base.ref, { helm: outfit.helm, robe: outfit.robe })) ?? base
   }
   const held: { which: 'primary' | 'secondary'; item: CharacterModelAsset | null }[] = []
@@ -384,7 +390,8 @@ export async function buildCharacter(
     const point = dress.shield ? 'SHIELD_POINT' : 'L_POINT'
     held.push({ which: 'secondary', item: await loadAttachedItem(asset, point, dress.secondary).catch(() => null) })
   }
-  // A Luclin model's hair, robe and plate, each tinted as its slot.
+  // A Luclin model's hair, robe and plate, each tinted as its slot (hair
+  // and beards in their own colour).
   const wear = outfit?.wear ?? []
   const worn = await Promise.all(wear.map((w) =>
     loadWornModel(asset, w.point, { code: w.item, archive: w.archive }).catch(() => null)))
@@ -392,7 +399,8 @@ export async function buildCharacter(
   const owned: THREE.Material[] = []
   worn.forEach((item, i) => {
     if (!item) return
-    const tint = wear[i].slot >= 0 ? dress?.tints[wear[i].slot] ?? 0 : 0
+    const w = wear[i]
+    const tint = w.tint ?? (w.slot >= 0 ? dress?.tints[w.slot] ?? 0 : 0)
     const mats = tinted(item.materials, tint)
     owned.push(...mats)
     object.add(new THREE.Mesh(item.geometry, mats))

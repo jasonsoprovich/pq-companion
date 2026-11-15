@@ -233,6 +233,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/mesh/{archive}/{code}", modelsH.mesh)
 			r.Get("/texture/{archive}/{name}", modelsH.texture)
 			r.Get("/outfit/{archive}/{code}", modelsH.outfit)
+			r.Get("/looks/{archive}/{code}", modelsH.looks)
 			r.Get("/locate/{code}", modelsH.locate)
 			r.Get("/attach/{archive}/{code}/{point}/{itemArchive}/{item}", modelsH.attach)
 			r.Get("/items", modelsH.items)

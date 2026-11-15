@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/character"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/mapgen"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/players"
 )
 
@@ -68,7 +69,7 @@ func TestModelsPeople(t *testing.T) {
 	if _, err := chars.Create("Osui", 6, 6, 60); err != nil {
 		t.Fatal(err)
 	}
-	if err := chars.SetAppearance(character.Appearance{Name: "Osui", Gender: 1}); err != nil {
+	if err := chars.SetAppearance(character.Appearance{Name: "Osui", Gender: 1, Face: 4, HairColor: 13, Beard: -1, BeardColor: -1, Eyes: 2}); err != nil {
 		t.Fatal(err)
 	}
 	if err := ps.Upsert(players.SightingInput{Name: "Bela", Race: "Vah Shir", Class: "Warrior", Level: 50, ObservedAt: time.Now()}); err != nil {
@@ -82,9 +83,9 @@ func TestModelsPeople(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []personModel{
-		{Name: "osui", Race: 6, Gender: 1, Known: true},
-		{Name: "Bela", Race: 130, Known: true},
-		{Name: "Nobody"},
+		{Name: "osui", Race: 6, Gender: 1, Known: true, Looks: mapgen.Looks{Face: 4, HairColor: 13, Beard: -1, BeardColor: -1, Eyes: 2}},
+		{Name: "Bela", Race: 130, Known: true, Looks: mapgen.DefaultLooks},
+		{Name: "Nobody", Looks: mapgen.DefaultLooks},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("people = %+v, want %+v", got, want)

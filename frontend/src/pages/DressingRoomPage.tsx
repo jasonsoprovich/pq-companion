@@ -1,12 +1,18 @@
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { RotateCcw, Search, Shirt, X } from 'lucide-react'
 import {
+  DEFAULT_LOOKS,
   getCharacterAppearance,
+  getCharacterTextureUrl,
+  getModelLooks,
   listCharacters,
   searchWearables,
   setCharacterAppearance,
   type Character,
+  type CharacterModelRef,
   type ItemAppearance,
+  type ModelLookOptions,
+  type ModelLooks,
 } from '../services/api'
 import CharacterSubTabs from '../components/CharacterSubTabs'
 import { ItemIcon } from '../components/Icon'
@@ -22,7 +28,8 @@ const ModelViewer = lazy(() => import('../components/models/ModelViewer'))
 // The Dressing Room: your character's model from your own EverQuest
 // client, in the gear from their last Zeal inventory export, with any other
 // item tried on in its place. The game logs neither gender nor face, so
-// gender is picked here and saved per character.
+// gender and looks (face, hair, eyes) are picked here and saved per
+// character.
 
 type SlotDef = DressSlot
 const SLOTS = DRESS_SLOTS
@@ -37,7 +44,7 @@ export default function DressingRoomPage(): React.ReactElement {
   const [characters, setCharacters] = useState<Character[]>([])
   const [gender, setGender] = useState(0)
   const [luclin, setLuclin] = useState(false)
-  const [hair, setHair] = useState(0)
+  const [looks, setLooks] = useState<ModelLooks>(DEFAULT_LOOKS)
   const [equipped, setEquipped] = useState<Record<string, ItemAppearance>>({})
   const [exported, setExported] = useState<string | null>(null)
   const [tryOns, setTryOns] = useState<TryOns>({})
@@ -62,7 +69,10 @@ export default function DressingRoomPage(): React.ReactElement {
         if (!live) return
         setGender(a.gender)
         setLuclin(a.luclin)
-        setHair(a.hair ?? 0)
+        setLooks({
+          face: a.face ?? 0, hair: a.hair ?? 0, hair_color: a.hair_color ?? -1,
+          beard: a.beard ?? -1, beard_color: a.beard_color ?? -1, eyes: a.eyes ?? 0,
+        })
       })
       .catch(() => {})
     loadEquippedItems(viewed)
@@ -77,16 +87,17 @@ export default function DressingRoomPage(): React.ReactElement {
     }
   }, [viewed])
 
-  const saveAppearance = useCallback((next: { gender?: number; luclin?: boolean; hair?: number }) => {
+  const saveAppearance = useCallback((next: { gender?: number; luclin?: boolean } & Partial<ModelLooks>) => {
     if (!viewed) return
-    const g = next.gender ?? gender
-    const l = next.luclin ?? luclin
-    const h = next.hair ?? hair
+    const { gender: ng, luclin: nl, ...nextLooks } = next
+    const g = ng ?? gender
+    const l = nl ?? luclin
+    const lk = { ...looks, ...nextLooks }
     setGender(g)
     setLuclin(l)
-    setHair(h)
-    setCharacterAppearance({ name: viewed, gender: g, luclin: l, hair: h }).catch(() => {})
-  }, [viewed, gender, luclin, hair])
+    setLooks(lk)
+    setCharacterAppearance({ name: viewed, gender: g, luclin: l, ...lk }).catch(() => {})
+  }, [viewed, gender, luclin, looks])
 
   const worn = useCallback(
     (key: string): ItemAppearance | null => (key in tryOns ? tryOns[key] : equipped[key] ?? null),
@@ -94,8 +105,8 @@ export default function DressingRoomPage(): React.ReactElement {
   )
 
   const dress = useMemo(
-    (): ModelDress => ({ ...dressFor(worn, character?.class === MONK_CLASS), hair }),
-    [worn, character?.class, hair],
+    (): ModelDress => ({ ...dressFor(worn, character?.class === MONK_CLASS), looks }),
+    [worn, character?.class, looks],
   )
 
   const race = character?.race ?? -1
@@ -127,16 +138,6 @@ export default function DressingRoomPage(): React.ReactElement {
               value={luclin ? 1 : 0}
               onChange={(v) => saveAppearance({ luclin: v === 1 })}
             />
-            {luclin && (
-              <Toggle
-                options={[
-                  { value: -1, label: 'Bald' }, { value: 0, label: 'Hair 1' },
-                  { value: 1, label: 'Hair 2' }, { value: 2, label: 'Hair 3' },
-                ]}
-                value={hair}
-                onChange={(h) => saveAppearance({ hair: h })}
-              />
-            )}
           </div>
           <div className="relative min-h-0 flex-1">
             {!viewed || race <= 0 ? (
@@ -156,10 +157,18 @@ export default function DressingRoomPage(): React.ReactElement {
               </Suspense>
             )}
           </div>
-          <DressNotes info={info} luclin={luclin} hair={hair} />
+          <DressNotes info={info} luclin={luclin} hair={looks.hair} />
         </div>
 
         <div className="flex w-80 shrink-0 flex-col gap-3 overflow-y-auto">
+          {race > 0 && info && (
+            <LooksPanel
+              model={info.ref}
+              luclin={luclin}
+              looks={looks}
+              onChange={(l) => saveAppearance(l)}
+            />
+          )}
           <div className="rounded-lg"
             style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
             <div className="flex items-center justify-between border-b px-3 py-2" style={{ borderColor: 'var(--color-border)' }}>
@@ -256,6 +265,210 @@ function Toggle({ options, value, onChange }: {
           {o.label}
         </button>
       ))}
+    </div>
+  )
+}
+
+// LooksPanel picks a character's face, hair and eyes from what their
+// model has in the client. The game keeps these on the character but
+// never logs them, so they're set by hand to match what's seen in game.
+function LooksPanel({ model, luclin, looks, onChange }: {
+  model: CharacterModelRef
+  luclin: boolean
+  looks: ModelLooks
+  onChange: (l: Partial<ModelLooks>) => void
+}): React.ReactElement | null {
+  const [opts, setOpts] = useState<ModelLookOptions | null>(null)
+  const [eyes, setEyes] = useState<Record<number, ImageBitmap>>({})
+  useEffect(() => {
+    let live = true
+    const made: ImageBitmap[] = []
+    setOpts(null)
+    setEyes({})
+    getModelLooks(model)
+      .then(async (o) => {
+        if (!live) return
+        setOpts(o)
+        // Fetched and drawn, as the 3D view does (the page's CSP keeps
+        // images to its own origin).
+        for (const e of o.eyes) {
+          const res = await fetch(await getCharacterTextureUrl('lgequip.s3d', e.texture, false))
+          if (!live || !res.ok) continue
+          const bitmap = await createImageBitmap(await res.blob())
+          made.push(bitmap)
+          if (live) setEyes((u) => ({ ...u, [e.index]: bitmap }))
+        }
+      })
+      .catch(() => live && setOpts(null))
+    return () => {
+      live = false
+      made.forEach((b) => b.close())
+    }
+  }, [model.archive, model.code])
+  if (!opts) return null
+
+  const hairColor = looks.hair_color >= 0 ? looks.hair_color : opts.default_hair_color
+  const showHair = luclin && opts.hair.length > 0
+  return (
+    <div className="rounded-lg"
+      style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+      <div className="flex items-center justify-between border-b px-3 py-2" style={{ borderColor: 'var(--color-border)' }}>
+        <span className="text-xs font-semibold" style={{ color: 'var(--color-foreground)' }}>Looks</span>
+        <button
+          type="button"
+          onClick={() => onChange(DEFAULT_LOOKS)}
+          className="flex items-center gap-1 text-[11px]"
+          style={{ color: 'var(--color-muted-foreground)' }}
+          title="Back to the default face, hair and eyes"
+        >
+          <RotateCcw size={12} /> Default
+        </button>
+      </div>
+      <div className="space-y-2.5 px-3 py-2.5">
+        {opts.faces > 1 && (
+          <LookRow label="Face">
+            <Toggle
+              options={Array.from({ length: opts.faces }, (_, i) => ({ value: i, label: String(i + 1) }))}
+              value={Math.min(looks.face, opts.faces - 1)}
+              onChange={(f) => onChange({ face: f })}
+            />
+          </LookRow>
+        )}
+        {showHair && (
+          <LookRow label="Hair">
+            <Toggle
+              options={[
+                { value: -1, label: 'Bald' },
+                ...opts.hair.map((h) => ({ value: h, label: String(h + 1) })),
+              ]}
+              value={looks.hair}
+              onChange={(h) => onChange({ hair: h })}
+            />
+          </LookRow>
+        )}
+        {luclin && opts.hair_colors.length > 0 && (
+          <LookRow label="Hair colour">
+            <Swatches
+              colors={opts.hair_colors}
+              value={hairColor}
+              onChange={(c) => onChange({ hair_color: c })}
+            />
+          </LookRow>
+        )}
+        {luclin && opts.beards.length > 0 && (
+          <LookRow label="Beard">
+            <Toggle
+              options={[
+                { value: -1, label: 'None' },
+                ...opts.beards.map((b) => ({ value: b, label: String(b + 1) })),
+              ]}
+              value={opts.beards.includes(looks.beard) ? looks.beard : -1}
+              onChange={(b) => onChange({ beard: b })}
+            />
+          </LookRow>
+        )}
+        {luclin && opts.beards.length > 0 && looks.beard >= 0 && opts.hair_colors.length > 0 && (
+          <LookRow label="Beard colour">
+            <div className="flex flex-wrap items-center gap-1">
+              <button
+                type="button"
+                onClick={() => onChange({ beard_color: -1 })}
+                className="rounded px-1.5 py-0.5 text-[10px]"
+                style={looks.beard_color < 0
+                  ? { backgroundColor: 'var(--color-primary)', color: 'var(--color-primary-foreground, #fff)' }
+                  : { color: 'var(--color-muted-foreground)', border: '1px solid var(--color-border)' }}
+              >
+                As hair
+              </button>
+              <Swatches
+                colors={opts.hair_colors}
+                value={looks.beard_color}
+                onChange={(c) => onChange({ beard_color: c })}
+              />
+            </div>
+          </LookRow>
+        )}
+        {luclin && opts.eyes.length > 0 && (
+          <LookRow label="Eyes">
+            <div className="flex flex-wrap gap-1">
+              {opts.eyes.map((e) => {
+                const on = (looks.eyes || 1) === e.index
+                return (
+                  <button
+                    key={e.index}
+                    type="button"
+                    title={`Eye colour ${e.index}`}
+                    onClick={() => onChange({ eyes: e.index })}
+                    className="h-6 w-6 overflow-hidden rounded-full"
+                    style={{
+                      outline: on ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
+                      outlineOffset: on ? 1 : 0,
+                    }}
+                  >
+                    {eyes[e.index] && <BitmapSwatch bitmap={eyes[e.index]} />}
+                  </button>
+                )
+              })}
+            </div>
+          </LookRow>
+        )}
+        <p className="text-[11px] leading-relaxed" style={{ color: 'var(--color-muted)' }}>
+          {luclin
+            ? 'The game never logs your face, hair or eyes, so pick what you see in game. Saved for this character.'
+            : 'The game never logs your face, so pick what you see in game. Hair, beards and eye colour are on the Luclin models.'}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+// BitmapSwatch draws an image, centred and cropped to fill.
+function BitmapSwatch({ bitmap }: { bitmap: ImageBitmap }): React.ReactElement {
+  const ref = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    const ctx = ref.current?.getContext('2d')
+    if (!ctx) return
+    // The middle of the texture, where the iris is.
+    const side = Math.min(bitmap.width, bitmap.height) / 2
+    ctx.clearRect(0, 0, 48, 48)
+    ctx.drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, 48, 48)
+  }, [bitmap])
+  return <canvas ref={ref} width={48} height={48} className="h-full w-full" />
+}
+
+function LookRow({ label, children }: { label: string; children: React.ReactNode }): React.ReactElement {
+  return (
+    <div>
+      <div className="mb-1 text-[11px]" style={{ color: 'var(--color-muted)' }}>{label}</div>
+      {children}
+    </div>
+  )
+}
+
+function Swatches({ colors, value, onChange }: {
+  colors: { index: number; rgb: number }[]
+  value: number
+  onChange: (index: number) => void
+}): React.ReactElement {
+  return (
+    <div className="flex flex-wrap gap-1">
+      {colors.map((c) => {
+        const on = c.index === value
+        return (
+          <button
+            key={c.index}
+            type="button"
+            title={`Colour ${c.index + 1}`}
+            onClick={() => onChange(c.index)}
+            className="h-5 w-5 rounded-full"
+            style={{
+              backgroundColor: `#${c.rgb.toString(16).padStart(6, '0')}`,
+              outline: on ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
+              outlineOffset: on ? 1 : 0,
+            }}
+          />
+        )
+      })}
     </div>
   )
 }

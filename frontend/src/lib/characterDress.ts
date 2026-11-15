@@ -4,7 +4,7 @@
 // equipped). Shared by the dressing room and the 3D map's people.
 
 import { getItemAppearances, getZealInventory } from '../services/api'
-import type { ItemAppearance } from '../services/api'
+import type { ItemAppearance, ModelLooks } from '../services/api'
 
 /** ModelDress is what a model wears. */
 export interface ModelDress {
@@ -19,8 +19,8 @@ export interface ModelDress {
   shield?: boolean
   /** Only monks show the monk armor material (4). */
   monk?: boolean
-  /** Luclin hairstyle, 0-2, or -1 for none; 0 when left out. */
-  hair?: number
+  /** Face, hair and eyes; the defaults when left out. */
+  looks?: ModelLooks
 }
 
 export interface DressSlot {

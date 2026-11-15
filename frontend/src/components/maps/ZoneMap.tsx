@@ -10,6 +10,7 @@ import type {
 } from '../../types/map'
 import type { PlayerPosition } from '../../hooks/usePlayerPosition'
 import type { ModelDress } from '../../lib/characterDress'
+import type { ModelLooks } from '../../services/api'
 import type { GroupMemberPosition } from '../../hooks/useGroupPositions'
 
 // MapHighlight is a prominent marker drawn over the map, independent of the
@@ -74,8 +75,8 @@ export interface RaiderMarker {
 export interface MarkerModel {
   race: number
   gender: number
-  /** Luclin hairstyle (0-2, -1 for none). */
-  hair?: number
+  /** Face, hair and eyes picked in the dressing room. */
+  looks?: ModelLooks
   dress?: ModelDress | null
 }
 
