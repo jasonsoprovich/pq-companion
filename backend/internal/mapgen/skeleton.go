@@ -3,6 +3,7 @@ package mapgen
 import (
 	"encoding/binary"
 	"math"
+	"strings"
 )
 
 // Animated objects (flags, torches, braziers, signs) are skeletal: their
@@ -64,6 +65,8 @@ type bonePose struct {
 	track    int32
 	frame    int
 	keepRest bool
+	// src is the file the track is in, when it isn't the skeleton's own.
+	src *WLD
 }
 
 // skeletonMeshesPosed is skeletonMeshes with each bone's 0x13 track
@@ -71,17 +74,36 @@ type bonePose struct {
 // for an animation's and pick the frame (see posedSkeleton); nil keeps the
 // rest pose.
 func (w *WLD) skeletonMeshesPosed(r int32, pose func(track int32) bonePose) []Mesh {
+	meshes, _ := w.skeleton(r, pose, nil)
+	return meshes
+}
+
+// skeleton is skeletonMeshesPosed that also returns each bone's world
+// transform (raw space) by its rest track's name less "_TRACK"
+// ("HUMR_POINT"), which places items at the attachment points. swap, when
+// set, can replace a mesh by name ("HUMHE00_DMSPRITEDEF") with another in
+// the file, as the client does for helms and robes; it returns "" to keep
+// the mesh.
+func (w *WLD) skeleton(r int32, pose func(track int32) bonePose, swap func(name string) string) ([]Mesh, map[string]mat4) {
 	i, ok := w.ref(r, fragSkeletonRef)
 	if !ok || len(w.Fragments[i].payload) < 4 {
-		return nil
+		return nil, nil
 	}
 	j, ok := w.ref(int32(binary.LittleEndian.Uint32(w.Fragments[i].payload)), fragSkeleton)
 	if !ok {
-		return nil
+		return nil, nil
 	}
 	bones, meshRefs := parseSkeleton(w.Fragments[j].payload)
 	if len(bones) == 0 {
-		return nil
+		return nil, nil
+	}
+	meshOf := func(r int32) (Mesh, bool) {
+		if swap != nil {
+			if m, ok := w.swappedMesh(r, swap); ok {
+				return m, true
+			}
+		}
+		return w.meshRef(r)
 	}
 
 	// World pose per bone: parent then the bone's own frame, walking down
@@ -96,8 +118,12 @@ func (w *WLD) skeletonMeshesPosed(r int32, pose func(track int32) bonePose) []Me
 		seen[b] = true
 		local := w.trackPose(bones[b].track)
 		if pose != nil {
-			if bp := pose(bones[b].track); bp.track != bones[b].track || bp.frame != 0 {
-				anim := w.trackPoseFrame(bp.track, bp.frame)
+			if bp := pose(bones[b].track); bp.track != bones[b].track || bp.frame != 0 || bp.src != nil {
+				from := w
+				if bp.src != nil {
+					from = bp.src
+				}
+				anim := from.trackPoseFrame(bp.track, bp.frame)
 				if bp.keepRest {
 					anim[3], anim[7], anim[11] = local[3], local[7], local[11]
 				}
@@ -116,14 +142,21 @@ func (w *WLD) skeletonMeshesPosed(r int32, pose func(track int32) bonePose) []Me
 		}
 	}
 
+	points := make(map[string]mat4, len(bones))
+	for b, bn := range bones {
+		if k, ok := w.ref(bn.track, fragTrack); ok {
+			points[strings.TrimSuffix(strings.ToUpper(w.str(w.Fragments[k].nameRef)), "_TRACK")] = world[b]
+		}
+	}
+
 	var out []Mesh
 	for b, bn := range bones {
-		if m, ok := w.meshRef(bn.mesh); ok {
+		if m, ok := meshOf(bn.mesh); ok {
 			out = append(out, poseMesh(m, func(int) mat4 { return world[b] }))
 		}
 	}
 	for _, r := range meshRefs {
-		m, ok := w.meshRef(r)
+		m, ok := meshOf(r)
 		if !ok {
 			continue
 		}
@@ -146,7 +179,31 @@ func (w *WLD) skeletonMeshesPosed(r int32, pose func(track int32) bonePose) []Me
 			return identity
 		}))
 	}
-	return out
+	return out, points
+}
+
+// swappedMesh resolves a 0x2D reference to the mesh swap names in its
+// place, if it names one the file has.
+func (w *WLD) swappedMesh(r int32, swap func(string) string) (Mesh, bool) {
+	i, ok := w.ref(r, fragMeshRef)
+	if !ok || len(w.Fragments[i].payload) < 4 {
+		return Mesh{}, false
+	}
+	j, ok := w.ref(int32(binary.LittleEndian.Uint32(w.Fragments[i].payload)), fragMesh)
+	if !ok {
+		return Mesh{}, false
+	}
+	want := swap(strings.ToUpper(w.str(w.Fragments[j].nameRef)))
+	if want == "" {
+		return Mesh{}, false
+	}
+	for _, f := range w.Fragments {
+		if f.kind == fragMesh && strings.ToUpper(w.str(f.nameRef)) == want {
+			m, err := parseMesh(f.payload, w.Version)
+			return m, err == nil
+		}
+	}
+	return Mesh{}, false
 }
 
 // meshRef follows a 0x2D reference to its parsed 0x36 mesh.

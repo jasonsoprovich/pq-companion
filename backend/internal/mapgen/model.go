@@ -52,7 +52,10 @@ func chrArchives(clientDir string) (names []string, fingerprint string, err erro
 	h := sha1.New()
 	for _, e := range entries {
 		n := strings.ToLower(e.Name())
-		if e.IsDir() || !strings.HasSuffix(n, ".s3d") || !strings.Contains(n, "_chr") {
+		// Character archives, and the item models (weapons, shields)
+		// for dressing them.
+		isModels := strings.Contains(n, "_chr") || strings.HasPrefix(n, "gequip")
+		if e.IsDir() || !strings.HasSuffix(n, ".s3d") || !isModels {
 			continue
 		}
 		info, err := e.Info()
@@ -181,32 +184,117 @@ func (ix *ModelIndex) Resolve(race, gender int, zone string, luclin bool) (code,
 // arms out, otherwise). Positions are in map space with the model's own
 // origin; its textures are in the same archive.
 func LoadModel(clientDir, archive, code string) (*Mesh3D, error) {
+	p, err := LoadModelWith(clientDir, archive, code, ModelOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return p.Mesh, nil
+}
+
+// ModelOptions are the mesh swaps an original player model makes for what
+// it wears. Luclin models have no such meshes; their helms are item
+// models, which aren't drawn yet.
+type ModelOptions struct {
+	// Helm is the helm mesh, {code}HE0n: 0 bare head, 1 leather, 2 chain,
+	// 3 plate.
+	Helm int
+	// Robe swaps the body for the robed one, {code}01.
+	Robe bool
+}
+
+// PosedModel is a loaded model and where its bones ended up, for
+// attaching items to it.
+type PosedModel struct {
+	Mesh   *Mesh3D
+	code   string
+	points map[string]mat4
+}
+
+// LoadModelWith is LoadModel with mesh swaps, keeping the bone poses.
+func LoadModelWith(clientDir, archive, code string, opts ModelOptions) (*PosedModel, error) {
 	w, err := loadArchiveWLD(filepath.Join(clientDir, archive))
 	if err != nil {
 		return nil, err
 	}
-	want := strings.ToUpper(code) + "_ACTORDEF"
+	code = strings.ToUpper(code)
+	want := code + "_ACTORDEF"
+	swap := func(name string) string {
+		switch {
+		case opts.Helm > 0 && name == code+"HE00_DMSPRITEDEF":
+			return fmt.Sprintf("%sHE%02d_DMSPRITEDEF", code, opts.Helm)
+		case opts.Robe && name == code+"_DMSPRITEDEF":
+			return code + "01_DMSPRITEDEF"
+		}
+		return ""
+	}
 	for _, f := range w.Fragments {
 		if f.kind != fragActor || strings.ToUpper(w.str(f.nameRef)) != want {
 			continue
 		}
 		b := newMeshBuilder()
+		var points map[string]mat4
+		donor := luclinDonor(clientDir, archive, code)
 		for _, r := range actorComponents(f.payload) {
 			if m, ok := w.meshRef(r); ok {
 				b.add(w, m, nil, false)
 				continue
 			}
-			for _, m := range w.posedSkeleton(r, idleAnim, 0) {
+			meshes, pts := w.posedSkeletonFrom(r, idleAnim, 0, swap, donor)
+			for _, m := range meshes {
 				b.add(w, m, nil, false)
+			}
+			if points == nil {
+				points = pts
 			}
 		}
 		out := b.build()
 		if len(out.Idx) == 0 {
 			return nil, fmt.Errorf("%s in %s: %w", code, archive, ErrNoModel)
 		}
-		return out, nil
+		return &PosedModel{Mesh: out, code: code, points: points}, nil
 	}
 	return nil, fmt.Errorf("%s in %s: %w", code, archive, fs.ErrNotExist)
+}
+
+// luclinAnimDonors are the Luclin models that keep no animations of their
+// own, and the model the client animates them with: elves for the dark
+// and high elves, humans for the Erudites, dwarves for the halflings.
+var luclinAnimDonors = map[string]string{
+	"DAF": "ELF", "DAM": "ELM", "HIF": "ELF", "HIM": "ELM",
+	"ERF": "HUF", "ERM": "HUM", "HAF": "DWF", "HAM": "DWM",
+}
+
+// luclinDonor loads the animation donor for a Luclin model that needs
+// one, or nil.
+func luclinDonor(clientDir, archive, code string) *animDonor {
+	from, ok := luclinAnimDonors[code]
+	if !ok || archive != "global"+strings.ToLower(code)+"_chr.s3d" {
+		return nil
+	}
+	w, err := loadArchiveWLD(filepath.Join(clientDir, "global"+strings.ToLower(from)+"_chr.s3d"))
+	if err != nil {
+		return nil
+	}
+	return &animDonor{w: w, code: from}
+}
+
+// Attach places an item model at one of the model's attachment points
+// ("R_POINT", "L_POINT", "SHIELD_POINT", "HEAD_POINT"), returning the item
+// in the model's space. ok is false when the model has no such point.
+func (p *PosedModel) Attach(item *Mesh3D, point string) (*Mesh3D, bool) {
+	at, ok := p.points[p.code+strings.ToUpper(point)]
+	if !ok {
+		return nil, false
+	}
+	out := *item
+	out.Pos = make([]float32, len(item.Pos))
+	for i := 0; i+2 < len(item.Pos); i += 3 {
+		// Map space to raw, through the bone, and back (as poseMesh).
+		x, y, z := at.apply(-float64(item.Pos[i+1]), -float64(item.Pos[i]), float64(item.Pos[i+2]))
+		v := ToMapSpace(x, y, z)
+		out.Pos[i], out.Pos[i+1], out.Pos[i+2] = float32(v.X), float32(v.Y), float32(v.Z)
+	}
+	return &out, true
 }
 
 // posedSkeleton poses a skeletal actor (0x11 reference r) at frame frame
@@ -223,12 +311,38 @@ func LoadModel(clientDir, archive, code string) (*Mesh3D, error) {
 // a dwarf's walk would come out dwarf-shaped. With no good match, the model
 // is left in its rest pose: half-animated looks worse than arms out.
 func (w *WLD) posedSkeleton(r int32, anim string, frame int) []Mesh {
+	meshes, _ := w.posedSkeletonWith(r, anim, frame, nil)
+	return meshes
+}
+
+// posedSkeletonWith is posedSkeleton with mesh swaps and the bones' world
+// transforms (see skeleton).
+func (w *WLD) posedSkeletonWith(r int32, anim string, frame int, swap func(string) string) ([]Mesh, map[string]mat4) {
+	return w.posedSkeletonFrom(r, anim, frame, swap, nil)
+}
+
+// animDonor is another file's model to borrow an animation from, for
+// Luclin models that keep none of their own (see luclinAnimDonors).
+type animDonor struct {
+	w    *WLD
+	code string
+}
+
+// trackNames maps a WLD's track names to their references.
+func (w *WLD) trackNames() map[string]int32 {
 	tracks := map[string]int32{}
 	for i, f := range w.Fragments {
 		if f.kind == fragTrack {
 			tracks[strings.ToUpper(w.str(f.nameRef))] = int32(i + 1)
 		}
 	}
+	return tracks
+}
+
+// posedSkeletonFrom is posedSkeletonWith that, when the model's own file
+// has no usable animation, borrows from donor's.
+func (w *WLD) posedSkeletonFrom(r int32, anim string, frame int, swap func(string) string, donor *animDonor) ([]Mesh, map[string]mat4) {
+	tracks := w.trackNames()
 	var restNames []string
 	w.skeletonMeshesPosed(r, func(track int32) bonePose {
 		if i, ok := w.ref(track, fragTrack); ok {
@@ -237,11 +351,11 @@ func (w *WLD) posedSkeleton(r int32, anim string, frame int) []Mesh {
 		return bonePose{track: track}
 	})
 	if len(restNames) == 0 {
-		return w.skeletonMeshes(r)
+		return w.skeleton(r, nil, swap)
 	}
 	// The model's own code is its root bone's track name ("HUM_TRACK").
 	own := strings.TrimSuffix(restNames[0], "_TRACK")
-	find := func(code, rest string) (int32, bool) {
+	findIn := func(tracks map[string]int32, code, rest string) (int32, bool) {
 		name := code + strings.TrimPrefix(rest, own)
 		for _, p := range []string{anim, anim + "A", anim + "B"} {
 			if t, ok := tracks[p+name]; ok {
@@ -250,6 +364,7 @@ func (w *WLD) posedSkeleton(r int32, anim string, frame int) []Mesh {
 		}
 		return 0, false
 	}
+	find := func(code, rest string) (int32, bool) { return findIn(tracks, code, rest) }
 	// Attachment points (weapon, shield, guild and head points) and the
 	// root never move, so only the real bones count toward coverage.
 	moving := 0
@@ -291,11 +406,16 @@ func (w *WLD) posedSkeleton(r int32, anim string, frame int) []Mesh {
 			}
 		}
 		if moving == 0 || bestN*5 < moving*4 {
-			return w.skeletonMeshes(r)
+			if donor != nil && moving > 0 {
+				if meshes, pts, ok := w.donorPose(r, swap, donor, restNames, own, moving, frame, findIn); ok {
+					return meshes, pts
+				}
+			}
+			return w.skeleton(r, nil, swap)
 		}
 		source, keepRest = best, true
 	}
-	return w.skeletonMeshesPosed(r, func(track int32) bonePose {
+	return w.skeleton(r, func(track int32) bonePose {
 		i, ok := w.ref(track, fragTrack)
 		if !ok {
 			return bonePose{track: track}
@@ -304,7 +424,35 @@ func (w *WLD) posedSkeleton(r int32, anim string, frame int) []Mesh {
 			return bonePose{track: t, frame: frame, keepRest: keepRest}
 		}
 		return bonePose{track: track}
-	})
+	}, swap)
+}
+
+// donorPose poses a skeleton with another file's animation: rotations
+// from the donor, lengths the model's own. ok is false when the donor's
+// tracks cover too few of the model's bones.
+func (w *WLD) donorPose(r int32, swap func(string) string, donor *animDonor, restNames []string, own string, moving, frame int,
+	findIn func(map[string]int32, string, string) (int32, bool)) ([]Mesh, map[string]mat4, bool) {
+	tracks := donor.w.trackNames()
+	n := 0
+	for _, rest := range restNames {
+		if _, ok := findIn(tracks, donor.code, rest); ok && isMovingBone(own, rest) {
+			n++
+		}
+	}
+	if n*5 < moving*4 {
+		return nil, nil, false
+	}
+	meshes, pts := w.skeleton(r, func(track int32) bonePose {
+		i, ok := w.ref(track, fragTrack)
+		if !ok {
+			return bonePose{track: track}
+		}
+		if t, ok := findIn(tracks, donor.code, strings.ToUpper(w.str(w.Fragments[i].nameRef))); ok {
+			return bonePose{track: t, frame: frame, keepRest: true, src: donor.w}
+		}
+		return bonePose{track: track}
+	}, swap)
+	return meshes, pts, true
 }
 
 // isMovingBone reports whether a bone's rest track (named for model own)

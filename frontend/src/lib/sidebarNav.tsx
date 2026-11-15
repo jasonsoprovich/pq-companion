@@ -2,7 +2,7 @@ import React from 'react'
 import {
   Sword, Sparkles, Skull, Map, Hammer, Activity, Layers, ScrollText, Zap,
   Users, Dice5, UserSearch, MessageSquare, Package, TrendingUp, BookOpen,
-  Library, KeyRound, Hourglass, Star, Wand2, ListChecks, Percent, Store, PawPrint,
+  Library, KeyRound, Hourglass, Star, Wand2, ListChecks, Percent, Store, PawPrint, Shirt,
   Flag, Swords, ShieldBan, Keyboard, Route, Scale, Navigation, ShieldCheck, Film,
   Crosshair,
 } from 'lucide-react'
@@ -72,6 +72,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: '/characters/lockouts', label: 'Lockouts', icon: <Hourglass size={16} /> },
       { to: '/characters/wishlist', label: 'Wishlist', icon: <Star size={16} /> },
       { to: '/characters/upgrades', label: 'Gear Upgrades', icon: <Wand2 size={16} /> },
+      { to: '/characters/dressing-room', label: 'Dressing Room', icon: <Shirt size={16} /> },
       { to: '/characters/tasks', label: 'Tasks', icon: <ListChecks size={16} /> },
       { to: '/pop-flags', label: 'PoP Flags', icon: <Flag size={16} /> },
       { to: '/trader-tracker', label: 'Trader Tracker', icon: <Store size={16} /> },

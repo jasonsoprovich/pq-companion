@@ -156,7 +156,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	changelogH := &changelogHandler{entries: changelogEntries}
 	emotesH := &emotesHandler{service: emoteService}
 	mapsH := &mapsHandler{store: mapStore, annotations: mapAnnotations, cfg: cfgMgr, quarm: database}
-	modelsH := newModelsHandler(cfgMgr)
+	modelsH := newModelsHandler(cfgMgr, database, charStore)
 	raidsH := &raidsHandler{store: raidStore, roster: roster, pipe: pipeSupervisor, liveZone: liveZone}
 
 	r.Route("/api", func(r chi.Router) {
@@ -232,6 +232,13 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/resolve", modelsH.resolve)
 			r.Get("/mesh/{archive}/{code}", modelsH.mesh)
 			r.Get("/texture/{archive}/{name}", modelsH.texture)
+			r.Get("/outfit/{archive}/{code}", modelsH.outfit)
+			r.Get("/locate/{code}", modelsH.locate)
+			r.Get("/attach/{archive}/{code}/{point}/{itemArchive}/{item}", modelsH.attach)
+			r.Get("/items", modelsH.items)
+			r.Get("/wearables", modelsH.wearables)
+			r.Get("/appearance/{name}", modelsH.appearance)
+			r.Put("/appearance/{name}", modelsH.setAppearance)
 		})
 		r.Route("/maps", func(r chi.Router) {
 			r.Get("/status", mapsH.status)

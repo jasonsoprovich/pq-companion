@@ -14,6 +14,9 @@ func TestModelsRejectBadInput(t *testing.T) {
 	r.Get("/resolve", h.resolve)
 	r.Get("/mesh/{archive}/{code}", h.mesh)
 	r.Get("/texture/{archive}/{name}", h.texture)
+	r.Get("/outfit/{archive}/{code}", h.outfit)
+	r.Get("/locate/{code}", h.locate)
+	r.Get("/attach/{archive}/{code}/{point}/{itemArchive}/{item}", h.attach)
 	for _, path := range []string{
 		"/resolve?race=abc",
 		"/resolve?race=-1",
@@ -23,7 +26,12 @@ func TestModelsRejectBadInput(t *testing.T) {
 		"/mesh/global_chr.s3d/hum.wld", // not an actor code
 		"/texture/global_chr.s3d/..%2Fx.bmp",
 		"/texture/global_chr.s3d/humch0001.png",
-		"/texture/gequip.s3d/it1.bmp",
+		"/texture/lgequip_amr.s3d/it1.bmp", // not a model archive
+		"/outfit/global_chr.s3d/HUM?mats=1,2,3",
+		"/outfit/global_chr.s3d/HUM?mats=1,2,3,4,5,6,x",
+		"/attach/global_chr.s3d/HUM/HEAD_POINT/gequip.s3d/IT1",
+		"/attach/global_chr.s3d/HUM/R_POINT/qeynos.s3d/IT1",
+		"/locate/HUM",
 	} {
 		rec := httptest.NewRecorder()
 		r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
@@ -31,8 +39,8 @@ func TestModelsRejectBadInput(t *testing.T) {
 			t.Errorf("%s: status %d, want 400", path, rec.Code)
 		}
 	}
-	for _, name := range []string{"global_chr.s3d", "global_chr1.s3d", "globalhum_chr2.s3d", "sleeper2_chr.s3d", "global7_chr.s3d"} {
-		if !chrArchiveRe.MatchString(name) {
+	for _, name := range []string{"global_chr.s3d", "global_chr1.s3d", "globalhum_chr2.s3d", "sleeper2_chr.s3d", "global7_chr.s3d", "gequip.s3d", "gequip8.s3d", "global17_amr.s3d"} {
+		if !modelArchiveRe.MatchString(name) {
 			t.Errorf("%s rejected", name)
 		}
 	}

@@ -46,6 +46,7 @@ const ZonesPage = lazy(() => import('./pages/ZonesPage'))
 const MapsPage = lazy(() => import('./pages/MapsPage'))
 const LiveMapPage = lazy(() => import('./pages/LiveMapPage'))
 const RaidReplayPage = lazy(() => import('./pages/RaidReplayPage'))
+const DressingRoomPage = lazy(() => import('./pages/DressingRoomPage'))
 const LiveMapWindowPage = lazy(() => import('./pages/LiveMapWindowPage'))
 const RecipesPage = lazy(() => import('./pages/RecipesPage'))
 const TradeskillLevelingPage = lazy(() => import('./pages/TradeskillLevelingPage'))
@@ -430,6 +431,7 @@ export default function App(): React.ReactElement {
             <Route path="wishlist" element={<WishlistPage />} />
             <Route path="factions" element={<FactionsPage />} />
             <Route path="upgrades" element={<GearUpgradeFinderPage />} />
+            <Route path="dressing-room" element={<DressingRoomPage />} />
             <Route path="tasks" element={<CharacterTasksPage />} />
           </Route>
           <Route path="raids" element={<RaidsLayout />}>

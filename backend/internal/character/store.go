@@ -187,6 +187,9 @@ func (s *Store) migrate() error {
 	if err := s.migrateTasks(); err != nil {
 		return err
 	}
+	if err := s.migrateAppearance(); err != nil {
+		return err
+	}
 	if err := s.migrateWishlist(); err != nil {
 		return err
 	}

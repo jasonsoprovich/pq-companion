@@ -645,16 +645,122 @@ export async function resolveCharacterModel(
   return res.json()
 }
 
+// CharacterMeshOptions are the original player models' mesh swaps: a helm
+// (1 leather, 2 chain, 3 plate) and the robed body.
+export interface CharacterMeshOptions {
+  helm?: number
+  robe?: boolean
+}
+
 // getCharacterMesh3D fetches a character model posed standing, in the same
 // format as a zone mesh. Resolves null when the archive has no such model.
-export async function getCharacterMesh3D(ref: CharacterModelRef): Promise<ZoneMesh3D | null> {
+export async function getCharacterMesh3D(
+  ref: CharacterModelRef,
+  opts: CharacterMeshOptions = {},
+): Promise<ZoneMesh3D | null> {
   const baseUrl = await getBackendBaseUrl()
+  const q = new URLSearchParams()
+  if (opts.helm) q.set('helm', String(opts.helm))
+  if (opts.robe) q.set('robe', '1')
+  const qs = q.size ? `?${q}` : ''
   const res = await fetch(
-    `${baseUrl}/api/models/mesh/${encodeURIComponent(ref.archive)}/${encodeURIComponent(ref.code)}`,
+    `${baseUrl}/api/models/mesh/${encodeURIComponent(ref.archive)}/${encodeURIComponent(ref.code)}${qs}`,
   )
   if (res.status === 404) return null
   if (!res.ok) throw new Error(`model ${ref.code}: ${res.statusText}`)
   return parseMesh3D(await res.arrayBuffer(), `model ${ref.code}`)
+}
+
+// ModelTextureSwap replaces one of a model's textures to dress it.
+export interface ModelTextureSwap {
+  from: string
+  archive: string
+  name: string
+  slot: number
+  fallback?: boolean
+}
+
+// ModelOutfit is how to dress a model: load it with helm and robe, then
+// make the texture swaps. missing lists slots this model has no texture
+// for (they stay as loaded).
+export interface ModelOutfit {
+  helm: number
+  robe: boolean
+  swaps: ModelTextureSwap[]
+  missing: number[]
+}
+
+// getModelOutfit asks how a player model looks wearing mats, one material
+// per slot: head, chest, arms, wrist, hands, legs, feet.
+export async function getModelOutfit(ref: CharacterModelRef, mats: number[]): Promise<ModelOutfit> {
+  return get<ModelOutfit>(
+    `/api/models/outfit/${encodeURIComponent(ref.archive)}/${encodeURIComponent(ref.code)}?mats=${mats.join(',')}`,
+  )
+}
+
+// locateItemModel finds the archive holding an item's model (its idfile,
+// "IT63"). Resolves null when the client has none.
+export async function locateItemModel(idfile: string): Promise<CharacterModelRef | null> {
+  const baseUrl = await getBackendBaseUrl()
+  const res = await fetch(`${baseUrl}/api/models/locate/${encodeURIComponent(idfile)}`)
+  if (res.status === 404 || res.status === 400) return null
+  if (!res.ok) throw new Error(`item model ${idfile}: ${res.statusText}`)
+  return res.json()
+}
+
+// getAttachedMesh3D fetches an item model placed at one of a model's
+// attachment points, in the model's space. Its textures are in item.archive.
+export async function getAttachedMesh3D(
+  ref: CharacterModelRef,
+  point: 'R_POINT' | 'L_POINT' | 'SHIELD_POINT',
+  item: CharacterModelRef,
+): Promise<ZoneMesh3D | null> {
+  const baseUrl = await getBackendBaseUrl()
+  const parts = [ref.archive, ref.code, point, item.archive, item.code].map(encodeURIComponent)
+  const res = await fetch(`${baseUrl}/api/models/attach/${parts.join('/')}`)
+  if (res.status === 404) return null
+  if (!res.ok) throw new Error(`attach ${item.code}: ${res.statusText}`)
+  return parseMesh3D(await res.arrayBuffer(), `item ${item.code}`)
+}
+
+// ItemAppearance is what an item looks like worn: material picks the armor
+// texture, color tints it (0xRRGGBB, 0 for none), id_file is the model of
+// a held item.
+export interface ItemAppearance {
+  id: number
+  name: string
+  icon: number
+  slots: number
+  item_type: number
+  material: number
+  color: number
+  id_file: string
+}
+
+export function getItemAppearances(ids: number[]): Promise<ItemAppearance[]> {
+  return get<ItemAppearance[]>(`/api/models/items?ids=${ids.join(',')}`)
+}
+
+// searchWearables finds items to try on in a slot (items.slots bits).
+export function searchWearables(slots: number, q: string, signal?: AbortSignal): Promise<ItemAppearance[]> {
+  const qs = new URLSearchParams({ slots: String(slots), q })
+  return get<ItemAppearance[]>(`/api/models/wearables?${qs}`, signal)
+}
+
+// CharacterAppearance is the gender (0 male, 1 female) and model era saved
+// for a character; the game logs neither.
+export interface CharacterAppearance {
+  name: string
+  gender: number
+  luclin: boolean
+}
+
+export function getCharacterAppearance(name: string): Promise<CharacterAppearance> {
+  return get<CharacterAppearance>(`/api/models/appearance/${encodeURIComponent(name)}`)
+}
+
+export function setCharacterAppearance(a: CharacterAppearance): Promise<CharacterAppearance> {
+  return put<CharacterAppearance>(`/api/models/appearance/${encodeURIComponent(a.name)}`, a)
 }
 
 // getCharacterTextureUrl is where one of a character archive's textures is

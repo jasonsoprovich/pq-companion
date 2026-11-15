@@ -11,11 +11,18 @@
 
 import * as THREE from 'three'
 import {
+  getAttachedMesh3D,
   getCharacterMesh3D,
   getCharacterTextureUrl,
+  locateItemModel,
   resolveCharacterModel,
 } from '../services/api'
-import type { CharacterModelRef, ZoneMesh3D } from '../services/api'
+import type {
+  CharacterMeshOptions,
+  CharacterModelRef,
+  ModelOutfit,
+  ZoneMesh3D,
+} from '../services/api'
 
 export interface CharacterModelRequest {
   /** npc_types race id. */
@@ -38,7 +45,12 @@ export interface CharacterModelAsset {
   ref: CharacterModelRef
   geometry: THREE.BufferGeometry
   materials: THREE.Material[]
+  /** Each material's client texture name ("" for none). */
+  textures: string[]
   height: number
+  /** What was taken off map-space positions to centre the model (after
+   * the y flip); items attached to it are moved by the same. */
+  offset: [number, number, number]
 }
 
 const assets = new Map<string, Promise<CharacterModelAsset | null>>()
@@ -85,6 +97,106 @@ export function loadCharacterModel(r: CharacterModelRequest): Promise<CharacterM
   return p
 }
 
+/**
+ * loadModelVariant loads a resolved player model with mesh swaps (helm,
+ * robe), for the dressing room. Loads are shared like loadCharacterModel's.
+ */
+export function loadModelVariant(
+  ref: CharacterModelRef,
+  opts: CharacterMeshOptions,
+): Promise<CharacterModelAsset | null> {
+  if (!opts.helm && !opts.robe) {
+    const key = `ref|${ref.archive}|${ref.code}`
+    let p = assets.get(key)
+    if (!p) {
+      p = getCharacterMesh3D(ref).then((data) => (data ? buildAsset(ref, data) : null))
+      p.catch(() => assets.delete(key))
+      assets.set(key, p)
+    }
+    return p
+  }
+  const key = `variant|${ref.archive}|${ref.code}|${opts.helm ?? 0}|${opts.robe ? 1 : 0}`
+  let p = assets.get(key)
+  if (!p) {
+    p = getCharacterMesh3D(ref, opts).then((data) => (data ? buildAsset(ref, data) : null))
+    p.catch(() => assets.delete(key))
+    assets.set(key, p)
+  }
+  return p
+}
+
+/**
+ * loadAttachedItem loads an item model (idfile "IT63") placed at one of a
+ * loaded model's attachment points. Resolves null when the client has no
+ * such item model or the model no such point.
+ */
+export async function loadAttachedItem(
+  body: CharacterModelAsset,
+  point: 'R_POINT' | 'L_POINT' | 'SHIELD_POINT',
+  idfile: string,
+): Promise<CharacterModelAsset | null> {
+  const item = await locateItemModel(idfile)
+  if (!item) return null
+  const key = `attach|${body.ref.archive}|${body.ref.code}|${point}|${item.archive}|${item.code}`
+  let p = assets.get(key)
+  if (!p) {
+    p = getAttachedMesh3D(body.ref, point, item)
+      .then((data) => (data ? buildAsset(item, data, body.offset) : null))
+    p.catch(() => assets.delete(key))
+    assets.set(key, p)
+  }
+  return p
+}
+
+// Body part textures: model code, part, material (or "sk"), variant.
+const partTextureRe = /^[a-z]{3}(ch|fa|ft|hn|lg|ua|he)(?:[0-9]{2}|sk)[0-9]{2}\.(?:bmp|dds)$/
+const partSlots: Record<string, number> = { he: 0, ch: 1, ua: 2, fa: 3, hn: 4, lg: 5, ft: 6 }
+
+/** textureSlot is the material slot a body texture belongs to, or -1. */
+function textureSlot(name: string): number {
+  const lower = name.toLowerCase()
+  if (/^clk[0-9]{4}\.(?:bmp|dds)$/.test(lower)) return 1 // the robed body
+  const m = partTextureRe.exec(lower)
+  return m ? partSlots[m[1]] : -1
+}
+
+/**
+ * dressMaterials makes a model's materials for an outfit: the outfit's
+ * texture swaps, and each slot's tint (0xRRGGBB, 0 for none). The result
+ * is the caller's to dispose of; textures stay shared.
+ */
+export function dressMaterials(
+  asset: CharacterModelAsset,
+  outfit: ModelOutfit | null,
+  tints: number[],
+): THREE.Material[] {
+  const swaps = new Map((outfit?.swaps ?? []).map((s) => [s.from.toLowerCase(), s]))
+  return asset.materials.map((base, i) => {
+    const name = asset.textures[i] ?? ''
+    const swap = swaps.get(name.toLowerCase())
+    const slot = swap ? swap.slot : textureSlot(name)
+    const tint = slot >= 0 ? tints[slot] ?? 0 : 0
+    if (!swap && !tint) return base.clone()
+    const m = base.clone() as THREE.MeshLambertMaterial
+    if (swap) {
+      const map = texture(swap.archive, swap.name, false)
+      m.map = map
+      if ('emissiveMap' in m) m.emissiveMap = map
+    }
+    if (tint && m.color) {
+      // The client's tints are dark (Cobalt is 0x323264), so they're doubled.
+      const c = new THREE.Color().setRGB(
+        ((tint >> 16) & 0xff) / 127.5, ((tint >> 8) & 0xff) / 127.5, (tint & 0xff) / 127.5,
+        THREE.SRGBColorSpace,
+      )
+      m.color = c
+      if (m.emissive) m.emissive = c.clone()
+    }
+    m.needsUpdate = true
+    return m
+  })
+}
+
 /** createCharacterMesh makes a mesh of a loaded model, sharing its data. */
 export function createCharacterMesh(asset: CharacterModelAsset): THREE.Mesh {
   const mesh = new THREE.Mesh(asset.geometry, asset.materials)
@@ -92,7 +204,11 @@ export function createCharacterMesh(asset: CharacterModelAsset): THREE.Mesh {
   return mesh
 }
 
-function buildAsset(ref: CharacterModelRef, data: ZoneMesh3D): CharacterModelAsset {
+function buildAsset(
+  ref: CharacterModelRef,
+  data: ZoneMesh3D,
+  fixedOffset?: [number, number, number],
+): CharacterModelAsset {
   const pos = new Float32Array(data.positions)
   let minX = Infinity, minY = Infinity, minZ = Infinity
   let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity
@@ -103,13 +219,14 @@ function buildAsset(ref: CharacterModelRef, data: ZoneMesh3D): CharacterModelAss
     minY = Math.min(minY, pos[i + 1]); maxY = Math.max(maxY, pos[i + 1])
     minZ = Math.min(minZ, pos[i + 2]); maxZ = Math.max(maxZ, pos[i + 2])
   }
-  // Stand the model on its feet at the origin.
-  const cx = (minX + maxX) / 2
-  const cy = (minY + maxY) / 2
+  // Stand the model on its feet at the origin (an attached item moves
+  // with the model it's attached to).
+  const offset: [number, number, number] = fixedOffset ?? [(minX + maxX) / 2, (minY + maxY) / 2, minZ]
+  const [cx, cy, cz] = offset
   for (let i = 0; i < pos.length; i += 3) {
     pos[i] -= cx
     pos[i + 1] -= cy
-    pos[i + 2] -= minZ
+    pos[i + 2] -= cz
   }
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.BufferAttribute(pos, 3))
@@ -141,7 +258,8 @@ function buildAsset(ref: CharacterModelRef, data: ZoneMesh3D): CharacterModelAss
       depthWrite: m.kind !== 2,
     })
   })
-  return { ref, geometry, materials, height: maxZ - minZ }
+  const textures = data.materials.map((m) => m.texture)
+  return { ref, geometry, materials, textures, height: maxZ - minZ, offset }
 }
 
 // texture returns a character texture, starting its load the first time.

@@ -201,9 +201,14 @@ func TestLoadModelPosed(t *testing.T) {
 		t.Errorf("Luclin human %.1f wide, %.1f tall: not posed idle", width, height)
 	}
 	// Original models without an idle of their own borrow one: a dark
-	// elf female (no DAF tracks) stands with her arms down too.
-	for _, code := range []string{"DAF", "GNM", "HUF"} {
-		m, err := LoadModel(modelClientDir, "global_chr.s3d", code)
+	// elf female (no DAF tracks) stands with her arms down too. So do the
+	// Luclin models that keep no animations, from another race's file.
+	for _, c := range []struct{ archive, code string }{
+		{"global_chr.s3d", "DAF"}, {"global_chr.s3d", "GNM"}, {"global_chr.s3d", "HUF"},
+		{"globaldaf_chr.s3d", "DAF"}, {"globalerm_chr.s3d", "ERM"}, {"globalham_chr.s3d", "HAM"},
+	} {
+		code := c.code
+		m, err := LoadModel(modelClientDir, c.archive, code)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -221,7 +226,7 @@ func TestLoadModelPosed(t *testing.T) {
 		}
 		width := max(hi[0]-lo[0], hi[1]-lo[1])
 		if height := hi[2] - lo[2]; width > height*0.75 {
-			t.Errorf("%s %.1f wide, %.1f tall: still in the rest pose", code, width, height)
+			t.Errorf("%s/%s %.1f wide, %.1f tall: still in the rest pose", c.archive, code, width, height)
 		}
 	}
 	if _, err := LoadModel(modelClientDir, "global_chr.s3d", "NOPE"); err == nil {
