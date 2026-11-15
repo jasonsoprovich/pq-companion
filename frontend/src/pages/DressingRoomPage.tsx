@@ -2,8 +2,6 @@ import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useStat
 import { RotateCcw, Search, Shirt, X } from 'lucide-react'
 import {
   getCharacterAppearance,
-  getItemAppearances,
-  getZealInventory,
   listCharacters,
   searchWearables,
   setCharacterAppearance,
@@ -15,7 +13,9 @@ import { ItemIcon } from '../components/Icon'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
 import { useCachedState } from '../hooks/useCachedState'
 import { charRaceLabel } from '../lib/enumsCache'
-import type { DressInfo, ModelDress } from '../components/models/ModelViewer'
+import type { DressInfo } from '../components/models/ModelViewer'
+import { DRESS_SLOTS, MONK_CLASS, dressFor, loadEquippedItems } from '../lib/characterDress'
+import type { DressSlot, ModelDress } from '../lib/characterDress'
 
 const ModelViewer = lazy(() => import('../components/models/ModelViewer'))
 
@@ -24,40 +24,12 @@ const ModelViewer = lazy(() => import('../components/models/ModelViewer'))
 // item tried on in its place. The game logs neither gender nor face, so
 // gender is picked here and saved per character.
 
-interface SlotDef {
-  key: string
-  label: string
-  // items.slots bits for the slot.
-  mask: number
-  // Material slot (head, chest, arms, wrist, hands, legs, feet), or -1 for
-  // a held item.
-  material: number
-}
-
-const SLOTS: SlotDef[] = [
-  { key: 'Head', label: 'Head', mask: 4, material: 0 },
-  { key: 'Chest', label: 'Chest', mask: 131072, material: 1 },
-  { key: 'Arms', label: 'Arms', mask: 128, material: 2 },
-  { key: 'Wrist', label: 'Wrist', mask: 1536, material: 3 },
-  { key: 'Hands', label: 'Hands', mask: 4096, material: 4 },
-  { key: 'Legs', label: 'Legs', mask: 262144, material: 5 },
-  { key: 'Feet', label: 'Feet', mask: 524288, material: 6 },
-  { key: 'Primary', label: 'Primary', mask: 8192, material: -1 },
-  { key: 'Secondary', label: 'Secondary', mask: 16384, material: -1 },
-]
-
-const SHIELD_ITEM_TYPE = 8
-// The app's 0-based class index for Monk.
-const MONK_CLASS = 6
+type SlotDef = DressSlot
+const SLOTS = DRESS_SLOTS
 
 // Try-ons per slot: an item, or null for nothing; a slot not in the map
 // shows what's equipped.
 type TryOns = Record<string, ItemAppearance | null>
-
-function heldModel(item: ItemAppearance | null | undefined): string | undefined {
-  const f = item?.id_file?.toUpperCase() ?? ''
-  return /^IT[1-9][0-9]*$/.test(f) ? f : undefined
-}
 
 export default function DressingRoomPage(): React.ReactElement {
   const { active } = useActiveCharacter()
@@ -91,28 +63,11 @@ export default function DressingRoomPage(): React.ReactElement {
         setLuclin(a.luclin)
       })
       .catch(() => {})
-    getZealInventory(viewed)
-      .then(async (res) => {
-        const inv = res.inventory
-        if (!inv || !live) return
-        setExported(inv.exported_at)
-        // The first of a doubled slot (Wrist) is the one the client draws.
-        const bySlot = new Map<string, number>()
-        for (const e of inv.entries) {
-          if (SLOTS.some((s) => s.key === e.location) && !bySlot.has(e.location) && e.id > 0) {
-            bySlot.set(e.location, e.id)
-          }
-        }
-        if (bySlot.size === 0) return
-        const items = await getItemAppearances([...bySlot.values()])
+    loadEquippedItems(viewed)
+      .then((eq) => {
         if (!live) return
-        const byID = new Map(items.map((i) => [i.id, i]))
-        const out: Record<string, ItemAppearance> = {}
-        for (const [slot, id] of bySlot) {
-          const it = byID.get(id)
-          if (it) out[slot] = it
-        }
-        setEquipped(out)
+        setExported(eq.exportedAt)
+        setEquipped(eq.items)
       })
       .catch(() => {})
     return () => {
@@ -134,25 +89,10 @@ export default function DressingRoomPage(): React.ReactElement {
     [tryOns, equipped],
   )
 
-  const dress = useMemo((): ModelDress => {
-    const mats = [0, 0, 0, 0, 0, 0, 0]
-    const tints = [0, 0, 0, 0, 0, 0, 0]
-    for (const s of SLOTS) {
-      if (s.material < 0) continue
-      const it = worn(s.key)
-      mats[s.material] = it?.material ?? 0
-      tints[s.material] = it?.material ? it.color : 0
-    }
-    const secondary = worn('Secondary')
-    return {
-      mats,
-      tints,
-      primary: heldModel(worn('Primary')),
-      secondary: heldModel(secondary),
-      shield: secondary?.item_type === SHIELD_ITEM_TYPE,
-      monk: character?.class === MONK_CLASS,
-    }
-  }, [worn, character?.class])
+  const dress = useMemo(
+    (): ModelDress => dressFor(worn, character?.class === MONK_CLASS),
+    [worn, character?.class],
+  )
 
   const race = character?.race ?? -1
   const tried = Object.keys(tryOns).length

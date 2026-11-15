@@ -1,11 +1,18 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"reflect"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/jasonsoprovich/pq-companion/backend/internal/character"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/players"
 )
 
 func TestModelsRejectBadInput(t *testing.T) {
@@ -43,5 +50,43 @@ func TestModelsRejectBadInput(t *testing.T) {
 		if !modelArchiveRe.MatchString(name) {
 			t.Errorf("%s rejected", name)
 		}
+	}
+}
+
+func TestModelsPeople(t *testing.T) {
+	dir := t.TempDir()
+	chars, err := character.OpenStore(filepath.Join(dir, "user.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer chars.Close()
+	ps, err := players.OpenStore(filepath.Join(dir, "players.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ps.Close()
+	if _, err := chars.Create("Osui", 6, 6, 60); err != nil {
+		t.Fatal(err)
+	}
+	if err := chars.SetAppearance(character.Appearance{Name: "Osui", Gender: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ps.Upsert(players.SightingInput{Name: "Bela", Race: "Vah Shir", Class: "Warrior", Level: 50, ObservedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	h := &modelsHandler{chars: chars, players: ps}
+	rec := httptest.NewRecorder()
+	h.people(rec, httptest.NewRequest(http.MethodGet, "/people?names=osui,Bela,Nobody", nil))
+	var got []personModel
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	want := []personModel{
+		{Name: "osui", Race: 6, Gender: 1, Known: true},
+		{Name: "Bela", Race: 130, Known: true},
+		{Name: "Nobody"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("people = %+v, want %+v", got, want)
 	}
 }

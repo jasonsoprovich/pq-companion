@@ -120,5 +120,13 @@ func ModelCodes(race, gender int) []string {
 			out = append(out, c)
 		}
 	}
-	return out
+	return append(out, playableFallbacks[race]...)
+}
+
+// playableFallbacks are models to draw a player race with when the client
+// has none of its own: the TAKP client has no FRM/FRF for player frogloks,
+// only the froglok models in globalfroglok_chr.s3d (FRO is the one with
+// its animations there).
+var playableFallbacks = map[int][]string{
+	330: {"FRO", "FRG"},
 }

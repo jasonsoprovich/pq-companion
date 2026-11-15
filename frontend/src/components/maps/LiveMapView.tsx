@@ -14,6 +14,9 @@ import { CATEGORY_STYLE, ZoneMap, type RaiderMarker, type ReplayTarget } from '.
 import type { Pin3D } from './ZoneMap3D'
 import { TARGET_RING_COLOR, useSpawnOverlays } from './spawnOverlays'
 import { ErrorBoundary } from '../ErrorBoundary'
+import { useMap3DPrefs } from '../../hooks/useMap3DPrefs'
+import { usePeopleModels } from '../../hooks/usePeopleModels'
+import { useActivePlayerName } from '../../hooks/useActivePlayerName'
 
 // three.js is large; it loads only when the 3D view is picked.
 const ZoneMap3D = lazy(() => import('./ZoneMap3D'))
@@ -96,20 +99,32 @@ export default function LiveMapView({ zone: zoneName, prefs }: LiveMapViewProps)
     [prefs.aggro, aggroRings, targetRing],
   )
 
+  // People as character models, when the 3D view's People option is on.
+  const [prefs3D] = useMap3DPrefs()
+  const me = useActivePlayerName()
+  const peopleNames = useMemo(
+    () => [...raidMembers.map((m) => m.name), ...groupMembers.map((g) => g.name)],
+    [raidMembers, groupMembers],
+  )
+  const models = usePeopleModels(peopleNames, me, show3D && prefs3D.people !== 'off')
+
   const markers3D = useMemo((): RaiderMarker[] => {
     if (!show3D || !arrow) return []
-    const out = [...raiders]
+    const out = raiders.map((r) => ({ ...r, model: models.get(r.label.toLowerCase()) }))
     if (groupOn) {
       for (const g of groupMembers) {
-        out.push({ x: g.x, y: g.y, z: g.z, heading: g.heading, color: GROUP_3D, label: g.name, mine: true })
+        out.push({
+          x: g.x, y: g.y, z: g.z, heading: g.heading, color: GROUP_3D, label: g.name, mine: true,
+          model: models.get(g.name.toLowerCase()),
+        })
       }
     }
     out.push({
       x: arrow.x, y: arrow.y, z: arrow.z, heading: arrow.heading,
-      color: PLAYER_3D, label: 'You', focus: true, mine: true,
+      color: PLAYER_3D, label: 'You', focus: true, mine: true, model: models.get(me.toLowerCase()),
     })
     return out
-  }, [show3D, arrow, raiders, groupOn, groupMembers])
+  }, [show3D, arrow, raiders, groupOn, groupMembers, models, me])
 
   const pins3D = useMemo((): Pin3D[] => {
     if (!show3D) return []

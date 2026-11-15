@@ -23,7 +23,9 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/character"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/db/enums"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/mapgen"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/players"
 )
 
 // Character models for the 3D views and the dressing room, read from the
@@ -55,9 +57,10 @@ const modelMeshCacheSize = 48
 const modelTextureArchives = 6
 
 type modelsHandler struct {
-	cfg   *config.Manager
-	db    *db.DB
-	chars *character.Store
+	cfg     *config.Manager
+	db      *db.DB
+	chars   *character.Store
+	players *players.Store
 	// indexPath is where the model index is cached on disk.
 	indexPath string
 
@@ -78,8 +81,8 @@ type modelsHandler struct {
 	pngs     meshCache
 }
 
-func newModelsHandler(cfg *config.Manager, database *db.DB, chars *character.Store) *modelsHandler {
-	h := &modelsHandler{cfg: cfg, db: database, chars: chars}
+func newModelsHandler(cfg *config.Manager, database *db.DB, chars *character.Store, playerStore *players.Store) *modelsHandler {
+	h := &modelsHandler{cfg: cfg, db: database, chars: chars, players: playerStore}
 	h.meshes.size = modelMeshCacheSize
 	h.pngs.size = 512
 	if home, err := os.UserHomeDir(); err == nil {
@@ -445,6 +448,54 @@ func (h *modelsHandler) wearables(w http.ResponseWriter, r *http.Request) {
 	}
 	if out == nil {
 		out = []db.ItemAppearance{}
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// personModel is the race and gender to draw a player as. Known is false
+// when nothing says which race they are.
+type personModel struct {
+	Name   string `json:"name"`
+	Race   int    `json:"race"`
+	Gender int    `json:"gender"`
+	Known  bool   `json:"known"`
+}
+
+// people handles GET /api/models/people?names=a,b: the race and gender to
+// draw each player as. Your own characters come from the character list
+// and the gender picked in the dressing room; anyone else's race from
+// /who sightings. The game never says anyone's gender, so others are
+// male unless picked.
+func (h *modelsHandler) people(w http.ResponseWriter, r *http.Request) {
+	var names []string
+	for _, n := range strings.Split(r.URL.Query().Get("names"), ",") {
+		if n = strings.TrimSpace(n); n != "" && len(n) <= 64 {
+			names = append(names, n)
+		}
+	}
+	if len(names) > 120 {
+		writeError(w, http.StatusBadRequest, "too many names")
+		return
+	}
+	out := make([]personModel, 0, len(names))
+	for _, n := range names {
+		p := personModel{Name: n}
+		if h.chars != nil {
+			if c, ok, err := h.chars.GetByName(n); err == nil && ok && c.Race > 0 {
+				p.Race, p.Known = c.Race, true
+			}
+			if a, ok, err := h.chars.GetAppearance(n); err == nil && ok {
+				p.Gender = a.Gender
+			}
+		}
+		if !p.Known && h.players != nil {
+			if s, err := h.players.Get(n); err == nil && s != nil {
+				if id := enums.CharRaceID(s.EffectiveRace); id > 0 {
+					p.Race, p.Known = id, true
+				}
+			}
+		}
+		out = append(out, p)
 	}
 	writeJSON(w, http.StatusOK, out)
 }

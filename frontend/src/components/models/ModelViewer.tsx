@@ -1,36 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-import {
-  createCharacterMesh,
-  dressMaterials,
-  loadAttachedItem,
-  loadCharacterModel,
-  loadModelVariant,
-  onCharacterTexture,
-} from '../../lib/characterModels'
-import type { CharacterModelAsset, CharacterModelRequest } from '../../lib/characterModels'
-import { getModelOutfit } from '../../services/api'
-import type { CharacterModelRef, ModelOutfit } from '../../services/api'
+import { buildCharacter, onCharacterTexture } from '../../lib/characterModels'
+import type { DressedCharacter, CharacterModelRequest } from '../../lib/characterModels'
+import type { CharacterModelRef } from '../../services/api'
+import type { ModelDress } from '../../lib/characterDress'
 
 // ModelViewer shows one character model on its own, to turn around and zoom
 // into, optionally dressed (the dressing room). three.js is large, so pages
 // should load this lazily.
 
-/** ModelDress is what a model wears. */
-export interface ModelDress {
-  /** Material per slot: head, chest, arms, wrist, hands, legs, feet. */
-  mats: number[]
-  /** Tint per slot, 0xRRGGBB, 0 for none. */
-  tints: number[]
-  /** Model (idfile, "IT1") of the primary hand's item. */
-  primary?: string
-  /** Model of the secondary hand's item; shield goes on the arm. */
-  secondary?: string
-  shield?: boolean
-  /** Only monks show the monk armor material (4). */
-  monk?: boolean
-}
+export type { ModelDress } from '../../lib/characterDress'
 
 /** DressInfo reports how a dressing went, for the page to explain. */
 export interface DressInfo {
@@ -53,8 +33,8 @@ interface Stage {
   render: () => void
   // The model and what it holds; replaced on every change.
   group: THREE.Group
-  // Materials made for the current outfit, disposed on the next.
-  owned: THREE.Material[]
+  // The character shown, disposed when replaced.
+  shown: DressedCharacter | null
   // The model framed last, so a change of outfit keeps the user's view.
   framed: string
 }
@@ -124,14 +104,14 @@ export default function ModelViewer({ model, dress, onDressed, className }: {
     const ro = new ResizeObserver(resize)
     ro.observe(el)
     resize()
-    stage.current = { renderer, scene, camera, controls, render, group, owned: [], framed: '' }
+    stage.current = { renderer, scene, camera, controls, render, group, shown: null, framed: '' }
 
     return () => {
       cancelAnimationFrame(frame)
       offTexture()
       ro.disconnect()
       controls.dispose()
-      stage.current?.owned.forEach((m) => m.dispose())
+      stage.current?.shown?.dispose()
       stage.current = null
       renderer.dispose()
       renderer.domElement.remove()
@@ -145,48 +125,25 @@ export default function ModelViewer({ model, dress, onDressed, className }: {
     let live = true
     setStatus((st) => (st === 'ready' ? st : 'loading'))
     ;(async () => {
-      const base = await loadCharacterModel({ race, gender, zone, luclin })
-      if (!live) return
-      if (!base) {
-        s.group.clear()
+      const parsed: ModelDress | null = dressKey ? JSON.parse(dressKey) : null
+      const c = await buildCharacter({ race, gender, zone, luclin }, parsed)
+      if (!live) {
+        c?.dispose()
+        return
+      }
+      s.group.clear()
+      s.shown?.dispose()
+      s.shown = c
+      if (!c) {
         setStatus('none')
         return
       }
-      const parsed: ModelDress | null = dressKey ? JSON.parse(dressKey) : null
-      let asset: CharacterModelAsset = base
-      let outfit: ModelOutfit | null = null
-      if (parsed) {
-        outfit = await getModelOutfit(base.ref, parsed.mats, parsed.monk)
-        asset = (await loadModelVariant(base.ref, { helm: outfit.helm, robe: outfit.robe })) ?? base
-      }
-      const held: { which: 'primary' | 'secondary'; item: CharacterModelAsset | null }[] = []
-      if (parsed?.primary) {
-        held.push({ which: 'primary', item: await loadAttachedItem(asset, 'R_POINT', parsed.primary).catch(() => null) })
-      }
-      if (parsed?.secondary) {
-        const point = parsed.shield ? 'SHIELD_POINT' : 'L_POINT'
-        held.push({ which: 'secondary', item: await loadAttachedItem(asset, point, parsed.secondary).catch(() => null) })
-      }
-      if (!live) return
-
-      const old = s.owned
-      s.group.clear()
-      s.owned = []
-      if (parsed) {
-        const mats = dressMaterials(asset, outfit, parsed.tints)
-        s.owned.push(...mats)
-        s.group.add(new THREE.Mesh(asset.geometry, mats))
-      } else {
-        s.group.add(createCharacterMesh(asset))
-      }
-      for (const h of held) if (h.item) s.group.add(createCharacterMesh(h.item))
-      old.forEach((m) => m.dispose())
-
-      const refKey = `${base.ref.archive}|${base.ref.code}`
+      s.group.add(c.object)
+      const refKey = `${c.base.ref.archive}|${c.base.ref.code}`
       if (s.framed !== refKey) {
         // Models face world +y (raw +x after the map-space swap and the y
         // flip), so the camera starts in front, a little to the side.
-        const h = asset.height
+        const h = c.asset.height
         s.controls.target.set(0, 0, h * 0.5)
         s.camera.position.set(h * 0.55, h * 2.6, h * 0.75)
         s.controls.minDistance = h * 0.6
@@ -194,14 +151,11 @@ export default function ModelViewer({ model, dress, onDressed, className }: {
         s.controls.update()
         s.framed = refKey
       }
-      setLabel(`${base.ref.code} · ${base.ref.archive}`)
+      setLabel(`${c.base.ref.code} · ${c.base.ref.archive}`)
       setStatus('ready')
       s.render()
       onDressedRef.current?.({
-        ref: base.ref,
-        missing: outfit?.missing ?? [],
-        fallback: [...new Set((outfit?.swaps ?? []).filter((w) => w.fallback).map((w) => w.slot))],
-        missingItems: held.filter((h) => !h.item).map((h) => h.which),
+        ref: c.base.ref, missing: c.missing, fallback: c.fallback, missingItems: c.missingItems,
       })
     })().catch(() => live && setStatus('error'))
     return () => {

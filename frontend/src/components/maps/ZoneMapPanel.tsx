@@ -26,6 +26,9 @@ const PLAYER_3D = '#f8fafc'
 const GROUP_3D = '#7dd3fc'
 import { useActiveCharacterLevel } from '../../hooks/useActiveCharacterLevel'
 import { ErrorBoundary } from '../ErrorBoundary'
+import { useMap3DPrefs } from '../../hooks/useMap3DPrefs'
+import { usePeopleModels } from '../../hooks/usePeopleModels'
+import { useActivePlayerName } from '../../hooks/useActivePlayerName'
 import { AGGRO_SCOPES, DotLegend, TARGET_RING_COLOR, useSpawnOverlays, type AggroScope } from './spawnOverlays'
 import {
   mapMarkerCommand,
@@ -545,20 +548,32 @@ export function ZoneMapPanel({
 
   // You, your group and the raid as 3D markers; the camera follows you with
   // Follow me. Your group comes after the raid so it draws over it.
+  // People as character models, when the 3D view's People option is on.
+  const [prefs3D] = useMap3DPrefs()
+  const me = useActivePlayerName()
+  const peopleNames = useMemo(
+    () => [...raidMembers.map((m) => m.name), ...groupMembers.map((g) => g.name)],
+    [raidMembers, groupMembers],
+  )
+  const models = usePeopleModels(peopleNames, me, show3D && prefs3D.people !== 'off')
+
   const markers3D = useMemo((): RaiderMarker[] => {
     if (!show3D || !arrowPos || !zone || arrowPos.zone !== zone.zone) return []
-    const out: RaiderMarker[] = [...liveRaiders]
+    const out: RaiderMarker[] = liveRaiders.map((r) => ({ ...r, model: models.get(r.label.toLowerCase()) }))
     if (groupOn) {
       for (const g of groupMembers) {
-        out.push({ x: g.x, y: g.y, z: g.z, heading: g.heading, color: GROUP_3D, label: g.name, mine: true })
+        out.push({
+          x: g.x, y: g.y, z: g.z, heading: g.heading, color: GROUP_3D, label: g.name, mine: true,
+          model: models.get(g.name.toLowerCase()),
+        })
       }
     }
     out.push({
       x: arrowPos.x, y: arrowPos.y, z: arrowPos.z, heading: arrowPos.heading,
-      color: PLAYER_3D, label: 'You', focus: followPlayer, mine: true,
+      color: PLAYER_3D, label: 'You', focus: followPlayer, mine: true, model: models.get(me.toLowerCase()),
     })
     return out
-  }, [show3D, arrowPos, zone, groupMembers, groupOn, liveRaiders, followPlayer])
+  }, [show3D, arrowPos, zone, groupMembers, groupOn, liveRaiders, followPlayer, models, me])
 
   // The visible pin layers and your markers, plus whatever search or a click
   // picked out, as 3D pins.

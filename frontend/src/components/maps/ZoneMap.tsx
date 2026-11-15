@@ -9,6 +9,7 @@ import type {
   MapZone,
 } from '../../types/map'
 import type { PlayerPosition } from '../../hooks/usePlayerPosition'
+import type { ModelDress } from '../../lib/characterDress'
 import type { GroupMemberPosition } from '../../hooks/useGroupPositions'
 
 // MapHighlight is a prominent marker drawn over the map, independent of the
@@ -64,6 +65,16 @@ export interface RaiderMarker {
   focus?: boolean
   // mine is you or someone in your group, labelled under Labels: Group.
   mine?: boolean
+  // model is who this is, for the 3D view's People option: their race and
+  // gender, and what they wear when it's known (you, from your Zeal
+  // export). Without it, only the arrow is drawn.
+  model?: MarkerModel
+}
+
+export interface MarkerModel {
+  race: number
+  gender: number
+  dress?: ModelDress | null
 }
 
 // ReplayTarget is the observer's target in a raid replay, in map space: a

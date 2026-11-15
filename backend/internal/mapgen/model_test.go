@@ -41,6 +41,8 @@ func TestModelCodes(t *testing.T) {
 		// Neutral with no letter of its own: just the gender variants.
 		{"clockwork neutral", 15, 2, []string{"BRM", "BRF", "BRN"}},
 		{"froglok male", 23, 0, []string{"CPM", "CPF", "CPN"}},
+		// Player frogloks have no model of their own in the TAKP client.
+		{"player froglok", 330, 1, []string{"FRF", "FRM", "FRN", "FRO", "FRG"}},
 		// Races the client has no model for are drawn as humans.
 		{"unknown", 999, 1, []string{"HUF", "HUM", "HUN"}},
 		{"water golem (PoP)", 312, 0, []string{"HUM", "HUF", "HUN"}},

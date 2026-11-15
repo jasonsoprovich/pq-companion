@@ -1,5 +1,7 @@
 package enums
 
+import "strings"
+
 // charRaces maps the raw EQ race id used for PCs to a display name.
 //
 // This is the same namespace as npc_types.race (EQMacEmu Race), filtered
@@ -30,6 +32,17 @@ var charRaces = map[int]string{
 	128: "Iksar",
 	130: "Vah Shir",
 	330: "Froglok",
+}
+
+// CharRaceID returns the race id for a display name as /who prints it
+// ("Dark Elf"), ignoring case; 0 when it isn't a player race.
+func CharRaceID(name string) int {
+	for id, n := range charRaces {
+		if strings.EqualFold(n, strings.TrimSpace(name)) {
+			return id
+		}
+	}
+	return 0
 }
 
 // CharRaceName returns the display name for a PC race index.

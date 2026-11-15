@@ -7,6 +7,8 @@ import { getZoneMesh3D, getZoneTextureUrl } from '../../services/api'
 import type { ZoneMesh3D } from '../../services/api'
 import { useMap3DPrefs } from '../../hooks/useMap3DPrefs'
 import type { Map3DLabels, Map3DPrefs, Map3DStyle } from '../../hooks/useMap3DPrefs'
+import { PeopleLayer } from './people3D'
+import { onCharacterTexture } from '../../lib/characterModels'
 import { drawCompass, drawEye, type AggroRing, type RaiderMarker, type ReplayTarget, type SpawnDot } from './ZoneMap'
 
 // ZoneMap3D draws a zone in 3D from the user's own installed client files
@@ -186,6 +188,8 @@ interface Scene3D {
   camera: THREE.PerspectiveCamera
   controls: OrbitControls
   markers: THREE.Group
+  // people are the character models standing on the markers (People).
+  people: PeopleLayer
   pins: THREE.Group
   ringFill: THREE.Mesh
   ringLine: THREE.LineSegments
@@ -288,6 +292,9 @@ export default function ZoneMap3D({
     const markerGroup = new THREE.Group()
     markerGroup.renderOrder = 10
     sc.add(markerGroup)
+    const people = new PeopleLayer(() => scene.current?.render())
+    sc.add(people.group)
+    const offTexture = onCharacterTexture(() => scene.current?.render())
     const pinGroup = new THREE.Group()
     pinGroup.renderOrder = 8
     sc.add(pinGroup)
@@ -319,7 +326,7 @@ export default function ZoneMap3D({
 
     let frame = 0
     const s: Scene3D = {
-      renderer, scene: sc, camera, controls, markers: markerGroup, pins: pinGroup,
+      renderer, scene: sc, camera, controls, markers: markerGroup, people, pins: pinGroup,
       ringFill, ringLine, dotsKnown, dotsOther, targetLine,
       cut: new THREE.Plane(new THREE.Vector3(0, 0, -1), NO_CUT),
       layers: null, markerSize: 4, radius: 1000, hover: null, home: null,
@@ -368,6 +375,9 @@ export default function ZoneMap3D({
         // are freed.
         sc.remove(markerGroup)
         sc.remove(pinGroup)
+        offTexture()
+        people.dispose()
+        sc.remove(people.group)
         if (s.layers) {
           s.layers.materials.forEach((m) => m.dispose())
           s.layers.textures.forEach((t) => t.dispose())
@@ -528,6 +538,7 @@ export default function ZoneMap3D({
         resetView(s)
         setStatus('ready')
         updateMarkers(s, markersRef.current)
+        s.people.update(markersRef.current, prefsRef.current.people)
         updatePins(s, pinsRef.current ?? [])
         updateRings(s, ringsRef.current ?? [], prefsRef.current.dashFaint)
         updateDots(s, dotsRef.current ?? [])
@@ -554,6 +565,7 @@ export default function ZoneMap3D({
     const s = scene.current
     if (!s || status !== 'ready') return
     updateMarkers(s, markers)
+    s.people.update(markers, prefsRef.current.people)
     updateTargetLine(s, target ?? null)
     const f = markers.find((r) => r.focus)
     if (f) {
@@ -576,6 +588,14 @@ export default function ZoneMap3D({
     cutAbove(s, f, camRef.current, prefsRef.current.cutAbove, sliceRef.current)
     s.render()
   }, [markers, target, status])
+
+  // People on or off, or switched between original and Luclin models.
+  useEffect(() => {
+    const s = scene.current
+    if (!s || status !== 'ready') return
+    s.people.update(markersRef.current, prefs.people)
+    s.render()
+  }, [prefs.people, status])
 
   // Top looks straight down from where the camera is; Chase swings it
   // behind whoever it follows on the next marker update, and now.
@@ -811,6 +831,24 @@ function ViewOptions({ prefs, onChange, zRange, slice, onSlice }: {
                 color: prefs.style === v ? 'var(--color-background)' : 'var(--color-muted-foreground)',
               }}
               onClick={() => onChange({ style: v })}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div title="Draw people as their character models from your EverQuest files, standing on their arrows. Your own model wears your gear from your last Zeal inventory export; others' races come from /who, and the game never says anyone's gender, so they're drawn male">
+        <div className="mb-1" style={{ color: 'var(--color-muted)' }}>People</div>
+        <div className="flex overflow-hidden rounded border" style={{ borderColor: 'var(--color-border)' }}>
+          {([['off', 'Arrows'], ['original', 'Original'], ['luclin', 'Luclin']] as const).map(([v, label]) => (
+            <button
+              key={v}
+              className="flex-1 px-1 py-0.5"
+              style={{
+                backgroundColor: prefs.people === v ? 'var(--color-primary)' : 'transparent',
+                color: prefs.people === v ? 'var(--color-background)' : 'var(--color-muted-foreground)',
+              }}
+              onClick={() => onChange({ people: v })}
             >
               {label}
             </button>

@@ -10,6 +10,8 @@ import type { RaiderMarker, ReplayTarget } from '../components/maps/ZoneMap'
 import { useCachedState } from '../hooks/useCachedState'
 import { useStoredState } from '../hooks/useStoredState'
 import { useDPSClassColors } from '../hooks/useDPSClassColors'
+import { useMap3DPrefs } from '../hooks/useMap3DPrefs'
+import { usePeopleModels } from '../hooks/usePeopleModels'
 import { classColor } from '../lib/raidColors'
 import {
   deleteRaidNight,
@@ -405,6 +407,17 @@ export default function RaidReplayPage(): React.ReactElement {
     return out
   }, [rec, inGap, t, present, byIndex, indexByName, palette, focus])
 
+  // Raiders as character models, when the 3D view's People option is on.
+  // The recorder wears their gear from their latest Zeal export, which may
+  // not be what they wore that night.
+  const [prefs3D] = useMap3DPrefs()
+  const rosterNames = useMemo(() => [...byIndex.values()].map((m) => m.name), [byIndex])
+  const models = usePeopleModels(rosterNames, rec?.session.character ?? '', view3D && prefs3D.people !== 'off')
+  const raiders3D = useMemo(
+    () => (models.size ? raiders.map((r) => ({ ...r, model: models.get(r.label.toLowerCase()) })) : raiders),
+    [raiders, models],
+  )
+
   // The recorder's target: a line from them to it, ending on the raider when
   // they targeted one (a heal target), else at the mob's own position when
   // Zeal reported it.
@@ -589,7 +602,7 @@ export default function RaidReplayPage(): React.ReactElement {
                       <ZoneMap3D
                         key={rec.session.zone}
                         zone={rec.session.zone}
-                        markers={raiders}
+                        markers={raiders3D}
                         target={replayTarget}
                         pins={killPins}
                         onUnavailable={(why) =>

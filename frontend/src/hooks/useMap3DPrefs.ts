@@ -8,6 +8,10 @@ export type Map3DStyle = 'textured' | 'height' | 'plain'
 // you and your group, or everyone close enough to read.
 export type Map3DLabels = 'off' | 'group' | 'all'
 
+// Map3DPeople is how people are drawn: as arrows only, or also as the
+// character models from your client, original or Luclin era.
+export type Map3DPeople = 'off' | 'original' | 'luclin'
+
 export interface Map3DPrefs {
   style: Map3DStyle
   // wallOpacity applies to walls and ceilings (0.1–1); floors stay solid so
@@ -30,6 +34,9 @@ export interface Map3DPrefs {
   // or Chase camera follows you, so the floors over you in a stacked zone
   // (Bastion of Thunder, Plane of Knowledge) don't block the view down.
   cutAbove: boolean
+  // people draws you, your group and the raid as character models (read
+  // from your own client) standing on their arrows. Off by default.
+  people: Map3DPeople
 }
 
 const KEY = 'map3d.prefs'
@@ -39,9 +46,11 @@ const DEFAULTS: Map3DPrefs = {
   seeInvisEyes: true,
   dashFaint: true,
   cutAbove: true,
+  people: 'off',
 }
 const STYLES: readonly Map3DStyle[] = ['textured', 'height', 'plain']
 const LABELS: readonly Map3DLabels[] = ['off', 'group', 'all']
+const PEOPLE: readonly Map3DPeople[] = ['off', 'original', 'luclin']
 
 function load(): Map3DPrefs {
   try {
@@ -58,6 +67,7 @@ function load(): Map3DPrefs {
       seeInvisEyes: typeof p.seeInvisEyes === 'boolean' ? p.seeInvisEyes : DEFAULTS.seeInvisEyes,
       dashFaint: typeof p.dashFaint === 'boolean' ? p.dashFaint : DEFAULTS.dashFaint,
       cutAbove: typeof p.cutAbove === 'boolean' ? p.cutAbove : DEFAULTS.cutAbove,
+      people: PEOPLE.includes(p.people as Map3DPeople) ? (p.people as Map3DPeople) : DEFAULTS.people,
     }
   } catch {
     return DEFAULTS

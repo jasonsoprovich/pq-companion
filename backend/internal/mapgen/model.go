@@ -257,11 +257,12 @@ func LoadModelWith(clientDir, archive, code string, opts ModelOptions) (*PosedMo
 }
 
 // luclinAnimDonors are the Luclin models that keep no animations of their
-// own, and the model the client animates them with: elves for the dark
-// and high elves, humans for the Erudites, dwarves for the halflings.
+// own, and the model they borrow from: wood elves for the dark and high
+// elves, humans for the Erudites and half elves (HA; halflings are HO and
+// have their own).
 var luclinAnimDonors = map[string]string{
 	"DAF": "ELF", "DAM": "ELM", "HIF": "ELF", "HIM": "ELM",
-	"ERF": "HUF", "ERM": "HUM", "HAF": "DWF", "HAM": "DWM",
+	"ERF": "HUF", "ERM": "HUM", "HAF": "HUF", "HAM": "HUM",
 }
 
 // luclinDonor loads the animation donor for a Luclin model that needs

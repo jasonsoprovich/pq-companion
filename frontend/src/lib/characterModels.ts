@@ -14,9 +14,11 @@ import {
   getAttachedMesh3D,
   getCharacterMesh3D,
   getCharacterTextureUrl,
+  getModelOutfit,
   locateItemModel,
   resolveCharacterModel,
 } from '../services/api'
+import type { ModelDress } from './characterDress'
 import type {
   CharacterMeshOptions,
   CharacterModelRef,
@@ -291,4 +293,82 @@ function texture(archive: string, name: string, masked: boolean): THREE.Texture 
     .finally(() => listeners.forEach((fn) => fn()))
   t = tex
   return t
+}
+
+/** DressedCharacter is a ready-to-draw character: the model and what it
+ * holds, as one object. */
+export interface DressedCharacter {
+  object: THREE.Group
+  /** The model as loaded (with its helm and robe swaps). */
+  asset: CharacterModelAsset
+  /** The model the request resolved to, before swaps. */
+  base: CharacterModelAsset
+  /** Slots with no texture for this model, left as they were. */
+  missing: number[]
+  /** Slots shown with a stand-in texture. */
+  fallback: number[]
+  /** Held items with no model in the client. */
+  missingItems: ('primary' | 'secondary')[]
+  /** Frees the materials made for this outfit (geometry and textures are
+   * shared and stay). */
+  dispose: () => void
+}
+
+/**
+ * buildCharacter loads a character model, dressed when dress is given:
+ * armor textures and tints, helm and robe meshes, and the items in its
+ * hands. Resolves null when the client has no model for the race.
+ */
+export async function buildCharacter(
+  req: CharacterModelRequest,
+  dress?: ModelDress | null,
+): Promise<DressedCharacter | null> {
+  const base = await loadCharacterModel(req)
+  if (!base) return null
+  let asset = base
+  let outfit: ModelOutfit | null = null
+  if (dress) {
+    outfit = await getModelOutfit(base.ref, dress.mats, dress.monk)
+    asset = (await loadModelVariant(base.ref, { helm: outfit.helm, robe: outfit.robe })) ?? base
+  }
+  const held: { which: 'primary' | 'secondary'; item: CharacterModelAsset | null }[] = []
+  if (dress?.primary) {
+    held.push({ which: 'primary', item: await loadAttachedItem(asset, 'R_POINT', dress.primary).catch(() => null) })
+  }
+  if (dress?.secondary) {
+    const point = dress.shield ? 'SHIELD_POINT' : 'L_POINT'
+    held.push({ which: 'secondary', item: await loadAttachedItem(asset, point, dress.secondary).catch(() => null) })
+  }
+  const object = new THREE.Group()
+  const owned: THREE.Material[] = []
+  if (dress) {
+    const mats = dressMaterials(asset, outfit, dress.tints)
+    owned.push(...mats)
+    object.add(new THREE.Mesh(asset.geometry, mats))
+  } else {
+    object.add(createCharacterMesh(asset))
+  }
+  for (const h of held) if (h.item) object.add(createCharacterMesh(h.item))
+  return {
+    object,
+    asset,
+    base,
+    missing: outfit?.missing ?? [],
+    fallback: [...new Set((outfit?.swaps ?? []).filter((w) => w.fallback).map((w) => w.slot))],
+    missingItems: held.filter((h) => !h.item).map((h) => h.which),
+    dispose: () => owned.forEach((m) => m.dispose()),
+  }
+}
+
+// Standing heights of the player races in game units (the client's
+// defaults), since models aren't drawn at their own size: every Luclin
+// model is about as tall as a human.
+const RACE_HEIGHTS: Record<number, number> = {
+  1: 6, 2: 7, 3: 6, 4: 5, 5: 6, 6: 5, 7: 5.5, 8: 4, 9: 8, 10: 9,
+  11: 3.5, 12: 3, 128: 6, 130: 7, 330: 5,
+}
+
+/** raceHeight is how tall a player race stands, or null for other races. */
+export function raceHeight(race: number): number | null {
+  return RACE_HEIGHTS[race] ?? null
 }

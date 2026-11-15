@@ -761,6 +761,19 @@ export interface CharacterAppearance {
   luclin: boolean
 }
 
+// PersonModel is the race and gender to draw a player as; known is false
+// when nothing says which race they are.
+export interface PersonModel {
+  name: string
+  race: number
+  gender: number
+  known: boolean
+}
+
+export function getPeopleModels(names: string[]): Promise<PersonModel[]> {
+  return get<PersonModel[]>(`/api/models/people?names=${encodeURIComponent(names.join(','))}`)
+}
+
 export function getCharacterAppearance(name: string): Promise<CharacterAppearance> {
   return get<CharacterAppearance>(`/api/models/appearance/${encodeURIComponent(name)}`)
 }
