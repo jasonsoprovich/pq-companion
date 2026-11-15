@@ -57,7 +57,7 @@ export class PeopleLayer {
 
   private load(key: string, p: Person, m: RaiderMarker, luclin: boolean): void {
     const model = m.model!
-    buildCharacter({ race: model.race, gender: model.gender, luclin }, model.dress ?? null)
+    buildCharacter({ race: model.race, gender: model.gender, luclin, hair: model.hair }, model.dress ?? null)
       .then((char) => {
         if (this.disposed || this.people.get(key) !== p) {
           char?.dispose()

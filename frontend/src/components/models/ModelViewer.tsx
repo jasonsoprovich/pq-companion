@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { buildCharacter, onCharacterTexture } from '../../lib/characterModels'
 import type { DressedCharacter, CharacterModelRequest } from '../../lib/characterModels'
-import type { CharacterModelRef } from '../../services/api'
+import type { CharacterModelRef, WornModel } from '../../services/api'
 import type { ModelDress } from '../../lib/characterDress'
 
 // ModelViewer shows one character model on its own, to turn around and zoom
@@ -21,6 +21,8 @@ export interface DressInfo {
   fallback: number[]
   /** Held items with no model in the client. */
   missingItems: ('primary' | 'secondary')[]
+  /** What a Luclin model wears as models (hair, robe, plate). */
+  wear: WornModel[]
 }
 
 type Status = 'loading' | 'ready' | 'none' | 'error' | 'webgl'
@@ -156,6 +158,7 @@ export default function ModelViewer({ model, dress, onDressed, className }: {
       s.render()
       onDressedRef.current?.({
         ref: c.base.ref, missing: c.missing, fallback: c.fallback, missingItems: c.missingItems,
+        wear: c.wear,
       })
     })().catch(() => live && setStatus('error'))
     return () => {

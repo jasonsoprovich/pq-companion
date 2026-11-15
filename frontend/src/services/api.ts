@@ -680,27 +680,41 @@ export interface ModelTextureSwap {
   fallback?: boolean
 }
 
+// WornModel is a model a Luclin character wears (hair, robe, a piece of
+// plate): item model `item` in `archive`, hung from bone `point`. slot is
+// the material slot whose tint it takes, -1 for hair.
+export interface WornModel {
+  item: string
+  archive: string
+  point: AttachPoint
+  slot: number
+}
+
 // ModelOutfit is how to dress a model: load it with helm and robe, then
-// make the texture swaps. missing lists slots this model has no texture
-// for (they stay as loaded).
+// make the texture swaps and, on a Luclin model, put on the worn models.
+// missing lists slots this model has no texture for (they stay as
+// loaded).
 export interface ModelOutfit {
   helm: number
   robe: boolean
   swaps: ModelTextureSwap[]
   missing: number[]
+  wear: WornModel[]
 }
 
 // getModelOutfit asks how a player model looks wearing mats, one material
 // per slot: head, chest, arms, wrist, hands, legs, feet. monk matters
-// because only monks show the monk armor material.
+// because only monks show the monk armor material; hair is a Luclin
+// model's hairstyle (0-2, -1 for none).
 export async function getModelOutfit(
   ref: CharacterModelRef,
   mats: number[],
   monk = false,
+  hair = 0,
 ): Promise<ModelOutfit> {
   const m = monk ? '&monk=1' : ''
   return get<ModelOutfit>(
-    `/api/models/outfit/${encodeURIComponent(ref.archive)}/${encodeURIComponent(ref.code)}?mats=${mats.join(',')}${m}`,
+    `/api/models/outfit/${encodeURIComponent(ref.archive)}/${encodeURIComponent(ref.code)}?mats=${mats.join(',')}${m}&hair=${hair}`,
   )
 }
 
@@ -714,11 +728,19 @@ export async function locateItemModel(idfile: string): Promise<CharacterModelRef
   return res.json()
 }
 
+// AttachPoint is a bone items hang from: the hands and shield arm, and the
+// bones of the Luclin worn models.
+export type AttachPoint =
+  | 'R_POINT' | 'L_POINT' | 'SHIELD_POINT'
+  | 'HAIR_POINT' | 'HEAD_POINT' | 'CHEST_POINT' | 'TUNIC_POINT'
+  | 'SHOULDR_POINT' | 'SHOULDL_POINT' | 'GAUNTR_POINT' | 'GAUNTL_POINT'
+  | 'PELVIS_POINT' | 'LEGL_POINT' | 'LEGR_POINT'
+
 // getAttachedMesh3D fetches an item model placed at one of a model's
 // attachment points, in the model's space. Its textures are in item.archive.
 export async function getAttachedMesh3D(
   ref: CharacterModelRef,
-  point: 'R_POINT' | 'L_POINT' | 'SHIELD_POINT',
+  point: AttachPoint,
   item: CharacterModelRef,
 ): Promise<ZoneMesh3D | null> {
   const baseUrl = await getBackendBaseUrl()
@@ -753,20 +775,23 @@ export function searchWearables(slots: number, q: string, signal?: AbortSignal):
   return get<ItemAppearance[]>(`/api/models/wearables?${qs}`, signal)
 }
 
-// CharacterAppearance is the gender (0 male, 1 female) and model era saved
-// for a character; the game logs neither.
+// CharacterAppearance is the gender (0 male, 1 female), model era and
+// Luclin hairstyle (0-2, -1 for none) saved for a character; the game logs
+// none of them.
 export interface CharacterAppearance {
   name: string
   gender: number
   luclin: boolean
+  hair: number
 }
 
-// PersonModel is the race and gender to draw a player as; known is false
-// when nothing says which race they are.
+// PersonModel is the race, gender and Luclin hairstyle to draw a player
+// as; known is false when nothing says which race they are.
 export interface PersonModel {
   name: string
   race: number
   gender: number
+  hair: number
   known: boolean
 }
 

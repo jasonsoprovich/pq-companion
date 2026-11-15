@@ -39,11 +39,18 @@ import (
 
 var (
 	// modelArchiveRe guards an archive name from the URL: a character
-	// archive in the EQ folder, an item model archive (gequip) or a
-	// Velious armor texture archive (global17_amr), no paths.
-	modelArchiveRe = regexp.MustCompile(`^([a-z0-9_]{1,40}_chr[0-9]?|gequip[0-9]?|global[0-9]{2}_amr)\.s3d$`)
-	// attachPoints are the points items can be attached at.
-	attachPoints = map[string]bool{"R_POINT": true, "L_POINT": true, "SHIELD_POINT": true}
+	// archive in the EQ folder, an item model archive (gequip), the Luclin
+	// worn models (lgequip, lgequip_amr) or a Velious armor texture
+	// archive (global17_amr), no paths.
+	modelArchiveRe = regexp.MustCompile(`^([a-z0-9_]{1,40}_chr[0-9]?|gequip[0-9]?|lgequip(_amr)?[0-9]?|global[0-9]{2}_amr)\.s3d$`)
+	// attachPoints are the points items can be attached at: hands and
+	// shield, and the bones the Luclin worn models hang from.
+	attachPoints = map[string]bool{
+		"R_POINT": true, "L_POINT": true, "SHIELD_POINT": true,
+		"HAIR_POINT": true, "HEAD_POINT": true, "CHEST_POINT": true, "TUNIC_POINT": true,
+		"SHOULDR_POINT": true, "SHOULDL_POINT": true, "GAUNTR_POINT": true, "GAUNTL_POINT": true,
+		"PELVIS_POINT": true, "LEGL_POINT": true, "LEGR_POINT": true,
+	}
 	// modelCodeRe guards an actor code ("HUM", "DR2", "LAUNCH").
 	modelCodeRe = regexp.MustCompile(`^[A-Z0-9]{2,8}$`)
 )
@@ -259,17 +266,26 @@ func (h *modelsHandler) mesh(w http.ResponseWriter, r *http.Request) {
 }
 
 // outfitResponse is how to dress a model: the mesh swaps to load it with,
-// then the texture swaps to make on it.
+// then the texture swaps to make on it, and on a Luclin model the models
+// it wears (hair, robe, plate), each to fetch from /attach.
 type outfitResponse struct {
 	Helm int  `json:"helm"`
 	Robe bool `json:"robe"`
 	mapgen.OutfitResult
+	Wear []wornModel `json:"wear"`
 }
 
-// outfit handles GET /api/models/outfit/{archive}/{code}?mats=h,c,a,w,g,l,f[&monk=1]:
+// wornModel is a Luclin worn model and the archive it's in.
+type wornModel struct {
+	mapgen.Wearable
+	Archive string `json:"archive"`
+}
+
+// outfit handles GET /api/models/outfit/{archive}/{code}?mats=h,c,a,w,g,l,f[&monk=1][&hair=n]:
 // how a player model looks wearing those materials (head, chest, arms,
 // wrist, hands, legs, feet; 0 for nothing). monk matters because only
-// monks show the monk armor material.
+// monks show the monk armor material; hair is a Luclin model's hairstyle
+// (0-2, -1 for none; 0 when left out).
 func (h *modelsHandler) outfit(w http.ResponseWriter, r *http.Request) {
 	archive := strings.ToLower(chi.URLParam(r, "archive"))
 	code := strings.ToUpper(chi.URLParam(r, "code"))
@@ -324,13 +340,47 @@ func (h *modelsHandler) outfit(w http.ResponseWriter, r *http.Request) {
 	}
 	res := mapgen.DressTextures(archive, who, textures, mats, has)
 	h.texMu.Unlock()
+	wear := []wornModel{}
+	if luclin {
+		hair, err := strconv.Atoi(r.URL.Query().Get("hair"))
+		if err != nil || hair < mapgen.NoHair || hair > 9 {
+			hair = 0
+		}
+		ix, err := h.modelIndex(eqPath)
+		if err != nil {
+			writeModelError(w, err, "model index")
+			return
+		}
+		located := map[string]string{}
+		find := func(item string) bool {
+			if a, ok := ix.Locate(item, "", false); ok && strings.HasPrefix(a, "lgequip") {
+				located[item] = a
+				return true
+			}
+			return false
+		}
+		covered := map[int]bool{}
+		for _, wm := range mapgen.LuclinWear(code, mats, hair, who, find) {
+			wear = append(wear, wornModel{Wearable: wm, Archive: located[wm.Item]})
+			covered[wm.Slot] = true
+		}
+		// A slot a worn model covers (the plate chest) has no texture of
+		// its own to miss.
+		kept := res.Missing[:0]
+		for _, s := range res.Missing {
+			if !covered[s] {
+				kept = append(kept, s)
+			}
+		}
+		res.Missing = kept
+	}
 	if res.Swaps == nil {
 		res.Swaps = []mapgen.TextureSwap{}
 	}
 	if res.Missing == nil {
 		res.Missing = []int{}
 	}
-	writeJSON(w, http.StatusOK, outfitResponse{Helm: opts.Helm, Robe: opts.Robe, OutfitResult: res})
+	writeJSON(w, http.StatusOK, outfitResponse{Helm: opts.Helm, Robe: opts.Robe, OutfitResult: res, Wear: wear})
 }
 
 // locate handles GET /api/models/locate/{code}: the archive holding an
@@ -361,6 +411,7 @@ func (h *modelsHandler) locate(w http.ResponseWriter, r *http.Request) {
 // attach handles GET /api/models/attach/{archive}/{code}/{point}/{itemArchive}/{item}:
 // item model {item} placed at {point} of the standing model, in the
 // model's space, packed like /mesh. Its textures are in {itemArchive}.
+// A Luclin worn model (lgequip) bends with the body (mapgen.PosedModel.Wear).
 func (h *modelsHandler) attach(w http.ResponseWriter, r *http.Request) {
 	archive := strings.ToLower(chi.URLParam(r, "archive"))
 	code := strings.ToUpper(chi.URLParam(r, "code"))
@@ -388,15 +439,24 @@ func (h *modelsHandler) attach(w http.ResponseWriter, r *http.Request) {
 		writeModelError(w, err, code+" in "+archive)
 		return
 	}
-	m, err := mapgen.LoadModel(eqPath, itemArchive, item)
-	if err != nil {
-		writeModelError(w, err, item+" in "+itemArchive)
-		return
-	}
-	placed, ok := p.Attach(m, point)
-	if !ok {
-		writeError(w, http.StatusNotFound, code+" has no "+point)
-		return
+	var placed *mapgen.Mesh3D
+	if strings.HasPrefix(itemArchive, "lgequip") {
+		placed, err = p.Wear(eqPath, itemArchive, item, point)
+		if err != nil {
+			writeModelError(w, err, item+" on "+code)
+			return
+		}
+	} else {
+		m, err := mapgen.LoadModel(eqPath, itemArchive, item)
+		if err != nil {
+			writeModelError(w, err, item+" in "+itemArchive)
+			return
+		}
+		var ok bool
+		if placed, ok = p.Attach(m, point); !ok {
+			writeError(w, http.StatusNotFound, code+" has no "+point)
+			return
+		}
 	}
 	buf := placed.Encode()
 	h.meshes.put(key, buf)
@@ -458,7 +518,10 @@ type personModel struct {
 	Name   string `json:"name"`
 	Race   int    `json:"race"`
 	Gender int    `json:"gender"`
-	Known  bool   `json:"known"`
+	// Hair is the Luclin hairstyle picked in the dressing room (0 unless
+	// picked).
+	Hair  int  `json:"hair"`
+	Known bool `json:"known"`
 }
 
 // people handles GET /api/models/people?names=a,b: the race and gender to
@@ -485,7 +548,7 @@ func (h *modelsHandler) people(w http.ResponseWriter, r *http.Request) {
 				p.Race, p.Known = c.Race, true
 			}
 			if a, ok, err := h.chars.GetAppearance(n); err == nil && ok {
-				p.Gender = a.Gender
+				p.Gender, p.Hair = a.Gender, a.Hair
 			}
 		}
 		if !p.Known && h.players != nil {

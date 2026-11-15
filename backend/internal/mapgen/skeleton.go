@@ -85,6 +85,14 @@ func (w *WLD) skeletonMeshesPosed(r int32, pose func(track int32) bonePose) []Me
 // the file, as the client does for helms and robes; it returns "" to keep
 // the mesh.
 func (w *WLD) skeleton(r int32, pose func(track int32) bonePose, swap func(name string) string) ([]Mesh, map[string]mat4) {
+	return w.skeletonBound(r, pose, swap, nil)
+}
+
+// skeletonBound is skeleton where bind, when set, can place a bone outright
+// by its rest track's name less "_TRACK": a worn model's bones follow the
+// wearer's like-named ones. Bones bind leaves alone hang from their parent
+// as usual.
+func (w *WLD) skeletonBound(r int32, pose func(track int32) bonePose, swap func(name string) string, bind func(name string) (mat4, bool)) ([]Mesh, map[string]mat4) {
 	i, ok := w.ref(r, fragSkeletonRef)
 	if !ok || len(w.Fragments[i].payload) < 4 {
 		return nil, nil
@@ -116,6 +124,18 @@ func (w *WLD) skeleton(r int32, pose func(track int32) bonePose, swap func(name 
 			return
 		}
 		seen[b] = true
+		if bind != nil {
+			if k, ok := w.ref(bones[b].track, fragTrack); ok {
+				name := strings.TrimSuffix(strings.ToUpper(w.str(w.Fragments[k].nameRef)), "_TRACK")
+				if m, ok := bind(name); ok {
+					world[b] = m
+					for _, c := range bones[b].children {
+						walk(c, world[b])
+					}
+					return
+				}
+			}
+		}
 		local := w.trackPose(bones[b].track)
 		if pose != nil {
 			if bp := pose(bones[b].track); bp.track != bones[b].track || bp.frame != 0 || bp.src != nil {

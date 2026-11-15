@@ -33,10 +33,10 @@ func TestModelsRejectBadInput(t *testing.T) {
 		"/mesh/global_chr.s3d/hum.wld", // not an actor code
 		"/texture/global_chr.s3d/..%2Fx.bmp",
 		"/texture/global_chr.s3d/humch0001.png",
-		"/texture/lgequip_amr.s3d/it1.bmp", // not a model archive
+		"/texture/lgequip_obj.s3d/it1.bmp", // not a model archive
 		"/outfit/global_chr.s3d/HUM?mats=1,2,3",
 		"/outfit/global_chr.s3d/HUM?mats=1,2,3,4,5,6,x",
-		"/attach/global_chr.s3d/HUM/HEAD_POINT/gequip.s3d/IT1",
+		"/attach/global_chr.s3d/HUM/NECK_POINT/gequip.s3d/IT1",
 		"/attach/global_chr.s3d/HUM/R_POINT/qeynos.s3d/IT1",
 		"/locate/HUM",
 	} {

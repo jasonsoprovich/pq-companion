@@ -66,12 +66,12 @@ func TestDressTextures(t *testing.T) {
 			}},
 		},
 		{
-			name: "luclin plate: chain chest stands in", archive: "globalhum_chr.s3d", who: Wearer{Luclin: true}, textures: luclin,
+			// The plate chest is a worn model; the body under it stays bare.
+			name: "luclin plate: no chest texture", archive: "globalhum_chr.s3d", who: Wearer{Luclin: true}, textures: luclin,
 			mats: [MaterialSlots]int{SlotChest: 3, SlotLegs: 3},
 			want: OutfitResult{Swaps: []TextureSwap{
-				{From: "humchsk01.dds", Archive: "globalhum_chr.s3d", Name: "humch0201.dds", Slot: SlotChest, Fallback: true},
 				{From: "humlgsk01.dds", Archive: "globalhum_chr.s3d", Name: "humlg0301.dds", Slot: SlotLegs},
-			}},
+			}, Missing: []int{SlotChest}},
 		},
 	}
 	for _, c := range cases {

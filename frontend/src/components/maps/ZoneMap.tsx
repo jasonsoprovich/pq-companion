@@ -74,6 +74,8 @@ export interface RaiderMarker {
 export interface MarkerModel {
   race: number
   gender: number
+  /** Luclin hairstyle (0-2, -1 for none). */
+  hair?: number
   dress?: ModelDress | null
 }
 

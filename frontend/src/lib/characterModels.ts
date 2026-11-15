@@ -20,9 +20,11 @@ import {
 } from '../services/api'
 import type { ModelDress } from './characterDress'
 import type {
+  AttachPoint,
   CharacterMeshOptions,
   CharacterModelRef,
   ModelOutfit,
+  WornModel,
   ZoneMesh3D,
 } from '../services/api'
 
@@ -35,6 +37,8 @@ export interface CharacterModelRequest {
   zone?: string
   /** The Luclin-era model, for player races. */
   luclin?: boolean
+  /** Luclin hairstyle (0-2, -1 for none) when the dress doesn't say. */
+  hair?: number
 }
 
 /**
@@ -134,11 +138,24 @@ export function loadModelVariant(
  */
 export async function loadAttachedItem(
   body: CharacterModelAsset,
-  point: 'R_POINT' | 'L_POINT' | 'SHIELD_POINT',
+  point: AttachPoint,
   idfile: string,
 ): Promise<CharacterModelAsset | null> {
   const item = await locateItemModel(idfile)
   if (!item) return null
+  return loadWornModel(body, point, item)
+}
+
+/**
+ * loadWornModel loads a resolved item model (a held item, or a Luclin
+ * model's hair, robe or plate) hung from one of a loaded model's bones.
+ * Resolves null when the model has no such bone.
+ */
+export function loadWornModel(
+  body: CharacterModelAsset,
+  point: AttachPoint,
+  item: CharacterModelRef,
+): Promise<CharacterModelAsset | null> {
   const key = `attach|${body.ref.archive}|${body.ref.code}|${point}|${item.archive}|${item.code}`
   let p = assets.get(key)
   if (!p) {
@@ -148,6 +165,29 @@ export async function loadAttachedItem(
     assets.set(key, p)
   }
   return p
+}
+
+/** tinted makes materials with one tint (0xRRGGBB, 0 for none); the
+ * result is the caller's to dispose of. */
+function tinted(materials: THREE.Material[], tint: number): THREE.Material[] {
+  return materials.map((base) => {
+    const m = base.clone() as THREE.MeshLambertMaterial
+    if (tint && m.color) {
+      const c = tintColor(tint)
+      m.color = c
+      if (m.emissive) m.emissive = c.clone()
+    }
+    return m
+  })
+}
+
+// tintColor is a client tint as a colour. The client's tints are dark
+// (Cobalt is 0x323264), so they're doubled.
+function tintColor(tint: number): THREE.Color {
+  return new THREE.Color().setRGB(
+    ((tint >> 16) & 0xff) / 127.5, ((tint >> 8) & 0xff) / 127.5, (tint & 0xff) / 127.5,
+    THREE.SRGBColorSpace,
+  )
 }
 
 // Body part textures: model code, part, material (or "sk"), variant.
@@ -186,11 +226,7 @@ export function dressMaterials(
       if ('emissiveMap' in m) m.emissiveMap = map
     }
     if (tint && m.color) {
-      // The client's tints are dark (Cobalt is 0x323264), so they're doubled.
-      const c = new THREE.Color().setRGB(
-        ((tint >> 16) & 0xff) / 127.5, ((tint >> 8) & 0xff) / 127.5, (tint & 0xff) / 127.5,
-        THREE.SRGBColorSpace,
-      )
+      const c = tintColor(tint)
       m.color = c
       if (m.emissive) m.emissive = c.clone()
     }
@@ -309,6 +345,8 @@ export interface DressedCharacter {
   fallback: number[]
   /** Held items with no model in the client. */
   missingItems: ('primary' | 'secondary')[]
+  /** What a Luclin model wears as models (hair, robe, plate). */
+  wear: WornModel[]
   /** Frees the materials made for this outfit (geometry and textures are
    * shared and stay). */
   dispose: () => void
@@ -321,14 +359,21 @@ export interface DressedCharacter {
  */
 export async function buildCharacter(
   req: CharacterModelRequest,
-  dress?: ModelDress | null,
+  given?: ModelDress | null,
 ): Promise<DressedCharacter | null> {
   const base = await loadCharacterModel(req)
   if (!base) return null
+  // A Luclin model is always dressed: its hair and the bare body's
+  // loincloth are worn models.
+  let dress = given ?? null
+  if (base.ref.archive === `global${base.ref.code.toLowerCase()}_chr.s3d`) {
+    dress = dress ?? { mats: [0, 0, 0, 0, 0, 0, 0], tints: [0, 0, 0, 0, 0, 0, 0] }
+    if (dress.hair === undefined && req.hair !== undefined) dress = { ...dress, hair: req.hair }
+  }
   let asset = base
   let outfit: ModelOutfit | null = null
   if (dress) {
-    outfit = await getModelOutfit(base.ref, dress.mats, dress.monk)
+    outfit = await getModelOutfit(base.ref, dress.mats, dress.monk, dress.hair ?? 0)
     asset = (await loadModelVariant(base.ref, { helm: outfit.helm, robe: outfit.robe })) ?? base
   }
   const held: { which: 'primary' | 'secondary'; item: CharacterModelAsset | null }[] = []
@@ -339,8 +384,19 @@ export async function buildCharacter(
     const point = dress.shield ? 'SHIELD_POINT' : 'L_POINT'
     held.push({ which: 'secondary', item: await loadAttachedItem(asset, point, dress.secondary).catch(() => null) })
   }
+  // A Luclin model's hair, robe and plate, each tinted as its slot.
+  const wear = outfit?.wear ?? []
+  const worn = await Promise.all(wear.map((w) =>
+    loadWornModel(asset, w.point, { code: w.item, archive: w.archive }).catch(() => null)))
   const object = new THREE.Group()
   const owned: THREE.Material[] = []
+  worn.forEach((item, i) => {
+    if (!item) return
+    const tint = wear[i].slot >= 0 ? dress?.tints[wear[i].slot] ?? 0 : 0
+    const mats = tinted(item.materials, tint)
+    owned.push(...mats)
+    object.add(new THREE.Mesh(item.geometry, mats))
+  })
   if (dress) {
     const mats = dressMaterials(asset, outfit, dress.tints)
     owned.push(...mats)
@@ -356,6 +412,7 @@ export async function buildCharacter(
     missing: outfit?.missing ?? [],
     fallback: [...new Set((outfit?.swaps ?? []).filter((w) => w.fallback).map((w) => w.slot))],
     missingItems: held.filter((h) => !h.item).map((h) => h.which),
+    wear,
     dispose: () => owned.forEach((m) => m.dispose()),
   }
 }

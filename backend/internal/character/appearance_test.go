@@ -12,6 +12,9 @@ func TestAppearanceRoundTrip(t *testing.T) {
 		{"female luclin", Appearance{Name: "Bela", Gender: 1, Luclin: true}, Appearance{Name: "Bela", Gender: 1, Luclin: true}},
 		{"overwrite", Appearance{Name: "BELA", Gender: 0}, Appearance{Name: "bela", Gender: 0}},
 		{"bad gender is male", Appearance{Name: "Odd", Gender: 7}, Appearance{Name: "Odd", Gender: 0}},
+		{"bald", Appearance{Name: "Kojak", Luclin: true, Hair: -1}, Appearance{Name: "Kojak", Luclin: true, Hair: -1}},
+		{"second style", Appearance{Name: "Kojak", Hair: 2}, Appearance{Name: "Kojak", Hair: 2}},
+		{"bad style is the first", Appearance{Name: "Kojak", Hair: 40}, Appearance{Name: "Kojak", Hair: 0}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -22,7 +25,7 @@ func TestAppearanceRoundTrip(t *testing.T) {
 			if err != nil || !ok {
 				t.Fatalf("get: ok=%v err=%v", ok, err)
 			}
-			if got.Gender != c.want.Gender || got.Luclin != c.want.Luclin {
+			if got.Gender != c.want.Gender || got.Luclin != c.want.Luclin || got.Hair != c.want.Hair {
 				t.Errorf("got %+v, want %+v", got, c.want)
 			}
 		})

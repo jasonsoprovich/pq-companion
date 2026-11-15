@@ -52,9 +52,10 @@ func chrArchives(clientDir string) (names []string, fingerprint string, err erro
 	h := sha1.New()
 	for _, e := range entries {
 		n := strings.ToLower(e.Name())
-		// Character archives, and the item models (weapons, shields)
-		// for dressing them.
-		isModels := strings.Contains(n, "_chr") || strings.HasPrefix(n, "gequip")
+		// Character archives, and the item models for dressing them:
+		// weapons and shields (gequip), and the Luclin models' hair,
+		// robes and plate (lgequip).
+		isModels := strings.Contains(n, "_chr") || strings.HasPrefix(n, "gequip") || strings.HasPrefix(n, "lgequip")
 		if e.IsDir() || !strings.HasSuffix(n, ".s3d") || !isModels {
 			continue
 		}
@@ -296,6 +297,63 @@ func (p *PosedModel) Attach(item *Mesh3D, point string) (*Mesh3D, bool) {
 		out.Pos[i], out.Pos[i+1], out.Pos[i+2] = float32(v.X), float32(v.Y), float32(v.Z)
 	}
 	return &out, true
+}
+
+// Wear dresses the model in a worn model (a Luclin hair, robe or piece of
+// plate, item "IT4360" in clientDir/archive) hung from bone point
+// ("TUNIC_POINT"), in the model's space. A worn model with a skeleton
+// names its bones after the wearer's (IT4360PEPELVIS for HUMPEPELVIS), and
+// each follows its namesake, so it bends as the body does; one without a
+// namesake hangs from its parent, and the root from point. A plain mesh
+// hangs from point like a held item.
+func (p *PosedModel) Wear(clientDir, archive, item, point string) (*Mesh3D, error) {
+	at, ok := p.points[p.code+strings.ToUpper(point)]
+	if !ok {
+		return nil, fmt.Errorf("%s has no %s: %w", p.code, point, ErrNoModel)
+	}
+	w, err := loadArchiveWLD(filepath.Join(clientDir, archive))
+	if err != nil {
+		return nil, err
+	}
+	item = strings.ToUpper(item)
+	want := item + "_ACTORDEF"
+	for _, f := range w.Fragments {
+		if f.kind != fragActor || strings.ToUpper(w.str(f.nameRef)) != want {
+			continue
+		}
+		b := newMeshBuilder()
+		hang := func(v Vec3) Vec3 {
+			x, y, z := at.apply(-v.Y, -v.X, v.Z)
+			return ToMapSpace(x, y, z)
+		}
+		bind := func(name string) (mat4, bool) {
+			suffix, ok := strings.CutPrefix(name, item)
+			if !ok {
+				return mat4{}, false
+			}
+			if suffix == "" {
+				return at, true
+			}
+			m, ok := p.points[p.code+suffix]
+			return m, ok
+		}
+		for _, r := range actorComponents(f.payload) {
+			if m, ok := w.meshRef(r); ok {
+				b.add(w, m, hang, false)
+				continue
+			}
+			meshes, _ := w.skeletonBound(r, nil, nil, bind)
+			for _, m := range meshes {
+				b.add(w, m, nil, false)
+			}
+		}
+		out := b.build()
+		if len(out.Idx) == 0 {
+			return nil, fmt.Errorf("%s in %s: %w", item, archive, ErrNoModel)
+		}
+		return out, nil
+	}
+	return nil, fmt.Errorf("%s in %s: %w", item, archive, fs.ErrNotExist)
 }
 
 // posedSkeleton poses a skeletal actor (0x11 reference r) at frame frame

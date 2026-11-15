@@ -19,6 +19,8 @@ export interface ModelDress {
   shield?: boolean
   /** Only monks show the monk armor material (4). */
   monk?: boolean
+  /** Luclin hairstyle, 0-2, or -1 for none; 0 when left out. */
+  hair?: number
 }
 
 export interface DressSlot {

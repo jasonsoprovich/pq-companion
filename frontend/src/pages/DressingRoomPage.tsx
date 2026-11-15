@@ -37,6 +37,7 @@ export default function DressingRoomPage(): React.ReactElement {
   const [characters, setCharacters] = useState<Character[]>([])
   const [gender, setGender] = useState(0)
   const [luclin, setLuclin] = useState(false)
+  const [hair, setHair] = useState(0)
   const [equipped, setEquipped] = useState<Record<string, ItemAppearance>>({})
   const [exported, setExported] = useState<string | null>(null)
   const [tryOns, setTryOns] = useState<TryOns>({})
@@ -61,6 +62,7 @@ export default function DressingRoomPage(): React.ReactElement {
         if (!live) return
         setGender(a.gender)
         setLuclin(a.luclin)
+        setHair(a.hair ?? 0)
       })
       .catch(() => {})
     loadEquippedItems(viewed)
@@ -75,14 +77,16 @@ export default function DressingRoomPage(): React.ReactElement {
     }
   }, [viewed])
 
-  const saveAppearance = useCallback((next: { gender?: number; luclin?: boolean }) => {
+  const saveAppearance = useCallback((next: { gender?: number; luclin?: boolean; hair?: number }) => {
     if (!viewed) return
     const g = next.gender ?? gender
     const l = next.luclin ?? luclin
+    const h = next.hair ?? hair
     setGender(g)
     setLuclin(l)
-    setCharacterAppearance({ name: viewed, gender: g, luclin: l }).catch(() => {})
-  }, [viewed, gender, luclin])
+    setHair(h)
+    setCharacterAppearance({ name: viewed, gender: g, luclin: l, hair: h }).catch(() => {})
+  }, [viewed, gender, luclin, hair])
 
   const worn = useCallback(
     (key: string): ItemAppearance | null => (key in tryOns ? tryOns[key] : equipped[key] ?? null),
@@ -90,8 +94,8 @@ export default function DressingRoomPage(): React.ReactElement {
   )
 
   const dress = useMemo(
-    (): ModelDress => dressFor(worn, character?.class === MONK_CLASS),
-    [worn, character?.class],
+    (): ModelDress => ({ ...dressFor(worn, character?.class === MONK_CLASS), hair }),
+    [worn, character?.class, hair],
   )
 
   const race = character?.race ?? -1
@@ -123,6 +127,16 @@ export default function DressingRoomPage(): React.ReactElement {
               value={luclin ? 1 : 0}
               onChange={(v) => saveAppearance({ luclin: v === 1 })}
             />
+            {luclin && (
+              <Toggle
+                options={[
+                  { value: -1, label: 'Bald' }, { value: 0, label: 'Hair 1' },
+                  { value: 1, label: 'Hair 2' }, { value: 2, label: 'Hair 3' },
+                ]}
+                value={hair}
+                onChange={(h) => saveAppearance({ hair: h })}
+              />
+            )}
           </div>
           <div className="relative min-h-0 flex-1">
             {!viewed || race <= 0 ? (
@@ -142,7 +156,7 @@ export default function DressingRoomPage(): React.ReactElement {
               </Suspense>
             )}
           </div>
-          <DressNotes info={info} luclin={luclin} headWorn={dress.mats[0] > 0} />
+          <DressNotes info={info} luclin={luclin} hair={hair} />
         </div>
 
         <div className="flex w-80 shrink-0 flex-col gap-3 overflow-y-auto">
@@ -248,10 +262,10 @@ function Toggle({ options, value, onChange }: {
 
 const MATERIAL_SLOT_NAMES = ['head', 'chest', 'arms', 'wrists', 'hands', 'legs', 'feet']
 
-function DressNotes({ info, luclin, headWorn }: {
+function DressNotes({ info, luclin, hair }: {
   info: DressInfo | null
   luclin: boolean
-  headWorn: boolean
+  hair: number
 }): React.ReactElement | null {
   const notes: string[] = []
   const names = (slots: number[]): string => slots.map((s) => MATERIAL_SLOT_NAMES[s]).join(', ')
@@ -259,12 +273,15 @@ function DressNotes({ info, luclin, headWorn }: {
     notes.push(`Your client has no texture for this model's ${names(info.missing)}, so they're shown bare.`)
   }
   if (info?.fallback.length) {
-    notes.push('Your client has no Luclin plate chest texture; chain stands in until we know what the game shows.')
+    notes.push(`Your client has no texture for this model's ${names(info.fallback)}; a near one stands in.`)
   }
   if (info?.missingItems.length) {
     notes.push(`No model in your client for the ${info.missingItems.join(' and ')} item.`)
   }
-  if (luclin && headWorn) notes.push('Helms aren’t drawn on Luclin models yet.')
+  const onHead = info?.wear.some((w) => w.point === 'HAIR_POINT' || w.point === 'HEAD_POINT')
+  if (luclin && info && hair >= 0 && !onHead) {
+    notes.push('Your client has no hairstyle for this model, so it’s drawn bald (as the game does).')
+  }
   if (!notes.length) return null
   return (
     <div className="space-y-0.5 border-t px-4 py-2 text-[11px]" style={{ borderColor: 'var(--color-border)', color: 'var(--color-muted)' }}>

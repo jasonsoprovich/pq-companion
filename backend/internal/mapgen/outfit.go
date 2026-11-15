@@ -95,7 +95,8 @@ type Wearer struct {
 // shows as leather on anyone else; 7 (scale) shows as chain, or plate on
 // an Iksar; the Velious sets fall back to leather, chain and plate when
 // their textures aren't there. guess marks a stand-in of ours, not the
-// client's: the TAKP Luclin models have no plate chest.
+// client's (none at present: the Luclin plate chest that has no texture is
+// a worn model, see LuclinWear).
 func materialCandidates(mat int, code, part string, who Wearer) (mats []int, guess []bool) {
 	switch {
 	case mat == 4 && !who.Monk:
@@ -113,15 +114,6 @@ func materialCandidates(mat int, code, part string, who Wearer) (mats []int, gue
 			base = 4
 		}
 		mats, guess = append(mats, base), append(guess, false)
-	}
-	if who.Luclin && part == "ch" {
-		for i, m := range mats {
-			if m == 3 {
-				mats = append(mats[:i+1:i+1], append([]int{2}, mats[i+1:]...)...)
-				guess = append(guess[:i+1:i+1], append([]bool{true}, guess[i+1:]...)...)
-				break
-			}
-		}
 	}
 	return mats, guess
 }

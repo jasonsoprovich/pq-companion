@@ -93,7 +93,7 @@ export function usePeopleModels(names: string[], self: string, enabled: boolean)
       const p = known.get(n.toLowerCase())
       if (!p?.known) continue
       const isSelf = n.toLowerCase() === self.toLowerCase()
-      out.set(n.toLowerCase(), { race: p.race, gender: p.gender, dress: isSelf ? dress : null })
+      out.set(n.toLowerCase(), { race: p.race, gender: p.gender, hair: p.hair, dress: isSelf ? dress : null })
     }
     return out
     // tick: lookups landed in the module cache.
