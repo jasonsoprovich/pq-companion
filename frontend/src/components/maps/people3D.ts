@@ -22,6 +22,11 @@ export class PeopleLayer {
   readonly group = new THREE.Group()
   private people = new Map<string, Person>()
   private disposed = false
+  // ground finds the floor under a world point near a height, so models
+  // stand on it: the game's height for a spawn is about its middle, not
+  // its feet. Null until the zone loads, and where there's no floor near,
+  // the marker's own height stands.
+  ground: ((x: number, y: number, z: number) => number | null) | null = null
 
   constructor(private render: () => void) {}
 
@@ -41,13 +46,7 @@ export class PeopleLayer {
           this.people.set(key, p)
           this.load(key, p, m, mode === 'luclin')
         }
-        const o = p.char?.object
-        if (o) {
-          // Facing the heading, as the arrow does: models face +y.
-          o.position.set(m.x, -m.y, m.z)
-          o.rotation.z = ((m.heading ?? 0) / 512) * Math.PI * 2
-          o.scale.setScalar(p.scale)
-        }
+        if (p.char) this.place(p.char.object, m, p.scale)
       }
     }
     for (const [key, p] of this.people) {
@@ -70,15 +69,22 @@ export class PeopleLayer {
         p.char = char
         const h = model.height ?? raceHeight(model.race)
         p.scale = model.scale ?? (h && char.base.height > 0 ? h / char.base.height : 1)
-        char.object.position.set(m.x, -m.y, m.z)
-        char.object.rotation.z = ((m.heading ?? 0) / 512) * Math.PI * 2
-        char.object.scale.setScalar(p.scale)
+        this.place(char.object, m, p.scale)
         this.group.add(char.object)
         this.render()
       })
       .catch(() => {
         // No model (or no client): the arrow alone stands in.
       })
+  }
+
+  // place stands o on the floor under m, facing its heading as the arrow
+  // does (models face +y).
+  private place(o: THREE.Object3D, m: RaiderMarker, scale: number): void {
+    const z = this.ground?.(m.x, -m.y, m.z) ?? m.z
+    o.position.set(m.x, -m.y, z)
+    o.rotation.z = ((m.heading ?? 0) / 512) * Math.PI * 2
+    o.scale.setScalar(scale)
   }
 
   private drop(key: string, p: Person): void {

@@ -172,14 +172,16 @@ interface ZoneLayers {
   materials: THREE.Material[]
   faded: THREE.Material[]
   // ceilings indexes the zone's own ceiling faces by where they sit on the
-  // ground, to find what's over the followed marker; built when first
+  // ground, to find what's over the followed marker; floors indexes every
+  // floor face, the objects' too, to stand models on. Built when first
   // needed.
-  ceilings: CeilingGrid | null
+  ceilings: FaceGrid | null
+  floors: FaceGrid | null
 }
 
-// CeilingGrid buckets ceiling triangles (as offsets into idx) by the grid
-// cells their footprints cover.
-interface CeilingGrid {
+// FaceGrid buckets triangles (as offsets into idx) by the grid cells their
+// footprints cover.
+interface FaceGrid {
   pos: ArrayLike<number>
   idx: ArrayLike<number>
   cells: Map<number, number[]>
@@ -522,6 +524,9 @@ export default function ZoneMap3D({
         }
         const layers = buildLayers(zone, mesh)
         s.layers = layers
+        const ground = (x: number, y: number, z: number): number | null => floorUnder(layers, x, y, z)
+        s.people.ground = ground
+        s.npcs.ground = ground
         sc.add(layers.group)
         buildMaterials(s, prefsRef.current)
         adjustLook(layers, prefsRef.current)
@@ -1056,6 +1061,7 @@ function buildLayers(zone: string, data: ZoneMesh3D): ZoneLayers {
     materials: [],
     faded: [],
     ceilings: null,
+    floors: null,
   }
 }
 
@@ -1063,11 +1069,25 @@ function cellKey(cx: number, cy: number): number {
   return (cx + 32768) * 65536 + (cy + 32768)
 }
 
-function ceilingGrid(L: ZoneLayers): CeilingGrid {
-  if (L.ceilings) return L.ceilings
-  const geo = L.own.ceiling.geometry
-  const pos = geo.getAttribute('position').array
-  const idx = geo.getIndex()?.array ?? []
+function ceilingGrid(L: ZoneLayers): FaceGrid {
+  if (!L.ceilings) {
+    const geo = L.own.ceiling.geometry
+    L.ceilings = faceGrid(geo.getAttribute('position').array, geo.getIndex()?.array ?? [])
+  }
+  return L.ceilings
+}
+
+function floorGrid(L: ZoneLayers): FaceGrid {
+  if (!L.floors) {
+    // Both floor meshes share the zone's vertices.
+    const own = L.own.floor.geometry
+    const idx = [...(own.getIndex()?.array ?? []), ...(L.objects.floor.geometry.getIndex()?.array ?? [])]
+    L.floors = faceGrid(own.getAttribute('position').array, idx)
+  }
+  return L.floors
+}
+
+function faceGrid(pos: ArrayLike<number>, idx: ArrayLike<number>): FaceGrid {
   const cells = new Map<number, number[]>()
   for (let i = 0; i + 2 < idx.length; i += 3) {
     const a = idx[i] * 3
@@ -1086,17 +1106,42 @@ function ceilingGrid(L: ZoneLayers): CeilingGrid {
       }
     }
   }
-  L.ceilings = { pos, idx, cells }
-  return L.ceilings
+  return { pos, idx, cells }
 }
 
 // ceilingOver returns the height of the lowest ceiling face over world
 // point (x, y) higher than z, or null under open sky.
 function ceilingOver(L: ZoneLayers, x: number, y: number, z: number): number | null {
-  const { pos, idx, cells } = ceilingGrid(L)
-  const list = cells.get(cellKey(Math.floor(x / CEIL_CELL), Math.floor(y / CEIL_CELL)))
-  if (!list) return null
   let best = Infinity
+  facesAt(ceilingGrid(L), x, y, (hz) => {
+    if (hz > z && hz < best) best = hz
+  })
+  return best === Infinity ? null : best
+}
+
+// FLOOR_ABOVE is how far over a spawn's height its floor may be (a mob
+// sunk a little into a slope); FLOOR_BELOW how far under it. The game
+// keeps a mob's height at about its middle, not its feet, a few units
+// over the ground for most races and more for big ones.
+const FLOOR_ABOVE = 1.5
+const FLOOR_BELOW = 12
+
+// floorUnder returns the height of the highest floor face under world
+// point (x, y) near height z, or null when there's none close.
+function floorUnder(L: ZoneLayers, x: number, y: number, z: number): number | null {
+  let best = -Infinity
+  facesAt(floorGrid(L), x, y, (hz) => {
+    if (hz <= z + FLOOR_ABOVE && hz >= z - FLOOR_BELOW && hz > best) best = hz
+  })
+  return best === -Infinity ? null : best
+}
+
+// facesAt calls visit with the height of every face in grid over world
+// point (x, y).
+function facesAt(grid: FaceGrid, x: number, y: number, visit: (z: number) => void): void {
+  const { pos, idx, cells } = grid
+  const list = cells.get(cellKey(Math.floor(x / CEIL_CELL), Math.floor(y / CEIL_CELL)))
+  if (!list) return
   for (const i of list) {
     const a = idx[i] * 3
     const b = idx[i + 1] * 3
@@ -1110,10 +1155,8 @@ function ceilingOver(L: ZoneLayers, x: number, y: number, z: number): number | n
     const l2 = ((y3 - y1) * (x - x3) + (x1 - x3) * (y - y3)) / d
     const l3 = 1 - l1 - l2
     if (l1 < -1e-4 || l2 < -1e-4 || l3 < -1e-4) continue
-    const hz = l1 * pos[a + 2] + l2 * pos[b + 2] + l3 * pos[c + 2]
-    if (hz > z && hz < best) best = hz
+    visit(l1 * pos[a + 2] + l2 * pos[b + 2] + l3 * pos[c + 2])
   }
-  return best === Infinity ? null : best
 }
 
 function layerMeshes(L: ZoneLayers): THREE.Mesh[] {
