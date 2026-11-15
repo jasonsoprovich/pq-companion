@@ -57,6 +57,17 @@ export interface HealerStats {
   raid_seconds: number
   // See EntityStats.is_you.
   is_you?: boolean
+  // Who this healer healed, largest total first (backend HealTargetStats).
+  // The log names the target of your own heals, so the HPS view reads it.
+  targets?: HealTargetStats[]
+}
+
+export interface HealTargetStats {
+  name: string
+  total_heal: number
+  heal_count: number
+  max_heal: number
+  is_you?: boolean
 }
 
 export interface FightState {

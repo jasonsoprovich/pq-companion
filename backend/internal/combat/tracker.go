@@ -154,9 +154,38 @@ type internalHealer struct {
 	totalHeal int64
 	healCount int
 	maxHeal   int
+	// targets splits the healing by recipient.
+	targets map[string]*internalHealTarget
 
 	firstActivity time.Time
 	lastActivity  time.Time
+}
+
+// internalHealTarget accumulates one healer's healing on one recipient.
+type internalHealTarget struct {
+	totalHeal int64
+	healCount int
+	maxHeal   int
+}
+
+// addHealTarget records amount healed on target by h.
+func addHealTarget(h *internalHealer, target string, amount int) {
+	if target == "" {
+		return
+	}
+	if h.targets == nil {
+		h.targets = make(map[string]*internalHealTarget)
+	}
+	ht := h.targets[target]
+	if ht == nil {
+		ht = &internalHealTarget{}
+		h.targets[target] = ht
+	}
+	ht.totalHeal += int64(amount)
+	ht.healCount++
+	if amount > ht.maxHeal {
+		ht.maxHeal = amount
+	}
 }
 
 // noteActivityEntity records the timestamp of a damage event on this
@@ -598,6 +627,15 @@ func relabelYouHealers(playerName string, healers []HealerStats) {
 			healers[i].IsYou = true
 			if playerName != "" {
 				healers[i].Name = playerName
+			}
+		}
+		for j := range healers[i].Targets {
+			t := &healers[i].Targets[j]
+			if t.Name == "You" {
+				t.IsYou = true
+				if playerName != "" {
+					t.Name = playerName
+				}
 			}
 		}
 	}
@@ -1293,6 +1331,7 @@ func (t *Tracker) recordHeal(ts time.Time, data logparser.HealData) {
 	if data.Amount > h.maxHeal {
 		h.maxHeal = data.Amount
 	}
+	addHealTarget(h, data.Target, data.Amount)
 	noteActivityHealer(h, ts)
 
 	// A heal during combat counts as activity — extend the fight's timer.
@@ -1515,6 +1554,21 @@ func mergeHealerInto(dst, src *internalHealer) {
 	}
 	if src.lastActivity.After(dst.lastActivity) {
 		dst.lastActivity = src.lastActivity
+	}
+	for name, st := range src.targets {
+		if dst.targets == nil {
+			dst.targets = make(map[string]*internalHealTarget)
+		}
+		dt := dst.targets[name]
+		if dt == nil {
+			dt = &internalHealTarget{}
+			dst.targets[name] = dt
+		}
+		dt.totalHeal += st.totalHeal
+		dt.healCount += st.healCount
+		if st.maxHeal > dt.maxHeal {
+			dt.maxHeal = st.maxHeal
+		}
 	}
 }
 
@@ -1999,12 +2053,36 @@ func buildHealerStats(healers map[string]*internalHealer, duration, raidSeconds 
 			ActiveSeconds: personal,
 			RaidHPS:       safeDivide(float64(h.totalHeal), raidSeconds),
 			RaidSeconds:   raidSeconds,
+			Targets:       buildHealTargetStats(h.targets),
 		})
 	}
 	sort.Slice(stats, func(i, j int) bool {
 		return stats[i].TotalHeal > stats[j].TotalHeal
 	})
 	return stats
+}
+
+// buildHealTargetStats lists a healer's recipients, largest total first.
+func buildHealTargetStats(targets map[string]*internalHealTarget) []HealTargetStats {
+	if len(targets) == 0 {
+		return nil
+	}
+	out := make([]HealTargetStats, 0, len(targets))
+	for name, t := range targets {
+		out = append(out, HealTargetStats{
+			Name:      name,
+			TotalHeal: t.totalHeal,
+			HealCount: t.healCount,
+			MaxHeal:   t.maxHeal,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].TotalHeal != out[j].TotalHeal {
+			return out[i].TotalHeal > out[j].TotalHeal
+		}
+		return out[i].Name < out[j].Name
+	})
+	return out
 }
 
 func (t *Tracker) broadcast(state CombatState) {

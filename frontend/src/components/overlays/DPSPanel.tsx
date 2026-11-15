@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Swords, Circle, ChartBar, ChartBarDecreasing, CheckCircle2, AlertTriangle, ExternalLink, Clipboard, ClipboardCheck, Users, Trash2, Activity, Hourglass, User, History, Crosshair, XCircle } from 'lucide-react'
+import { Swords, HeartPulse, Circle, ChartBar, ChartBarDecreasing, CheckCircle2, AlertTriangle, ExternalLink, Clipboard, ClipboardCheck, Users, Trash2, Activity, Hourglass, User, History, Crosshair, XCircle } from 'lucide-react'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { WSEvent } from '../../lib/wsEvents'
 import { getCombatState, getLogStatus, resetCombatState, endActiveFight } from '../../services/api'
@@ -15,6 +15,10 @@ import { useDPSScope, dpsScopeLabel, type DPSScope } from '../../hooks/useDPSSco
 import { aggregateRecentFights } from '../../lib/rollingWindow'
 import { useDPSBarScale, dpsBarScaleTooltip, type DPSBarScale } from '../../hooks/useDPSBarScale'
 import DPSTable, { PANEL_THEME } from './DPSTable'
+import HPSTable from './HPSTable'
+import MeterKindToggle from './MeterKindToggle'
+import { useMeterKind } from '../../hooks/useMeterKind'
+import { HPS_COLOR, buildHpsFightSummary, hpsModeAbbrev, youHPS } from '../../lib/hpsMeter'
 
 // dpsModeIcon picks an icon for the current DPS mode that matches the
 // metric's intuition: a single User for Personal, Users for Raid, an
@@ -60,12 +64,12 @@ function truncateName(name: string, max = 28): string {
   return name.length > max ? `${name.slice(0, max - 1)}…` : name
 }
 
-function CopyFightButton({ fight, combine, mode }: { fight: FightState | null; combine: boolean; mode: DPSMode }): React.ReactElement {
+function CopyFightButton({ fight, combine, mode, hps }: { fight: FightState | null; combine: boolean; mode: DPSMode; hps: boolean }): React.ReactElement {
   const [copied, setCopied] = useState(false)
 
   function handleCopy(): void {
     if (!fight) return
-    const text = buildDpsFightSummary(fight.primary_target, fight, combine, mode)
+    const text = hps ? buildHpsFightSummary(fight, mode) : buildDpsFightSummary(fight.primary_target, fight, combine, mode)
     if (!text) return
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true)
@@ -77,7 +81,7 @@ function CopyFightButton({ fight, combine, mode }: { fight: FightState | null; c
     <button
       onClick={handleCopy}
       disabled={!fight}
-      title="Copy DPS summary to clipboard"
+      title={hps ? 'Copy HPS summary to clipboard' : 'Copy DPS summary to clipboard'}
       style={{
         background: 'none', border: 'none',
         cursor: fight ? 'pointer' : 'default',
@@ -141,7 +145,7 @@ function FilterButton({ showAll, onToggle }: { showAll: boolean; onToggle: () =>
   )
 }
 
-function CombatStrip({ combat, now, mode }: { combat: CombatState; now: number; mode: DPSMode }): React.ReactElement {
+function CombatStrip({ combat, now, mode, hps }: { combat: CombatState; now: number; mode: DPSMode; hps: boolean }): React.ReactElement {
   const fight = combat.current_fight
   const liveSecs = fight
     ? Math.max((now - new Date(fight.start_time).getTime()) / 1000, fight.duration_seconds)
@@ -177,7 +181,11 @@ function CombatStrip({ combat, now, mode }: { combat: CombatState; now: number; 
           <span style={{ color: 'var(--color-muted)' }}>·</span>
           <span>{fmtDuration(liveSecs)}</span>
           <span style={{ color: 'var(--color-muted)' }}>·</span>
-          <span style={{ color: '#f97316' }}>{fmtRate(liveTotalDPS)} {dpsModeAbbrev(mode)}</span>
+          {hps ? (
+            <span style={{ color: HPS_COLOR }}>{fmtRate(youHPS(fight, mode, liveSecs))} {hpsModeAbbrev(mode)}</span>
+          ) : (
+            <span style={{ color: '#f97316' }}>{fmtRate(liveTotalDPS)} {dpsModeAbbrev(mode)}</span>
+          )}
         </>
       ) : (
         <span>Not in combat</span>
@@ -188,7 +196,7 @@ function CombatStrip({ combat, now, mode }: { combat: CombatState; now: number; 
 
 // WindowStrip is the "Last N mobs" analogue of CombatStrip: a static summary
 // of the pooled window rather than a live in-combat readout.
-function WindowStrip({ fight, mode }: { fight: FightState | null; mode: DPSMode }): React.ReactElement {
+function WindowStrip({ fight, mode, hps }: { fight: FightState | null; mode: DPSMode; hps: boolean }): React.ReactElement {
   // Encounter pools over total wall-clock (fight.total_dps already is that);
   // Raid/Personal use the shared fight-aggregate denominator.
   const totalDPS = fight
@@ -213,7 +221,11 @@ function WindowStrip({ fight, mode }: { fight: FightState | null; mode: DPSMode 
           <span style={{ color: 'var(--color-muted)' }}>·</span>
           <span>{fmtDuration(fight.duration_seconds)} total</span>
           <span style={{ color: 'var(--color-muted)' }}>·</span>
-          <span style={{ color: '#f97316' }}>{fmtRate(totalDPS)} {dpsModeAbbrev(mode)}</span>
+          {hps ? (
+            <span style={{ color: HPS_COLOR }}>{fmtRate(youHPS(fight, mode))} {hpsModeAbbrev(mode)}</span>
+          ) : (
+            <span style={{ color: '#f97316' }}>{fmtRate(totalDPS)} {dpsModeAbbrev(mode)}</span>
+          )}
         </>
       ) : (
         <span>No completed fights yet</span>
@@ -222,7 +234,8 @@ function WindowStrip({ fight, mode }: { fight: FightState | null; mode: DPSMode 
   )
 }
 
-function DPSContent({ fight, showAll, combine, mode, palette, barScale }: { fight: FightState; showAll: boolean; combine: boolean; mode: DPSMode; palette: DPSClassColors; barScale: DPSBarScale }): React.ReactElement {
+function DPSContent({ fight, showAll, combine, mode, palette, barScale, hps, liveSecs }: { fight: FightState; showAll: boolean; combine: boolean; mode: DPSMode; palette: DPSClassColors; barScale: DPSBarScale; hps: boolean; liveSecs?: number }): React.ReactElement {
+  if (hps) return <HPSTable fight={fight} mode={mode} barScale={barScale} theme={PANEL_THEME} liveSecs={liveSecs} />
   return (
     <DPSTable
       fight={fight}
@@ -236,10 +249,10 @@ function DPSContent({ fight, showAll, combine, mode, palette, barScale }: { figh
   )
 }
 
-function NotInCombat(): React.ReactElement {
+function NotInCombat({ hps }: { hps: boolean }): React.ReactElement {
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: 'var(--color-muted)' }}>
-      <Swords size={32} style={{ opacity: 0.3 }} />
+      {hps ? <HeartPulse size={32} style={{ opacity: 0.3 }} /> : <Swords size={32} style={{ opacity: 0.3 }} />}
       <p style={{ fontSize: 12, margin: 0 }}>Not in combat</p>
     </div>
   )
@@ -278,7 +291,7 @@ function ScopeButton({ scope, onToggle }: { scope: DPSScope; onToggle: () => voi
   )
 }
 
-function SessionBar({ combat }: { combat: CombatState }): React.ReactElement {
+function SessionBar({ combat, hps }: { combat: CombatState; hps: boolean }): React.ReactElement {
   const fights = (combat.recent_fights ?? []).length
   return (
     <div
@@ -290,8 +303,17 @@ function SessionBar({ combat }: { combat: CombatState }): React.ReactElement {
       }}
     >
       <span>{fights} fight{fights !== 1 ? 's' : ''}</span>
-      <span style={{ color: 'var(--color-foreground)' }}>{fmt(combat.session_damage)} dmg</span>
-      <span style={{ color: '#f97316' }}>{fmtRate(combat.session_dps)} DPS (session)</span>
+      {hps ? (
+        <>
+          <span style={{ color: 'var(--color-foreground)' }}>{fmt(combat.session_heal)} healed</span>
+          <span style={{ color: HPS_COLOR }}>{fmtRate(combat.session_hps)} HPS (session)</span>
+        </>
+      ) : (
+        <>
+          <span style={{ color: 'var(--color-foreground)' }}>{fmt(combat.session_damage)} dmg</span>
+          <span style={{ color: '#f97316' }}>{fmtRate(combat.session_dps)} DPS (session)</span>
+        </>
+      )}
     </div>
   )
 }
@@ -313,6 +335,8 @@ export default function DPSPanel({
   const { barScale, toggle: toggleBarScale } = useDPSBarScale()
   const [now, setNow] = useState(() => Date.now())
   const palette = useDPSClassColors()
+  const { kind, setKind } = useMeterKind()
+  const hps = kind === 'hps'
 
   // Pooled "last N mobs" fight, recomputed when the recent-fights list moves.
   // A synthetic FightState so DPSContent renders it with the same row/rollup/
@@ -349,15 +373,17 @@ export default function DPSPanel({
   return (
     <OverlayWindow
       title={
-        <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-          <Swords size={13} style={{ color: 'var(--color-primary)' }} />
-          DPS Meter
-        </span>
+        <MeterKindToggle
+          kind={kind}
+          onChange={setKind}
+          borderColor="var(--color-border)"
+          idleColor="var(--color-muted)"
+        />
       }
       headerRight={
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <FilterButton showAll={showAll} onToggle={() => setShowAll((v) => !v)} />
-          <button
+          {!hps && <FilterButton showAll={showAll} onToggle={() => setShowAll((v) => !v)} />}
+          {!hps && <button
             onClick={() => setCombine(!combine)}
             title={combine ? 'Pet damage rolled up under owner — click to split' : 'Pets shown as separate rows — click to combine'}
             style={{
@@ -367,7 +393,7 @@ export default function DPSPanel({
             }}
           >
             <Users size={12} />
-          </button>
+          </button>}
           <button
             onClick={toggleBarScale}
             title={dpsBarScaleTooltip(barScale)}
@@ -393,7 +419,7 @@ export default function DPSPanel({
             {dpsModeIcon(dpsMode)}
             {dpsModeLabel(dpsMode)}
           </button>
-          <CopyFightButton fight={scope === 'window' ? windowFight : combat?.current_fight ?? null} combine={combine} mode={dpsMode} />
+          <CopyFightButton fight={scope === 'window' ? windowFight : combat?.current_fight ?? null} combine={combine} mode={dpsMode} hps={hps} />
           <button
             onClick={() => { if (combat?.in_combat) endActiveFight().catch(() => {}) }}
             disabled={!combat?.in_combat}
@@ -454,24 +480,33 @@ export default function DPSPanel({
         <>
           {scope === 'window' ? (
             <>
-              <WindowStrip fight={windowFight} mode={dpsMode} />
+              <WindowStrip fight={windowFight} mode={dpsMode} hps={hps} />
               {windowFight ? (
-                <DPSContent fight={windowFight} showAll={showAll} combine={combine} mode={dpsMode} palette={palette} barScale={barScale} />
+                <DPSContent fight={windowFight} showAll={showAll} combine={combine} mode={dpsMode} palette={palette} barScale={barScale} hps={hps} />
               ) : (
                 <NoWindowData />
               )}
             </>
           ) : (
             <>
-              <CombatStrip combat={combat} now={now} mode={dpsMode} />
+              <CombatStrip combat={combat} now={now} mode={dpsMode} hps={hps} />
               {combat.in_combat && combat.current_fight ? (
-                <DPSContent fight={combat.current_fight} showAll={showAll} combine={combine} mode={dpsMode} palette={palette} barScale={barScale} />
+                <DPSContent
+                  fight={combat.current_fight}
+                  showAll={showAll}
+                  combine={combine}
+                  mode={dpsMode}
+                  palette={palette}
+                  barScale={barScale}
+                  hps={hps}
+                  liveSecs={Math.max((now - new Date(combat.current_fight.start_time).getTime()) / 1000, combat.current_fight.duration_seconds)}
+                />
               ) : (
-                <NotInCombat />
+                <NotInCombat hps={hps} />
               )}
             </>
           )}
-          <SessionBar combat={combat} />
+          <SessionBar combat={combat} hps={hps} />
         </>
       )}
     </OverlayWindow>

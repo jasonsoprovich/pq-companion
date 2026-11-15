@@ -3,6 +3,7 @@ import type {
   FightState,
   FightSummary,
   HealerStats,
+  HealTargetStats,
 } from '../types/combat'
 
 // AggregatableFight is the structural subset aggregateRecentFights reads. Both
@@ -64,6 +65,7 @@ interface HealAccum {
   encounter_seconds: number
   raid_seconds: number
   is_you?: boolean
+  targets: Map<string, HealTargetStats>
 }
 
 // aggregateRecentFights pools the most recent `windowSize` completed fights
@@ -155,6 +157,15 @@ export function aggregateRecentFights(
         encounter_seconds: 0,
         raid_seconds: 0,
         is_you: h.is_you,
+        targets: new Map<string, HealTargetStats>(),
+      }
+      for (const t of h.targets ?? []) {
+        const at = a.targets.get(t.name) ?? { name: t.name, total_heal: 0, heal_count: 0, max_heal: 0, is_you: t.is_you }
+        at.total_heal += t.total_heal
+        at.heal_count += t.heal_count
+        at.max_heal = Math.max(at.max_heal, t.max_heal)
+        if (!at.is_you && t.is_you) at.is_you = true
+        a.targets.set(t.name, at)
       }
       a.total_heal += h.total_heal
       a.heal_count += h.heal_count
@@ -199,6 +210,7 @@ export function aggregateRecentFights(
       raid_hps: a.raid_seconds > 0 ? a.total_heal / a.raid_seconds : 0,
       raid_seconds: a.raid_seconds,
       is_you: a.is_you,
+      targets: [...a.targets.values()].sort((x, y) => y.total_heal - x.total_heal),
     }))
     .sort((x, y) => y.total_heal - x.total_heal)
 

@@ -122,6 +122,20 @@ type HealerStats struct {
 	RaidSeconds   float64 `json:"raid_seconds"`
 	// IsYou marks the active character's own row — see EntityStats.IsYou.
 	IsYou bool `json:"is_you,omitempty"`
+	// Targets breaks the healing down by who received it, largest first.
+	// The log names the target of the player's own heals, so this is how the
+	// HPS view shows where your healing went.
+	Targets []HealTargetStats `json:"targets,omitempty"`
+}
+
+// HealTargetStats is one healer's healing on one target within a fight.
+type HealTargetStats struct {
+	Name      string `json:"name"`
+	TotalHeal int64  `json:"total_heal"`
+	HealCount int    `json:"heal_count"`
+	MaxHeal   int    `json:"max_heal"`
+	// IsYou marks a self-heal (the target is the active character).
+	IsYou bool `json:"is_you,omitempty"`
 }
 
 // FightState describes the currently active fight.

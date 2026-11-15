@@ -2252,3 +2252,47 @@ func TestFinishingBlowCountedNotAdded(t *testing.T) {
 			you.TotalDamage, you.FinishingBlows)
 	}
 }
+
+// The HPS view breaks the player's healing down by recipient: per-target
+// totals, counts and biggest heal, with a self-heal relabelled like the
+// player's own row and merged correctly across concurrent fights.
+func TestHealTargetsBreakdown(t *testing.T) {
+	hub := ws.NewHub()
+	go hub.Run()
+	tr := NewTracker(hub, func() string { return "Osui" })
+	now := time.Now()
+
+	tr.Handle(hitEvent("You", "a gnoll", 100, now))
+	tr.Handle(hitEvent("You", "a gnoll pup", 50, now.Add(time.Second)))
+	tr.Handle(healEvent("You", "Tank", 1000, now.Add(2*time.Second)))
+	tr.Handle(healEvent("You", "Tank", 1500, now.Add(3*time.Second)))
+	tr.Handle(healEvent("You", "You", 300, now.Add(4*time.Second)))
+	tr.Handle(healEvent("You", "Kebartik", 200, now.Add(5*time.Second)))
+
+	st := tr.GetState()
+	if st.CurrentFight == nil {
+		t.Fatal("expected a current fight")
+	}
+	var you *HealerStats
+	for i := range st.CurrentFight.Healers {
+		if st.CurrentFight.Healers[i].IsYou {
+			you = &st.CurrentFight.Healers[i]
+		}
+	}
+	if you == nil {
+		t.Fatal("no healer row for the player")
+	}
+	want := []HealTargetStats{
+		{Name: "Tank", TotalHeal: 2500, HealCount: 2, MaxHeal: 1500},
+		{Name: "Osui", TotalHeal: 300, HealCount: 1, MaxHeal: 300, IsYou: true},
+		{Name: "Kebartik", TotalHeal: 200, HealCount: 1, MaxHeal: 200},
+	}
+	if len(you.Targets) != len(want) {
+		t.Fatalf("targets = %+v, want %+v", you.Targets, want)
+	}
+	for i := range want {
+		if you.Targets[i] != want[i] {
+			t.Errorf("target %d = %+v, want %+v", i, you.Targets[i], want[i])
+		}
+	}
+}

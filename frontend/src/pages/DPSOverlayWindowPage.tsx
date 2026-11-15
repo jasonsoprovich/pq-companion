@@ -1,6 +1,7 @@
 /**
  * DPSOverlayWindowPage — renders in the dedicated always-on-top Electron overlay
- * window. No sidebar, no title bar, transparent background.
+ * window. No sidebar, no title bar, transparent background. The title bar's
+ * DPS | HPS switch flips it to the healing view (your heals by target).
  *
  * Unlocked: the window is movable (OS drag region on the header) and resizable.
  * Locked: the entire window passes clicks through to the game except the
@@ -8,7 +9,7 @@
  * buttons (clear, lock, close, etc.) stay clickable.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Swords, ChartBar, ChartBarDecreasing, Clipboard, ClipboardCheck, Trash2, Users, Activity, Hourglass, User, History, Crosshair, XCircle } from 'lucide-react'
+import { Swords, HeartPulse, ChartBar, ChartBarDecreasing, Clipboard, ClipboardCheck, Trash2, Users, Activity, Hourglass, User, History, Crosshair, XCircle } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { CollapseToggle, useOverlayCollapse } from '../hooks/useOverlayCollapse'
@@ -29,6 +30,10 @@ import { aggregateRecentFights } from '../lib/rollingWindow'
 import { useDPSBarScale, dpsBarScaleTooltip } from '../hooks/useDPSBarScale'
 import DPSTable, { OVERLAY_THEME } from '../components/overlays/DPSTable'
 import { WSEvent } from '../lib/wsEvents'
+import { useMeterKind } from '../hooks/useMeterKind'
+import MeterKindToggle from '../components/overlays/MeterKindToggle'
+import HPSTable from '../components/overlays/HPSTable'
+import { HPS_COLOR, buildHpsFightSummary, healTargetRows, hpsModeAbbrev, youHealer, youHPS } from '../lib/hpsMeter'
 
 // dpsModeIcon picks an icon matching the metric's intuition.
 function dpsModeIcon(mode: DPSMode, size = 11): React.ReactElement {
@@ -84,6 +89,8 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
   const { barScale, toggle: toggleBarScale } = useDPSBarScale()
   const [now, setNow] = useState(() => Date.now())
   const [copied, setCopied] = useState(false)
+  const { kind, setKind } = useMeterKind()
+  const hps = kind === 'hps'
 
   // Hold the most recent fight so the overlay keeps the numbers visible after
   // combat ends. Cleared when a new fight starts (replaced with current_fight)
@@ -182,8 +189,19 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
     }
   }
 
-  // "Top: Kaelyn 1.4k · You 3rd" in the active DPS mode.
-  const collapsedSummary = (() => {
+  // Encounter HPS ticks on the live clock like DPS; otherwise undefined
+  // falls back to the fight's own duration.
+  const hpsLiveSecs = !windowMode && inCombat ? liveSecs : undefined
+  const liveYouHPS = hps ? youHPS(fight, dpsMode, hpsLiveSecs) : 0
+
+  // HPS: "You 412 · Tank 70%". DPS: "Top: Kaelyn 1.4k · You 3rd".
+  const collapsedSummary = hps ? (() => {
+    if (!youHealer(fight)) return null
+    const top = healTargetRows(fight, dpsMode, hpsLiveSecs)[0]
+    const you = youHealer(fight)!
+    const head = `You ${compactNumber(liveYouHPS)}`
+    return top ? `${head} · ${top.name} ${Math.round((top.total_heal / you.total_heal) * 100)}%` : head
+  })() : (() => {
     const list = [...(fight?.combatants ?? [])].sort((a, b) => b.total_damage - a.total_damage)
     if (list.length === 0) return null
     const rate = (e: (typeof list)[number]): number =>
@@ -243,11 +261,16 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-          <Swords size={11} style={{ color: '#818cf8' }} />
-          <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.8)' }}>{dpsModeAbbrev(dpsMode)}</span>
+          <MeterKindToggle
+            kind={kind}
+            onChange={setKind}
+            size={10}
+            dpsLabel={dpsModeAbbrev(dpsMode)}
+            hpsLabel={hpsModeAbbrev(dpsMode)}
+          />
           {fight && (
-            <span style={{ fontSize: 10, color: '#fb923c', marginLeft: 4 }}>
-              {fmtDPS(showAll ? liveTotalDPS : liveYouDPS)}
+            <span style={{ fontSize: 10, color: hps ? HPS_COLOR : '#fb923c', marginLeft: 4 }}>
+              {hps ? fmtDPS(liveYouHPS) : fmtDPS(showAll ? liveTotalDPS : liveYouDPS)}
             </span>
           )}
         </div>
@@ -260,8 +283,8 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
           style={{ display: 'flex', alignItems: 'center', gap: 6 }}
         >
           <CollapseToggle collapsed={collapsed} onToggle={toggleCollapsed} summary={collapsedSummary} />
-          {/* filter toggle */}
-          <button
+          {/* filter toggle (DPS only: the HPS view is just your heals) */}
+          {!hps && <button
             onClick={() => setShowAll((v) => !v)}
             style={{
               fontSize: 9,
@@ -277,9 +300,9 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
             }}
           >
             {showAll ? 'All' : 'Me'}
-          </button>
+          </button>}
           {/* combine pets toggle */}
-          <button
+          {!hps && <button
             onClick={() => setCombine(!combine)}
             title={combine ? 'Pet damage rolled up — click to split' : 'Pets shown separately — click to combine'}
             style={{
@@ -293,7 +316,7 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
             }}
           >
             <Users size={11} />
-          </button>
+          </button>}
           {/* Bar scale toggle: leader = full bar ↔ share of total. */}
           <button
             onClick={toggleBarScale}
@@ -339,7 +362,7 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
           {/* DPS mode toggle: cycles Personal → Raid → Encounter. */}
           <button
             onClick={toggleDPSMode}
-            title={`${dpsModeLabel(dpsMode)} DPS — click to cycle (Personal → Raid → Encounter)`}
+            title={`${dpsModeLabel(dpsMode)} ${hps ? 'HPS' : 'DPS'} — click to cycle (Personal → Raid → Encounter)`}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -362,7 +385,9 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
           <button
             onClick={() => {
               if (!fight) return
-              const text = buildDpsFightSummary(fight.primary_target, fight, combine, dpsMode)
+              const text = hps
+                ? buildHpsFightSummary(fight, dpsMode)
+                : buildDpsFightSummary(fight.primary_target, fight, combine, dpsMode)
               if (!text) return
               navigator.clipboard.writeText(text).then(() => {
                 setCopied(true)
@@ -370,7 +395,7 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
               }).catch(() => {})
             }}
             disabled={!fight}
-            title="Copy DPS summary"
+            title={hps ? 'Copy HPS summary' : 'Copy DPS summary'}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -481,7 +506,7 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
               </span>
             )}
             {fight.primary_target && <span style={{ color: 'rgba(255,255,255,0.3)' }}> · </span>}
-            {fmtDur(liveSecs)} · {fmt(fight.total_damage)} dmg
+            {fmtDur(liveSecs)} · {hps ? `${fmt(youHealer(fight)?.total_heal ?? 0)} healed` : `${fmt(fight.total_damage)} dmg`}
             {showingPostFight && (
               <span style={{ color: 'rgba(255,255,255,0.3)', marginLeft: 4 }}>
                 (last fight)
@@ -498,6 +523,8 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
         <p style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: 'rgba(255,255,255,0.3)', margin: 0 }}>
           Connecting…
         </p>
+      ) : fight && hps ? (
+        <HPSTable fight={fight} mode={dpsMode} barScale={barScale} theme={OVERLAY_THEME} liveSecs={hpsLiveSecs} />
       ) : fight ? (
         <DPSTable
           fight={fight}
@@ -510,7 +537,7 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
         />
       ) : (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, opacity: chrome ? 1 : 0, transition: 'opacity 0.4s ease' }}>
-          {windowMode ? <History size={24} style={{ opacity: 0.15 }} /> : <Swords size={24} style={{ opacity: 0.15 }} />}
+          {windowMode ? <History size={24} style={{ opacity: 0.15 }} /> : hps ? <HeartPulse size={24} style={{ opacity: 0.15 }} /> : <Swords size={24} style={{ opacity: 0.15 }} />}
           <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', margin: 0 }}>
             {windowMode ? 'No completed fights yet' : 'Not in combat'}
           </p>
@@ -531,8 +558,17 @@ export default function DPSOverlayWindowPage(): React.ReactElement {
           }}
         >
           <span>{(combat.recent_fights ?? []).length} fights</span>
-          <span>{fmt(combat.session_damage)} dmg</span>
-          <span style={{ color: '#fb923c' }}>{fmtDPS(combat.session_dps)} DPS</span>
+          {hps ? (
+            <>
+              <span>{fmt(combat.session_heal)} healed</span>
+              <span style={{ color: HPS_COLOR }}>{fmtDPS(combat.session_hps)} HPS</span>
+            </>
+          ) : (
+            <>
+              <span>{fmt(combat.session_damage)} dmg</span>
+              <span style={{ color: '#fb923c' }}>{fmtDPS(combat.session_dps)} DPS</span>
+            </>
+          )}
         </div>
       )}
     </div>
