@@ -17,6 +17,7 @@ import FavoriteRecipeStar from '../components/FavoriteRecipeStar'
 import { RecipeBody } from '../components/RecipeView'
 import RecipeSuccessPanel from '../components/RecipeSuccessPanel'
 import { useFavoriteRecipes } from '../lib/favoriteRecipes'
+import { matchesSearch, WILDCARD_HINT } from '../lib/textSearch'
 
 const RECIPE_PAGE_SIZE = 50
 
@@ -66,7 +67,7 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
   // Favorites mode applies the same filters client-side over the starred set.
   const matchesFilters = useCallback(
     (r: RecipeSummary): boolean => {
-      if (query && !r.name.toLowerCase().includes(query.toLowerCase())) return false
+      if (query && !matchesSearch(r.name, query)) return false
       if (tradeskill >= 0 && r.tradeskill !== tradeskill) return false
       if (parseInt(trivialMin) > 0 && r.trivial < parseInt(trivialMin)) return false
       if (parseInt(trivialMax) > 0 && r.trivial > parseInt(trivialMax)) return false
@@ -141,6 +142,7 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
           className="flex-1 bg-transparent text-sm outline-none placeholder:text-(--color-muted)"
           style={{ color: 'var(--color-foreground)' }}
           placeholder="Search recipes…"
+          title={WILDCARD_HINT}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           spellCheck={false}

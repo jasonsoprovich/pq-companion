@@ -6,6 +6,7 @@ import type { NPC } from '../../types/npc'
 import { roleLabel, subLabel } from '../../lib/raidLabels'
 import { getNPC, searchNPCs } from '../../services/api'
 import { npcLevelLabel } from '../../lib/npcHelpers'
+import { matchesSearch } from '../../lib/textSearch'
 
 interface Leaf {
   key: string
@@ -78,7 +79,7 @@ function ZoneField({ zones, value, onPick }: {
 
   const q = value.text.trim().toLowerCase()
   const matches = useMemo(() => {
-    const list = zones.filter((z) => !q || z.long_name.toLowerCase().includes(q) || z.short_name.toLowerCase().includes(q))
+    const list = zones.filter((z) => !q || matchesSearch(z.long_name, q) || matchesSearch(z.short_name, q))
     return list.slice(0, 12)
   }, [zones, q])
 

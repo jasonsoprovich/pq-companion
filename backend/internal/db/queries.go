@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/jasonsoprovich/pq-companion/backend/internal/likequery"
 )
 
 // ─── Items ────────────────────────────────────────────────────────────────────
@@ -280,7 +282,7 @@ func (db *DB) RechargeableMaxCharges(ids []int) (map[int]int, error) {
 // SearchItems returns a filtered, paginated list of items.
 // Zero-value fields in f mean "no filter" (except ItemType: -1 = any).
 func (db *DB) SearchItems(f ItemFilter) (*SearchResult[Item], error) {
-	pattern := "%" + escapeLike(f.Query) + "%"
+	pattern := likequery.Contains(f.Query)
 
 	where := "Name LIKE ? ESCAPE '\\'"
 	args := []any{pattern}
@@ -1083,7 +1085,7 @@ func (db *DB) SearchNPCs(query string, limit, offset int, hidePlaceholders bool)
 	// the user can type (e.g. "#Lord_Inquisitor_Seru" surfaces for both
 	// "lord" and "lord inquisitor").
 	normalized := strings.ReplaceAll(query, " ", "_")
-	pattern := "%" + escapeLike(normalized) + "%"
+	pattern := likequery.Contains(normalized)
 
 	placeholderClause := ""
 	if hidePlaceholders {
@@ -1137,7 +1139,7 @@ func collectNPCs(rows *sql.Rows) ([]NPC, error) {
 // An empty query returns the first `limit` factions alphabetically. Used by
 // the faction wishlist picker.
 func (db *DB) SearchFactions(query string, limit int) ([]Faction, error) {
-	pattern := "%" + escapeLike(query) + "%"
+	pattern := likequery.Contains(query)
 	rows, err := db.Query(
 		`SELECT id, name FROM faction_list
 		 WHERE name LIKE ? ESCAPE '\' AND id != 0
@@ -1999,7 +2001,7 @@ type SpellSearchFilters struct {
 // SearchSpellsFiltered is SearchSpells with the full Spells-page filter set.
 func (db *DB) SearchSpellsFiltered(query string, f SpellSearchFilters, limit, offset int) (*SearchResult[Spell], error) {
 	classIndex, minLevel, maxLevel := f.ClassIndex, f.MinLevel, f.MaxLevel
-	pattern := "%" + escapeLike(query) + "%"
+	pattern := likequery.Contains(query)
 
 	conditions := []string{"s.name LIKE ? ESCAPE '\\'", "s.name != ''"}
 	args := []any{pattern}
@@ -2775,7 +2777,7 @@ type ZoneSearchFilters struct {
 // (see applyExpansionOverride) because the raw zone.expansion column doesn't
 // match player-visible buckets for several Classic/Kunark dungeons.
 func (db *DB) SearchZones(query string, filters ZoneSearchFilters, limit, offset int) (*SearchResult[Zone], error) {
-	pattern := "%" + escapeLike(query) + "%"
+	pattern := likequery.Contains(query)
 	hiddenFilter, hiddenArgs := zoneVisibilityFilter(" AND ")
 
 	q := fmt.Sprintf(
@@ -2972,8 +2974,8 @@ func (db *DB) GetZoneDrops(shortName string, opts ZoneDropsOptions, limit, offse
 		// NPC names store underscores where the UI shows spaces.
 		where = ` AND (i.Name LIKE ? ESCAPE '\' OR n.name LIKE ? ESCAPE '\')`
 		args = append(args,
-			"%"+escapeLike(q)+"%",
-			"%"+escapeLike(strings.ReplaceAll(q, " ", "_"))+"%",
+			likequery.Contains(q),
+			likequery.Contains(strings.ReplaceAll(q, " ", "_")),
 		)
 	}
 	// HAVING repeats the expression rather than naming the "chance" alias:

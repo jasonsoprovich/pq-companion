@@ -29,6 +29,7 @@ import type { Spellset, SpellsetFile } from '../types/zeal'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
 import { expandKnownSpellIds } from '../lib/spellHelpers'
 import { SpellIcon } from '../components/Icon'
+import { matchesSearch } from '../lib/textSearch'
 
 const CLASS_NAMES = [
   'Warrior', 'Cleric', 'Paladin', 'Ranger', 'Shadow Knight', 'Druid', 'Monk',
@@ -107,7 +108,7 @@ function SlotPicker({
       for (const s of allSpells) consider(s)
       for (const s of referencedSpells.values()) consider(s)
       return pool
-        .filter((s) => !q || s.name.toLowerCase().includes(q))
+        .filter((s) => !q || matchesSearch(s.name, q))
         .sort((a, b) => a.name.localeCompare(b.name))
     }
     return allSpells
@@ -116,7 +117,7 @@ function SlotPicker({
         if (reqLevel >= 254) return false
         if (characterLevel > 0 && reqLevel > characterLevel) return false
         if (!knownIds.has(s.id)) return false
-        if (q && !s.name.toLowerCase().includes(q)) return false
+        if (q && !matchesSearch(s.name, q)) return false
         return true
       })
       .sort((a, b) => {

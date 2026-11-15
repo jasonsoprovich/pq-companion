@@ -994,3 +994,59 @@ func TestListAvailableAAs_FletchingMasteryRangerOnly(t *testing.T) {
 		t.Error("druid should still have the all-class Innate Strength AA")
 	}
 }
+
+func TestSearchWildcards(t *testing.T) {
+	d := openTestDB(t)
+	molds, err := d.SearchItems(db.ItemFilter{Query: "Elemental * Mold", ItemType: -1, Limit: 50})
+	if err != nil {
+		t.Fatalf("SearchItems: %v", err)
+	}
+	if molds.Total < 6 {
+		t.Errorf("Elemental * Mold: total=%d, want >= 6", molds.Total)
+	}
+	for _, it := range molds.Items {
+		if !strings.HasPrefix(it.Name, "Elemental") || !strings.Contains(it.Name, "Mold") {
+			t.Errorf("unexpected match %q", it.Name)
+		}
+	}
+
+	// ? matches exactly one character.
+	one, err := d.SearchItems(db.ItemFilter{Query: "Elemental Hel? Mold", ItemType: -1, Limit: 10})
+	if err != nil {
+		t.Fatalf("SearchItems: %v", err)
+	}
+	if one.Total != 1 {
+		t.Errorf("Elemental Hel? Mold: total=%d, want 1", one.Total)
+	}
+
+	// A literal trailing * (variant item names) still finds the item.
+	pack, err := d.SearchItems(db.ItemFilter{Query: "Backpack*", ItemType: -1, Limit: 50})
+	if err != nil {
+		t.Fatalf("SearchItems: %v", err)
+	}
+	found := false
+	for _, it := range pack.Items {
+		if it.Name == "Backpack*" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error(`"Backpack*" search didn't return the Backpack* item`)
+	}
+
+	// Spells and NPCs (spaces map to underscores there) take wildcards too.
+	spells, err := d.SearchSpells("Spirit * Wolf", -1, 0, 0, 20, 0, false)
+	if err != nil {
+		t.Fatalf("SearchSpells: %v", err)
+	}
+	if spells.Total < 2 { // Spirit of Wolf, Illusion: Spirit Wolf
+		t.Errorf("Spirit * Wolf: total=%d, want >= 2", spells.Total)
+	}
+	npcs, err := d.SearchNPCs("Lord * Seru", 20, 0, false)
+	if err != nil {
+		t.Fatalf("SearchNPCs: %v", err)
+	}
+	if npcs.Total < 1 {
+		t.Error("Lord * Seru: no NPCs")
+	}
+}

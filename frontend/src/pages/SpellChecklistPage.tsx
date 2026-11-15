@@ -51,6 +51,7 @@ import {
   zoneTypeLabel,
 } from '../lib/spellHelpers'
 import { SpellIcon } from '../components/Icon'
+import { matchesSearch } from '../lib/textSearch'
 
 // ── Class definitions ──────────────────────────────────────────────────────────
 
@@ -633,7 +634,7 @@ export default function SpellChecklistPage(): React.ReactElement {
     if (filter === 'known' && !knownIds.has(s.id)) return false
     if (filter === 'missing' && (knownIds.has(s.id) || passedIds.has(s.id))) return false
     if (filter === 'passed' && (knownIds.has(s.id) || !passedIds.has(s.id))) return false
-    if (nameQuery && !s.name.toLowerCase().includes(nameQuery)) return false
+    if (nameQuery && !matchesSearch(s.name, nameQuery)) return false
     const lvl = classLevel(s, classIndex)
     if (minLvl > 0 && lvl < minLvl) return false
     if (maxLvl > 0 && lvl > maxLvl) return false

@@ -38,6 +38,7 @@ import { EquipmentPaperDoll } from '../components/EquipmentPaperDoll'
 import CharacterSubTabs from '../components/CharacterSubTabs'
 import MockLoadoutPanel from '../components/MockLoadoutPanel'
 import { spaLabel, spaSign, formatDuration } from '../lib/spellModHelpers'
+import { matchesSearch } from '../lib/textSearch'
 
 // ── Equipment slot ordering ────────────────────────────────────────────────────
 
@@ -1572,7 +1573,7 @@ function AAPanel({ trained, available, unspentAA, unspentAAAt }: AAPanelProps): 
   const visibleRows = useMemo(() => {
     return allRows
       .filter((r) => cat.types.includes(r.type))
-      .filter((r) => term === '' || r.name.toLowerCase().includes(term))
+      .filter((r) => term === '' || matchesSearch(r.name, term))
       .sort((a, b) => a.aa_id - b.aa_id)
   }, [allRows, cat, term])
 
@@ -2367,7 +2368,7 @@ function SkillsPanel({ characterID }: { characterID: number | null }): React.Rea
 
   const term = query.trim().toLowerCase()
   const filtered = term
-    ? skills.filter((s) => s.skill_name.toLowerCase().includes(term))
+    ? skills.filter((s) => matchesSearch(s.skill_name, term))
     : skills
 
   return (

@@ -13,6 +13,8 @@ import (
 	"time"
 
 	_ "modernc.org/sqlite"
+
+	"github.com/jasonsoprovich/pq-companion/backend/internal/likequery"
 )
 
 // Message is one stored chat line.
@@ -183,8 +185,8 @@ func (s *Store) Conversations(f ConversationFilters) ([]Conversation, error) {
 	args = append(args, mainArgs...)
 	args = append(args, drArgs...)
 	if f.PeerContains != "" {
-		q += ` AND t.peer LIKE ? COLLATE NOCASE`
-		args = append(args, "%"+f.PeerContains+"%")
+		q += ` AND t.peer LIKE ? COLLATE NOCASE` + likequery.Escape
+		args = append(args, likequery.Contains(f.PeerContains))
 	}
 	q += ` GROUP BY t.peer COLLATE NOCASE`
 	if f.SortDesc {
@@ -251,8 +253,10 @@ func (s *Store) Feed(f FeedFilters) ([]Message, error) {
 	allArgs := append([]any{f.Channel}, args...)
 	allArgs = append(allArgs, drArgs...)
 	if f.Search != "" {
-		q += ` AND (peer LIKE ? COLLATE NOCASE OR message LIKE ? COLLATE NOCASE)`
-		allArgs = append(allArgs, "%"+f.Search+"%", "%"+f.Search+"%")
+		q += ` AND (peer LIKE ? COLLATE NOCASE` + likequery.Escape +
+			` OR message LIKE ? COLLATE NOCASE` + likequery.Escape + `)`
+		pat := likequery.Contains(f.Search)
+		allArgs = append(allArgs, pat, pat)
 	}
 	if f.SortDesc {
 		q += ` ORDER BY ts DESC, id DESC`

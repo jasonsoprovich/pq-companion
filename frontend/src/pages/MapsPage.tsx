@@ -4,6 +4,7 @@ import { Map as MapIcon, Search, X } from 'lucide-react'
 import { useCachedState } from '../hooks/useCachedState'
 import { useMapZones } from '../hooks/useMapZones'
 import { ZoneMapPanel } from '../components/maps/ZoneMapPanel'
+import { matchesSearch } from '../lib/textSearch'
 
 // MapsPage is the standalone map browser: a zone picker beside the shared
 // ZoneMapPanel. All the layer/POI behaviour lives in the panel so this page and
@@ -17,7 +18,7 @@ export default function MapsPage(): React.ReactElement {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    const list = q ? zones.filter((z) => z.zone.toLowerCase().includes(q)) : zones
+    const list = q ? zones.filter((z) => matchesSearch(z.zone, q)) : zones
     return [...list].sort((a, b) => a.zone.localeCompare(b.zone))
   }, [zones, query])
 

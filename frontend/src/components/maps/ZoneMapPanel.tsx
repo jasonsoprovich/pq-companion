@@ -15,6 +15,7 @@ import { useMapStyle } from '../../hooks/useMapStyle'
 import { useZoneMap } from '../../hooks/useZoneMap'
 import { CATEGORY_STYLE, ZoneMap, type MapHighlight, type RaiderMarker, type ReplayTarget } from './ZoneMap'
 import type { Pin3D } from './ZoneMap3D'
+import { matchesSearch } from '../../lib/textSearch'
 
 // three.js is large; it loads only when the 3D view is opened.
 const ZoneMap3D = lazy(() => import('./ZoneMap3D'))
@@ -399,7 +400,7 @@ export function ZoneMapPanel({
     const hits: SearchHit[] = []
     const poiRow = new Map<string, Extract<SearchHit, { kind: 'poi' }>>()
     for (const poi of allPois) {
-      if (!poi.label.toLowerCase().includes(q)) continue
+      if (!matchesSearch(poi.label, q)) continue
       const key = `${poi.category}|${poi.label}`
       const row = poiRow.get(key)
       if (row) {
@@ -415,7 +416,7 @@ export function ZoneMapPanel({
     const npcRow = new Map<string, Extract<SearchHit, { kind: 'npc' }>>()
     for (const npc of npcs) {
       if (seen.has(npc.npc_id)) continue
-      if (!formatNPCName(npc.name).toLowerCase().includes(q)) continue
+      if (!matchesSearch(formatNPCName(npc.name), q)) continue
       // By name, not id: a named mob often has one npc_types row per spawn
       // point, and they are still the same thing to a player.
       const row = npcRow.get(npc.name)

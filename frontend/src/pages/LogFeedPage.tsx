@@ -21,6 +21,7 @@ import {
   type LogBrowseLine,
 } from '../services/api'
 import type { LogTailerStatus } from '../types/logEvent'
+import { matchesSearch, searchRanges } from '../lib/textSearch'
 
 // Page size for the out-of-game log browser.
 const BROWSE_LIMIT = 300
@@ -541,7 +542,7 @@ export default function LogFeedPage(): React.ReactElement {
     if (!searchQuery) return []
     const idxs: number[] = []
     activeLines.forEach((ln, i) => {
-      if (ln.message.toLowerCase().includes(searchQuery)) idxs.push(i)
+      if (matchesSearch(ln.message, searchQuery)) idxs.push(i)
     })
     return idxs
   }, [activeLines, searchQuery])
@@ -1099,29 +1100,23 @@ function BrowseBody({
 // with <mark>, so a search reads as an in-place highlight (like an editor's
 // find widget) instead of the message being replaced or filtered away.
 function highlightMatches(text: string, query: string): React.ReactNode {
-  if (!query) return text
-  const lower = text.toLowerCase()
-  const q = query.toLowerCase()
+  const ranges = searchRanges(text, query)
+  if (ranges.length === 0) return text
   const parts: React.ReactNode[] = []
   let i = 0
-  let key = 0
-  while (i < text.length) {
-    const idx = lower.indexOf(q, i)
-    if (idx === -1) {
-      parts.push(text.slice(i))
-      break
-    }
-    if (idx > i) parts.push(text.slice(i, idx))
+  ranges.forEach(([start, end], key) => {
+    if (start > i) parts.push(text.slice(i, start))
     parts.push(
       <mark
-        key={key++}
+        key={key}
         style={{ backgroundColor: '#f59e0b', color: '#1a1a1a', borderRadius: 2, padding: '0 1px' }}
       >
-        {text.slice(idx, idx + query.length)}
+        {text.slice(start, end)}
       </mark>,
     )
-    i = idx + query.length
-  }
+    i = end
+  })
+  if (i < text.length) parts.push(text.slice(i))
   return parts
 }
 

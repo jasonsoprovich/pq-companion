@@ -11,6 +11,7 @@ import { castableClassesShort } from '../lib/spellHelpers'
 import { npcDisplayName, className as npcClassName, npcLevelLabel } from '../lib/npcHelpers'
 import { zoneListLabel } from './NPCZoneLinks'
 import { ItemIcon, SpellIcon } from './Icon'
+import { WILDCARD_HINT } from '../lib/textSearch'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -258,6 +259,7 @@ export default function GlobalSearch({ open, onClose }: GlobalSearchProps): Reac
             className="flex-1 bg-transparent text-sm outline-none placeholder:text-(--color-muted)"
             style={{ color: 'var(--color-foreground)' }}
             placeholder="Search items, spells, NPCs, zones…"
+            title={WILDCARD_HINT}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             spellCheck={false}

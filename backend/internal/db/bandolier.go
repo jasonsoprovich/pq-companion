@@ -3,6 +3,8 @@ package db
 import (
 	"fmt"
 	"strings"
+
+	"github.com/jasonsoprovich/pq-companion/backend/internal/likequery"
 )
 
 // BandolierSlotBits maps a bandolier slot index (0..3 = Primary, Secondary,
@@ -99,7 +101,7 @@ func (db *DB) BandolierSlotItems(slotIndex int, ownedIDs []int, search string, f
 
 	if s := strings.TrimSpace(search); s != "" {
 		where += " AND i.Name LIKE ? ESCAPE '\\'"
-		args = append(args, "%"+escapeLike(s)+"%")
+		args = append(args, likequery.Contains(s))
 	}
 
 	if clause, hargs := hiddenItemClause(); clause != "" {
@@ -126,11 +128,4 @@ func (db *DB) BandolierSlotItems(slotIndex int, ownedIDs []int, search string, f
 		out = append(out, it)
 	}
 	return out, rows.Err()
-}
-
-// escapeLike escapes LIKE wildcards so a user-typed search term is matched
-// literally (paired with ESCAPE '\\' in the query).
-func escapeLike(s string) string {
-	r := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
-	return r.Replace(s)
 }

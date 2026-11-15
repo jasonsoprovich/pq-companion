@@ -13,6 +13,7 @@ import {
 } from '../services/api'
 import type { Zone } from '../types/zone'
 import { CHARM_CLASSES, ENCHANTER, landColor, pickDefaultSpell } from '../lib/charmFinder'
+import { matchesSearch } from '../lib/textSearch'
 
 type SortKey =
   | 'level'
@@ -121,7 +122,7 @@ export default function CharmPetFinderPage(): React.ReactElement {
     if (!q || (zone && zoneQuery === zone.long)) return allZones
     return allZones.filter(
       (z) =>
-        z.long_name.toLowerCase().includes(q) || z.short_name.toLowerCase().includes(q),
+        matchesSearch(z.long_name, q) || matchesSearch(z.short_name, q),
     )
   }, [allZones, zoneQuery, zone])
 

@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/jasonsoprovich/pq-companion/backend/internal/likequery"
 )
 
 // QuestSummary is one browsable quest (identified by its giver NPC + zone) for
@@ -150,17 +152,21 @@ func (db *DB) buildQuestSearchIndex() {
 }
 
 // SearchQuests returns quest summaries whose NPC, zone, or any related item name
-// contains every whitespace-separated term in query (case-insensitive, AND).
+// contains every whitespace-separated term in query (case-insensitive, AND;
+// a term may use * and ? wildcards).
 // An empty query returns all quests. Results are paged by limit/offset.
 func (db *DB) SearchQuests(query string, limit, offset int) QuestSearchResult {
 	db.buildQuestSearchIndex()
-	terms := strings.Fields(strings.ToLower(query))
+	var terms []func(string) bool
+	for _, t := range strings.Fields(query) {
+		terms = append(terms, likequery.Matcher(t))
+	}
 
 	matched := make([]QuestSummary, 0)
 	for i := range questSearchIndex {
 		ok := true
-		for _, t := range terms {
-			if !strings.Contains(questSearchIndex[i].haystack, t) {
+		for _, match := range terms {
+			if !match(questSearchIndex[i].haystack) {
 				ok = false
 				break
 			}

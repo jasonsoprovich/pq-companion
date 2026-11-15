@@ -12,6 +12,8 @@ import (
 	"time"
 
 	_ "modernc.org/sqlite"
+
+	"github.com/jasonsoprovich/pq-companion/backend/internal/likequery"
 )
 
 // Entry is one stored kill row.
@@ -171,8 +173,10 @@ func (s *Store) List(f Filters) ([]Entry, error) {
 		args = append(args, f.Character)
 	}
 	if f.Search != "" {
-		q += ` AND (target LIKE ? COLLATE NOCASE OR killer LIKE ? COLLATE NOCASE)`
-		args = append(args, "%"+f.Search+"%", "%"+f.Search+"%")
+		q += ` AND (target LIKE ? COLLATE NOCASE` + likequery.Escape +
+			` OR killer LIKE ? COLLATE NOCASE` + likequery.Escape + `)`
+		pat := likequery.Contains(f.Search)
+		args = append(args, pat, pat)
 	}
 	if f.Zone != "" {
 		q += ` AND zone = ? COLLATE NOCASE`

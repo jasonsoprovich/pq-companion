@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react'
 import { ItemIcon } from './Icon'
+import { matchesSearch } from '../lib/textSearch'
 
 // Minimal shape the paper-doll needs from an equipped item. Both the Zeal
 // inventory entry (types/zeal.ts) and the quarmy export entry (api.ts) satisfy
@@ -163,7 +164,7 @@ export function EquipmentPaperDoll({
         const list = indexed.get(pos.key) ?? []
         const idx = pos.index ?? 0
         const entry = list[idx] ?? null
-        const highlight = !!(entry && q && entry.name.toLowerCase().includes(q))
+        const highlight = !!(entry && q && matchesSearch(entry.name, q))
         return (
           <SlotCell
             key={`${pos.key}-${idx}-${pos.row}-${pos.col}`}

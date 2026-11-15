@@ -30,6 +30,7 @@ import { FightViewToggle } from '../components/FightViewToggle'
 import { groupBySession, fmtSessionGap } from '../lib/sessionGrouping'
 import { WSEvent } from '../lib/wsEvents'
 import DeathRecapView from '../components/overlays/DeathRecapView'
+import { matchesSearch } from '../lib/textSearch'
 
 // dpsModeIcon picks an icon for the current DPS mode that matches the
 // metric's intuition: a single User for Personal, group Activity for Raid,
@@ -915,7 +916,7 @@ function applyFilters(fights: FightSummary[], filters: FilterState): FightSummar
   const query = filters.search.trim().toLowerCase()
   if (query) {
     result = result.filter((f) =>
-      f.combatants.some((c) => c.name.toLowerCase().includes(query))
+      f.combatants.some((c) => matchesSearch(c.name, query))
     )
   }
 

@@ -33,6 +33,7 @@ import type {
 import type { ZoneLockoutBoss } from '../types/lockouts'
 import { className, npcDisplayName, npcLevelLabel } from '../lib/npcHelpers'
 import { zoneExpansionName } from '../lib/enumsCache'
+import { matchesSearch, WILDCARD_HINT } from '../lib/textSearch'
 
 function expansionName(id: number): string {
   return zoneExpansionName(id)
@@ -132,6 +133,7 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
           className="flex-1 bg-transparent text-sm outline-none placeholder:text-(--color-muted)"
           style={{ color: 'var(--color-foreground)' }}
           placeholder="Search zones…"
+          title={WILDCARD_HINT}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           spellCheck={false}
@@ -619,7 +621,7 @@ function NPCsTab({ shortName }: { shortName: string }): React.ReactElement {
     const lo = parseLevel(minLevel)
     const hi = parseLevel(maxLevel)
     const rows = npcs.filter((npc) => {
-      if (q && !npcDisplayName(npc).toLowerCase().includes(q)) return false
+      if (q && !matchesSearch(npcDisplayName(npc), q)) return false
       // A ranged spawn passes if any part of its range overlaps the filter.
       const top = Math.max(npc.level, npc.max_level)
       if (lo !== null && top < lo) return false

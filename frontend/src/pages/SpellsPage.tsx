@@ -29,6 +29,7 @@ import { useSpellRefNames } from '../hooks/useSpellRefNames'
 import { useItemRefNames } from '../hooks/useItemRefNames'
 import { maxLevel as eraMaxLevel } from '../lib/era'
 import { spellEnumOptions } from '../lib/enumsCache'
+import { WILDCARD_HINT } from '../lib/textSearch'
 
 const SPELL_CLASSES: { index: number; abbr: string; full: string }[] = [
   { index: 0,  abbr: 'WAR', full: 'Warrior' },
@@ -190,6 +191,7 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
           className="flex-1 bg-transparent text-sm outline-none placeholder:text-(--color-muted)"
           style={{ color: 'var(--color-foreground)' }}
           placeholder="Search spells…"
+          title={WILDCARD_HINT}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           spellCheck={false}

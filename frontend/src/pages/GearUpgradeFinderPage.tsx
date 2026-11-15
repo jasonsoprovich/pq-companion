@@ -44,6 +44,7 @@ import type { Item, ItemSources, ItemQuests } from '../types/item'
 import type { WishlistEntry } from '../types/wishlist'
 import type { Zone } from '../types/zone'
 import type { RespawnState } from '../types/respawn'
+import { matchesSearch } from '../lib/textSearch'
 
 // Logical worn slots, keyed to the backend slot keys. `bucket` is the wishlist
 // slot-bucket name (singular Shoulder/Finger) that an item from this slot is
@@ -874,7 +875,7 @@ function FocusPanel({
   const [filter, setFilter] = useState('')
   const sel = new Set(selected)
   const q = filter.trim().toLowerCase()
-  const shown = q ? options.filter((o) => o.name.toLowerCase().includes(q)) : options
+  const shown = q ? options.filter((o) => matchesSearch(o.name, q)) : options
   return (
     <div className="shrink-0 border-b px-6 py-2"
       style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}>
@@ -1555,7 +1556,7 @@ function ZonePicker({
     const q = query.trim().toLowerCase()
     if (!q) return allZones
     return allZones.filter(
-      (z) => z.long_name.toLowerCase().includes(q) || z.short_name.toLowerCase().includes(q),
+      (z) => matchesSearch(z.long_name, q) || matchesSearch(z.short_name, q),
     )
   }, [allZones, query])
 

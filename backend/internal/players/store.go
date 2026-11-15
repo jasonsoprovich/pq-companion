@@ -12,6 +12,8 @@ import (
 	"time"
 
 	_ "modernc.org/sqlite"
+
+	"github.com/jasonsoprovich/pq-companion/backend/internal/likequery"
 )
 
 // Sighting is the public-facing model for one player row in the database.
@@ -635,8 +637,8 @@ func buildFilterClause(f SearchFilters) (string, []any) {
 	q := ``
 	args := []any{}
 	if f.NameContains != "" {
-		q += ` AND s.name LIKE ? COLLATE NOCASE`
-		args = append(args, "%"+f.NameContains+"%")
+		q += ` AND s.name LIKE ? COLLATE NOCASE` + likequery.Escape
+		args = append(args, likequery.Contains(f.NameContains))
 	}
 	if f.Class != "" {
 		// Expand the filter against the class-title alias table so picking

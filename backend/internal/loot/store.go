@@ -6,6 +6,8 @@ import (
 	"time"
 
 	_ "modernc.org/sqlite"
+
+	"github.com/jasonsoprovich/pq-companion/backend/internal/likequery"
 )
 
 // Entry is one stored loot row.
@@ -125,8 +127,10 @@ func (s *Store) List(f Filters) ([]Entry, error) {
 		args = append(args, f.Character)
 	}
 	if f.Search != "" {
-		q += ` AND (item LIKE ? COLLATE NOCASE OR player LIKE ? COLLATE NOCASE)`
-		args = append(args, "%"+f.Search+"%", "%"+f.Search+"%")
+		q += ` AND (item LIKE ? COLLATE NOCASE` + likequery.Escape +
+			` OR player LIKE ? COLLATE NOCASE` + likequery.Escape + `)`
+		pat := likequery.Contains(f.Search)
+		args = append(args, pat, pat)
 	}
 	if f.Player != "" {
 		q += ` AND player = ? COLLATE NOCASE`

@@ -23,6 +23,7 @@ import type { KeyringMasterEntry } from '../types/keyring'
 import type { AllInventoriesResponse } from '../types/zeal'
 import { useWebSocket } from '../hooks/useWebSocket'
 import CharacterSubTabs from './CharacterSubTabs'
+import { matchesSearch } from '../lib/textSearch'
 
 type OwnedFilter = 'all' | 'owned' | 'missing'
 
@@ -187,7 +188,7 @@ export default function KeyringSection({ initialCharacter }: KeyringSectionProps
       if (filter === 'missing' && state !== 'missing') continue
       if (q) {
         const hay = `${k.key_name} ${k.item_name} ${k.zone_name}`.toLowerCase()
-        if (!hay.includes(q)) continue
+        if (!matchesSearch(hay, q)) continue
       }
       const zone = k.zone_name || 'Unknown zone'
       const bucket = groups.get(zone)

@@ -4,6 +4,7 @@ import { ScrollText, Search, ChevronRight, ChevronDown } from 'lucide-react'
 import { searchQuests } from '../services/api'
 import QuestWalkthrough from '../components/QuestWalkthrough'
 import type { QuestSummary, ItemRef } from '../types/item'
+import { WILDCARD_HINT } from '../lib/textSearch'
 
 const PAGE_SIZE = 50
 
@@ -137,6 +138,7 @@ export default function QuestsPage(): React.ReactElement {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search by NPC, zone, or related item…"
+            title={WILDCARD_HINT}
             className="w-full bg-transparent text-sm outline-none"
             style={{ color: 'var(--color-foreground)' }}
           />

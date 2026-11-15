@@ -14,6 +14,7 @@ import {
   describeLocation,
   isEquipmentSlot,
 } from '../lib/inventoryLocations'
+import { matchesSearch, WILDCARD_HINT } from '../lib/textSearch'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -385,7 +386,7 @@ export default function InventoryTrackerPage(): React.ReactElement {
     const sharedTagged: TaggedEntry[] = data.shared_bank.map((e) => ({ ...e, character: '' }))
     return [...allTagged, ...sharedTagged]
       .filter((e) => !isEmptyEntry(e) && !e.location.endsWith('-Coin'))
-      .filter((e) => e.name.toLowerCase().includes(q))
+      .filter((e) => matchesSearch(e.name, q))
       .sort((a, b) => a.name.localeCompare(b.name) || a.character.localeCompare(b.character))
   }, [allTagged, data, query, searchActive])
 
@@ -577,6 +578,7 @@ export default function InventoryTrackerPage(): React.ReactElement {
             ref={searchRef}
             type="text"
             placeholder="Search items…"
+            title={WILDCARD_HINT}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="flex-1 bg-transparent text-xs outline-none"

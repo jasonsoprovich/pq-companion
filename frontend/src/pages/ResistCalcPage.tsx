@@ -17,6 +17,7 @@ import type { Spell } from '../types/spell'
 import type { NPC } from '../types/npc'
 import { npcDisplayName } from '../lib/npcHelpers'
 import { applyLevelFormula } from '../lib/spellHelpers'
+import { matchesSearch } from '../lib/textSearch'
 
 type ResistKey = 'mr' | 'cr' | 'fr' | 'dr' | 'pr'
 
@@ -218,7 +219,7 @@ export default function ResistCalcPage(): React.ReactElement {
 
   const filteredSpells = useMemo(() => {
     const q = spellFilter.trim().toLowerCase()
-    const list = q ? spells.filter((s) => s.name.toLowerCase().includes(q)) : spells
+    const list = q ? spells.filter((s) => matchesSearch(s.name, q)) : spells
     return list.slice(0, 400)
   }, [spells, spellFilter])
 
@@ -285,7 +286,7 @@ export default function ResistCalcPage(): React.ReactElement {
     const q = debuffQuery.trim().toLowerCase()
     if (!q) return []
     return debuffList
-      .filter((d) => d.name.toLowerCase().includes(q) && !selectedDebuffs.some((s) => s.id === d.id))
+      .filter((d) => matchesSearch(d.name, q) && !selectedDebuffs.some((s) => s.id === d.id))
       .slice(0, 10)
   }, [debuffQuery, debuffList, selectedDebuffs])
 

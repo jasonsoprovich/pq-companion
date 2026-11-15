@@ -20,6 +20,7 @@ import {
 } from '../services/api'
 import { playSoundForTest, stopTestPlayback } from '../services/audio'
 import type { Action, ActionTemplate, BulkResult, Trigger, TriggerCategory } from '../types/trigger'
+import { matchesSearch } from '../lib/textSearch'
 
 type BulkOperation = 'tts_to_sound' | 'apply_template'
 
@@ -119,7 +120,7 @@ export default function BulkActionsModal({
     return grouped
       .map(
         ([key, arr]) =>
-          [key, arr.filter((t) => t.name.toLowerCase().includes(query))] as const,
+          [key, arr.filter((t) => matchesSearch(t.name, query))] as const,
       )
       .filter(([, arr]) => arr.length > 0)
   }, [grouped, query])

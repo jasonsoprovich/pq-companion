@@ -8,6 +8,8 @@ import (
 	"time"
 
 	_ "modernc.org/sqlite"
+
+	"github.com/jasonsoprovich/pq-companion/backend/internal/likequery"
 )
 
 // HistoryStore persists archived combat fights to user.db so the in-memory
@@ -181,8 +183,8 @@ func (s *HistoryStore) ListFights(filter FightFilter) ([]StoredFight, error) {
 		args = append(args, filter.EndTime.UnixNano())
 	}
 	if filter.NPCName != "" {
-		clauses = append(clauses, "lower(npc_name) LIKE ?")
-		args = append(args, "%"+strings.ToLower(filter.NPCName)+"%")
+		clauses = append(clauses, "lower(npc_name) LIKE ?"+likequery.Escape)
+		args = append(args, likequery.Contains(strings.ToLower(filter.NPCName)))
 	}
 	if filter.CharacterName != "" {
 		clauses = append(clauses, "character_name = ?")
@@ -347,8 +349,8 @@ func (s *HistoryStore) Count(filter FightFilter) (int64, error) {
 		args = append(args, filter.EndTime.UnixNano())
 	}
 	if filter.NPCName != "" {
-		clauses = append(clauses, "lower(npc_name) LIKE ?")
-		args = append(args, "%"+strings.ToLower(filter.NPCName)+"%")
+		clauses = append(clauses, "lower(npc_name) LIKE ?"+likequery.Escape)
+		args = append(args, likequery.Contains(strings.ToLower(filter.NPCName)))
 	}
 	if filter.CharacterName != "" {
 		clauses = append(clauses, "character_name = ?")

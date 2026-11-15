@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
 import type { RawRow } from '../services/api'
+import { matchesSearch } from '../lib/textSearch'
 
 interface RawDataModalProps {
   open: boolean
@@ -53,8 +54,8 @@ export default function RawDataModal({
   const visible = needle
     ? fields.filter(
         (f) =>
-          f.name.toLowerCase().includes(needle) ||
-          formatValue(f.value).toLowerCase().includes(needle),
+          matchesSearch(f.name, needle) ||
+          matchesSearch(formatValue(f.value), needle),
       )
     : fields
 

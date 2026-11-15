@@ -30,6 +30,7 @@ import { ItemIcon } from '../components/Icon'
 import RawDataModal from './../components/RawDataModal'
 import NPCCasterSummarySection from '../components/overlays/NPCCasterSummarySection'
 import { DEFAULT_NPC_OVERLAY_SECTIONS } from '../types/config'
+import { WILDCARD_HINT } from '../lib/textSearch'
 
 function formatRespawnTime(seconds: number): string {
   if (seconds <= 0) return '—'
@@ -306,6 +307,7 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
           className="flex-1 bg-transparent text-sm outline-none placeholder:text-(--color-muted)"
           style={{ color: 'var(--color-foreground)' }}
           placeholder="Search NPCs…"
+          title={WILDCARD_HINT}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           spellCheck={false}

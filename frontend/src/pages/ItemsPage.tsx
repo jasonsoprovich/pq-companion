@@ -34,6 +34,7 @@ import { ItemTradeskillsTab } from '../components/RecipeView'
 import ItemCharactersTab from '../components/ItemCharactersTab'
 import ItemQuestsTab, { questsHaveContent } from '../components/ItemQuestsTab'
 import SpellEffectRow from '../components/SpellEffectRow'
+import { WILDCARD_HINT } from '../lib/textSearch'
 
 // ── Filter definitions ─────────────────────────────────────────────────────────
 
@@ -485,6 +486,7 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
           className="flex-1 bg-transparent text-sm outline-none placeholder:text-(--color-muted)"
           style={{ color: 'var(--color-foreground)' }}
           placeholder="Search items…"
+          title={WILDCARD_HINT}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           spellCheck={false}

@@ -114,6 +114,7 @@ import type {
   PackUpdateSummary,
   TestLineResult,
 } from '../types/trigger'
+import { matchesSearch } from '../lib/textSearch'
 
 // NPC special ability codes (Project Quarm's EQMacEmu numbering) offered as
 // the target-HP trigger's ability filter.
@@ -3493,7 +3494,7 @@ export default function TriggersPage(): React.ReactElement {
     return triggers.filter((t) => {
       if (q) {
         const haystack = `${t.name}\n${t.pattern}\n${t.pack_name}\n${t.dedup_key ?? ''}`.toLowerCase()
-        if (!haystack.includes(q)) return false
+        if (!matchesSearch(haystack, q)) return false
       }
       // Character filter: empty Characters list = fires for any character
       // (engine's legacy semantic), so universal triggers pass — global
