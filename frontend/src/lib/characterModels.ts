@@ -6,8 +6,10 @@
 //
 // Each model is loaded once: callers get their own THREE.Mesh, but the
 // geometry, materials and textures are shared, so a raid of 72 copies
-// costs one download. Nothing is disposed; a session uses a few dozen
-// models at most.
+// costs one download. Models and textures are counted out to the
+// characters using them, and freed (from the GPU too) once nothing uses
+// them and a few dozen others have been let go since, so going back to
+// one just seen is instant but browsing hundreds doesn't keep them all.
 
 import * as THREE from 'three'
 import {
@@ -58,10 +60,60 @@ export interface CharacterModelAsset {
   /** What was taken off map-space positions to centre the model (after
    * the y flip); items attached to it are moved by the same. */
   offset: [number, number, number]
+  /** The pooled textures its materials hold. */
+  textureKeys: string[]
 }
 
-const assets = new Map<string, Promise<CharacterModelAsset | null>>()
-const textures = new Map<string, THREE.Texture>()
+/**
+ * Pool shares values by key and counts their users. A value nobody uses
+ * is kept until keepIdle others have gone unused since, then freed.
+ */
+class Pool<T> {
+  private items = new Map<string, { value: T; refs: number; free: () => void }>()
+  // Unused keys, longest unused first.
+  private idle = new Set<string>()
+
+  constructor(private keepIdle: number) {}
+
+  /** acquire returns key's value, making it the first time, and counts a
+   * user, who must release it. */
+  acquire(key: string, make: () => { value: T; free: () => void }): T {
+    let it = this.items.get(key)
+    if (!it) {
+      it = { ...make(), refs: 0 }
+      this.items.set(key, it)
+    }
+    it.refs++
+    this.idle.delete(key)
+    return it.value
+  }
+
+  release(key: string): void {
+    const it = this.items.get(key)
+    if (!it || it.refs <= 0) return
+    if (--it.refs > 0) return
+    this.idle.add(key)
+    for (const k of this.idle) {
+      if (this.idle.size <= this.keepIdle) break
+      this.idle.delete(k)
+      this.items.get(k)?.free()
+      this.items.delete(k)
+    }
+  }
+
+  /** forget drops a key whose value failed, so it's made again next time
+   * (its users' releases then do nothing). */
+  forget(key: string, value: T): void {
+    if (this.items.get(key)?.value !== value) return
+    this.items.delete(key)
+    this.idle.delete(key)
+  }
+}
+
+// How many unused models and textures are kept for reuse. Character
+// textures are small (most 256×256), so this holds tens of MB at most.
+const assetPool = new Pool<Promise<CharacterModelAsset | null>>(24)
+const texturePool = new Pool<THREE.Texture>(64)
 // Called when a texture arrives, so open views can redraw.
 const listeners = new Set<() => void>()
 
@@ -71,101 +123,125 @@ export function onCharacterTexture(fn: () => void): () => void {
   return () => listeners.delete(fn)
 }
 
+// Holds is what one character or item uses from the pools, released
+// together when it's disposed.
+class Holds {
+  assets: string[] = []
+  textures: string[] = []
+
+  asset(key: string, load: () => Promise<CharacterModelAsset | null>): Promise<CharacterModelAsset | null> {
+    this.assets.push(key)
+    return assetPool.acquire(key, () => {
+      const value = load()
+      value.catch(() => assetPool.forget(key, value))
+      return { value, free: () => value.then((a) => a && freeAsset(a)).catch(() => {}) }
+    })
+  }
+
+  texture(archive: string, name: string, masked: boolean): THREE.Texture {
+    const key = `${archive}|${name}|${masked ? 1 : 0}`
+    this.textures.push(key)
+    return acquireTexture(key, archive, name, masked)
+  }
+
+  release(): void {
+    this.assets.forEach((k) => assetPool.release(k))
+    this.textures.forEach((k) => texturePool.release(k))
+    this.assets = []
+    this.textures = []
+  }
+}
+
+// Which model a request resolves to, kept for the session (a few strings
+// each).
+const resolved = new Map<string, Promise<CharacterModelRef | null>>()
+
 function requestKey(r: CharacterModelRequest): string {
   return `${r.race}|${r.gender}|${r.zone ?? ''}|${r.luclin ? 1 : 0}`
 }
 
-/**
- * loadCharacterModel resolves and loads the model for a race and gender.
- * Resolves null when the client has no model for it. Loads are shared.
- */
-export function loadCharacterModel(r: CharacterModelRequest): Promise<CharacterModelAsset | null> {
+function resolveModel(r: CharacterModelRequest): Promise<CharacterModelRef | null> {
   const key = requestKey(r)
-  let p = assets.get(key)
+  let p = resolved.get(key)
   if (!p) {
-    p = (async () => {
-      const ref = await resolveCharacterModel(r.race, r.gender, { zone: r.zone, luclin: r.luclin })
-      if (!ref) return null
-      // Two requests can resolve to one model (a zone without its own
-      // copy); share the loaded asset between them.
-      const refKey = `ref|${ref.archive}|${ref.code}`
-      let byRef = assets.get(refKey)
-      if (!byRef) {
-        byRef = getCharacterMesh3D(ref).then((data) => (data ? buildAsset(ref, data) : null))
-        byRef.catch(() => assets.delete(refKey))
-        assets.set(refKey, byRef)
-      }
-      return byRef
-    })()
-    // A failed load isn't kept, so it's retried next time.
-    p.catch(() => assets.delete(key))
-    assets.set(key, p)
+    p = resolveCharacterModel(r.race, r.gender, { zone: r.zone, luclin: r.luclin })
+    // A failed ask isn't kept, so it's retried next time.
+    p.catch(() => resolved.delete(key))
+    resolved.set(key, p)
   }
   return p
 }
 
-/**
- * loadModelVariant loads a resolved player model with mesh swaps (helm,
- * robe), for the dressing room. Loads are shared like loadCharacterModel's.
- */
-export function loadModelVariant(
+// loadCharacterModel resolves and loads the model for a race and gender,
+// or null when the client has none. Two requests can resolve to one model
+// (a zone without its own copy) and share it.
+async function loadCharacterModel(holds: Holds, r: CharacterModelRequest): Promise<CharacterModelAsset | null> {
+  const ref = await resolveModel(r)
+  return ref ? loadModelVariant(holds, ref, {}) : null
+}
+
+// loadModelVariant loads a resolved model with mesh swaps (helm, robe).
+function loadModelVariant(
+  holds: Holds,
   ref: CharacterModelRef,
   opts: CharacterMeshOptions,
 ): Promise<CharacterModelAsset | null> {
-  if (!opts.helm && !opts.robe) {
-    const key = `ref|${ref.archive}|${ref.code}`
-    let p = assets.get(key)
-    if (!p) {
-      p = getCharacterMesh3D(ref).then((data) => (data ? buildAsset(ref, data) : null))
-      p.catch(() => assets.delete(key))
-      assets.set(key, p)
-    }
-    return p
-  }
-  const key = `variant|${ref.archive}|${ref.code}|${opts.helm ?? 0}|${opts.robe ? 1 : 0}`
-  let p = assets.get(key)
+  const key = !opts.helm && !opts.robe
+    ? `ref|${ref.archive}|${ref.code}`
+    : `variant|${ref.archive}|${ref.code}|${opts.helm ?? 0}|${opts.robe ? 1 : 0}`
+  return holds.asset(key, () =>
+    getCharacterMesh3D(ref, opts.helm || opts.robe ? opts : undefined)
+      .then((data) => (data ? buildAsset(ref, data) : null)))
+}
+
+// Where item models are, by idfile ("IT63"), kept for the session.
+const located = new Map<string, Promise<CharacterModelRef | null>>()
+
+function locateItem(idfile: string): Promise<CharacterModelRef | null> {
+  let p = located.get(idfile)
   if (!p) {
-    p = getCharacterMesh3D(ref, opts).then((data) => (data ? buildAsset(ref, data) : null))
-    p.catch(() => assets.delete(key))
-    assets.set(key, p)
+    p = locateItemModel(idfile)
+    p.catch(() => located.delete(idfile))
+    located.set(idfile, p)
   }
   return p
 }
 
-/**
- * loadAttachedItem loads an item model (idfile "IT63") placed at one of a
- * loaded model's attachment points. Resolves null when the client has no
- * such item model or the model no such point.
- */
-export async function loadAttachedItem(
+// loadAttachedItem loads an item model (idfile "IT63") placed at one of a
+// loaded model's attachment points, or null when the client has no such
+// item model or the model no such point.
+async function loadAttachedItem(
+  holds: Holds,
   body: CharacterModelAsset,
   point: AttachPoint,
   idfile: string,
 ): Promise<CharacterModelAsset | null> {
-  const item = await locateItemModel(idfile)
+  const item = await locateItem(idfile)
   if (!item) return null
-  return loadWornModel(body, point, item)
+  return loadWornModel(holds, body, point, item)
 }
 
-/**
- * loadWornModel loads a resolved item model (a held item, or a Luclin
- * model's hair, robe or plate) hung from one of a loaded model's bones.
- * Resolves null when the model has no such bone.
- */
-export function loadWornModel(
+// loadWornModel loads a resolved item model (a held item, or a Luclin
+// model's hair, robe or plate) hung from one of a loaded model's bones, or
+// null when the model has no such bone.
+function loadWornModel(
+  holds: Holds,
   body: CharacterModelAsset,
   point: AttachPoint,
   item: CharacterModelRef,
 ): Promise<CharacterModelAsset | null> {
   const key = `attach|${body.ref.archive}|${body.ref.code}|${point}|${item.archive}|${item.code}`
-  let p = assets.get(key)
-  if (!p) {
-    p = getAttachedMesh3D(body.ref, point, item)
-      .then((data) => (data ? buildAsset(item, data, body.offset) : null))
-    p.catch(() => assets.delete(key))
-    assets.set(key, p)
-  }
-  return p
+  return holds.asset(key, () =>
+    getAttachedMesh3D(body.ref, point, item)
+      .then((data) => (data ? buildAsset(item, data, body.offset) : null)))
+}
+
+// freeAsset frees a model's geometry and materials, and lets go of its
+// textures.
+function freeAsset(a: CharacterModelAsset): void {
+  a.geometry.dispose()
+  a.materials.forEach((m) => m.dispose())
+  a.textureKeys.forEach((k) => texturePool.release(k))
 }
 
 /** tinted makes materials with one tint (0xRRGGBB, 0 for none); the
@@ -209,7 +285,8 @@ function textureSlot(name: string): number {
  * texture swaps, and each slot's tint (0xRRGGBB, 0 for none). The result
  * is the caller's to dispose of; textures stay shared.
  */
-export function dressMaterials(
+function dressMaterials(
+  holds: Holds,
   asset: CharacterModelAsset,
   outfit: ModelOutfit | null,
   tints: number[],
@@ -223,7 +300,7 @@ export function dressMaterials(
     if (!swap && !tint) return base.clone()
     const m = base.clone() as THREE.MeshLambertMaterial
     if (swap) {
-      const map = texture(swap.archive, swap.name, false)
+      const map = holds.texture(swap.archive, swap.name, false)
       m.map = map
       if ('emissiveMap' in m) m.emissiveMap = map
     }
@@ -237,8 +314,8 @@ export function dressMaterials(
   })
 }
 
-/** createCharacterMesh makes a mesh of a loaded model, sharing its data. */
-export function createCharacterMesh(asset: CharacterModelAsset): THREE.Mesh {
+// createCharacterMesh makes a mesh of a loaded model, sharing its data.
+function createCharacterMesh(asset: CharacterModelAsset): THREE.Mesh {
   const mesh = new THREE.Mesh(asset.geometry, asset.materials)
   mesh.userData.characterModel = asset.ref
   return mesh
@@ -276,8 +353,14 @@ function buildAsset(
   geometry.computeVertexNormals()
   geometry.computeBoundingSphere()
 
+  const textureKeys: string[] = []
   const materials = data.materials.map((m): THREE.Material => {
-    const map = m.texture ? texture(ref.archive, m.texture, m.kind === 1) : null
+    let map: THREE.Texture | null = null
+    if (m.texture) {
+      const key = `${ref.archive}|${m.texture}|${m.kind === 1 ? 1 : 0}`
+      textureKeys.push(key)
+      map = acquireTexture(key, ref.archive, m.texture, m.kind === 1)
+    }
     if (m.kind === 3) {
       return new THREE.MeshBasicMaterial({
         map, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
@@ -299,43 +382,55 @@ function buildAsset(
     })
   })
   const textures = data.materials.map((m) => m.texture)
-  return { ref, geometry, materials, textures, height: maxZ - minZ, offset }
+  return { ref, geometry, materials, textures, height: maxZ - minZ, offset, textureKeys }
 }
 
-// texture returns a character texture, starting its load the first time.
-function texture(archive: string, name: string, masked: boolean): THREE.Texture {
-  const key = `${archive}|${name}|${masked ? 1 : 0}`
-  let t = textures.get(key)
-  if (t) return t
-  const tex = new THREE.Texture()
-  // Client UVs run top-down (DirectX); ImageBitmaps aren't flipped.
-  tex.flipY = false
-  tex.wrapS = THREE.RepeatWrapping
-  tex.wrapT = THREE.RepeatWrapping
-  tex.colorSpace = THREE.SRGBColorSpace
-  textures.set(key, tex)
-  // Fetched rather than loaded as an <img>: the page's CSP allows the
-  // backend for connections but not for images.
-  getCharacterTextureUrl(archive, name, masked)
-    .then((url) => fetch(url))
-    .then((res) => (res.ok ? res.blob() : Promise.reject(new Error(res.statusText))))
-    .then((blob) => createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' }))
-    .then((bitmap) => {
-      tex.image = bitmap
-      tex.needsUpdate = true
-    })
-    .catch(() => {
-      tex.image = new ImageData(new Uint8ClampedArray([138, 143, 152, 255]), 1, 1)
-      tex.needsUpdate = true
-    })
-    .finally(() => listeners.forEach((fn) => fn()))
-  t = tex
-  return t
+// acquireTexture returns a character texture, starting its load the first
+// time, and counts a user of it (see texturePool).
+function acquireTexture(key: string, archive: string, name: string, masked: boolean): THREE.Texture {
+  return texturePool.acquire(key, () => {
+    const tex = new THREE.Texture()
+    let freed = false
+    // Client UVs run top-down (DirectX); ImageBitmaps aren't flipped.
+    tex.flipY = false
+    tex.wrapS = THREE.RepeatWrapping
+    tex.wrapT = THREE.RepeatWrapping
+    tex.colorSpace = THREE.SRGBColorSpace
+    // Fetched rather than loaded as an <img>: the page's CSP allows the
+    // backend for connections but not for images.
+    getCharacterTextureUrl(archive, name, masked)
+      .then((url) => fetch(url))
+      .then((res) => (res.ok ? res.blob() : Promise.reject(new Error(res.statusText))))
+      .then((blob) => createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' }))
+      .then((bitmap) => {
+        if (freed) {
+          bitmap.close()
+          return
+        }
+        tex.image = bitmap
+        tex.needsUpdate = true
+      })
+      .catch(() => {
+        if (freed) return
+        tex.image = new ImageData(new Uint8ClampedArray([138, 143, 152, 255]), 1, 1)
+        tex.needsUpdate = true
+      })
+      .finally(() => listeners.forEach((fn) => fn()))
+    return {
+      value: tex,
+      free: () => {
+        freed = true
+        tex.dispose()
+        if (tex.image instanceof ImageBitmap) tex.image.close()
+      },
+    }
+  })
 }
 
 // Outfits asked for, by model and dress: a zone's NPCs repeat a few
 // looks many times over. A failed ask is forgotten so it's tried again.
 const outfits = new Map<string, Promise<ModelOutfit>>()
+const OUTFITS_KEPT = 512
 
 function cachedOutfit(ref: CharacterModelRef, dress: ModelDress): Promise<ModelOutfit> {
   const key = JSON.stringify([ref.archive, ref.code, dress.mats, !!dress.monk, dress.looks ?? null])
@@ -344,6 +439,8 @@ function cachedOutfit(ref: CharacterModelRef, dress: ModelDress): Promise<ModelO
     p = getModelOutfit(ref, dress.mats, dress.monk, dress.looks)
     p.catch(() => outfits.delete(key))
     outfits.set(key, p)
+    // Answers are small, but a long session browsing NPCs asks many.
+    if (outfits.size > OUTFITS_KEPT) outfits.delete(outfits.keys().next().value!)
   }
   return p
 }
@@ -378,11 +475,27 @@ export async function buildCharacter(
   req: CharacterModelRequest,
   given?: ModelDress | null,
 ): Promise<DressedCharacter | null> {
-  const base = await loadCharacterModel(req)
+  const holds = new Holds()
+  try {
+    const c = await dressCharacter(holds, req, given ?? null)
+    if (!c) holds.release()
+    return c
+  } catch (err) {
+    holds.release()
+    throw err
+  }
+}
+
+async function dressCharacter(
+  holds: Holds,
+  req: CharacterModelRequest,
+  given: ModelDress | null,
+): Promise<DressedCharacter | null> {
+  const base = await loadCharacterModel(holds, req)
   if (!base) return null
   // A Luclin model is always dressed: its hair and the bare body's
   // loincloth are worn models.
-  let dress = given ?? null
+  let dress = given
   if (base.ref.archive === `global${base.ref.code.toLowerCase()}_chr.s3d`) {
     dress = dress ?? { mats: [0, 0, 0, 0, 0, 0, 0], tints: [0, 0, 0, 0, 0, 0, 0] }
   }
@@ -395,21 +508,21 @@ export async function buildCharacter(
   let outfit: ModelOutfit | null = null
   if (dress) {
     outfit = await cachedOutfit(base.ref, dress)
-    asset = (await loadModelVariant(base.ref, { helm: outfit.helm, robe: outfit.robe })) ?? base
+    asset = (await loadModelVariant(holds, base.ref, { helm: outfit.helm, robe: outfit.robe })) ?? base
   }
   const held: { which: 'primary' | 'secondary'; item: CharacterModelAsset | null }[] = []
   if (dress?.primary) {
-    held.push({ which: 'primary', item: await loadAttachedItem(asset, 'R_POINT', dress.primary).catch(() => null) })
+    held.push({ which: 'primary', item: await loadAttachedItem(holds, asset, 'R_POINT', dress.primary).catch(() => null) })
   }
   if (dress?.secondary) {
     const point = dress.shield ? 'SHIELD_POINT' : 'L_POINT'
-    held.push({ which: 'secondary', item: await loadAttachedItem(asset, point, dress.secondary).catch(() => null) })
+    held.push({ which: 'secondary', item: await loadAttachedItem(holds, asset, point, dress.secondary).catch(() => null) })
   }
   // A Luclin model's hair, robe and plate, each tinted as its slot (hair
   // and beards in their own colour).
   const wear = outfit?.wear ?? []
   const worn = await Promise.all(wear.map((w) =>
-    loadWornModel(asset, w.point, { code: w.item, archive: w.archive }).catch(() => null)))
+    loadWornModel(holds, asset, w.point, { code: w.item, archive: w.archive }).catch(() => null)))
   const object = new THREE.Group()
   const owned: THREE.Material[] = []
   worn.forEach((item, i) => {
@@ -421,7 +534,7 @@ export async function buildCharacter(
     object.add(new THREE.Mesh(item.geometry, mats))
   })
   if (dress) {
-    const mats = dressMaterials(asset, outfit, dress.tints)
+    const mats = dressMaterials(holds, asset, outfit, dress.tints)
     owned.push(...mats)
     object.add(new THREE.Mesh(asset.geometry, mats))
   } else {
@@ -436,7 +549,41 @@ export async function buildCharacter(
     fallback: [...new Set((outfit?.swaps ?? []).filter((w) => w.fallback).map((w) => w.slot))],
     missingItems: held.filter((h) => !h.item).map((h) => h.which),
     wear,
-    dispose: () => owned.forEach((m) => m.dispose()),
+    dispose: () => {
+      owned.forEach((m) => m.dispose())
+      holds.release()
+    },
+  }
+}
+
+/** ShownItem is an item model on its own, ready to draw. */
+export interface ShownItem {
+  object: THREE.Group
+  asset: CharacterModelAsset
+  /** Lets go of the model (it's shared, and freed once nothing uses it). */
+  dispose: () => void
+}
+
+/**
+ * buildItem loads an item's model (idfile "IT10") on its own, as the
+ * game draws it held or on the ground. Resolves null when the client has
+ * no such model.
+ */
+export async function buildItem(idfile: string): Promise<ShownItem | null> {
+  const holds = new Holds()
+  try {
+    const ref = await locateItem(idfile)
+    const asset = ref ? await loadModelVariant(holds, ref, {}) : null
+    if (!asset) {
+      holds.release()
+      return null
+    }
+    const object = new THREE.Group()
+    object.add(createCharacterMesh(asset))
+    return { object, asset, dispose: () => holds.release() }
+  } catch (err) {
+    holds.release()
+    throw err
   }
 }
 

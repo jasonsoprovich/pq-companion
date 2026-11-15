@@ -38,6 +38,24 @@ func TestMeshCacheEvicts(t *testing.T) {
 	}
 }
 
+func TestMeshCacheBytesAndRecency(t *testing.T) {
+	c := meshCache{size: 10, maxBytes: 10}
+	c.put("a", make([]byte, 4))
+	c.put("b", make([]byte, 4))
+	c.get("a") // a is now the most recently used
+	c.put("c", make([]byte, 4))
+	if _, ok := c.get("b"); ok {
+		t.Error("least recently used entry kept past the byte limit")
+	}
+	if _, ok := c.get("a"); !ok {
+		t.Error("recently used entry dropped")
+	}
+	c.put("big", make([]byte, 20))
+	if _, ok := c.get("big"); !ok || c.bytes != 20 {
+		t.Errorf("newest entry should stay alone even over the limit (bytes %d)", c.bytes)
+	}
+}
+
 func TestTexture3DRejectsBadName(t *testing.T) {
 	h := &mapsHandler{}
 	r := chi.NewRouter()

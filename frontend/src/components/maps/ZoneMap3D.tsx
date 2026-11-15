@@ -280,7 +280,8 @@ export default function ZoneMap3D({
       onUnavailable?.('webgl')
       return
     }
-    renderer.setPixelRatio(window.devicePixelRatio)
+    // Past 2× the extra pixels cost more than they show.
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.localClippingEnabled = true
     renderer.setClearColor(0x0b0d12, transparentRef.current ? 0 : 1)
     el.appendChild(renderer.domElement)
@@ -406,6 +407,8 @@ export default function ZoneMap3D({
           else mat?.dispose()
         })
         renderer.dispose()
+        // Give the WebGL context back now rather than at garbage collection.
+        renderer.forceContextLoss()
         renderer.domElement.remove()
       },
     }

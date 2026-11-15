@@ -30,17 +30,34 @@ const meshCacheSize = 3
 
 type meshCache struct {
 	mu    sync.Mutex
-	order []string
+	order []string // least recently used first
 	data  map[string][]byte
-	// size is how many entries are kept; 0 means meshCacheSize.
-	size int
+	bytes int
+	// size is how many entries are kept; 0 means meshCacheSize. maxBytes,
+	// when set, also bounds their total size (the newest entry is always
+	// kept).
+	size     int
+	maxBytes int
 }
 
 func (c *meshCache) get(key string) ([]byte, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	b, ok := c.data[key]
+	if ok {
+		c.touch(key)
+	}
 	return b, ok
+}
+
+// touch moves key to the most recently used end.
+func (c *meshCache) touch(key string) {
+	for i, k := range c.order {
+		if k == key {
+			c.order = append(append(c.order[:i:i], c.order[i+1:]...), key)
+			return
+		}
+	}
 }
 
 func (c *meshCache) put(key string, b []byte) {
@@ -49,15 +66,20 @@ func (c *meshCache) put(key string, b []byte) {
 	if c.data == nil {
 		c.data = map[string][]byte{}
 	}
-	if _, ok := c.data[key]; !ok {
+	if old, ok := c.data[key]; ok {
+		c.bytes -= len(old)
+		c.touch(key)
+	} else {
 		c.order = append(c.order, key)
 	}
 	c.data[key] = b
+	c.bytes += len(b)
 	size := c.size
 	if size <= 0 {
 		size = meshCacheSize
 	}
-	for len(c.order) > size {
+	for len(c.order) > 1 && (len(c.order) > size || (c.maxBytes > 0 && c.bytes > c.maxBytes)) {
+		c.bytes -= len(c.data[c.order[0]])
 		delete(c.data, c.order[0])
 		c.order = c.order[1:]
 	}
