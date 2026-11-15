@@ -849,15 +849,17 @@ func (db *DB) GetItemIDByName(name string) (int, bool) {
 // overlay uses this to disambiguate against the player's zone and position
 // (see backend/internal/overlay/npc.go).
 //
-// Excludes race 127 (Invisible Man) rows, same as nonPlayerNPCClause below.
-// Several raid bosses (e.g. Rhag'Mozdezh, Rhag'Zhezum, Arch Lich Rhag'Zadune)
+// Excludes untargetable race 127 (Invisible Man) rows, same as
+// nonPlayerNPCClause below. Several raid bosses (e.g. Rhag'Mozdezh, Rhag'Zhezum, Arch Lich Rhag'Zadune)
 // have a same-named decoy row with race=127 and bodytype in the untargetable
 // range alongside the real encounter row; without this filter the decoy's
 // raid_target=1 flag beat the real boss's raid_target=0 in
 // sortVariantsByStrength (backend/internal/overlay/npc.go), so the overlay
 // headlined an "Untargetable"/"Invisible Man" NPC for a boss that is neither
 // (reported 2026-07-18). The NPC search page never showed this because
-// SearchNPCs already chains nonPlayerNPCClause.
+// SearchNPCs already chains nonPlayerNPCClause. A race 127 row with a
+// targetable bodytype is a real mob drawn invisible ("a conjured
+// automoton" in Solusek Ro's tower, "a shadowed man"), so it stays.
 //
 // When zoneShortName is non-empty, only variants with at least one spawn
 // point in that zone are returned, and each variant's SpawnPoints field is
@@ -871,7 +873,7 @@ func (db *DB) GetItemIDByName(name string) (int, bool) {
 func (db *DB) GetNPCVariantsByNameInZone(name, zoneShortName string) ([]NPCVariant, error) {
 	if zoneShortName == "" {
 		q := fmt.Sprintf(
-			"SELECT %s FROM npc_types n %s WHERE n.name = ? COLLATE NOCASE AND n.race != 127 ORDER BY n.id",
+			"SELECT %s FROM npc_types n %s WHERE n.name = ? COLLATE NOCASE AND NOT (n.race = 127 AND n.bodytype IN (11, 60, 65, 66, 67)) ORDER BY n.id",
 			npcColumns, npcJoin,
 		)
 		rows, err := db.Query(q, name)
@@ -900,7 +902,7 @@ func (db *DB) GetNPCVariantsByNameInZone(name, zoneShortName string) ([]NPCVaria
 		JOIN spawnentry se ON se.npcID = n.id
 		JOIN spawn2 s2 ON s2.spawngroupID = se.spawngroupID
 		WHERE n.name = ? COLLATE NOCASE
-		  AND n.race != 127
+		  AND NOT (n.race = 127 AND n.bodytype IN (11, 60, 65, 66, 67))
 		  AND s2.zone = ?
 		ORDER BY n.id, s2.spawngroupID, s2.id`,
 		npcColumns, npcJoin)
@@ -961,7 +963,7 @@ func (db *DB) GetScriptSpawnedNPCsByNameInZone(name, zoneShortName string) ([]NP
 		SELECT %s FROM npc_types n %s
 		JOIN zone z ON z.short_name = ? AND n.id / 1000 = z.zoneidnumber
 		WHERE n.name = ? COLLATE NOCASE
-		  AND n.race != 127
+		  AND NOT (n.race = 127 AND n.bodytype IN (11, 60, 65, 66, 67))
 		  AND NOT EXISTS (SELECT 1 FROM spawnentry se WHERE se.npcID = n.id)
 		ORDER BY n.id`,
 		npcColumns, npcJoin)
@@ -1058,16 +1060,18 @@ var ScriptSpawnedNPCOverrides = map[string]map[string][]int{
 }
 
 // nonPlayerNPCClause filters out rows in npc_types that do not reference
-// real in-game NPCs: empty/placeholder names ("", "#", "_") and the
-// Invisible Man race (127), which EQEmu uses exclusively for invisible
-// dev/trigger objects (spawners, animation puppets, environment effects,
-// "You_hear_..." emitters, etc.). All NPC list/summary queries should
+// real in-game NPCs: placeholder names of only "_" and "#" ("", "_",
+// "___") and untargetable Invisible Man (race 127) rows: the dev/trigger
+// objects EQEmu uses that race for (spawners, environment effects,
+// "You_hear_..." emitters, raid bosses' decoys). A race 127 row with a
+// targetable bodytype is a real mob drawn invisible ("a shadowed man",
+// "a conjured automoton") and stays. All NPC list/summary queries should
 // chain this clause so a placeholder doesn't surface in the UI as
 // "level 99 warrior" with no name.
 //
 // Use as `WHERE ... ` + nonPlayerNPCClause — the leading " AND " is
 // included. The alias `n` must be the npc_types row.
-const nonPlayerNPCClause = " AND n.name != '' AND n.name != '#' AND n.name != '_' AND n.race != 127"
+const nonPlayerNPCClause = " AND TRIM(n.name, '_#') != '' AND NOT (n.race = 127 AND n.bodytype IN (11, 60, 65, 66, 67))"
 
 // SearchNPCs searches NPCs by name (case-insensitive substring match).
 // When hidePlaceholders is true, entries with level 0 or class 0 are also
@@ -2618,8 +2622,8 @@ const zoneColumns = `
   z.min_level, COALESCE(z.note,''),
   z.castoutdoor, z.hotzone, z.canlevitate, z.canbind,
   COALESCE(z.zone_exp_multiplier, 1.0), z.expansion,
-  COALESCE((SELECT MIN(n.level) FROM npc_types n JOIN spawnentry se ON se.npcID = n.id JOIN spawn2 s2 ON s2.spawngroupID = se.spawngroupID WHERE s2.zone = z.short_name AND n.name != '' AND n.name != '#' AND n.name != '_' AND n.race != 127), 0),
-  COALESCE((SELECT MAX(n.level) FROM npc_types n JOIN spawnentry se ON se.npcID = n.id JOIN spawn2 s2 ON s2.spawngroupID = se.spawngroupID WHERE s2.zone = z.short_name AND n.name != '' AND n.name != '#' AND n.name != '_' AND n.race != 127), 0),
+  COALESCE((SELECT MIN(n.level) FROM npc_types n JOIN spawnentry se ON se.npcID = n.id JOIN spawn2 s2 ON s2.spawngroupID = se.spawngroupID WHERE s2.zone = z.short_name AND TRIM(n.name, '_#') != '' AND NOT (n.race = 127 AND n.bodytype IN (11, 60, 65, 66, 67))), 0),
+  COALESCE((SELECT MAX(n.level) FROM npc_types n JOIN spawnentry se ON se.npcID = n.id JOIN spawn2 s2 ON s2.spawngroupID = se.spawngroupID WHERE s2.zone = z.short_name AND TRIM(n.name, '_#') != '' AND NOT (n.race = 127 AND n.bodytype IN (11, 60, 65, 66, 67))), 0),
   COALESCE(z.pull_limit, 80),
   COALESCE(z.graveyard_id, 0),
   COALESCE(z.graveyard_time, 0),
