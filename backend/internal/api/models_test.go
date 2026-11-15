@@ -75,9 +75,15 @@ func TestModelsPeople(t *testing.T) {
 	if err := ps.Upsert(players.SightingInput{Name: "Bela", Race: "Vah Shir", Class: "Warrior", Level: 50, ObservedAt: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
+	// Seen in game by Zeal: wins over /who and the character list.
+	if err := ps.SetLook("Seenya", players.Look{Race: 128, Gender: 1, Size: 6, Face: 2, HairStyle: 255,
+		BeardStyle: 255, HairColor: 255, BeardColor: 255,
+		Mats: [7]int{0, 2, 2, 2, 2, 2, 2}, Tints: [7]uint32{0, 0x323264}, Primary: "IT10"}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
 	h := &modelsHandler{chars: chars, players: ps}
 	rec := httptest.NewRecorder()
-	h.people(rec, httptest.NewRequest(http.MethodGet, "/people?names=osui,Bela,Nobody", nil))
+	h.people(rec, httptest.NewRequest(http.MethodGet, "/people?names=osui,Bela,Nobody,Seenya", nil))
 	var got []personModel
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
@@ -86,6 +92,11 @@ func TestModelsPeople(t *testing.T) {
 		{Name: "osui", Race: 6, Gender: 1, Known: true, Looks: mapgen.Looks{Face: 4, HairColor: 13, Beard: -1, BeardColor: -1, Eyes: 2}},
 		{Name: "Bela", Race: 130, Known: true, Looks: mapgen.DefaultLooks},
 		{Name: "Nobody", Looks: mapgen.DefaultLooks},
+		{
+			Name: "Seenya", Race: 128, Gender: 1, Known: true, Seen: true, Size: 6,
+			Looks: mapgen.Looks{Face: 2, Hair: 0, HairColor: -1, Beard: -1, BeardColor: -1},
+			Dress: &personDress{Mats: [7]int{0, 2, 2, 2, 2, 2, 2}, Tints: [7]uint32{0, 0x323264}, Primary: "IT10"},
+		},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("people = %+v, want %+v", got, want)

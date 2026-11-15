@@ -287,6 +287,30 @@ type RaidMember struct {
 	HPCur   *int      `json:"hp_current,omitempty"` // PipeVerbose only
 	HPMax   *int      `json:"hp_max,omitempty"`     // PipeVerbose only
 	ZoneID  *int      `json:"zone_id,omitempty"`    // PipeVerbose only
+	// Appearance is how they're rendered; only for raiders in the zone, and
+	// only from Zeal builds that send it.
+	Appearance *Appearance `json:"appearance,omitempty"`
+}
+
+// Appearance is how a raid or group member is rendered, as Zeal reads it
+// from their entity: what anyone looking at them sees.
+type Appearance struct {
+	Race    int     `json:"race"`
+	Gender  int     `json:"gender"`
+	Texture int     `json:"texture"`
+	Size    float64 `json:"size"`
+	Face    int     `json:"face"`
+	// The Luclin hair and beard.
+	HairStyle  int `json:"hair_style"`
+	HairColor  int `json:"hair_color"`
+	BeardStyle int `json:"beard_style"`
+	BeardColor int `json:"beard_color"`
+	// Equipment is the material of the head, chest, arms, wrist, hands, legs
+	// and feet slots, then the primary and secondary item types (IT###).
+	Equipment []int `json:"equipment"`
+	// EquipmentColors is each material slot's tint, 0xRRGGBB in the low 24
+	// bits.
+	EquipmentColors []uint32 `json:"equipment_colors"`
 }
 
 // GroupMember is one entry in a MsgGroup (type 6) payload. name/spawn_id/
@@ -302,6 +326,8 @@ type GroupMember struct {
 	Class   *classID  `json:"class,omitempty"`      // PipeVerbose only
 	Level   *flexInt  `json:"level,omitempty"`      // PipeVerbose only
 	ZoneID  *int      `json:"zone_id,omitempty"`    // PipeVerbose only
+	// Appearance is as on RaidMember.
+	Appearance *Appearance `json:"appearance,omitempty"`
 }
 
 // Death is a MsgDeath (type 7) payload: Zeal forwards every OP_Death the

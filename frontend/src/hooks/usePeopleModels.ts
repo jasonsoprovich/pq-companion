@@ -6,10 +6,12 @@ import type { ModelDress } from '../lib/characterDress'
 import type { MarkerModel } from '../components/maps/ZoneMap'
 
 // Who's who, for drawing people as character models in the 3D map: each
-// name's race and gender (your characters, then /who sightings), and what
-// you're wearing, from your Zeal export. Looked up once per name per
-// session; names nobody knows the race of are asked again a minute later,
-// since a /who may have seen them since.
+// name's race and gender, and what they wear. How Zeal last saw them in
+// game wins (race, gender, size, face, hair and gear, from Zeal builds
+// that send raid and group appearance); otherwise your characters, then
+// /who sightings. You wear your Zeal inventory export when there is one.
+// Every name is asked again a minute later, since a /who or Zeal may have
+// seen them, or they may have changed gear, since.
 
 const known = new Map<string, PersonModel>()
 const askedAt = new Map<string, number>()
@@ -54,12 +56,7 @@ export function usePeopleModels(names: string[], self: string, enabled: boolean)
     let live = true
     const ask = (): void => {
       const now = Date.now()
-      const want = key.split(',').filter((n) => {
-        const k = n.toLowerCase()
-        const p = known.get(k)
-        if (p?.known) return false
-        return now - (askedAt.get(k) ?? 0) > RETRY_MS
-      })
+      const want = key.split(',').filter((n) => now - (askedAt.get(n.toLowerCase()) ?? 0) > RETRY_MS)
       if (want.length === 0) return
       want.forEach((n) => askedAt.set(n.toLowerCase(), now))
       getPeopleModels(want.slice(0, 120))
@@ -93,7 +90,12 @@ export function usePeopleModels(names: string[], self: string, enabled: boolean)
       const p = known.get(n.toLowerCase())
       if (!p?.known) continue
       const isSelf = n.toLowerCase() === self.toLowerCase()
-      out.set(n.toLowerCase(), { race: p.race, gender: p.gender, looks: lookOf(p), dress: isSelf ? dress : null })
+      const model: MarkerModel = { race: p.race, gender: p.gender, looks: lookOf(p) }
+      // Your export knows your items' own models; what Zeal saw stands in
+      // without one, and is all there is for anyone else.
+      model.dress = isSelf && dress ? dress : p.dress ?? null
+      if (p.seen && p.size && p.size > 0) model.height = p.size
+      out.set(n.toLowerCase(), model)
     }
     return out
     // tick: lookups landed in the module cache.

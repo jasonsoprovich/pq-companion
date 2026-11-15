@@ -1965,7 +1965,11 @@ func main() {
 				return
 			}
 			pts := make([]playerpos.GroupMemberInput, 0, len(members))
+			looks := make(map[string]*zealpipe.Appearance, len(members))
 			for _, m := range members {
+				if m.Name != "" && m.Appearance != nil {
+					looks[m.Name] = m.Appearance
+				}
 				if m.Name == "" || m.Loc == nil || m.Name == env.Character {
 					continue
 				}
@@ -1982,6 +1986,7 @@ func main() {
 				})
 			}
 			posTracker.UpdateGroup(pipeZoneShort, pts)
+			recordLooks(playerStore, looks)
 			return
 		case zealpipe.MsgRaid:
 			// Raid roster: names / levels / classes / group numbers for every
@@ -1996,7 +2001,11 @@ func main() {
 				return
 			}
 			raidMembers := make([]raidcomp.Member, 0, len(members))
+			looks := make(map[string]*zealpipe.Appearance, len(members))
 			for _, m := range members {
+				if m.Name != "" && m.Appearance != nil {
+					looks[m.Name] = m.Appearance
+				}
 				code, _ := raidcomp.CodeForZealID(int(m.Class))
 				raidMembers = append(raidMembers, raidcomp.Member{
 					Name: m.Name, Level: int(m.Level), Class: int(m.Class), Code: code,
@@ -2004,6 +2013,7 @@ func main() {
 				})
 			}
 			rosterKeeper.Set(pipeZoneID, pipeZoneShort, raidMembers)
+			recordLooks(playerStore, looks)
 			posTracker.UpdateRaid(pipeZoneShort, raidPositions(members, env.Character))
 			if raidRecorder != nil {
 				raidRecorder.SetRaid(env.Character, pipeZoneShort, raidTrackMembers(members))

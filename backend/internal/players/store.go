@@ -97,6 +97,8 @@ type LevelHistoryEntry struct {
 // event consumer need.
 type Store struct {
 	db *sql.DB
+	// looks is the last look written per player (SetLook).
+	looks looksCache
 }
 
 // OpenStore opens a new connection to user.db at the given path and applies
@@ -227,7 +229,7 @@ func (s *Store) migrate() error {
 	`); err != nil {
 		return err
 	}
-	return nil
+	return s.migrateLooks()
 }
 
 // tableColumns returns the set of column names on a table, used to make

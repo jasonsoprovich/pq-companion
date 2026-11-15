@@ -578,16 +578,50 @@ type personModel struct {
 	Name   string `json:"name"`
 	Race   int    `json:"race"`
 	Gender int    `json:"gender"`
-	// Looks are picked in the dressing room (the defaults unless picked).
+	// Looks are picked in the dressing room (the defaults unless picked),
+	// or as last seen in game.
 	mapgen.Looks
 	Known bool `json:"known"`
+	// Seen is set when the look is how Zeal last saw them in game: then
+	// Size is their model height and Dress what they wore.
+	Seen  bool         `json:"seen"`
+	Size  float64      `json:"size,omitempty"`
+	Dress *personDress `json:"dress,omitempty"`
+}
+
+// personDress is what a player was last seen wearing: material and tint
+// (0xRRGGBB) per armor slot, and the held items' models.
+type personDress struct {
+	Mats      [7]int    `json:"mats"`
+	Tints     [7]uint32 `json:"tints"`
+	Primary   string    `json:"primary,omitempty"`
+	Secondary string    `json:"secondary,omitempty"`
+}
+
+// seenLooks is the looks part of how a player was seen. The client keeps
+// 0xFF for "none" (no beard, no colour picked).
+func seenLooks(l players.Look) mapgen.Looks {
+	in := func(v, lo, hi, def int) int {
+		if v < lo || v > hi {
+			return def
+		}
+		return v
+	}
+	return mapgen.Looks{
+		Face:       in(l.Face, 0, 7, 0),
+		Hair:       in(l.HairStyle, 0, 9, 0),
+		HairColor:  in(l.HairColor, 0, 23, -1),
+		Beard:      in(l.BeardStyle, 0, 9, -1),
+		BeardColor: in(l.BeardColor, 0, 23, -1),
+	}
 }
 
 // people handles GET /api/models/people?names=a,b: the race and gender to
-// draw each player as. Your own characters come from the character list
-// and the gender picked in the dressing room; anyone else's race from
-// /who sightings. The game never says anyone's gender, so others are
-// male unless picked.
+// draw each player as. How Zeal last saw them in game (race, gender,
+// size, face, hair, gear) wins when there is one; otherwise your own
+// characters come from the character list and the gender picked in the
+// dressing room, and anyone else's race from /who sightings, drawn male
+// since the log never says anyone's gender.
 func (h *modelsHandler) people(w http.ResponseWriter, r *http.Request) {
 	var names []string
 	for _, n := range strings.Split(r.URL.Query().Get("names"), ",") {
@@ -612,6 +646,18 @@ func (h *modelsHandler) people(w http.ResponseWriter, r *http.Request) {
 					Face: a.Face, Hair: a.Hair, HairColor: a.HairColor,
 					Beard: a.Beard, BeardColor: a.BeardColor, Eyes: a.Eyes,
 				}
+			}
+		}
+		if h.players != nil {
+			if l, ok, err := h.players.GetLook(n); err == nil && ok {
+				p.Race, p.Gender, p.Known, p.Seen = l.Race, l.Gender, true, true
+				// Zeal doesn't send eye colour; keep any picked in the
+				// dressing room.
+				eyes := p.Looks.Eyes
+				p.Looks = seenLooks(l)
+				p.Looks.Eyes = eyes
+				p.Size = l.Size
+				p.Dress = &personDress{Mats: l.Mats, Tints: l.Tints, Primary: l.Primary, Secondary: l.Secondary}
 			}
 		}
 		if !p.Known && h.players != nil {

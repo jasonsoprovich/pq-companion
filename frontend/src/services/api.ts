@@ -830,12 +830,18 @@ export interface CharacterAppearance extends ModelLooks {
 }
 
 // PersonModel is the race, gender and looks to draw a player as; known is
-// false when nothing says which race they are.
+// false when nothing says which race they are. seen marks a look from how
+// Zeal last saw them in game, with their model height (size) and what
+// they wore (dress: material and 0xRRGGBB tint per armor slot, held items'
+// models).
 export interface PersonModel extends ModelLooks {
   name: string
   race: number
   gender: number
   known: boolean
+  seen: boolean
+  size?: number
+  dress?: { mats: number[]; tints: number[]; primary?: string; secondary?: string }
 }
 
 export function getPeopleModels(names: string[]): Promise<PersonModel[]> {
