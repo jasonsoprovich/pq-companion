@@ -277,6 +277,24 @@ type pipeDeath struct {
 	at   time.Time
 }
 
+// deadIDTTL is how long a pipe-reported death keeps a spawn id marked dead.
+// Far longer than any log lag, far shorter than a respawn reusing the id.
+const deadIDTTL = 60 * time.Second
+
+// pipeCastStart is a cast as the pipe first reported it, with the target
+// selected at that moment. See Engine.pipeCastStart.
+type pipeCastStart struct {
+	spell  string
+	target string
+	id     int
+	at     time.Time
+}
+
+// pipeCastStartWindow is how long after the pipe first shows a cast the
+// log's matching "You begin casting" line may arrive and still use the
+// pipe's target snapshot.
+const pipeCastStartWindow = 5 * time.Second
+
 // pipeDeathWindow is how far apart a pipe death event and a log kill line
 // for the same death may land. The pipe normally wins (Zeal forwards the
 // packet before the client prints the chat line, which the tailer then
@@ -343,7 +361,8 @@ func (e *Engine) keyTargetTokenLocked(spell *db.Spell, targetName string, at tim
 		!strings.EqualFold(e.lastCastSpell, spell.Name) {
 		return e.namedTargetTokenLocked(targetName)
 	}
-	if d := at.Sub(e.lastCastAt); d < 0 || d > castSelfSlowWindow {
+	// Both log timestamps: a land in the cast's own second is d == 0.
+	if d := at.Truncate(time.Second).Sub(e.lastCastLogAt.Truncate(time.Second)); d < 0 || d > castSelfSlowWindow {
 		return e.namedTargetTokenLocked(targetName)
 	}
 	if !isSingleTargetSpellType(spell.TargetType) {
@@ -544,6 +563,13 @@ type Engine struct {
 	lastCastSpell string
 	lastCastAt    time.Time
 
+	// lastCastLogAt is the cast line's own log timestamp (whole seconds),
+	// for comparing with a land line's, which is on the same clock. Against
+	// lastCastAt (wall clock when the line was read, a poll later) a land in
+	// the same second as its cast looked like it came first, which lost the
+	// spawn-id tag on every fast cast.
+	lastCastLogAt time.Time
+
 	// lastCastTarget is a best-effort snapshot of lastPipeTarget taken at
 	// the moment lastCastSpell/lastCastAt were recorded — i.e. whoever the
 	// Zeal pipe said the player had selected when they began casting. Empty
@@ -661,6 +687,22 @@ type Engine struct {
 	// arriving just before or after, is recognised as already resolved
 	// instead of flagging the surviving same-named timers MaybeDead.
 	pipeDeaths []pipeDeath
+
+	// deadIDs is every spawn id the pipe reported dead in the last
+	// deadIDTTL, until the player sees that id alive again. A spell that
+	// landed just before a kill reaches the engine through the log, up to a
+	// poll later than the pipe's death event, so without this its timer
+	// would start on a mob that's already gone, and nothing would ever
+	// clear it. See landedOnDeadLocked.
+	deadIDs map[int]time.Time
+
+	// pipeCastStart is the target the pipe showed at the moment it first
+	// reported an in-flight cast (SetPipeCasting): the spell's real target,
+	// since EQ locks it at cast start. The log's "You begin casting" line
+	// reaches Handle a poll later, by when the player may have tabbed to
+	// the next mob, often a same-named one, which tagged the timer with the
+	// wrong spawn id so the right mob's death never cleared it.
+	pipeCastStart pipeCastStart
 
 	// pipeBuffSlots is the most recent self-buff slot snapshot from the pipe
 	// (Buff0..14, plus 15..20 from game.dll). Stored as a set keyed by spell
@@ -941,8 +983,19 @@ func (e *Engine) Handle(ev logparser.LogEvent) {
 		e.mu.Lock()
 		e.lastCastSpell = data.SpellName
 		e.lastCastAt = time.Now()
+		e.lastCastLogAt = ev.Timestamp
+		if e.lastCastLogAt.IsZero() {
+			e.lastCastLogAt = e.lastCastAt
+		}
 		e.lastCastTarget = e.lastPipeTarget
 		e.lastCastTargetID = e.lastPipeTargetID
+		// Prefer the target the pipe showed when this cast began: the
+		// current one may already be the next mob (see pipeCastStart).
+		if cs := e.pipeCastStart; strings.EqualFold(cs.spell, data.SpellName) &&
+			e.lastCastAt.Sub(cs.at) <= pipeCastStartWindow {
+			e.lastCastTarget = cs.target
+			e.lastCastTargetID = cs.id
+		}
 		castTarget, castTargetID := e.lastCastTarget, e.lastCastTargetID
 		// Cross-check: if Zeal is reporting a different in-flight cast than
 		// the log, that's a parser miss worth investigating. Logged once per
@@ -972,6 +1025,7 @@ func (e *Engine) Handle(ev logparser.LogEvent) {
 		e.mu.Lock()
 		e.lastCastSpell = ""
 		e.lastCastAt = time.Time{}
+		e.lastCastLogAt = time.Time{}
 		e.lastCastTarget = ""
 		e.lastCastTargetID = 0
 		e.pendingCharm = nil
@@ -1043,6 +1097,7 @@ func (e *Engine) Handle(ev logparser.LogEvent) {
 		e.aliveSeenIDs = make(map[int]time.Time)
 		e.pendingKills = nil
 		e.pipeDeaths = nil
+		e.deadIDs = nil
 		e.lastAliveClearedID = 0
 		e.mu.Unlock()
 
@@ -1136,8 +1191,17 @@ func (e *Engine) SpellsOnTarget(target string) []string {
 // engine consults this value during EventSpellCast to detect parser
 // divergence; it has no other side effects in this stage.
 func (e *Engine) SetPipeCasting(name string) {
+	name = strings.TrimSpace(name)
 	e.mu.Lock()
-	e.pipeCasting = strings.TrimSpace(name)
+	if name != "" && name != e.pipeCasting {
+		e.pipeCastStart = pipeCastStart{
+			spell:  name,
+			target: e.lastPipeTarget,
+			id:     e.lastPipeTargetID,
+			at:     time.Now(),
+		}
+	}
+	e.pipeCasting = name
 	e.mu.Unlock()
 }
 
@@ -1240,6 +1304,8 @@ func (e *Engine) observeAliveLocked(id int, now time.Time) {
 		e.aliveSeenIDs = make(map[int]time.Time)
 	}
 	e.aliveSeenIDs[id] = now
+	// Seen alive again: the id belongs to a new spawn now.
+	delete(e.deadIDs, id)
 	if id == e.lastAliveClearedID {
 		return
 	}
@@ -1328,6 +1394,8 @@ func (e *Engine) ResetPipeTargetTracking() {
 	e.mu.Lock()
 	e.aliveSeenIDs = make(map[int]time.Time)
 	e.pendingKills = nil
+	e.deadIDs = nil
+	e.pipeCastStart = pipeCastStart{}
 	e.lastAliveClearedID = 0
 	e.mu.Unlock()
 }
@@ -1462,6 +1530,15 @@ func (e *Engine) startExternal(name string, category string, durationSecs, displ
 	// gnoll"s) the player personally slowed in quick succession into
 	// independent rows instead of colliding on name alone.
 	key := timerKey(name, e.keyTargetTokenLocked(spell, targetName, startedAt))
+	// Only a spawn-id-tagged key is checked here: a trigger timer named
+	// after a dead mob (a respawn timer off "You have slain X!") is meant
+	// to start on a death.
+	if id := parseKeyTargetID(key); id != 0 && e.deadIDLocked(id) {
+		e.mu.Unlock()
+		slog.Debug("timer-debug: external start skipped (target already dead)",
+			"name", name, "key", key)
+		return false
+	}
 
 	// IfIdle: the same timer is still counting down, so keep its original
 	// deadline rather than restarting it. An expired row (e.g. a pinned
@@ -2000,6 +2077,12 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 	key := timerKey(spellName, target)
 	if !isSelfTarget {
 		key = timerKey(spellName, e.keyTargetTokenLocked(spell, target, landedAt))
+	}
+	if !isSelfTarget && isDetrimentalCategory(cat) && e.landedOnDeadLocked(key, target, landedAt) {
+		e.mu.Unlock()
+		slog.Debug("timer-debug: spell-landed skipped (target already dead)",
+			"spell", spellName, "target", target, "key", key)
+		return
 	}
 	timer := &ActiveTimer{
 		ID:              key,
@@ -2897,6 +2980,35 @@ func (e *Engine) resolvePendingKillsLocked(now time.Time) {
 	e.pendingKills = kept
 }
 
+// deadIDLocked reports whether the pipe reported id dead within deadIDTTL
+// and the player hasn't seen it alive since. Caller must hold e.mu.
+func (e *Engine) deadIDLocked(id int) bool {
+	at, ok := e.deadIDs[id]
+	return ok && time.Since(at) <= deadIDTTL
+}
+
+// landedOnDeadLocked reports whether a detrimental that landed at landedAt
+// (the log line's second) went onto a mob the pipe has since reported dead:
+// a tagged key by its exact spawn id; an untagged one only for a named mob
+// (one live spawn at a time) that the pipe saw die at or after that second.
+// A generic "a gnoll" can't be told from its namesakes, so it's left alone.
+// Caller must hold e.mu.
+func (e *Engine) landedOnDeadLocked(key, target string, landedAt time.Time) bool {
+	if id := parseKeyTargetID(key); id != 0 {
+		return e.deadIDLocked(id)
+	}
+	if isGenericNPCName(target) {
+		return false
+	}
+	norm := normalizeNPCName(target)
+	for _, d := range e.pipeDeaths {
+		if d.name == norm && !d.at.Before(landedAt.Truncate(time.Second)) {
+			return true
+		}
+	}
+	return false
+}
+
 // HandlePipeDeath handles a Zeal pipe death event: the server tells every
 // client in the zone about every death, so unlike the log's "has been
 // slain" lines — which, in a large raid, only show up for a fraction of the
@@ -2934,6 +3046,15 @@ func (e *Engine) HandlePipeDeath(spawnID int, name string) {
 		}
 	}
 	delete(e.aliveSeenIDs, spawnID)
+	if e.deadIDs == nil {
+		e.deadIDs = make(map[int]time.Time)
+	}
+	for id, at := range e.deadIDs {
+		if now.Sub(at) > deadIDTTL {
+			delete(e.deadIDs, id)
+		}
+	}
+	e.deadIDs[spawnID] = now
 	if norm != "" {
 		kept := e.pipeDeaths[:0]
 		for _, d := range e.pipeDeaths {
