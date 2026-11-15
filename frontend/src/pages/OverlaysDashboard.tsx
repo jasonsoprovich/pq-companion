@@ -13,6 +13,7 @@ import BuffTimerPanel from '../components/overlays/BuffTimerPanel'
 import FilteredTimerPanel from '../components/overlays/FilteredTimerPanel'
 import KillCounterPanel from '../components/overlays/KillCounterPanel'
 import DeathRecapPanel from '../components/overlays/DeathRecapPanel'
+import GearUpgradesPanel from '../components/overlays/GearUpgradesPanel'
 import ItemInfoPanel from '../components/overlays/ItemInfoPanel'
 import PetPanel from '../components/overlays/PetPanel'
 import DetrimTimerPanel from '../components/overlays/DetrimTimerPanel'
@@ -507,6 +508,17 @@ export default function OverlaysDashboard(): React.ReactElement {
             defaultHeight={layout.deathRecap.height}
             snapGridSize={SNAP_GRID}
             onLayoutChange={handleLayoutChange('deathRecap')}
+          />
+        )}
+        {layout.gearUpgrades.visible && (
+          <GearUpgradesPanel
+            key={`gearUpgrades-${layoutVersion}`}
+            defaultX={layout.gearUpgrades.x}
+            defaultY={layout.gearUpgrades.y}
+            defaultWidth={layout.gearUpgrades.width}
+            defaultHeight={layout.gearUpgrades.height}
+            snapGridSize={SNAP_GRID}
+            onLayoutChange={handleLayoutChange('gearUpgrades')}
           />
         )}
         {layout.detrim.visible && (

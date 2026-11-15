@@ -28,6 +28,7 @@ export type DashboardPanelKey =
   | 'itemInfo'
   | 'pet'
   | 'deathRecap'
+  | 'gearUpgrades'
 
 export interface PanelLayout {
   x: number
@@ -62,10 +63,11 @@ export const DEFAULT_DASHBOARD_LAYOUT: DashboardLayout = {
   itemInfo: { x: 1072, y: 416, width: 320, height: 464, visible: false },
   pet: { x: 1376, y: 672, width: 304, height: 432, visible: false },
   deathRecap: { x: 1696, y: 16, width: 352, height: 368, visible: false },
+  gearUpgrades: { x: 1696, y: 400, width: 304, height: 384, visible: false },
 }
 
 export const DASHBOARD_PANEL_KEYS: DashboardPanelKey[] =
-  ['buff', 'filtered', 'detrim', 'dps', 'npc', 'threat', 'rolls', 'respawn', 'chChain', 'chMetronome', 'custom', 'discordVoice', 'liveMap', 'zoneLockouts', 'raidReadiness', 'kills', 'itemInfo', 'pet', 'deathRecap']
+  ['buff', 'filtered', 'detrim', 'dps', 'npc', 'threat', 'rolls', 'respawn', 'chChain', 'chMetronome', 'custom', 'discordVoice', 'liveMap', 'zoneLockouts', 'raidReadiness', 'kills', 'itemInfo', 'pet', 'deathRecap', 'gearUpgrades']
 
 export const DASHBOARD_PANEL_LABELS: Record<DashboardPanelKey, string> = {
   buff: 'Buff Timers',
@@ -87,6 +89,7 @@ export const DASHBOARD_PANEL_LABELS: Record<DashboardPanelKey, string> = {
   itemInfo: 'Item Info',
   pet: 'Pet',
   deathRecap: 'Death Recap',
+  gearUpgrades: 'Gear Upgrades',
 }
 
 export function isPanelLayout(v: unknown): v is PanelLayout {

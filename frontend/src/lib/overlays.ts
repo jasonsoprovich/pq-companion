@@ -31,6 +31,7 @@ export type OverlayName =
   | 'itemInfo'
   | 'pet'
   | 'deathRecap'
+  | 'gearUpgrades'
   // Every Custom Overlay window shares this key for lock mode, opacity, fade
   // and zoom. Deliberately not in OVERLAY_DEFS: it has no single window to
   // pop out and no single hotkey (each overlay is `customOverlay:<id>`).
@@ -108,6 +109,7 @@ export const OVERLAY_DEFS: { name: OverlayName; label: string }[] = [
   { name: 'itemInfo', label: 'Item Info' },
   { name: 'pet', label: 'Pet' },
   { name: 'deathRecap', label: 'Death Recap' },
+  { name: 'gearUpgrades', label: 'Gear Upgrades' },
 ]
 
 // Matches a StreamKit voice-overlay URL, e.g.

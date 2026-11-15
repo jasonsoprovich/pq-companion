@@ -51,6 +51,7 @@ export const FEATURES: readonly FeatureEntry[] = [
   // and global hotkeys. ──
   { id: 'overlay-hub', since: '0.34.0', nav: '/overlays' },
   { id: 'overlay-hotkeys', since: '0.34.0', nav: '/settings', settingsTab: 'hotkeys' },
+  { id: 'gear-upgrades-overlay', since: '0.34.0', nav: '/overlays', overlay: 'gearUpgrades' },
 ]
 
 // ── Version helpers ─────────────────────────────────────────────────────────

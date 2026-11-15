@@ -8,6 +8,7 @@
  */
 import type { LucideIcon } from 'lucide-react'
 import {
+  ArrowUpCircle,
   Crosshair,
   Filter,
   Gauge,
@@ -72,6 +73,7 @@ export const PANEL_POPOUT: Record<DashboardPanelKey, { name: OverlayName; toggle
   itemInfo:      { name: 'itemInfo',      toggle: () => { o()?.toggleItemInfo() } },
   pet:           { name: 'pet',           toggle: () => { o()?.togglePet() } },
   deathRecap:    { name: 'deathRecap',    toggle: () => { o()?.toggleDeathRecap() } },
+  gearUpgrades:  { name: 'gearUpgrades',  toggle: () => { o()?.toggleGearUpgrades() } },
 }
 
 type Entry = Omit<OverlayCatalogEntry, 'name'>
@@ -184,6 +186,14 @@ const ENTRIES: Entry[] = [
     details:
       'Shows an item’s stats and effects when you inspect it in game, and can pop up on ' +
       'its own each time. Needs Zeal 1.5.0 or newer.',
+  },
+  {
+    panel: 'gearUpgrades', label: 'Gear Upgrades', category: 'targets', icon: ArrowUpCircle, color: '#22c55e',
+    blurb: 'Upgrades for your character that drop in this zone.',
+    details:
+      'The Gear Upgrade Finder’s zone view at a glance: the best upgrades by slot that drop ' +
+      'where you are, and the NPCs that drop them. Hover an item for its stats, or click it ' +
+      'or an NPC to open it in the app. Uses your saved finder weights.',
   },
   {
     panel: 'liveMap', label: 'Live Map', category: 'targets', icon: MapIcon, color: '#22c55e',

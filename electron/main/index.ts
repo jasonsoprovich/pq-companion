@@ -357,7 +357,7 @@ function audioMimeType(ext: string): string {
 
 // ── Overlay bounds persistence ────────────────────────────────────────────────
 
-type OverlayName = 'dps' | 'buffTimer' | 'detrimTimer' | 'customTimer' | 'trigger' | 'npc' | 'threat' | 'rollTracker' | 'respawnTimer' | 'chChain' | 'chMetronome' | 'discordVoice' | 'liveMap' | 'zoneLockouts' | 'raidReadiness' | 'filteredTimer' | 'killCounter' | 'itemInfo' | 'pet' | 'deathRecap'
+type OverlayName = 'dps' | 'buffTimer' | 'detrimTimer' | 'customTimer' | 'trigger' | 'npc' | 'threat' | 'rollTracker' | 'respawnTimer' | 'chChain' | 'chMetronome' | 'discordVoice' | 'liveMap' | 'zoneLockouts' | 'raidReadiness' | 'filteredTimer' | 'killCounter' | 'itemInfo' | 'pet' | 'deathRecap' | 'gearUpgrades'
 type Bounds = { x: number; y: number; width: number; height: number }
 
 // A window's identity for bounds/lock persistence and the generic per-window
@@ -408,6 +408,7 @@ const OVERLAY_DEFAULTS: Record<Exclude<OverlayName, 'trigger'>, Bounds> = {
   itemInfo: { x: 0, y: 0, width: 380, height: 460 },
   pet: { x: 0, y: 0, width: 300, height: 420 },
   deathRecap: { x: 0, y: 0, width: 340, height: 360 },
+  gearUpgrades: { x: 0, y: 0, width: 300, height: 380 },
 }
 
 // Overlay types that can have many windows, one per user-created item. The
@@ -980,6 +981,7 @@ const STANDARD_OVERLAYS: Record<StandardOverlay, StandardOverlaySpec> = {
   killCounter: { route: 'kill-counter-window', minWidth: 200, minHeight: 100, ipc: 'killcounter' },
   pet: { route: 'pet-window', minWidth: 220, minHeight: 140, ipc: 'pet' },
   deathRecap: { route: 'death-recap-window', minWidth: 240, minHeight: 120, ipc: 'deathrecap' },
+  gearUpgrades: { route: 'gear-upgrades-window', minWidth: 220, minHeight: 140, ipc: 'gearupgrades' },
   itemInfo: { route: 'item-info-window', minWidth: 260, minHeight: 160, ipc: 'iteminfo' },
   chChain: { route: 'ch-chain-window', minWidth: 180, minHeight: 120, ipc: 'chchain' },
   chMetronome: { route: 'ch-metronome-window', minWidth: 180, minHeight: 180, ipc: 'chmetronome' },
@@ -2897,6 +2899,7 @@ const PANEL_TO_OVERLAY: Record<string, Exclude<OverlayName, 'trigger'>> = {
   itemInfo: 'itemInfo',
   pet: 'pet',
   deathRecap: 'deathRecap',
+  gearUpgrades: 'gearUpgrades',
 }
 
 const MAX_LAYOUT_NAME = 40

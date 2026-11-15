@@ -171,6 +171,9 @@ export interface ElectronAPI {
     openDeathRecap: () => Promise<void>
     closeDeathRecap: () => Promise<void>
     toggleDeathRecap: () => Promise<void>
+    openGearUpgrades: () => Promise<void>
+    closeGearUpgrades: () => Promise<void>
+    toggleGearUpgrades: () => Promise<void>
     openItemInfo: () => Promise<void>
     // Opens without taking focus; a no-op when already open.
     showItemInfo: () => Promise<void>
