@@ -50,13 +50,9 @@ var playableRaces = map[int]bool{
 	9: true, 10: true, 11: true, 12: true, 128: true, 130: true, 330: true,
 }
 
-// postPoPIllusions are player spells in the data that came after Planes of
-// Power and can't be had: Illusion: Froglok (Legacy of Ykesha; its scroll
-// drops nowhere and no merchant sells it).
-var postPoPIllusions = map[int]bool{3063: true}
-
 // raceNames renames races whose name in the data isn't what players call
-// the look.
+// the look. (Illusion: Froglok is a Legacy of Ykesha spell on live, but
+// Quarm gives it in PoP.)
 var raceNames = map[string]string{
 	"Were Wolf":         "Werewolf",
 	"Old Froglok Ghoul": "Froglok",
@@ -107,9 +103,6 @@ func (db *DB) Illusions() ([]Illusion, error) {
 		)
 		if err := rows.Scan(&id, &race, &rname, &spell); err != nil {
 			return nil, fmt.Errorf("scan illusion: %w", err)
-		}
-		if postPoPIllusions[id] {
-			continue
 		}
 		gender, ok := illusionGenders[id]
 		switch {
