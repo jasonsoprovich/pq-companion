@@ -61,10 +61,14 @@ export default function LiveMapView({ zone: zoneName, prefs }: LiveMapViewProps)
   const arrow = arrowPos && zone && arrowPos.zone === zone.zone ? arrowPos : null
   const groupOn = prefs.group ?? showGroup
   const liveTarget = prefs.target && here && targetPos?.zone === here.zone ? targetPos : null
+  // The 3D view's NPC models stand on the spawn points, so they need them
+  // even with the dots off.
+  const [prefs3D] = useMap3DPrefs()
+  const npcModels = show3D && prefs3D.npcs !== 'off'
   const { aggroRings, spawnDots, targetRing } = useSpawnOverlays(zoneName, {
     aggroScope: prefs.aggro,
     aggroNear: prefs.aggroNear,
-    dots: prefs.dots,
+    dots: prefs.dots || npcModels,
     hideKilled: prefs.hideKilled,
     here,
     target: liveTarget,
@@ -100,7 +104,6 @@ export default function LiveMapView({ zone: zoneName, prefs }: LiveMapViewProps)
   )
 
   // People as character models, when the 3D view's People option is on.
-  const [prefs3D] = useMap3DPrefs()
   const me = useActivePlayerName()
   const peopleNames = useMemo(
     () => [...raidMembers.map((m) => m.name), ...groupMembers.map((g) => g.name)],
@@ -150,7 +153,8 @@ export default function LiveMapView({ zone: zoneName, prefs }: LiveMapViewProps)
             pins={pins3D}
             target={targetLine}
             rings={rings}
-            spawnDots={prefs.dots ? spawnDots : undefined}
+            spawnDots={prefs.dots || npcModels ? spawnDots : undefined}
+            showDots={prefs.dots}
             labels={prefs.labels}
             camera={prefs.camera3D}
             chromeless

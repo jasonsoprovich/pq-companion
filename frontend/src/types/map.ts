@@ -77,7 +77,30 @@ export interface ZoneSpawnPoint {
   x: number
   y: number
   z: number
+  // heading is where a mob faces as it spawns, EQ's 0-512.
+  heading: number
   npcs: SpawnPointNPC[]
+}
+
+// NPCLook mirrors db.NPCLook: how an NPC is drawn. mats and tints are per
+// armor slot (head, chest, arms, wrist, hands, legs, feet); size is its
+// height in game units and base_size its race's usual size (0 unknown).
+export interface NPCLook {
+  race: number
+  gender: number
+  texture: number
+  mats: number[]
+  tints: number[]
+  size: number
+  base_size: number
+  primary?: string
+  secondary?: string
+  face: number
+  hair: number
+  hair_color: number
+  beard: number
+  beard_color: number
+  eyes: number
 }
 
 export interface SpawnPointNPC {
@@ -93,6 +116,7 @@ export interface SpawnPointNPC {
   undead: boolean
   aggro_pc: boolean
   pct: number
+  look: NPCLook
 }
 
 export interface MapStatus {

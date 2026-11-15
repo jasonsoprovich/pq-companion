@@ -336,13 +336,17 @@ export function ZoneMapPanel({
   // kill placed on it. hideKilled leaves out the ones on cooldown.
   const [dotsOn, setDotsOn] = useStoredState('maps.respawnDots', false)
   const [hideKilled, setHideKilled] = useStoredState('maps.hideKilled', false)
+  // The 3D view's NPC models stand on the spawn points, so they need them
+  // even with the dots off.
+  const [prefs3D] = useMap3DPrefs()
+  const npcModels = prefs3D.npcs !== 'off'
   const playerLevel = useActiveCharacterLevel()
   // Rings leave out spawns that are dead, and under Near the ones beyond the
   // chosen distance. Without a position here, Near shows them all.
   const here = playerPos && zone && playerPos.zone === zone.zone ? playerPos : null
   const liveTarget = !replay && targetOn && here && targetPos?.zone === here.zone ? targetPos : null
   const { aggroRings, spawnDots, targetRing } = useSpawnOverlays(zoneShortName, {
-    aggroScope, aggroNear, dots: dotsOn, hideKilled, here, target: liveTarget,
+    aggroScope, aggroNear, dots: dotsOn || npcModels, hideKilled, here, target: liveTarget,
   })
 
   const allPois = useMemo(
@@ -549,7 +553,6 @@ export function ZoneMapPanel({
   // You, your group and the raid as 3D markers; the camera follows you with
   // Follow me. Your group comes after the raid so it draws over it.
   // People as character models, when the 3D view's People option is on.
-  const [prefs3D] = useMap3DPrefs()
   const me = useActivePlayerName()
   const peopleNames = useMemo(
     () => [...raidMembers.map((m) => m.name), ...groupMembers.map((g) => g.name)],
@@ -1164,7 +1167,8 @@ export function ZoneMapPanel({
                 target={liveTargetLine}
                 rings={shownRings}
                 fitSeq={fitSeq > 0 ? fitSeq : undefined}
-                spawnDots={dotsOn ? spawnDots : undefined}
+                spawnDots={dotsOn || npcModels ? spawnDots : undefined}
+                showDots={dotsOn}
                 onUnavailable={(why) =>
                   setNo3D(
                     why === 'webgl'

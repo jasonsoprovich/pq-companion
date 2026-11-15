@@ -173,14 +173,16 @@ export function useSpawnOverlays(
     for (const p of spawnPoints) {
       const left = respawnLeft.get(p.spawn_id)
       const name = spawnNames(p)
+      // The mob most likely to stand there, for the 3D view's models.
+      const who = { id: p.spawn_id, heading: p.heading, look: p.npcs[0]?.look }
       if (left === undefined) {
-        out.push({ x: p.x, y: p.y, z: p.z, color: DOT_UNKNOWN, known: false, name })
+        out.push({ x: p.x, y: p.y, z: p.z, color: DOT_UNKNOWN, known: false, name, ...who })
         continue
       }
       if (hideKilled && left > RESPAWN_SOON_SECS) continue
       const color = left <= 0 ? DOT_UP : left <= RESPAWN_SOON_SECS ? DOT_SOON : DOT_COOLDOWN
       out.push({
-        x: p.x, y: p.y, z: p.z, color, known: true, name,
+        x: p.x, y: p.y, z: p.z, color, known: true, name, ...who, down: left > 0,
         label: left > 0 ? fmtRemaining(left) : 'up',
       })
     }

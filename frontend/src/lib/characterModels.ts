@@ -333,6 +333,21 @@ function texture(archive: string, name: string, masked: boolean): THREE.Texture 
   return t
 }
 
+// Outfits asked for, by model and dress: a zone's NPCs repeat a few
+// looks many times over. A failed ask is forgotten so it's tried again.
+const outfits = new Map<string, Promise<ModelOutfit>>()
+
+function cachedOutfit(ref: CharacterModelRef, dress: ModelDress): Promise<ModelOutfit> {
+  const key = JSON.stringify([ref.archive, ref.code, dress.mats, !!dress.monk, dress.looks ?? null])
+  let p = outfits.get(key)
+  if (!p) {
+    p = getModelOutfit(ref, dress.mats, dress.monk, dress.looks)
+    p.catch(() => outfits.delete(key))
+    outfits.set(key, p)
+  }
+  return p
+}
+
 /** DressedCharacter is a ready-to-draw character: the model and what it
  * holds, as one object. */
 export interface DressedCharacter {
@@ -379,7 +394,7 @@ export async function buildCharacter(
   let asset = base
   let outfit: ModelOutfit | null = null
   if (dress) {
-    outfit = await getModelOutfit(base.ref, dress.mats, dress.monk, dress.looks)
+    outfit = await cachedOutfit(base.ref, dress)
     asset = (await loadModelVariant(base.ref, { helm: outfit.helm, robe: outfit.robe })) ?? base
   }
   const held: { which: 'primary' | 'secondary'; item: CharacterModelAsset | null }[] = []

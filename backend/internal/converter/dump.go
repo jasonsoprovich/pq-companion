@@ -64,6 +64,9 @@ func finalizeSchema(cfg Config, db *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS "npc_types__loottable_id" ON "npc_types" ("loottable_id")`,
 		`CREATE INDEX IF NOT EXISTS "npc_types__merchant_id" ON "npc_types" ("merchant_id")`,
 		`CREATE INDEX IF NOT EXISTS "spawnentry__npcID" ON "spawnentry" ("npcID")`,
+		// The map's NPC models size each race against its usual size
+		// (db.raceBaseSizes groups by race and size).
+		`CREATE INDEX IF NOT EXISTS "npc_types__race_size" ON "npc_types" ("race", "size")`,
 		// Case-insensitive name lookups. Exact-name queries use
 		// `name = ? COLLATE NOCASE` (NPC overlay target resolution, lockouts,
 		// item name→id), which can't use a BINARY-collated index: npc_types.name

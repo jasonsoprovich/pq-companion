@@ -7,7 +7,7 @@ import { getZoneMesh3D, getZoneTextureUrl } from '../../services/api'
 import type { ZoneMesh3D } from '../../services/api'
 import { useMap3DPrefs } from '../../hooks/useMap3DPrefs'
 import type { Map3DLabels, Map3DPrefs, Map3DStyle } from '../../hooks/useMap3DPrefs'
-import { PeopleLayer } from './people3D'
+import { PeopleLayer, npcMarkers } from './people3D'
 import { onCharacterTexture } from '../../lib/characterModels'
 import { drawCompass, drawEye, type AggroRing, type RaiderMarker, type ReplayTarget, type SpawnDot } from './ZoneMap'
 
@@ -53,6 +53,9 @@ export interface ZoneMap3DProps {
   // spawnDots the spawn points themselves; both as the 2D map has them.
   rings?: AggroRing[]
   spawnDots?: SpawnDot[]
+  // showDots false keeps the spawn points for the NPC models but doesn't
+  // draw their dots.
+  showDots?: boolean
   // For the map overlay: chromeless drops the buttons and hints, labels
   // overrides the shared Labels setting, and transparent lets the window
   // behind show through.
@@ -190,6 +193,8 @@ interface Scene3D {
   markers: THREE.Group
   // people are the character models standing on the markers (People).
   people: PeopleLayer
+  // npcs are the NPC models standing on the spawn points (NPCs).
+  npcs: PeopleLayer
   pins: THREE.Group
   ringFill: THREE.Mesh
   ringLine: THREE.LineSegments
@@ -212,7 +217,7 @@ interface Scene3D {
 }
 
 export default function ZoneMap3D({
-  zone, markers, target, pins, rings, spawnDots, chromeless, labels, transparent, camera, fitSeq,
+  zone, markers, target, pins, rings, spawnDots, showDots = true, chromeless, labels, transparent, camera, fitSeq,
   onUnavailable,
 }: ZoneMap3DProps): React.ReactElement {
   const host = useRef<HTMLDivElement>(null)
@@ -226,6 +231,8 @@ export default function ZoneMap3D({
   ringsRef.current = rings
   const dotsRef = useRef(spawnDots)
   dotsRef.current = spawnDots
+  const showDotsRef = useRef(showDots)
+  showDotsRef.current = showDots
   const [status, setStatus] = useState<'loading' | 'ready' | string>('loading')
   const lastFocus = useRef<THREE.Vector3 | null>(null)
   const [prefs, setPrefs] = useMap3DPrefs()
@@ -294,6 +301,8 @@ export default function ZoneMap3D({
     sc.add(markerGroup)
     const people = new PeopleLayer(() => scene.current?.render())
     sc.add(people.group)
+    const npcs = new PeopleLayer(() => scene.current?.render())
+    sc.add(npcs.group)
     const offTexture = onCharacterTexture(() => scene.current?.render())
     const pinGroup = new THREE.Group()
     pinGroup.renderOrder = 8
@@ -326,7 +335,7 @@ export default function ZoneMap3D({
 
     let frame = 0
     const s: Scene3D = {
-      renderer, scene: sc, camera, controls, markers: markerGroup, people, pins: pinGroup,
+      renderer, scene: sc, camera, controls, markers: markerGroup, people, npcs, pins: pinGroup,
       ringFill, ringLine, dotsKnown, dotsOther, targetLine,
       cut: new THREE.Plane(new THREE.Vector3(0, 0, -1), NO_CUT),
       layers: null, markerSize: 4, radius: 1000, hover: null, home: null,
@@ -378,6 +387,8 @@ export default function ZoneMap3D({
         offTexture()
         people.dispose()
         sc.remove(people.group)
+        npcs.dispose()
+        sc.remove(npcs.group)
         if (s.layers) {
           s.layers.materials.forEach((m) => m.dispose())
           s.layers.textures.forEach((t) => t.dispose())
@@ -541,7 +552,8 @@ export default function ZoneMap3D({
         s.people.update(markersRef.current, prefsRef.current.people)
         updatePins(s, pinsRef.current ?? [])
         updateRings(s, ringsRef.current ?? [], prefsRef.current.dashFaint)
-        updateDots(s, dotsRef.current ?? [])
+        updateDots(s, showDotsRef.current ? dotsRef.current ?? [] : [])
+        s.npcs.update(npcMarkers(dotsRef.current ?? [], zone), prefsRef.current.npcs)
         s.render()
       })
       .catch((err: Error) => {
@@ -661,9 +673,18 @@ export default function ZoneMap3D({
   useEffect(() => {
     const s = scene.current
     if (!s || status !== 'ready') return
-    updateDots(s, spawnDots ?? [])
+    updateDots(s, showDots ? spawnDots ?? [] : [])
     s.render()
-  }, [spawnDots, status])
+  }, [spawnDots, showDots, status])
+
+  // NPC models on the spawn points: on or off, switched between original
+  // and Luclin, or a mob died or came back.
+  useEffect(() => {
+    const s = scene.current
+    if (!s || status !== 'ready') return
+    s.npcs.update(npcMarkers(spawnDots ?? [], zone), prefs.npcs)
+    s.render()
+  }, [spawnDots, prefs.npcs, status, zone])
 
   // Names are drawn each frame from the current setting.
   useEffect(() => {
@@ -849,6 +870,24 @@ function ViewOptions({ prefs, onChange, zRange, slice, onSlice }: {
                 color: prefs.people === v ? 'var(--color-background)' : 'var(--color-muted-foreground)',
               }}
               onClick={() => onChange({ people: v })}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div title="Stand the mob most likely to spawn at each spawn point on it, as its model from your EverQuest files, dressed and sized as the server has it. Mobs known to be dead aren't drawn. Off by default">
+        <div className="mb-1" style={{ color: 'var(--color-muted)' }}>NPCs</div>
+        <div className="flex overflow-hidden rounded border" style={{ borderColor: 'var(--color-border)' }}>
+          {([['off', 'Off'], ['original', 'Original'], ['luclin', 'Luclin']] as const).map(([v, label]) => (
+            <button
+              key={v}
+              className="flex-1 px-1 py-0.5"
+              style={{
+                backgroundColor: prefs.npcs === v ? 'var(--color-primary)' : 'transparent',
+                color: prefs.npcs === v ? 'var(--color-background)' : 'var(--color-muted-foreground)',
+              }}
+              onClick={() => onChange({ npcs: v })}
             >
               {label}
             </button>

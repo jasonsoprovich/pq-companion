@@ -7,6 +7,7 @@ import type {
   MapPOICategory,
   MapRenderMode,
   MapZone,
+  NPCLook,
 } from '../../types/map'
 import type { PlayerPosition } from '../../hooks/usePlayerPosition'
 import type { ModelDress } from '../../lib/characterDress'
@@ -49,6 +50,13 @@ export interface SpawnDot {
   known: boolean
   // name is who spawns there, shown on hover in 3D.
   name?: string
+  // id is the spawn point's, and look how the mob most likely to stand
+  // there is drawn, for the 3D view's NPC models; down marks a spawn known
+  // to be dead (no mob to draw).
+  id?: number
+  heading?: number
+  look?: NPCLook
+  down?: boolean
 }
 
 // RaiderMarker is one raider in a raid replay frame, in map space.
@@ -78,6 +86,12 @@ export interface MarkerModel {
   /** Face, hair and eyes picked in the dressing room. */
   looks?: ModelLooks
   dress?: ModelDress | null
+  /** An NPC's zone, for its zone's version of the model. */
+  zone?: string
+  /** How tall to draw it in game units, or how much to scale the model;
+   * a player race's own height when neither is given. */
+  height?: number
+  scale?: number
 }
 
 // ReplayTarget is the observer's target in a raid replay, in map space: a

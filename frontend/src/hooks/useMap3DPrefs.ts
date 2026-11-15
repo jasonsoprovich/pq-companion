@@ -37,6 +37,9 @@ export interface Map3DPrefs {
   // people draws you, your group and the raid as character models (read
   // from your own client) standing on their arrows. Off by default.
   people: Map3DPeople
+  // npcs stands each spawn point's likeliest mob on it as its model. Off
+  // by default.
+  npcs: Map3DPeople
 }
 
 const KEY = 'map3d.prefs'
@@ -47,6 +50,7 @@ const DEFAULTS: Map3DPrefs = {
   dashFaint: true,
   cutAbove: true,
   people: 'off',
+  npcs: 'off',
 }
 const STYLES: readonly Map3DStyle[] = ['textured', 'height', 'plain']
 const LABELS: readonly Map3DLabels[] = ['off', 'group', 'all']
@@ -68,6 +72,7 @@ function load(): Map3DPrefs {
       dashFaint: typeof p.dashFaint === 'boolean' ? p.dashFaint : DEFAULTS.dashFaint,
       cutAbove: typeof p.cutAbove === 'boolean' ? p.cutAbove : DEFAULTS.cutAbove,
       people: PEOPLE.includes(p.people as Map3DPeople) ? (p.people as Map3DPeople) : DEFAULTS.people,
+      npcs: PEOPLE.includes(p.npcs as Map3DPeople) ? (p.npcs as Map3DPeople) : DEFAULTS.npcs,
     }
   } catch {
     return DEFAULTS
