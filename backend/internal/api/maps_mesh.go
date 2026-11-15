@@ -32,6 +32,8 @@ type meshCache struct {
 	mu    sync.Mutex
 	order []string
 	data  map[string][]byte
+	// size is how many entries are kept; 0 means meshCacheSize.
+	size int
 }
 
 func (c *meshCache) get(key string) ([]byte, bool) {
@@ -51,7 +53,11 @@ func (c *meshCache) put(key string, b []byte) {
 		c.order = append(c.order, key)
 	}
 	c.data[key] = b
-	for len(c.order) > meshCacheSize {
+	size := c.size
+	if size <= 0 {
+		size = meshCacheSize
+	}
+	for len(c.order) > size {
 		delete(c.data, c.order[0])
 		c.order = c.order[1:]
 	}

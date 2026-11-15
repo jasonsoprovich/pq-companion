@@ -565,10 +565,15 @@ export async function getZoneMesh3D(zone: string): Promise<ZoneMesh3D | null> {
     const body = await res.json().catch(() => null)
     throw new Error(body?.error ?? `mesh ${zone}: ${res.statusText}`)
   }
-  const buf = await res.arrayBuffer()
+  return parseMesh3D(await res.arrayBuffer(), `mesh ${zone}`)
+}
+
+// parseMesh3D unpacks a PQM2 mesh (mapgen.Mesh3D.Encode), the format of zone
+// and character model meshes alike. The arrays view buf without copying.
+function parseMesh3D(buf: ArrayBuffer, label: string): ZoneMesh3D {
   const view = new DataView(buf)
   const magic = String.fromCharCode(...new Uint8Array(buf, 0, 4))
-  if (magic !== 'PQM2') throw new Error(`mesh ${zone}: bad format`)
+  if (magic !== 'PQM2') throw new Error(`${label}: bad format`)
   const verts = view.getUint32(4, true)
   const count = view.getUint32(8, true)
   const groupCount = view.getUint32(12, true)
@@ -607,6 +612,57 @@ export async function getZoneTextureUrl(zone: string, name: string, masked: bool
   const baseUrl = await getBackendBaseUrl()
   const q = masked ? '?mask=1' : ''
   return `${baseUrl}/api/maps/zone/${encodeURIComponent(zone)}/texture/${encodeURIComponent(name)}${q}`
+}
+
+// CharacterModelRef is a resolved character model: the actor the client
+// draws for a race and gender, and the character archive it's read from.
+export interface CharacterModelRef {
+  code: string
+  archive: string
+}
+
+// resolveCharacterModel asks which model the client draws for a race and
+// gender (npc_types numbering; gender 0 male, 1 female, 2 neutral). zone
+// prefers that zone's version of an NPC model; luclin asks for the
+// Luclin-era player model. Resolves null when the client has none. The
+// first call after launch can take several seconds while the backend
+// indexes the client's character archives.
+export async function resolveCharacterModel(
+  race: number,
+  gender: number,
+  opts: { zone?: string; luclin?: boolean } = {},
+): Promise<CharacterModelRef | null> {
+  const q = new URLSearchParams({ race: String(race), gender: String(gender) })
+  if (opts.zone) q.set('zone', opts.zone)
+  if (opts.luclin) q.set('luclin', '1')
+  const baseUrl = await getBackendBaseUrl()
+  const res = await fetch(`${baseUrl}/api/models/resolve?${q}`)
+  if (res.status === 404) return null
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(body?.error ?? `model ${race}: ${res.statusText}`)
+  }
+  return res.json()
+}
+
+// getCharacterMesh3D fetches a character model posed standing, in the same
+// format as a zone mesh. Resolves null when the archive has no such model.
+export async function getCharacterMesh3D(ref: CharacterModelRef): Promise<ZoneMesh3D | null> {
+  const baseUrl = await getBackendBaseUrl()
+  const res = await fetch(
+    `${baseUrl}/api/models/mesh/${encodeURIComponent(ref.archive)}/${encodeURIComponent(ref.code)}`,
+  )
+  if (res.status === 404) return null
+  if (!res.ok) throw new Error(`model ${ref.code}: ${res.statusText}`)
+  return parseMesh3D(await res.arrayBuffer(), `model ${ref.code}`)
+}
+
+// getCharacterTextureUrl is where one of a character archive's textures is
+// served as a PNG. masked keeps the colour key as transparency.
+export async function getCharacterTextureUrl(archive: string, name: string, masked: boolean): Promise<string> {
+  const baseUrl = await getBackendBaseUrl()
+  const q = masked ? '?mask=1' : ''
+  return `${baseUrl}/api/models/texture/${encodeURIComponent(archive)}/${encodeURIComponent(name)}${q}`
 }
 
 // getMapGeometry fetches packed int16 segments and wraps them without copying.

@@ -14,6 +14,7 @@ import (
 	"io"
 	"os"
 	"sort"
+	"strings"
 )
 
 // pfsMagic marks a .s3d archive ("PFS " in the header).
@@ -55,6 +56,12 @@ func OpenArchiveFiles(path string, keep func(name string) bool) (Archive, error)
 // parsePFS parses a PFS archive, inflating the entries keep accepts (all of
 // them when keep is nil).
 func parsePFS(data []byte, keep func(name string) bool) (Archive, error) {
+	return parsePFSInto(data, keep, nil)
+}
+
+// parsePFSInto is parsePFS; with lazy set, it fills lazy's directory
+// instead of inflating anything.
+func parsePFSInto(data []byte, keep func(name string) bool, lazy *LazyArchive) (Archive, error) {
 	if len(data) < 12 {
 		return nil, fmt.Errorf("too short to be a PFS archive (%d bytes)", len(data))
 	}
@@ -129,6 +136,14 @@ func parsePFS(data []byte, keep func(name string) bool) (Archive, error) {
 		return nil, fmt.Errorf("name count %d != payload entry count %d", len(names), len(payload))
 	}
 
+	if lazy != nil {
+		lazy.data = data
+		lazy.entries = make(map[string]pfsEntry, len(payload))
+		for i, e := range payload {
+			lazy.entries[strings.ToLower(names[i])] = e
+		}
+		return nil, nil
+	}
 	out := make(Archive, len(payload))
 	for i, e := range payload {
 		if keep != nil && !keep(names[i]) {
@@ -200,4 +215,53 @@ func inflateEntry(data []byte, e pfsEntry) ([]byte, error) {
 		p += deflated
 	}
 	return out, nil
+}
+
+// LazyArchive is an archive whose entries are inflated one at a time, on
+// request. Character archives hold over a thousand textures, of which a
+// model uses a handful.
+type LazyArchive struct {
+	data    []byte
+	entries map[string]pfsEntry
+}
+
+// OpenArchiveLazy reads a .s3d file and its directory without inflating any
+// entry.
+func OpenArchiveLazy(path string) (*LazyArchive, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	a := &LazyArchive{}
+	if _, err := parsePFSInto(data, nil, a); err != nil {
+		return nil, err
+	}
+	return a, nil
+}
+
+// Has reports whether the archive holds name (any case).
+func (a *LazyArchive) Has(name string) bool {
+	_, ok := a.entries[strings.ToLower(name)]
+	return ok
+}
+
+// Get inflates one entry by name (any case). ok is false when the archive
+// has no such entry.
+func (a *LazyArchive) Get(name string) (b []byte, ok bool, err error) {
+	e, ok := a.entries[strings.ToLower(name)]
+	if !ok {
+		return nil, false, nil
+	}
+	b, err = inflateEntry(a.data, e)
+	return b, true, err
+}
+
+// Names returns every entry name, lower-cased.
+func (a *LazyArchive) Names() []string {
+	out := make([]string, 0, len(a.entries))
+	for n := range a.entries {
+		out = append(out, n)
+	}
+	sort.Strings(out)
+	return out
 }

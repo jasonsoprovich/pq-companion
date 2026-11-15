@@ -53,6 +53,24 @@ type bone struct {
 // skeletonMeshes returns a skeletal actor's meshes posed at the first frame,
 // in map space like any other model. r is the actor's 0x11 reference.
 func (w *WLD) skeletonMeshes(r int32) []Mesh {
+	return w.skeletonMeshesPosed(r, nil)
+}
+
+// bonePose is how one bone is posed: the track and frame to read, and
+// whether to keep the bone's rest offset (its translation) instead of the
+// track's, for an animation borrowed from another model whose bones are
+// a different length.
+type bonePose struct {
+	track    int32
+	frame    int
+	keepRest bool
+}
+
+// skeletonMeshesPosed is skeletonMeshes with each bone's 0x13 track
+// reference passed through pose first, which can swap a bone's rest track
+// for an animation's and pick the frame (see posedSkeleton); nil keeps the
+// rest pose.
+func (w *WLD) skeletonMeshesPosed(r int32, pose func(track int32) bonePose) []Mesh {
 	i, ok := w.ref(r, fragSkeletonRef)
 	if !ok || len(w.Fragments[i].payload) < 4 {
 		return nil
@@ -76,7 +94,17 @@ func (w *WLD) skeletonMeshes(r int32) []Mesh {
 			return
 		}
 		seen[b] = true
-		world[b] = parent.mul(w.trackPose(bones[b].track))
+		local := w.trackPose(bones[b].track)
+		if pose != nil {
+			if bp := pose(bones[b].track); bp.track != bones[b].track || bp.frame != 0 {
+				anim := w.trackPoseFrame(bp.track, bp.frame)
+				if bp.keepRest {
+					anim[3], anim[7], anim[11] = local[3], local[7], local[11]
+				}
+				local = anim
+			}
+		}
+		world[b] = parent.mul(local)
 		for _, c := range bones[b].children {
 			walk(c, world[b])
 		}
@@ -206,6 +234,12 @@ func parseSkeleton(b []byte) ([]bone, []int32) {
 // bit 3) store frames as int16s: rotation w, x, y, z (normalised), then
 // translation x, y, z over 256 and scale over 256.
 func (w *WLD) trackPose(r int32) mat4 {
+	return w.trackPoseFrame(r, 0)
+}
+
+// trackPoseFrame is trackPose at frame frame (clamped to the track's last
+// frame).
+func (w *WLD) trackPoseFrame(r int32, frame int) mat4 {
 	i, ok := w.ref(r, fragTrack)
 	if !ok || len(w.Fragments[i].payload) < 4 {
 		return identity
@@ -219,21 +253,29 @@ func (w *WLD) trackPose(r int32) mat4 {
 	if len(b) < 8 || le.Uint32(b[4:]) == 0 {
 		return identity
 	}
+	if n := int(le.Uint32(b[4:])); frame >= n {
+		frame = n - 1
+	}
+	if frame < 0 {
+		frame = 0
+	}
 	var qw, qx, qy, qz, tx, ty, tz, s float64
 	if le.Uint32(b)&8 != 0 {
-		if len(b) < 24 {
+		if len(b) < 24+16*frame {
 			return identity
 		}
-		i16 := func(off int) float64 { return float64(int16(le.Uint16(b[off:]))) }
+		fo := 16 * frame
+		i16 := func(off int) float64 { return float64(int16(le.Uint16(b[fo+off:]))) }
 		qw, qx, qy, qz = i16(8), i16(10), i16(12), i16(14)
 		if d := i16(22); d != 0 {
 			tx, ty, tz, s = i16(16)/256, i16(18)/256, i16(20)/256, d/256
 		}
 	} else {
-		if len(b) < 40 {
+		if len(b) < 40+32*frame {
 			return identity
 		}
-		f := func(off int) float64 { return float64(math.Float32frombits(le.Uint32(b[off:]))) }
+		fo := 32 * frame
+		f := func(off int) float64 { return float64(math.Float32frombits(le.Uint32(b[fo+off:]))) }
 		s, tx, ty, tz = f(8), f(12), f(16), f(20)
 		qw, qx, qy, qz = f(24), f(28), f(32), f(36)
 	}

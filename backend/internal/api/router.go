@@ -156,6 +156,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 	changelogH := &changelogHandler{entries: changelogEntries}
 	emotesH := &emotesHandler{service: emoteService}
 	mapsH := &mapsHandler{store: mapStore, annotations: mapAnnotations, cfg: cfgMgr, quarm: database}
+	modelsH := newModelsHandler(cfgMgr)
 	raidsH := &raidsHandler{store: raidStore, roster: roster, pipe: pipeSupervisor, liveZone: liveZone}
 
 	r.Route("/api", func(r chi.Router) {
@@ -227,6 +228,11 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 				r.Get("/events", progressH.events)
 			})
 		}
+		r.Route("/models", func(r chi.Router) {
+			r.Get("/resolve", modelsH.resolve)
+			r.Get("/mesh/{archive}/{code}", modelsH.mesh)
+			r.Get("/texture/{archive}/{name}", modelsH.texture)
+		})
 		r.Route("/maps", func(r chi.Router) {
 			r.Get("/status", mapsH.status)
 			r.Get("/zones", mapsH.list)
