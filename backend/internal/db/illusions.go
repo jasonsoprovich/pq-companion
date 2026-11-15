@@ -50,17 +50,34 @@ var playableRaces = map[int]bool{
 	9: true, 10: true, 11: true, 12: true, 128: true, 130: true, 330: true,
 }
 
+// postPoPIllusions are player spells in the data that came after Planes of
+// Power and can't be had: Illusion: Froglok (Legacy of Ykesha; its scroll
+// drops nowhere and no merchant sells it).
+var postPoPIllusions = map[int]bool{3063: true}
+
+// raceNames renames races whose name in the data isn't what players call
+// the look.
+var raceNames = map[string]string{
+	"Were Wolf":         "Werewolf",
+	"Old Froglok Ghoul": "Froglok",
+}
+
 // genderNeutral is the neutral gender.
 const genderNeutral = 2
 
 // Illusions returns the looks illusion spells give their target, by race
 // then texture. Every effect slot is searched: some spells illusion in a
-// later slot.
+// later slot. Only spells a player can have are counted: one a class casts
+// (an AA's spell is a class's at level 254) or an item clicks, procs or
+// wears; the rest are NPC spells (Polymorphic Mayhem's goblin, Stonetouch).
 func (db *DB) Illusions() ([]Illusion, error) {
 	var parts []string
 	for i := 1; i <= 12; i++ {
 		parts = append(parts, fmt.Sprintf(
-			"SELECT id, name, effect_base_value%d AS race FROM spells_new WHERE effectid%d = %d AND effect_base_value%d > 0",
+			"SELECT id, name, effect_base_value%d AS race, "+
+				"MIN(classes1, classes2, classes3, classes4, classes5, classes6, classes7, classes8, "+
+				"classes9, classes10, classes11, classes12, classes13, classes14, classes15) AS lvl "+
+				"FROM spells_new WHERE effectid%d = %d AND effect_base_value%d > 0",
 			i, i, spaIllusion, i))
 	}
 	rows, err := db.Query(`
@@ -68,6 +85,9 @@ func (db *DB) Illusions() ([]Illusion, error) {
 		FROM (` + strings.Join(parts, " UNION ") + `) s
 		LEFT JOIN races r ON r.id = s.race
 		WHERE s.name != ''
+		  AND (s.lvl < 255 OR s.id IN (
+		      SELECT clickeffect FROM items UNION SELECT proceffect FROM items
+		      UNION SELECT worneffect FROM items))
 		ORDER BY s.race, s.name LIKE 'Illusion:%' DESC, s.name`)
 	if err != nil {
 		return nil, fmt.Errorf("illusions: %w", err)
@@ -87,6 +107,9 @@ func (db *DB) Illusions() ([]Illusion, error) {
 		)
 		if err := rows.Scan(&id, &race, &rname, &spell); err != nil {
 			return nil, fmt.Errorf("scan illusion: %w", err)
+		}
+		if postPoPIllusions[id] {
+			continue
 		}
 		gender, ok := illusionGenders[id]
 		switch {
@@ -118,6 +141,9 @@ func (db *DB) Illusions() ([]Illusion, error) {
 		name := raceName[il.Race]
 		if name == "" || strings.HasPrefix(name, "Unknown") || looks[il.Race] > 1 {
 			name = strings.TrimPrefix(lookSpell(il.Spells, name), "Illusion: ")
+		}
+		if n, ok := raceNames[name]; ok {
+			name = n
 		}
 		il.Name = name
 	}

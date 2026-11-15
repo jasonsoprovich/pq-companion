@@ -27,9 +27,16 @@ func TestIllusions(t *testing.T) {
 		"Scaled Wolf":       {42, 0, 1},
 		"Greater Wolf Form": {42, 3, 2},
 		"Wolf Form":         {42, 0, 2},
+		"Werewolf":          {14, 0, 2},
 	} {
 		if g, ok := byName[name]; !ok || g != want {
 			t.Errorf("%s = %+v (found %v), want %+v", name, g, ok, want)
+		}
+	}
+	// NPC-only and post-PoP looks aren't offered.
+	for _, name := range []string{"Kunark Goblin", "Rock-gem Men", "Grimling", "Froglok", "Old Froglok Ghoul", "Were Wolf"} {
+		if _, ok := byName[name]; ok {
+			t.Errorf("%s is offered", name)
 		}
 	}
 }
