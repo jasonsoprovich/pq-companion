@@ -293,3 +293,41 @@ func TestOnSpellLanded_ClickyOnPetPassesClassFilter(t *testing.T) {
 		t.Errorf("another player's clicky should stay filtered, got %v", e2.timers)
 	}
 }
+
+// In triggers-only mode a mez trigger's timer is parked as a pending arm; the
+// land must still turn it into a timer, or the trigger never shows a timer at
+// all (user report: Dazzle / Mez triggers fired their overlay text but no
+// timer appeared). A land with no arm stays suppressed.
+func TestOnSpellLanded_TriggersOnlyPromotesMezArm(t *testing.T) {
+	database, err := db.Open("../../data/quarm.db")
+	if err != nil {
+		t.Skipf("quarm.db not available: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+	charCtx := func() (string, string, int) { return "/eq", "Osui", -1 }
+	e := NewEngine(ws.NewHub(), database, charCtx,
+		func() string { return scopeAnyone }, nil,
+		func() string { return modeTriggersOnly }, nil, nil, nil)
+
+	now := time.Now()
+	e.mu.Lock()
+	e.lastCastSpell = "Dazzle"
+	e.lastCastAt = now
+	e.mu.Unlock()
+
+	// No trigger armed: nothing is created.
+	e.onSpellLanded(now, logparser.SpellLandedData{
+		Kind: logparser.SpellLandedKindOther, SpellName: "Dazzle", TargetName: "a gnoll",
+	})
+	if len(e.timers) != 0 {
+		t.Fatalf("unarmed land created timers in triggers_only: %v", keysOf(e.timers))
+	}
+
+	e.StartExternal("Dazzle", "debuff", 96, 0, now, nil, 0, "", "", false, "", false)
+	e.onSpellLanded(now, logparser.SpellLandedData{
+		Kind: logparser.SpellLandedKindOther, SpellName: "Dazzle", TargetName: "a kobold",
+	})
+	if _, ok := e.timers[timerKey("Dazzle", "a kobold")]; !ok || len(e.timers) != 1 {
+		t.Fatalf("armed land should create one Dazzle timer, got %v", keysOf(e.timers))
+	}
+}

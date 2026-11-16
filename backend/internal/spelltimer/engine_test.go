@@ -696,6 +696,19 @@ func TestOnSpellLanded_TriggersOnlyModeSuppressesAutoTimers(t *testing.T) {
 	}
 }
 
+// A Custom timer for a mez spell isn't one the spell-landed pipeline makes,
+// so it must start right away instead of being parked as a pending arm.
+func TestStartExternal_CustomMezStartsImmediately(t *testing.T) {
+	e := newTestEngine()
+	e.StartExternal("Dazzle", "custom", 96, 0, time.Now(), nil, 0, "", "", false, "", false)
+	if len(e.timers) != 1 {
+		t.Fatalf("custom Dazzle timer = %d rows, want 1", len(e.timers))
+	}
+	if _, parked := e.pendingArms["Dazzle"]; parked {
+		t.Error("custom Dazzle timer was parked as a pending arm")
+	}
+}
+
 // When a trigger fires after a spell-landed timer for the same spell has
 // already been created, StartExternal must not add a duplicate row — but it
 // MUST graft the trigger's threshold and alerts onto the existing timer.
