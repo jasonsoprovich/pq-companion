@@ -62,7 +62,7 @@ import type {
 import type { CombatState, HistoryFacets, HistoryFilter, HistoryListResponse, StoredDeath, StoredFight } from '../types/combat'
 import type { TimerState } from '../types/timer'
 import type { RespawnState } from '../types/respawn'
-import type { Trigger, TriggerFired, TriggerPack, TriggerCategory, CategoryPlacement, TimerGroup, Action, TimerType, TimerAlertThreshold, TriggerSource, PipeCondition, ExtraPattern, ImportPreview, PackUpdateSummary, PackDiff, PackUpdateMode, PackUpdateResult, ActionTemplate, BulkResult, EmoteChange, TriggerEmoteSuggestion, PatternLocation, TestRequest, TestReport, TestStatus } from '../types/trigger'
+import type { Trigger, TriggerFired, TriggerPack, TriggerCategory, CategoryPlacement, TimerGroup, Action, TimerType, TimerAlertThreshold, TriggerSource, PipeCondition, ExtraPattern, ImportPreview, PackUpdateSummary, PackDiff, PackUpdateMode, PackUpdateResult, ActionTemplate, BulkResult, EmoteChange, TriggerEmoteSuggestion, PatternLocation, TestRequest, TestReport, TestLineResult, TestStatus } from '../types/trigger'
 import type { RollsState, RollsSettingsPatch, WinnerRule } from '../types/rolls'
 import type { EnumsCatalog } from '../types/enums'
 import type {
@@ -3616,7 +3616,15 @@ export function getTriggerHistory(): Promise<TriggerFired[]> {
  * TriggerTestStatus for the streamed results.
  */
 export function runTriggerTest(req: TestRequest): Promise<TestReport> {
-  return post<TestReport>('/api/triggers/test', req)
+  return post<TestReport>('/api/triggers/test', req).then((r) =>
+    r ? { ...r, lines: (r.lines ?? []).map(normalizeTestLine) } : r,
+  )
+}
+
+/** Go encodes an empty slice as null; the tester UI reads .length on
+ *  matches, and a null there blanked the whole window. */
+export function normalizeTestLine(l: TestLineResult): TestLineResult {
+  return { ...l, matches: l.matches ?? [] }
 }
 
 /** Aborts an active real-time Trigger Tester session. No-op when idle. */

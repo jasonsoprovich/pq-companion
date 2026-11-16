@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Play, Square, RotateCcw, RefreshCw, Zap, Clock } from 'lucide-react'
 import {
   runTriggerTest,
+  normalizeTestLine,
   stopTriggerTest,
   getTriggerTestStatus,
   type Character,
@@ -241,7 +242,10 @@ export default function TriggerTesterTab({
 
   useWebSocket((msg) => {
     if (msg.type === WSEvent.TriggerTestLine) {
-      setLines((prev) => [...prev, msg.data as TestLineResult])
+      setLines((prev) => [
+        ...prev,
+        normalizeTestLine(msg.data as TestLineResult),
+      ])
     } else if (msg.type === WSEvent.TriggerTestStatus) {
       const status = msg.data as { state: 'idle' | 'playing'; errors?: string[] }
       setRunning(status.state === 'playing')
