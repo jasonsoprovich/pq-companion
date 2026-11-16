@@ -37,16 +37,7 @@ type CharmCandidate struct {
 // service NPCs the game won't let you charm, so they'd only be noise in a
 // best-pet list.
 func (db *DB) CharmCandidatesByZone(shortName string) ([]CharmCandidate, error) {
-	idSubquery := `
-		SELECT DISTINCT se.npcID
-		FROM spawnentry se
-		JOIN spawn2 s2 ON s2.spawngroupID = se.spawngroupID
-		WHERE s2.zone = ?
-		UNION
-		SELECT DISTINCT s2.spawngroupID
-		FROM spawn2 s2
-		WHERE s2.zone = ?
-		  AND EXISTS (SELECT 1 FROM npc_types n2 WHERE n2.id = s2.spawngroupID)`
+	idSubquery := zoneNPCIDSubquery
 
 	q := fmt.Sprintf(`
 		SELECT n.id, n.name, n.level, n.maxlevel, n.class, n.bodytype,
