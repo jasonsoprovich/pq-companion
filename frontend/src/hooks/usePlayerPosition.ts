@@ -12,6 +12,19 @@ export interface PlayerPosition {
   z: number
   // heading is EQ's 0-512 counter-clockwise value, 0 = north.
   heading: number
+  // pet is your own pet in the same map space, when Zeal sends its position
+  // (pet_loc). Absent with no pet or on older Zeal builds.
+  pet?: PetPosition
+}
+
+// PetPosition mirrors backend/internal/playerpos.PetState. id is the pet's
+// spawn id.
+export interface PetPosition {
+  id: number
+  x: number
+  y: number
+  z: number
+  heading: number
 }
 
 // STALE_MS is how long a position stays trusted without an update.

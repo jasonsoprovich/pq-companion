@@ -98,6 +98,12 @@ type Player struct {
 	TargetID   *int     `json:"target_id,omitempty"`
 	PetID      *int     `json:"pet_id,omitempty"`
 
+	// The pet's position and heading (CoastalRedwood/Zeal #275), with no
+	// distance cap since it's the player's own pet. Absent with no pet, when
+	// its entity can't be found, and on older Zeal builds.
+	PetLoc     *Location `json:"pet_loc,omitempty"`
+	PetHeading *float64  `json:"pet_heading,omitempty"`
+
 	// Target descriptors (CoastalRedwood/Zeal PR #239). Absent on older Zeal
 	// builds and whenever there is no target. TargetLoc is additionally
 	// omitted whenever the target is 250+ units from the player — a Project

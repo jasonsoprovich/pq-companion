@@ -17,6 +17,7 @@ import { ErrorBoundary } from '../ErrorBoundary'
 import { useMap3DPrefs } from '../../hooks/useMap3DPrefs'
 import { usePeopleModels } from '../../hooks/usePeopleModels'
 import { useActivePlayerName } from '../../hooks/useActivePlayerName'
+import { PET_COLOR, usePetMarker } from '../../hooks/usePetMarker'
 
 // three.js is large; it loads only when the 3D view is picked.
 const ZoneMap3D = lazy(() => import('./ZoneMap3D'))
@@ -60,6 +61,8 @@ export default function LiveMapView({ zone: zoneName, prefs }: LiveMapViewProps)
   const here = playerPos && zone && playerPos.zone === zone.zone ? playerPos : null
   const arrow = arrowPos && zone && arrowPos.zone === zone.zone ? arrowPos : null
   const groupOn = prefs.group ?? showGroup
+  const petMarker = usePetMarker(playerPos)
+  const pet = prefs.pet && here ? petMarker : null
   const liveTarget = prefs.target && here && targetPos?.zone === here.zone ? targetPos : null
   // The 3D view's NPC models stand on the spawn points, so they need them
   // even with the dots off.
@@ -122,12 +125,13 @@ export default function LiveMapView({ zone: zoneName, prefs }: LiveMapViewProps)
         })
       }
     }
+    if (pet) out.push({ ...pet, color: PET_COLOR, mine: true, model: undefined })
     out.push({
       x: arrow.x, y: arrow.y, z: arrow.z, heading: arrow.heading,
       color: PLAYER_3D, label: 'You', focus: true, mine: true, model: models.get(me.toLowerCase()),
     })
     return out
-  }, [show3D, arrow, raiders, groupOn, groupMembers, models, me])
+  }, [show3D, arrow, raiders, groupOn, groupMembers, pet, models, me])
 
   const pins3D = useMemo((): Pin3D[] => {
     if (!show3D) return []
@@ -173,6 +177,7 @@ export default function LiveMapView({ zone: zoneName, prefs }: LiveMapViewProps)
           poiIgnoreZFade={poiIgnoreZFade}
           playerPos={arrowPos}
           groupMembers={groupOn ? groupMembers : []}
+          pet={pet}
           raiders={raiders}
           replayTarget={targetLine}
           aggroRings={rings}

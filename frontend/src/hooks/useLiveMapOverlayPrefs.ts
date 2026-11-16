@@ -13,6 +13,8 @@ export interface LiveMapOverlayPrefs {
   headingUp: boolean
   // group null follows the Settings default for showing groupmates.
   group: boolean | null
+  // pet draws your own pet.
+  pet: boolean
   raid: boolean
   raidColor: 'group' | 'class'
   target: boolean
@@ -28,6 +30,7 @@ export const LIVE_MAP_OVERLAY_DEFAULTS: LiveMapOverlayPrefs = {
   camera3D: 'free',
   headingUp: false,
   group: null,
+  pet: true,
   raid: true,
   raidColor: 'group',
   target: true,
@@ -56,6 +59,7 @@ function load(): LiveMapOverlayPrefs {
       camera3D: p.camera3D === 'top' || p.camera3D === 'chase' ? p.camera3D : 'free',
       headingUp: bool(p.headingUp, d.headingUp),
       group: typeof p.group === 'boolean' ? p.group : null,
+      pet: bool(p.pet, d.pet),
       raid: bool(p.raid, d.raid),
       raidColor: p.raidColor === 'class' ? 'class' : 'group',
       target: bool(p.target, d.target),

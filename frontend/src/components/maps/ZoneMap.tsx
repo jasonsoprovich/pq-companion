@@ -13,6 +13,7 @@ import type { PlayerPosition } from '../../hooks/usePlayerPosition'
 import type { ModelDress } from '../../lib/characterDress'
 import type { ModelLooks } from '../../services/api'
 import type { GroupMemberPosition } from '../../hooks/useGroupPositions'
+import { PET_COLOR, type PetMarker } from '../../hooks/usePetMarker'
 
 // MapHighlight is a prominent marker drawn over the map, independent of the
 // generated POI set — an NPC's spawn point, or the POI the user just clicked.
@@ -163,6 +164,9 @@ export interface ZoneMapProps {
   // (MsgGroup), drawn as faint secondary arrows. Only rendered when the local
   // player's own position places them on this same map.
   groupMembers?: GroupMemberPosition[]
+  // pet is your own pet, drawn under you at any distance, on the same
+  // condition as groupMembers.
+  pet?: PetMarker | null
   // followDepth drives the depth window from the player's height (5b).
   followDepth?: boolean
   // followPlayer keeps the view centred on the player.
@@ -398,6 +402,7 @@ export function ZoneMap({
   replayTarget,
   playerPos,
   groupMembers,
+  pet,
   followDepth = true,
   followPlayer = false,
   onUserPan,
@@ -1088,6 +1093,39 @@ export function ZoneMap({
       }
     }
 
+    // ── pet ── a small amber disc with a tick for its heading, under you.
+    if (playerPos && playerPos.zone === zone.zone && pet) {
+      const [qx, qy] = toScreen(pet.x, pet.y)
+      ctx.save()
+      ctx.translate(qx, qy)
+      ctx.rotate(rot - ((pet.heading ?? 0) / 512) * Math.PI * 2)
+      ctx.beginPath()
+      ctx.arc(0, 0, 3.5, 0, Math.PI * 2)
+      ctx.lineWidth = 2.5
+      ctx.strokeStyle = 'rgba(0,0,0,0.65)'
+      ctx.stroke()
+      ctx.fillStyle = PET_COLOR
+      ctx.fill()
+      ctx.beginPath()
+      ctx.moveTo(0, -3.5)
+      ctx.lineTo(0, -7)
+      ctx.lineWidth = 1.5
+      ctx.strokeStyle = PET_COLOR
+      ctx.stroke()
+      ctx.restore()
+      if (showLabels) {
+        ctx.save()
+        ctx.font = '9px system-ui, sans-serif'
+        ctx.textAlign = 'center'
+        ctx.lineWidth = 3
+        ctx.strokeStyle = 'rgba(0,0,0,0.7)'
+        ctx.strokeText(pet.label, qx, qy - 9)
+        ctx.fillStyle = PET_COLOR
+        ctx.fillText(pet.label, qx, qy - 9)
+        ctx.restore()
+      }
+    }
+
     // ── player ──
     if (playerPos && playerPos.zone === zone.zone) {
       const [px, py] = toScreen(playerPos.x, playerPos.y)
@@ -1114,7 +1152,7 @@ export function ZoneMap({
 
     // ── compass ── only on a turned map, where north isn't up.
     if (rot) drawCompass(ctx, 24, 60, rot)
-  }, [geometry, shown, zone, size, toScreen, rot, view.zoom, depth, highlights, aggroRings, spawnDots, raiders, replayTarget, playerPos, groupMembers, showLabels, detail, showDetail, outline, external, mode, zScale, paths])
+  }, [geometry, shown, zone, size, toScreen, rot, view.zoom, depth, highlights, aggroRings, spawnDots, raiders, replayTarget, playerPos, groupMembers, pet, showLabels, detail, showDetail, outline, external, mode, zScale, paths])
 
   // Wheel zoom is attached natively with passive:false. React registers wheel
   // as a passive listener, so preventDefault() there is ignored — it never

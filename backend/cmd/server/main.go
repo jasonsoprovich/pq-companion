@@ -1895,8 +1895,20 @@ func main() {
 			pipeZoneShort = zoneShort
 			pipeZoneID = p.Zone
 			curPipeZone.Store(liveZone{id: p.Zone, short: zoneShort})
-			posTracker.Update(
-				zoneShort, p.Location.GameX(), p.Location.GameY(), p.Location.Z, p.Heading)
+			// The pet goes with the player's frame: only with both its id
+			// and position, so a pet whose position stopped coming is
+			// dropped from the map rather than frozen on it.
+			var petPos *playerpos.PetInput
+			if p.PetID != nil && p.PetLoc != nil {
+				petPos = &playerpos.PetInput{
+					ID: *p.PetID, GameX: p.PetLoc.GameX(), GameY: p.PetLoc.GameY(), GameZ: p.PetLoc.Z,
+				}
+				if p.PetHeading != nil {
+					petPos.Heading = *p.PetHeading
+				}
+			}
+			posTracker.UpdateWithPet(
+				zoneShort, p.Location.GameX(), p.Location.GameY(), p.Location.Z, p.Heading, petPos)
 			// Zeal v1.4.6+ pet spawn id: a stable, collision-proof identity for
 			// the player's pet. nil = older Zeal or no pet — consumers fall
 			// back to the pet-name label. pet_id going absent after being set

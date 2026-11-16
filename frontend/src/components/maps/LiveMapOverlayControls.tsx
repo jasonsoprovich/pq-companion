@@ -55,6 +55,9 @@ export default function LiveMapOverlayControls({ prefs, onChange, groupDefault, 
       <Chip on={groupOn} onClick={() => onChange({ group: !groupOn })} title="Your groupmates in this zone">
         Group
       </Chip>
+      <Chip on={prefs.pet} onClick={() => onChange({ pet: !prefs.pet })} title="Your pet, at any distance">
+        Pet
+      </Chip>
       <Chip on={prefs.raid} onClick={() => onChange({ raid: !prefs.raid })} title="Everyone else in your raid in this zone">
         Raid
       </Chip>

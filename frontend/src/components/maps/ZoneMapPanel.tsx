@@ -4,6 +4,7 @@ import { AlertTriangle, Check, Copy, Plus, X } from 'lucide-react'
 import { useCachedState } from '../../hooks/useCachedState'
 import { useStoredState } from '../../hooks/useStoredState'
 import { usePlayerPosition } from '../../hooks/usePlayerPosition'
+import { PET_COLOR, usePetMarker } from '../../hooks/usePetMarker'
 import { useSmoothPosition } from '../../hooks/useSmoothPosition'
 import { useMapLayers } from '../../hooks/useMapLayers'
 import { useGroupPositions } from '../../hooks/useGroupPositions'
@@ -243,6 +244,8 @@ export function ZoneMapPanel({
   const playerPos = usePlayerPosition()
   // Your arrow, eased between Zeal's samples; playerPos stays the logic's.
   const arrowPos = useSmoothPosition(playerPos)
+  // Your pet goes with your group on the Live Map page.
+  const petMarker = usePetMarker(playerPos)
   const groupMembers = useGroupPositions()
   const raidMembers = useRaidPositions()
   const targetPos = useTargetPosition()
@@ -571,12 +574,13 @@ export function ZoneMapPanel({
         })
       }
     }
+    if (groupOn && petMarker) out.push({ ...petMarker, color: PET_COLOR, mine: true })
     out.push({
       x: arrowPos.x, y: arrowPos.y, z: arrowPos.z, heading: arrowPos.heading,
       color: PLAYER_3D, label: 'You', focus: followPlayer, mine: true, model: models.get(me.toLowerCase()),
     })
     return out
-  }, [show3D, arrowPos, zone, groupMembers, groupOn, liveRaiders, followPlayer, models, me])
+  }, [show3D, arrowPos, zone, groupMembers, groupOn, petMarker, liveRaiders, followPlayer, models, me])
 
   // The visible pin layers and your markers, plus whatever search or a click
   // picked out, as 3D pins.
@@ -1192,6 +1196,7 @@ export function ZoneMapPanel({
             colorByHeight={heightColor}
             playerPos={replay ? null : arrowPos}
             groupMembers={groupOn && !replay ? groupMembers : []}
+            pet={groupOn && !replay ? petMarker : null}
             followPlayer={followPlayer && !replay}
             raiders={replay ? raiders : liveRaiders}
             replayTarget={replay ? replayTarget : liveTargetLine}

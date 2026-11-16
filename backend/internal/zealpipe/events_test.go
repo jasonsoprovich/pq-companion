@@ -648,3 +648,18 @@ func TestDecodeSpellAction(t *testing.T) {
 		}
 	}
 }
+
+// Zeal #275's pet position decodes alongside pet_id, and is nil without it.
+func TestDecodePlayer_PetLoc(t *testing.T) {
+	p, err := DecodePlayer(`{"zone":1,"location":{"x":1,"y":2,"z":3},"heading":0,"autoattack":false,"pet_id":44,"pet_loc":{"x":10,"y":20,"z":3},"pet_heading":128}`)
+	if err != nil || p.PetLoc == nil || p.PetHeading == nil {
+		t.Fatalf("got %+v %v", p, err)
+	}
+	if p.PetLoc.GameX() != 20 || p.PetLoc.GameY() != 10 || *p.PetHeading != 128 {
+		t.Errorf("pet loc %+v heading %v", *p.PetLoc, *p.PetHeading)
+	}
+	p, err = DecodePlayer(`{"zone":1,"location":{"x":1,"y":2,"z":3},"heading":0,"autoattack":false}`)
+	if err != nil || p.PetLoc != nil || p.PetHeading != nil {
+		t.Errorf("no pet: %+v %v", p, err)
+	}
+}

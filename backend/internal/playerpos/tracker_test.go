@@ -1,6 +1,8 @@
 package playerpos
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
@@ -309,5 +311,57 @@ func TestUpdateTarget(t *testing.T) {
 	}
 	if sent[3].Name != "" {
 		t.Errorf("lost-target frame = %+v, want empty", sent[3])
+	}
+}
+
+func TestUpdateWithPetNegatesAndRoundTrips(t *testing.T) {
+	tr, sent, _ := newTestTracker()
+	tr.UpdateWithPet("akheva", 100, -250, 42, 128, &PetInput{ID: 77, GameX: 110, GameY: -240, GameZ: 40, Heading: 64})
+	if len(*sent) != 1 || (*sent)[0].Pet == nil {
+		t.Fatalf("expected one frame with a pet, got %+v", *sent)
+	}
+	p := *(*sent)[0].Pet
+	if p.ID != 77 || p.X != -110 || p.Y != 240 || p.Z != 40 || p.Heading != 64 {
+		t.Errorf("pet = %+v", p)
+	}
+	b, err := json.Marshal((*sent)[0])
+	if err != nil || !strings.Contains(string(b), `"pet":{"id":77`) {
+		t.Errorf("json = %s %v", b, err)
+	}
+	b, _ = json.Marshal(State{Zone: "akheva"})
+	if strings.Contains(string(b), "pet") {
+		t.Errorf("no pet must omit the field: %s", b)
+	}
+}
+
+// The pet's own movement, appearing, vanishing and being replaced each send a
+// frame while the player stands still.
+func TestUpdateWithPetChanges(t *testing.T) {
+	tr, sent, clock := newTestTracker()
+	pet := func(id int, x float64) *PetInput { return &PetInput{ID: id, GameX: x} }
+	step := func(p *PetInput) int {
+		*clock = clock.Add(minInterval)
+		before := len(*sent)
+		tr.UpdateWithPet("akheva", 0, 0, 0, 0, p)
+		return len(*sent) - before
+	}
+	tr.UpdateWithPet("akheva", 0, 0, 0, 0, nil)
+	cases := []struct {
+		name string
+		pet  *PetInput
+		want int
+	}{
+		{"appears", pet(5, 10), 1},
+		{"still", pet(5, 10), 0},
+		{"jitter", pet(5, 10.1), 0},
+		{"moves", pet(5, 20), 1},
+		{"replaced", pet(6, 20), 1},
+		{"vanishes", nil, 1},
+		{"still gone", nil, 0},
+	}
+	for _, c := range cases {
+		if got := step(c.pet); got != c.want {
+			t.Errorf("%s: frames = %d, want %d", c.name, got, c.want)
+		}
 	}
 }

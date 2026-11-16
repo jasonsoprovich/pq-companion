@@ -29,6 +29,8 @@ import { fmtRemaining } from '../../lib/timeFormat'
 import type { CharmPet } from '../../services/api'
 import type { PetHealthSpell, PetState, PetStats } from '../../types/pet'
 import type { ActiveTimer } from '../../types/timer'
+import { usePlayerPosition } from '../../hooks/usePlayerPosition'
+import { petDistance } from '../../hooks/usePetMarker'
 
 const FG = 'rgba(255,255,255,0.92)'
 const MUTED = 'rgba(255,255,255,0.5)'
@@ -180,6 +182,29 @@ function Header({ state, color }: { state: PetState; color: string }): React.Rea
           {s.race_name ? ` \u00b7 ${s.race_name}` : ''}
         </div>
       )}
+      <PetDistance petId={state.pet_id} />
+    </div>
+  )
+}
+
+// FAR_PET is the distance past which the pet reads as left behind or off
+// chasing something.
+const FAR_PET = 200
+
+// PetDistance is how far your pet is from you, from Zeal's pet position.
+// Hidden without one (no pet, an older Zeal, or a different pet than this
+// overlay shows).
+function PetDistance({ petId }: { petId?: number }): React.ReactElement | null {
+  const pos = usePlayerPosition()
+  const d = petDistance(pos)
+  if (d == null || (petId != null && pos?.pet?.id !== petId)) return null
+  const far = d >= FAR_PET
+  return (
+    <div
+      style={{ fontSize: 11, color: far ? WARN : MUTED, paddingLeft: 18 }}
+      title="Flat distance from you to your pet, from Zeal"
+    >
+      {Math.round(d)} away{far ? ' \u00b7 far' : ''}
     </div>
   )
 }

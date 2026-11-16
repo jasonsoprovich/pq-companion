@@ -28,6 +28,30 @@ type State struct {
 	Z float64 `json:"z"`
 	// Heading is EQ's 0-512 counter-clockwise value, passed through unchanged.
 	Heading float64 `json:"heading"`
+	// Pet is the player's own pet, in the same map space, when Zeal reports
+	// its position (pet_loc, Zeal #275). nil when there's no pet, or the Zeal
+	// build doesn't send it.
+	Pet *PetState `json:"pet,omitempty"`
+}
+
+// PetState is the player's pet position in map space (same negation as
+// State). ID is its spawn id, so a replaced pet reads as a change.
+type PetState struct {
+	ID      int     `json:"id"`
+	X       float64 `json:"x"`
+	Y       float64 `json:"y"`
+	Z       float64 `json:"z"`
+	Heading float64 `json:"heading"`
+}
+
+// PetInput is the pet's position in *game* coordinates, from the pipe's
+// player message.
+type PetInput struct {
+	ID      int
+	GameX   float64
+	GameY   float64
+	GameZ   float64
+	Heading float64
 }
 
 // Broadcast throttling.
@@ -239,6 +263,14 @@ func (t *Tracker) shouldSendTargetLocked(ts TargetState) bool {
 // updates state but never broadcasts, since an unplaceable position is worse
 // than none — it would draw the arrow at the right coordinates on the wrong map.
 func (t *Tracker) Update(zone string, gameX, gameY, gameZ, heading float64) {
+	t.UpdateWithPet(zone, gameX, gameY, gameZ, heading, nil)
+}
+
+// UpdateWithPet is Update with the player's pet, or nil for no pet (none, or
+// no position for it from this Zeal). A pet moving beside a player who stands
+// still is worth a frame, and so is a pet appearing, vanishing or being
+// replaced.
+func (t *Tracker) UpdateWithPet(zone string, gameX, gameY, gameZ, heading float64, pet *PetInput) {
 	s := State{
 		Zone: zone,
 		// Same negation the geometry pipeline applies.
@@ -246,6 +278,9 @@ func (t *Tracker) Update(zone string, gameX, gameY, gameZ, heading float64) {
 		Y:       -gameY,
 		Z:       gameZ,
 		Heading: heading,
+	}
+	if pet != nil {
+		s.Pet = &PetState{ID: pet.ID, X: -pet.GameX, Y: -pet.GameY, Z: pet.GameZ, Heading: pet.Heading}
 	}
 
 	t.mu.Lock()
@@ -275,6 +310,9 @@ func (t *Tracker) shouldSendLocked(s State) bool {
 	if s.Zone != t.lastSent.Zone {
 		return true
 	}
+	if petChanged(s.Pet, t.lastSent.Pet) {
+		return true
+	}
 	if math.Hypot(s.X-t.lastSent.X, s.Y-t.lastSent.Y) >= moveEpsilon {
 		return true
 	}
@@ -282,6 +320,23 @@ func (t *Tracker) shouldSendLocked(s State) bool {
 		return true
 	}
 	return math.Abs(s.Heading-t.lastSent.Heading) >= headingEpsilon
+}
+
+// petChanged reports whether the pet appeared, vanished, was replaced, or
+// moved or turned past the same thresholds as the player.
+func petChanged(cur, prev *PetState) bool {
+	if (cur == nil) != (prev == nil) {
+		return true
+	}
+	if cur == nil {
+		return false
+	}
+	if cur.ID != prev.ID {
+		return true
+	}
+	return math.Hypot(cur.X-prev.X, cur.Y-prev.Y) >= moveEpsilon ||
+		math.Abs(cur.Z-prev.Z) >= moveEpsilon ||
+		math.Abs(cur.Heading-prev.Heading) >= headingEpsilon
 }
 
 // UpdateGroup records the in-zone groupmate positions from a Zeal MsgGroup
