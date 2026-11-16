@@ -101,3 +101,9 @@ func ZoneEntered(msg string) (string, bool) {
 func isNonZoneEnterLine(captured string) bool {
 	return strings.HasPrefix(captured, "an area where ")
 }
+
+// IsZoneName reports whether an EventZone's ZoneData.ZoneName is a real zone
+// rather than one of the "You have entered an area where …" system messages.
+func IsZoneName(name string) bool {
+	return name != "" && !isNonZoneEnterLine(name)
+}

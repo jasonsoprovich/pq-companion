@@ -316,14 +316,22 @@ func compile(def CounterDef) (*compiled, error) {
 	return c, nil
 }
 
+// SetZone sets the zone (long name) the player is in. Called from the event
+// stream and when the active character changes — the new character's login
+// zone-in line is never dispatched (the tailer opens its log at EOF), so the
+// previous character's zone would otherwise gate zone counters. "" = unknown.
+func (e *Engine) SetZone(zone string) {
+	e.mu.Lock()
+	e.zone = zone
+	e.mu.Unlock()
+}
+
 // Handle consumes parsed events: zone changes and kills.
 func (e *Engine) Handle(ev logparser.LogEvent) {
 	switch ev.Type {
 	case logparser.EventZone:
-		if zd, ok := ev.Data.(logparser.ZoneData); ok {
-			e.mu.Lock()
-			e.zone = zd.ZoneName
-			e.mu.Unlock()
+		if zd, ok := ev.Data.(logparser.ZoneData); ok && logparser.IsZoneName(zd.ZoneName) {
+			e.SetZone(zd.ZoneName)
 		}
 	case logparser.EventKill:
 		kd, ok := ev.Data.(logparser.KillData)
