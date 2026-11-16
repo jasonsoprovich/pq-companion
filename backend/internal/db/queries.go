@@ -2683,28 +2683,32 @@ func scanZone(row interface {
 	return &z, nil
 }
 
+// zoneNPCIDSubquery selects the npc_types.id values that spawn in a zone
+// (bind the zone short_name twice). Shared by every by-zone NPC list so the
+// spawngroup/npc id collision guard below can't be dropped from one of them.
+const zoneNPCIDSubquery = `
+	SELECT DISTINCT se.npcID
+	FROM spawnentry se
+	JOIN spawn2 s2 ON s2.spawngroupID = se.spawngroupID
+	WHERE s2.zone = ?
+	UNION
+	SELECT DISTINCT s2.spawngroupID
+	FROM spawn2 s2
+	WHERE s2.zone = ?
+	  AND EXISTS (SELECT 1 FROM npc_types n2 WHERE n2.id = s2.spawngroupID)
+	  -- Only treat spawngroupID as a direct npc id when the spawngroup has
+	  -- NO spawnentry rows. Otherwise it's a real spawngroup (spawning some
+	  -- OTHER npc via the chain above) whose id merely collides with an
+	  -- unrelated npc_types.id — the keyspaces overlap — which pulled e.g.
+	  -- Plane of Tactics mobs into Crushbone's list (verified: all 25 of
+	  -- Crushbone's second-arm rows were such collisions).
+	  AND NOT EXISTS (SELECT 1 FROM spawnentry se2 WHERE se2.spawngroupID = s2.spawngroupID)`
+
 // GetNPCsByZone returns all distinct NPCs that spawn in the given zone short_name.
 // It follows both the spawnentry chain (spawn2→spawnentry→npc_types) and direct
 // solo-spawn entries (spawn2.spawngroupID == npc_types.id).
 func (db *DB) GetNPCsByZone(shortName string, limit, offset int) (*SearchResult[NPC], error) {
-	// Subquery returns the set of npc_types.id values present in the zone.
-	idSubquery := `
-		SELECT DISTINCT se.npcID
-		FROM spawnentry se
-		JOIN spawn2 s2 ON s2.spawngroupID = se.spawngroupID
-		WHERE s2.zone = ?
-		UNION
-		SELECT DISTINCT s2.spawngroupID
-		FROM spawn2 s2
-		WHERE s2.zone = ?
-		  AND EXISTS (SELECT 1 FROM npc_types n2 WHERE n2.id = s2.spawngroupID)
-		  -- Only treat spawngroupID as a direct npc id when the spawngroup has
-		  -- NO spawnentry rows. Otherwise it's a real spawngroup (spawning some
-		  -- OTHER npc via the chain above) whose id merely collides with an
-		  -- unrelated npc_types.id — the keyspaces overlap — which pulled e.g.
-		  -- Plane of Tactics mobs into Crushbone's list (verified: all 25 of
-		  -- Crushbone's second-arm rows were such collisions).
-		  AND NOT EXISTS (SELECT 1 FROM spawnentry se2 WHERE se2.spawngroupID = s2.spawngroupID)`
+	idSubquery := zoneNPCIDSubquery
 
 	var total int
 	countQ := fmt.Sprintf(
