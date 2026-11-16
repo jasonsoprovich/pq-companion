@@ -62,6 +62,23 @@ func TestTriggerHandler_Test_InstantRun(t *testing.T) {
 	}
 }
 
+// A line no trigger matches must come back as "matches": [], never null —
+// the UI reads .length on it and a null blanked the whole app window.
+func TestTriggerHandler_Test_NoMatchSendsEmptyArray(t *testing.T) {
+	h := newTestTriggerHandler(t)
+	body := `{"lines":"nothing matches this","fire_effects":true,` +
+		`"trigger":{"name":"Dazzle","enabled":true,"pattern":"has been mesmerized"}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/triggers/test", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	h.test(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"matches":[]`) {
+		t.Fatalf("no-match line should send an empty matches array: %s", w.Body.String())
+	}
+}
+
 func TestTriggerHandler_Test_EmptyLinesRejected(t *testing.T) {
 	h := newTestTriggerHandler(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/triggers/test", strings.NewReader(`{"lines":""}`))

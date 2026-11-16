@@ -1005,6 +1005,19 @@ func main() {
 		}
 		return cfgMgr.Get().Character
 	}
+	// logZoneOf returns the zone a character is in now, from the newest
+	// zone-in line in their log ("" when unknown).
+	logZoneOf := func(character string) string {
+		eqPath := cfgMgr.Get().EQPath
+		if eqPath == "" || character == "" {
+			return ""
+		}
+		zone, _, ok := logparser.LastZoneInLog(eqPath, character)
+		if !ok {
+			return ""
+		}
+		return zone
+	}
 	// Pet overlay: the active character's charmed/summoned pet. Its npc_types
 	// row comes from the NPC overlay's spawn-id cache (target_id == pet_id
 	// while charming); the spell-name sets recognise `/pet health` replies.
@@ -1541,6 +1554,7 @@ func main() {
 
 	if killStore != nil {
 		killLogger = killtracker.NewLogger(killStore, killClassify, activeChar)
+		killLogger.SetZoneLookup(logZoneOf)
 		killLogger.SetOnInsert(func(e killtracker.Entry) {
 			hub.Broadcast(ws.Event{Type: "kills:new", Data: e})
 		})
@@ -2541,6 +2555,10 @@ func main() {
 		timerEngine.RefreshModifiers()
 		// The previous character's pet isn't this one's.
 		petTracker.Reset()
+		// The new log is tailed from EOF, so its login zone-in line is never
+		// dispatched: take the zone from the log tail instead of carrying the
+		// previous character's. (The kill logger seeds itself the same way.)
+		killCounters.SetZone(logZoneOf(character))
 		// Recompile trigger patterns: {c}/{char}/{self} tokens expand to the
 		// active character name at compile time.
 		triggerEngine.Reload()

@@ -16,6 +16,13 @@ import (
 // tests can stub it. nil treats every target as an NPC.
 type NPCClassifier func(displayName string) bool
 
+// ZoneLookup returns the zone a character is in right now, from outside the
+// event stream (the newest zone-in line in their log). Used when the logger
+// starts mid-session or the active character changes: the tailer opens a
+// newly active log at EOF, so the login's "You have entered …" line is never
+// dispatched and kills would otherwise carry the previous character's zone.
+type ZoneLookup func(character string) string
+
 // recorder turns EventKill events into kill rows. Shared by the live Logger
 // and the BackfillHandler so both stamp identical rows — which is what lets
 // the store's unique index dedup a kill seen live and again by a backfill.
@@ -24,6 +31,12 @@ type recorder struct {
 	classify NPCClassifier
 
 	zone string
+	// zoneChar is the character zone belongs to; lookupZone, when set, seeds
+	// zone whenever that character changes (live logger only — a backfill
+	// replays from the top and must learn zones in order).
+	zoneChar   string
+	zoneSeeded bool
+	lookupZone ZoneLookup
 
 	// seq numbering: the Nth identical (target, killer) kill within the same
 	// second gets seq N-1. Re-reading the same log from the top rebuilds the
@@ -42,9 +55,17 @@ func newRecorder(store *Store, classify NPCClassifier) *recorder {
 // handleEvent records ev when it is a kill and tracks zone changes. Returns
 // the stored entry when a new row was written.
 func (r *recorder) handleEvent(character string, ev logparser.LogEvent) (Entry, bool) {
+	if !r.zoneSeeded || !strings.EqualFold(character, r.zoneChar) {
+		r.zoneSeeded = true
+		r.zoneChar = character
+		r.zone = ""
+		if r.lookupZone != nil && character != "" && ev.Type != logparser.EventZone {
+			r.zone = r.lookupZone(character)
+		}
+	}
 	switch ev.Type {
 	case logparser.EventZone:
-		if zd, ok := ev.Data.(logparser.ZoneData); ok {
+		if zd, ok := ev.Data.(logparser.ZoneData); ok && logparser.IsZoneName(zd.ZoneName) {
 			r.zone = zd.ZoneName
 		}
 		return Entry{}, false
@@ -144,6 +165,14 @@ func NewLogger(store *Store, classify NPCClassifier, activeChar func() string) *
 func (l *Logger) SetOnInsert(fn func(Entry)) {
 	l.mu.Lock()
 	l.onInsert = fn
+	l.mu.Unlock()
+}
+
+// SetZoneLookup registers how to find the active character's current zone
+// when the logger starts or the character changes (see ZoneLookup).
+func (l *Logger) SetZoneLookup(fn ZoneLookup) {
+	l.mu.Lock()
+	l.rec.lookupZone = fn
 	l.mu.Unlock()
 }
 

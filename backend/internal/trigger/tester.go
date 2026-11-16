@@ -238,7 +238,9 @@ func (e *Engine) previewWebhooks(actions []Action) []TestWebhook {
 // the match itself, its status, and every reported field are always
 // computed regardless.
 func (e *Engine) testLine(fc *fireContext, cs []compiled, character string, ts time.Time, message string, fireEffects bool) []TestMatch {
-	var out []TestMatch
+	// Never nil: a no-match line must serialize as "matches": [] — the UI
+	// reads .length on it, and null blanked the whole renderer.
+	out := []TestMatch{}
 	for _, c := range cs {
 		m, names := c.re.FindStringSubmatch(message), c.re.SubexpNames()
 		label := "primary"
@@ -348,7 +350,7 @@ func (e *Engine) RunTest(req TestRequest) TestReport {
 		character = e.activeChar()
 	}
 	cs, errs := e.compiledForTest(character, req.Trigger)
-	report := TestReport{Errors: errs}
+	report := TestReport{Lines: []TestLineResult{}, Errors: errs}
 	if len(cs) == 0 {
 		return report
 	}

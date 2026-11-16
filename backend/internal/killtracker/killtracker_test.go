@@ -127,6 +127,37 @@ func TestKillLogDedupAndSeq(t *testing.T) {
 	}
 }
 
+// A character switch must not carry the previous character's zone: the new
+// log is tailed from EOF, so its login zone-in never reaches the logger.
+func TestKillLogZoneFollowsCharacterSwitch(t *testing.T) {
+	s := openTestStore(t)
+	char := "Alpha"
+	live := NewLogger(s, nil, func() string { return char })
+	logZones := map[string]string{"Alpha": "The Plane of Knowledge", "Bravo": "The Plane of Disease"}
+	live.SetZoneLookup(func(c string) string { return logZones[c] })
+	var got []Entry
+	live.SetOnInsert(func(e Entry) { got = append(got, e) })
+
+	// Started mid-session: no zone line yet, seeded from the log tail.
+	live.HandleEvent(killEv(t0, "a gnoll", "You"))
+	live.HandleEvent(zoneEv(t0.Add(time.Second), "an area where levitation effects do not function"))
+	live.HandleEvent(killEv(t0.Add(2*time.Second), "a gnoll pup", "You"))
+	char = "Bravo"
+	live.HandleEvent(killEv(t0.Add(3*time.Second), "a wan ghoul knight", "You"))
+	live.HandleEvent(zoneEv(t0.Add(4*time.Second), "The Plane of Innovation"))
+	live.HandleEvent(killEv(t0.Add(5*time.Second), "a clockwork", "You"))
+
+	want := []string{"The Plane of Knowledge", "The Plane of Knowledge", "The Plane of Disease", "The Plane of Innovation"}
+	if len(got) != len(want) {
+		t.Fatalf("inserts = %d, want %d", len(got), len(want))
+	}
+	for i, w := range want {
+		if got[i].Zone != w {
+			t.Errorf("kill %d (%s) zone = %q, want %q", i, got[i].Target, got[i].Zone, w)
+		}
+	}
+}
+
 func newTestCounter(t *testing.T, e *Engine, def CounterDef) Counter {
 	t.Helper()
 	def, err := Validate(def)

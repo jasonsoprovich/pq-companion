@@ -1623,7 +1623,9 @@ func (e *Engine) startExternal(name string, category string, durationSecs, displ
 	// pipeline promotes the arm into a real timer when the spell actually
 	// lands; if it never lands (fizzle, interrupt, push, resist) the arm
 	// expires via pendingArmTTL or StopExternal.
-	if deferredRenderSpells[name] {
+	// A Custom timer isn't one the spell-landed pipeline would ever create,
+	// so parking it would just drop it: start it now like any other.
+	if deferredRenderSpells[name] && cat != CategoryCustom {
 		e.pendingArms[name] = &pendingArm{
 			DisplayThresholdSecs: displayThresholdSecs,
 			TimerAlerts:          alerts,
@@ -1744,6 +1746,16 @@ func (e *Engine) StopExternal(name string, spellID int) {
 	delete(e.pendingArms, name)
 	e.mu.Unlock()
 	e.removeBySpellNameOrID(name, spellID)
+}
+
+// hasPendingArm reports whether a trigger armed a deferred-render timer for
+// spellName that hasn't aged out.
+func (e *Engine) hasPendingArm(spellName string) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.gcPendingArmsLocked(time.Now())
+	_, ok := e.pendingArms[spellName]
+	return ok
 }
 
 // gcPendingArmsLocked drops pending arms older than pendingArmTTL. Lazy
@@ -1932,7 +1944,10 @@ func (e *Engine) onSpellLandedSeq(landedAt time.Time, seq uint64, data logparser
 	// In triggers-only mode, the spell-landed pipeline still runs (so cast
 	// disambiguation keeps populating lastCastSpell for any trigger that
 	// keys off it) but does NOT create timer rows — only triggers/packs do.
-	if e.trackingMode() == modeTriggersOnly {
+	// The exception is a deferred-render spell (mez) a trigger armed: the
+	// trigger asked for that timer, and this land is the only place it can
+	// be created (StartExternal parks it as a pendingArm), so let it through.
+	if e.trackingMode() == modeTriggersOnly && !e.hasPendingArm(spellName) {
 		slog.Debug("timer-debug: spell-landed skipped (mode=triggers_only)",
 			"spell", spellName, "target", target)
 		return
