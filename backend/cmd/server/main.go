@@ -1462,6 +1462,28 @@ func main() {
 			})
 		})
 		popflagConsumer.SetOnHailReminder(popflag.NewReminder(hub, cfgMgr).Fire)
+		// Zeal's PoPFlags export (/outputfile popflags, or on camp), for
+		// every character, including ones camped while the app was closed.
+		// The only source when Zeal's "hide popflags" keeps the replies out
+		// of the log. Newer evidence wins: see Store.ApplyPopFlagsFile.
+		zealWatcher.SetPopFlagsFileCallback(func(path string) error {
+			f, err := popflag.ReadPopFlagsFile(path, time.Now())
+			if err != nil {
+				return err
+			}
+			applied, err := popflagStore.ApplyPopFlagsFile(f)
+			if err != nil {
+				return err
+			}
+			if applied {
+				slog.Info("popflag: Zeal export applied", "character", f.Character, "sections", len(f.Reports))
+				hub.Broadcast(ws.Event{
+					Type: "popflag.snapshot",
+					Data: map[string]any{"character": f.Character},
+				})
+			}
+			return nil
+		})
 	}
 
 	if chatStore != nil {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -34,8 +35,14 @@ type State struct {
 }
 
 // Store persists per-character PoP flag progress in user.db.
+//
+// mu serialises every write path. Several of them read the stored snapshot,
+// merge into it and write it back, and with one connection the read can't
+// happen inside the write transaction, so without the lock a hail grant
+// landing between another path's read and write would be overwritten.
 type Store struct {
 	db *sql.DB
+	mu sync.Mutex
 }
 
 // OpenStore opens user.db and runs the pop_flag_state migration. Coexists with
@@ -80,6 +87,28 @@ func (s *Store) migrate() error {
 	}
 	// Raw Seer snapshot per character — kept for audit and re-derivation when
 	// the dataset's completion rules change.
+	// When each character last got a live grant (a hail or an auto
+	// detection). A reading observed before it may only add, never take
+	// away: see reportIsStaleLocked.
+	if _, err := s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS pop_flag_grant_mark (
+			character     TEXT PRIMARY KEY COLLATE NOCASE,
+			last_grant_at INTEGER NOT NULL
+		)
+	`); err != nil {
+		return err
+	}
+	// The last Zeal PoPFlags export file applied per character: see
+	// ApplyPopFlagsFile.
+	if _, err := s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS pop_flag_file_import (
+			character   TEXT PRIMARY KEY COLLATE NOCASE,
+			file_ts     INTEGER NOT NULL,
+			content_sha TEXT    NOT NULL
+		)
+	`); err != nil {
+		return err
+	}
 	if _, err := s.db.Exec(`
 		CREATE TABLE IF NOT EXISTS pop_seer_snapshot (
 			character TEXT PRIMARY KEY COLLATE NOCASE,
@@ -192,19 +221,59 @@ func (s *Store) SetAuto(character, flagID string) (bool, error) {
 	if _, ok := ByID(flagID); !ok {
 		return false, fmt.Errorf("unknown flag id %q", flagID)
 	}
-	res, err := s.db.Exec(`
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now().Unix()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback() //nolint:errcheck
+	res, err := tx.Exec(`
 		INSERT INTO pop_flag_state (character, flag_id, done, source, updated_at)
 		VALUES (?, ?, 1, ?, ?)
 		ON CONFLICT(character, flag_id) DO NOTHING
-	`, character, flagID, SourceAuto, time.Now().Unix())
+	`, character, flagID, SourceAuto, now)
 	if err != nil {
 		return false, fmt.Errorf("insert auto row char=%q flag=%q: %w", character, flagID, err)
+	}
+	if err := markGrantTx(tx, character, now); err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
 	}
 	n, _ := res.RowsAffected()
 	return n > 0, nil
 }
 
+// markGrantTx records a live grant for character at unix time at, keeping
+// the latest. Written even when the grant's own row already existed, since
+// the grant is still newer evidence than any reading observed before it.
+func markGrantTx(tx *sql.Tx, character string, at int64) error {
+	if _, err := tx.Exec(`
+		INSERT INTO pop_flag_grant_mark (character, last_grant_at) VALUES (?, ?)
+		ON CONFLICT(character) DO UPDATE SET
+			last_grant_at = MAX(last_grant_at, excluded.last_grant_at)
+	`, character, at); err != nil {
+		return fmt.Errorf("mark grant for %q: %w", character, err)
+	}
+	return nil
+}
+
+// lastGrantAt is when character last got a live grant (0 if never).
+func (s *Store) lastGrantAt(character string) (int64, error) {
+	var at int64
+	err := s.db.QueryRow(`SELECT last_grant_at FROM pop_flag_grant_mark WHERE character = ?`, character).Scan(&at)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	return at, err
+}
+
 func (s *Store) upsert(character, flagID string, done bool, source string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	d := 0
 	if done {
 		d = 1
@@ -256,6 +325,16 @@ func (s *Store) ApplySeerOverriding(character string, qglobals map[string]string
 		observedAt = time.Now()
 	}
 	now := observedAt.Unix()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// A Seer reading replaces the whole snapshot. One observed before a later
+	// grant or reading is merged additively instead, so it can't take back
+	// what that newer evidence showed.
+	if prev, stale, err := s.staleAgainstLocked(character, now); err != nil {
+		return nil, err
+	} else if stale {
+		return s.applyMergedLocked(character, SourceSeer, prev, []PopFlagsReport{{Exact: qglobals}}, rawText, now, true, nil)
+	}
 	done := DeriveCompletion(qglobals)
 
 	qjson, err := json.Marshal(qglobals)
@@ -412,27 +491,71 @@ func (s *Store) ApplyPopFlagsReport(character string, report PopFlagsReport, raw
 		observedAt = time.Now()
 	}
 	now := observedAt.Unix()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	prev, stale, err := s.staleAgainstLocked(character, now)
+	if err != nil {
+		return nil, err
+	}
+	return s.applyMergedLocked(character, SourcePopflags, prev, []PopFlagsReport{report}, rawText, now, stale, nil)
+}
 
+// staleAgainstLocked loads character's snapshot and reports whether a reading
+// observed at unix time at is older than the snapshot's reading or the last
+// live grant. Caller holds s.mu.
+func (s *Store) staleAgainstLocked(character string, at int64) (*Snapshot, bool, error) {
 	prev, err := s.GetSnapshot(character)
 	if err != nil {
-		return nil, fmt.Errorf("load prior snapshot for %q: %w", character, err)
+		return nil, false, fmt.Errorf("load prior snapshot for %q: %w", character, err)
 	}
+	grant, err := s.lastGrantAt(character)
+	if err != nil {
+		return nil, false, fmt.Errorf("load grant mark for %q: %w", character, err)
+	}
+	stale := at < grant || (prev != nil && at < prev.TakenAt)
+	return prev, stale, nil
+}
+
+// applyMergedLocked merges reports, in order, onto prev's qglobals and
+// persists the result in one transaction (see ApplyPopFlagsReport), with
+// new rows marked source.
+//
+// additive is for a reading that isn't the newest evidence (observed before
+// the stored reading or a live grant, or a re-read of an export at the same
+// timestamp). PoP flags only ever progress in game, so stale evidence is safe
+// as long as it can only add: every value goes through mergeAdditive, a
+// confirmed absence is ignored, nothing is cleared and the snapshot's
+// taken_at and raw text are kept. extra, if set, runs inside the transaction.
+// Caller holds s.mu.
+func (s *Store) applyMergedLocked(character, source string, prev *Snapshot, reports []PopFlagsReport, rawText string, at int64, additive bool, extra func(*sql.Tx) error) ([]string, error) {
 	q := map[string]string{}
+	takenAt, keptRaw := at, rawText
 	if prev != nil {
 		for k, v := range prev.Qglobals {
 			q[k] = v
 		}
-	}
-	for k, v := range report.Exact {
-		q[k] = v
-	}
-	for k, floor := range report.AtLeast {
-		if atoi(q[k]) < floor {
-			q[k] = strconv.Itoa(floor)
+		if additive && prev.TakenAt > at {
+			takenAt, keptRaw = prev.TakenAt, prev.RawText
 		}
 	}
-	for k := range report.Pending {
-		q[k] = "1"
+	exact := map[string]string{}
+	for _, r := range reports {
+		for k, v := range r.Exact {
+			if additive {
+				if v != "" {
+					q[k] = mergeAdditive(k, q[k], v)
+				}
+				continue
+			}
+			q[k] = v
+			exact[k] = v
+		}
+		for k, floor := range r.AtLeast {
+			q[k] = mergeAdditive(k, q[k], strconv.Itoa(floor))
+		}
+		for k := range r.Pending {
+			q[k] = "1"
+		}
 	}
 
 	done := DeriveCompletion(q)
@@ -447,11 +570,12 @@ func (s *Store) ApplyPopFlagsReport(character string, report PopFlagsReport, raw
 	}
 	defer tx.Rollback() //nolint:errcheck
 
-	// Retract only what this report can actually refute: one section covers
+	// Retract only what the reports can actually refute: one section covers
 	// one tier, so clearing every qglobal-backed row (as a full Seer reading
 	// does) would wipe e.g. a kill-detected Tier 1 row on a '#popflags 2'
-	// run, re-deriving it from a stale snapshot.
-	if err := clearNonManualRowsForQglobals(tx, character, report.Exact); err != nil {
+	// run, re-deriving it from a stale snapshot. An additive merge retracts
+	// nothing (exact stays empty).
+	if err := clearNonManualRowsForQglobals(tx, character, exact); err != nil {
 		return nil, err
 	}
 	for _, id := range done {
@@ -459,8 +583,8 @@ func (s *Store) ApplyPopFlagsReport(character string, report PopFlagsReport, raw
 			INSERT INTO pop_flag_state (character, flag_id, done, source, updated_at)
 			VALUES (?, ?, 1, ?, ?)
 			ON CONFLICT(character, flag_id) DO NOTHING
-		`, character, id, SourcePopflags, now); err != nil {
-			return nil, fmt.Errorf("insert popflags row char=%q flag=%q: %w", character, id, err)
+		`, character, id, source, at); err != nil {
+			return nil, fmt.Errorf("insert %s row char=%q flag=%q: %w", source, character, id, err)
 		}
 	}
 	if _, err := tx.Exec(`
@@ -470,14 +594,77 @@ func (s *Store) ApplyPopFlagsReport(character string, report PopFlagsReport, raw
 			qglobals = excluded.qglobals,
 			raw_text = excluded.raw_text,
 			taken_at = excluded.taken_at
-	`, character, string(qjson), rawText, now); err != nil {
+	`, character, string(qjson), keptRaw, takenAt); err != nil {
 		return nil, fmt.Errorf("upsert snapshot for %q: %w", character, err)
+	}
+	if extra != nil {
+		if err := extra(tx); err != nil {
+			return nil, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 	return done, nil
 }
+
+// bitmaskQglobals are the qglobals stored as positional bit strings
+// ("101": trials 1 and 3 done), read from the dataset's bit_position flags.
+var bitmaskQglobals = func() map[string]bool {
+	m := map[string]bool{}
+	for _, f := range Flags() {
+		if f.BitPosition > 0 && f.Qglobal != "" {
+			m[f.Qglobal] = true
+		}
+	}
+	return m
+}()
+
+// mergeAdditive combines a stored qglobal value with incoming evidence
+// without ever losing progress:
+//   - bit strings (hohtrials, sol_room) are OR'd position by position, so
+//     "100" and "010" give "110";
+//   - zeks joins its parallel branches the way the game does: Vallon (3) and
+//     Tallon (4) together are 5 (see grantedValue);
+//   - every other value takes the numeric maximum, and a value that isn't a
+//     number never replaces one that's set.
+func mergeAdditive(qglobal, cur, incoming string) string {
+	if cur == "" {
+		return incoming
+	}
+	if incoming == "" || cur == incoming {
+		return cur
+	}
+	if bitmaskQglobals[qglobal] {
+		n := len(cur)
+		if len(incoming) > n {
+			n = len(incoming)
+		}
+		out := make([]byte, n)
+		for i := range out {
+			out[i] = '0'
+			if (i < len(cur) && cur[i] == '1') || (i < len(incoming) && incoming[i] == '1') {
+				out[i] = '1'
+			}
+		}
+		return string(out)
+	}
+	c, cerr := strconv.Atoi(cur)
+	in, ierr := strconv.Atoi(incoming)
+	if cerr != nil || ierr != nil {
+		return cur
+	}
+	if qglobal == zeksQglobal && ((c == 3 && in == 4) || (c == 4 && in == 3)) {
+		return "5"
+	}
+	if in > c {
+		return incoming
+	}
+	return cur
+}
+
+// zeksQglobal is the Plane of Tactics qglobal with the Vallon/Tallon branches.
+const zeksQglobal = "zeks"
 
 // grantedValue is the qglobal value after a grant of floor onto cur. Most
 // steps are a plain floor, but zeks runs Vallon (3) and Tallon (4) as parallel
@@ -533,6 +720,8 @@ func (s *Store) ApplyHailGrant(character, flagID string, observedAt time.Time) (
 	if floor < 1 {
 		floor = 1
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	prev, err := s.GetSnapshot(character)
 	if err != nil {
@@ -580,6 +769,9 @@ func (s *Store) ApplyHailGrant(character, flagID string, observedAt time.Time) (
 		ON CONFLICT(character) DO UPDATE SET qglobals = excluded.qglobals
 	`, character, string(qjson), rawText, takenAt); err != nil {
 		return false, fmt.Errorf("upsert snapshot for %q: %w", character, err)
+	}
+	if err := markGrantTx(tx, character, observedAt.Unix()); err != nil {
+		return false, err
 	}
 	if err := tx.Commit(); err != nil {
 		return false, err

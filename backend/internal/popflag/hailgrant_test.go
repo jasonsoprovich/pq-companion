@@ -344,8 +344,11 @@ func TestPopFlagsReportRetractionScopedToReportedQglobals(t *testing.T) {
 	if _, err := s.SetAuto(char, "ponb_terris"); err != nil {
 		t.Fatal(err)
 	}
+	// The reports follow the kill, as they would in game (a report observed
+	// before a live grant may only add; see TestStaleReportCannotRetractGrant).
+	base := time.Now().Add(time.Minute)
 	tier2 := ParsePopFlagsReport([]string{"=== Tier 2 Progression ===", "Lower Crypt access: Unlocked"})
-	if _, err := s.ApplyPopFlagsReport(char, tier2, "raw", time.Unix(100, 0)); err != nil {
+	if _, err := s.ApplyPopFlagsReport(char, tier2, "raw", base); err != nil {
 		t.Fatal(err)
 	}
 	if row := doneByID(t, s, char)["ponb_terris"]; !row.Done || row.Source != SourceAuto {
@@ -355,7 +358,7 @@ func TestPopFlagsReportRetractionScopedToReportedQglobals(t *testing.T) {
 	tier1 := newPopFlagsReport()
 	tier1.Section = PopFlagsTier1
 	tier1.Exact["thelin"] = "2"
-	if _, err := s.ApplyPopFlagsReport(char, tier1, "raw", time.Unix(200, 0)); err != nil {
+	if _, err := s.ApplyPopFlagsReport(char, tier1, "raw", base.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
 	rows := doneByID(t, s, char)

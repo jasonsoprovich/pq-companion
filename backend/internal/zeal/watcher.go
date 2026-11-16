@@ -3,6 +3,8 @@ package zeal
 import (
 	"context"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -40,6 +42,22 @@ type Watcher struct {
 	spellsetsModTime time.Time
 	bandolierModTime time.Time
 	macrosModTime    time.Time
+
+	// PoP flags exports (every character's, not just the active one): see
+	// SetPopFlagsFileCallback.
+	onPopFlagsFile func(path string) error
+	popFlagsSeen   map[string]fileStamp
+}
+
+// popFlagsFileGlob matches every character's Zeal PoPFlags export, in either
+// export format (popflag.PopFlagsFileGlob; not imported, to keep this package
+// free of popflag's dependencies).
+const popFlagsFileGlob = "*-PoPFlags*.txt"
+
+// fileStamp is what a file looked like when it was last handled.
+type fileStamp struct {
+	mod  time.Time
+	size int64
 }
 
 // NewWatcher creates a Watcher. Call Start to begin polling.
@@ -58,6 +76,55 @@ func (w *Watcher) SetQuarmyCallback(fn func(charName string)) {
 	w.mu.Lock()
 	w.onQuarmyChanged = fn
 	w.mu.Unlock()
+}
+
+// SetPopFlagsFileCallback registers fn to handle a Zeal PoPFlags export
+// (<Char>-PoPFlags*.txt in the EQ folder) for any character, each time one
+// appears or changes, including every existing one on the first poll after
+// it's set. A file fn returns an error for is offered again on every poll
+// until fn succeeds, changed or not.
+func (w *Watcher) SetPopFlagsFileCallback(fn func(path string) error) {
+	w.mu.Lock()
+	w.onPopFlagsFile = fn
+	w.mu.Unlock()
+}
+
+// checkPopFlagsFiles offers new, changed or previously failed exports to the
+// callback.
+func (w *Watcher) checkPopFlagsFiles(eqPath string) {
+	w.mu.RLock()
+	fn := w.onPopFlagsFile
+	w.mu.RUnlock()
+	if fn == nil {
+		return
+	}
+	matches, err := filepath.Glob(filepath.Join(eqPath, popFlagsFileGlob))
+	if err != nil {
+		return
+	}
+	for _, path := range matches {
+		st, err := os.Stat(path)
+		if err != nil || st.IsDir() {
+			continue
+		}
+		stamp := fileStamp{mod: st.ModTime(), size: st.Size()}
+		w.mu.RLock()
+		prev, ok := w.popFlagsSeen[path]
+		w.mu.RUnlock()
+		if ok && prev == stamp {
+			continue
+		}
+		if err := fn(path); err != nil {
+			slog.Debug("zeal: PoP flags export not applied, will retry", "path", path, "err", err)
+			continue
+		}
+		w.mu.Lock()
+		if w.popFlagsSeen == nil {
+			w.popFlagsSeen = make(map[string]fileStamp)
+		}
+		w.popFlagsSeen[path] = stamp
+		w.mu.Unlock()
+	}
 }
 
 // Start begins the polling loop. It blocks until ctx is cancelled.
@@ -198,6 +265,7 @@ func (w *Watcher) RefreshAllPersonas() {
 	if cfg.EQPath == "" {
 		return
 	}
+	w.checkPopFlagsFiles(cfg.EQPath)
 	chars, err := w.charStore.List()
 	if err != nil {
 		slog.Warn("zeal: refresh personas: list characters", "err", err)
