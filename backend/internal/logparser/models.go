@@ -225,6 +225,10 @@ type LogEvent struct {
 	Timestamp time.Time   `json:"timestamp"`
 	Message   string      `json:"message"`
 	Data      interface{} `json:"data,omitempty"`
+	// Seq is the live tailer's sequence number for the log line this event
+	// came from, shared with that line's raw-line dispatch (see
+	// Tailer.SetBatchHooks). 0 for replayed or synthesised events.
+	Seq uint64 `json:"-"`
 }
 
 // ZoneData is the structured payload for EventZone.

@@ -371,6 +371,23 @@ type Consider struct {
 	Faction int    `json:"faction"`
 }
 
+// SpellAction is the payload of the proposed Zeal spell message, one per spell
+// action packet (OP_Action type 231) the client receives. The server sends one
+// for every cast attempt (resists included) to the caster, the target and
+// clients near the target, then a second with Success set only to the caster
+// and the target, so a bystander only ever sees Success=false. Its type number
+// isn't settled (9 with only that PR, 10 on the combined test build), so it's
+// recognised by shape with DecodeSpellAction. Names are omitted when the
+// client didn't know the spawn.
+type SpellAction struct {
+	SpellID    int    `json:"spell_id"`
+	SourceID   int    `json:"source_id"`
+	SourceName string `json:"source_name,omitempty"`
+	TargetID   int    `json:"target_id"`
+	TargetName string `json:"target_name,omitempty"`
+	Success    bool   `json:"success"`
+}
+
 // Consider faction levels as Zeal reports them (higher is worse).
 const (
 	ConsiderAlly         = 1
@@ -550,6 +567,30 @@ func DecodeItemDisplay(payload string) (ItemDisplay, error) {
 	return it, nil
 }
 
+// DecodeSpellAction parses a spell action payload. The payload must look like
+// one — an object with spell_id, source_id and target_id, and a positive spell
+// and target id — because the type number it arrives under is not fixed. No
+// other pipe message carries spell_id.
+func DecodeSpellAction(payload string) (SpellAction, error) {
+	var a SpellAction
+	var keys map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(payload), &keys); err != nil {
+		return a, fmt.Errorf("zealpipe: decode spell action: %w", err)
+	}
+	for _, k := range []string{"spell_id", "source_id", "target_id"} {
+		if _, ok := keys[k]; !ok {
+			return a, fmt.Errorf("zealpipe: decode spell action: no %s", k)
+		}
+	}
+	if err := json.Unmarshal([]byte(payload), &a); err != nil {
+		return a, fmt.Errorf("zealpipe: decode spell action: %w", err)
+	}
+	if a.SpellID <= 0 || a.TargetID <= 0 {
+		return a, fmt.Errorf("zealpipe: decode spell action: spell_id %d target_id %d", a.SpellID, a.TargetID)
+	}
+	return a, nil
+}
+
 // ErrNotConsider is returned by DecodeConsider when the payload isn't shaped
 // like a consider at all, so the caller can hand it on to other decoders. Any
 // other error means it is a consider whose values can't be used.
@@ -595,12 +636,14 @@ func DecodeConsider(payload string) (Consider, error) {
 type Proposed struct {
 	Consider *Consider
 	Item     *ItemDisplay
+	Spell    *SpellAction
 }
 
-// DecodeProposed recognises the proposed consider and item display messages
-// by payload shape, for any envelope type from MsgDeath up: a consider is 7 on
-// a Zeal build with only that PR and 9 on the combined test build, an item
-// display 7 or 8, and either may be renumbered on merge. A death payload never
+// DecodeProposed recognises the proposed consider, item display and spell
+// action messages by payload shape, for any envelope type from MsgDeath up: a
+// consider is 7 on a Zeal build with only that PR and 9 on the combined test
+// build, an item display 7 or 8, a spell action 9 or 10, and any may be
+// renumbered on merge. A death payload never
 // matches either shape, so ok=false hands it (and every other message) on to
 // the caller's type switch.
 //
@@ -621,6 +664,10 @@ func DecodeProposed(env Envelope) (p Proposed, ok bool) {
 	}
 	if it, err := DecodeItemDisplay(env.Data); err == nil {
 		p.Item = &it
+		return p, true
+	}
+	if a, err := DecodeSpellAction(env.Data); err == nil {
+		p.Spell = &a
 		return p, true
 	}
 	return p, false

@@ -704,6 +704,17 @@ type Engine struct {
 	// wrong spawn id so the right mob's death never cleared it.
 	pipeCastStart pipeCastStart
 
+	// Spell action evidence from the Zeal pipe (see spell_actions.go):
+	// recent actions, the correlation computed for each spell land of the
+	// log batch being dispatched (by line Seq), the Seq of the raw line the
+	// trigger engine is matching right now, and our own spawn id.
+	spellActions   []*spellAction
+	landCorr       map[uint64]landCorrelation
+	curLineSeq     uint64
+	selfSpawnID    int
+	lastActionAt   time.Time
+	unmatchedLands int
+
 	// pipeBuffSlots is the most recent self-buff slot snapshot from the pipe
 	// (Buff0..14, plus 15..20 from game.dll). Stored as a set keyed by spell
 	// name. Used for divergence logging; the timer corrections themselves
@@ -1014,7 +1025,7 @@ func (e *Engine) Handle(ev logparser.LogEvent) {
 		if !ok {
 			return
 		}
-		e.onSpellLanded(ev.Timestamp, data)
+		e.onSpellLandedSeq(ev.Timestamp, ev.Seq, data)
 
 	case logparser.EventSpellDidNotTakeHold,
 		logparser.EventSpellInterrupt,
@@ -1397,6 +1408,7 @@ func (e *Engine) ResetPipeTargetTracking() {
 	e.deadIDs = nil
 	e.pipeCastStart = pipeCastStart{}
 	e.lastAliveClearedID = 0
+	e.spellActions = nil
 	e.mu.Unlock()
 }
 
@@ -1529,7 +1541,11 @@ func (e *Engine) startExternal(name string, category string, durationSecs, displ
 	// doc comment) — separating two identically-named targets (e.g. two "a
 	// gnoll"s) the player personally slowed in quick succession into
 	// independent rows instead of colliding on name alone.
-	key := timerKey(name, e.keyTargetTokenLocked(spell, targetName, startedAt))
+	token := e.triggerCorrelatedTokenLocked(spell, targetName)
+	if token == "" {
+		token = e.keyTargetTokenLocked(spell, targetName, startedAt)
+	}
+	key := timerKey(name, token)
 	// Only a spawn-id-tagged key is checked here: a trigger timer named
 	// after a dead mob (a respawn timer off "You have slain X!") is meant
 	// to start on a death.
@@ -1884,8 +1900,21 @@ func (e *Engine) recentSelfCastMatches(spellName, target string, singleTarget bo
 // the cast text is shared by multiple spells), the target (the active player
 // for self-cast events), and the duration (with item/AA focus extensions).
 func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedData) {
+	e.onSpellLandedSeq(landedAt, 0, data)
+}
+
+// onSpellLandedSeq is onSpellLanded for a live log line: seq is the line's
+// sequence number, which looks up what the Zeal pipe's spell actions said
+// about this land (see spell_actions.go). The packet's spell id settles an
+// ambiguous land text, its source says whether the cast was ours, and its
+// target id keys the timer to the spawn, ahead of the log heuristics.
+func (e *Engine) onSpellLandedSeq(landedAt time.Time, seq uint64, data logparser.SpellLandedData) {
 	e.noteSpellLandedForStrip(landedAt, data)
-	spellName := e.resolveLandedSpellName(data)
+	corr := e.landCorrFor(seq)
+	spellName := corr.spellName
+	if spellName == "" {
+		spellName = e.resolveLandedSpellName(data)
+	}
 	if spellName == "" {
 		return
 	}
@@ -1989,7 +2018,7 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 			}
 		case scopeCastByMe:
 			if !isSelfTarget {
-				if !e.recentSelfCastMatches(spellName, target, isSingleTargetSpellType(spell.TargetType)) {
+				if !e.castByMeFor(corr, spellName, target, spell) {
 					slog.Debug("timer-debug: spell-landed skipped (scope=cast_by_me, no matching local cast)",
 						"spell", spellName, "target", target)
 					return
@@ -1999,7 +2028,7 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 
 	default:
 		if e.trackingScope() != scopeAnyone && !isSelfTarget {
-			if !e.recentSelfCastMatches(spellName, target, isSingleTargetSpellType(spell.TargetType)) {
+			if !e.castByMeFor(corr, spellName, target, spell) {
 				slog.Debug("timer-debug: detrimental spell-landed skipped (no matching local cast)",
 					"spell", spellName, "target", target, "category", cat)
 				return
@@ -2020,7 +2049,7 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 	// classFilterAllowsSpell. A clicky the player aimed at someone else
 	// (Staff of the Serpent's Speed of the Shissar on a pet) counts as theirs
 	// via castByMe.
-	castByMe := e.recentSelfCastMatches(spellName, target, isSingleTargetSpellType(spell.TargetType))
+	castByMe := e.castByMeFor(corr, spellName, target, spell)
 	if e.classFilterFn != nil {
 		if enabled, classIdx := e.classFilterFn(); !classFilterAllowsSpell(spell, isSelfTarget || castByMe, enabled, classIdx) {
 			slog.Debug("timer-debug: spell-landed skipped (class filter)",
@@ -2076,7 +2105,11 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 	// name/"You" is already unique, nothing to disambiguate.
 	key := timerKey(spellName, target)
 	if !isSelfTarget {
-		key = timerKey(spellName, e.keyTargetTokenLocked(spell, target, landedAt))
+		if tok := correlatedToken(corr, spell, target); tok != "" {
+			key = timerKey(spellName, tok)
+		} else {
+			key = timerKey(spellName, e.keyTargetTokenLocked(spell, target, landedAt))
+		}
 	}
 	if !isSelfTarget && isDetrimentalCategory(cat) && e.landedOnDeadLocked(key, target, landedAt) {
 		e.mu.Unlock()
@@ -2138,7 +2171,9 @@ func (e *Engine) onSpellLanded(landedAt time.Time, data logparser.SpellLandedDat
 		sameSpell := !idConflict &&
 			(existing.TargetName == "" || normalizeNPCName(existing.TargetName) == normalizeNPCName(target)) &&
 			sameSpellForDedup(existing, spellName, spell.ID)
-		sameLand := sameLandOrphan(existing, target, landedAt, timer.Category)
+		// A same-second land on a namesake with a different spawn id is a
+		// separate recipient too (an AE slow), not a same-land orphan.
+		sameLand := !idConflict && sameLandOrphan(existing, target, landedAt, timer.Category)
 		if !sameSpell && !sameLand {
 			continue
 		}

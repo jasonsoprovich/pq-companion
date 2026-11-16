@@ -596,15 +596,23 @@ func TestDecodeProposed(t *testing.T) {
 		consider = `{"spawn_id":1234,"name":"a gnoll pup","faction":8}`
 		death    = `{"spawn_id":1234,"killer_id":0}`
 		item     = `{"item_id":13073,"name":"Bone Chips"}`
+		spell    = `{"spell_id":1588,"source_id":567,"source_name":"Soandso","target_id":1234,"target_name":"a gnoll pup","success":true}`
 	)
-	for _, typ := range []PipeMessageType{7, 8, 9} {
+	for _, typ := range []PipeMessageType{7, 8, 9, 10} {
 		p, ok := DecodeProposed(Envelope{Type: typ, Data: consider})
 		if !ok || p.Consider == nil || p.Consider.Faction != ConsiderThreatening || p.Item != nil {
 			t.Errorf("type %d consider: got %+v ok=%v", typ, p, ok)
 		}
 		p, ok = DecodeProposed(Envelope{Type: typ, Data: item})
-		if !ok || p.Item == nil || p.Consider != nil {
+		if !ok || p.Item == nil || p.Consider != nil || p.Spell != nil {
 			t.Errorf("type %d item: got %+v ok=%v", typ, p, ok)
+		}
+		p, ok = DecodeProposed(Envelope{Type: typ, Data: spell})
+		if !ok || p.Spell == nil || p.Consider != nil || p.Item != nil {
+			t.Errorf("type %d spell: got %+v ok=%v", typ, p, ok)
+		} else if a := *p.Spell; a.SpellID != 1588 || a.SourceID != 567 || a.TargetID != 1234 ||
+			a.TargetName != "a gnoll pup" || !a.Success {
+			t.Errorf("type %d spell fields: %+v", typ, a)
 		}
 		if _, ok := DecodeProposed(Envelope{Type: typ, Data: death}); ok {
 			t.Errorf("type %d death: claimed by DecodeProposed", typ)
@@ -618,5 +626,25 @@ func TestDecodeProposed(t *testing.T) {
 	// Below the death number nothing is claimed, even a matching shape.
 	if _, ok := DecodeProposed(Envelope{Type: MsgGroup, Data: consider}); ok {
 		t.Error("type 6 consider shape claimed")
+	}
+}
+
+func TestDecodeSpellAction(t *testing.T) {
+	a, err := DecodeSpellAction(`{"spell_id":12,"source_id":3,"target_id":9,"success":false}`)
+	if err != nil || a.SpellID != 12 || a.SourceID != 3 || a.TargetID != 9 || a.Success || a.TargetName != "" {
+		t.Fatalf("bystander attempt: %+v %v", a, err)
+	}
+	for _, bad := range []string{
+		`{"source_id":3,"target_id":9}`,               // no spell_id
+		`{"spell_id":12,"target_id":9}`,               // no source_id
+		`{"spell_id":12,"source_id":3}`,               // no target_id
+		`{"spell_id":0,"source_id":3,"target_id":9}`,  // no spell
+		`{"spell_id":12,"source_id":3,"target_id":0}`, // no target
+		`{"spawn_id":1234,"killer_id":0}`,             // a death
+		`not json`,
+	} {
+		if _, err := DecodeSpellAction(bad); err == nil {
+			t.Errorf("accepted %s", bad)
+		}
 	}
 }

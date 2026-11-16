@@ -1842,6 +1842,11 @@ func main() {
 				factionEngine.HandlePipeConsider(c.SpawnID, c.Name, c.Faction, time.Now())
 			case p.Item != nil:
 				itemDisplayTracker.Handle(p.Item.ItemID, p.Item.Name, env.Character)
+			case p.Spell != nil:
+				// One spell action packet, with the caster's and target's
+				// spawn ids: ties log spell lands to spawns (spell_actions.go).
+				a := p.Spell
+				timerEngine.HandlePipeSpellAction(a.SpellID, a.SourceID, a.TargetID, a.TargetName, a.Success)
 			}
 			return
 		}
@@ -1939,6 +1944,7 @@ func main() {
 			// by spawn id instead of colliding with another same-named mob —
 			// see spelltimer.Engine.keyTargetTokenLocked.
 			timerEngine.SetPipeTargetID(p.TargetID)
+			timerEngine.SetSelfSpawnID(p.SpawnID)
 			return
 		case zealpipe.MsgDeath:
 			// A death anywhere in the zone, by spawn id. The log's "has been
@@ -2220,6 +2226,7 @@ func main() {
 		timerEngine.SetPipeBuffSlots("", nil)
 		timerEngine.ResetPipePetID()
 		timerEngine.SetPipeTargetID(nil)
+		timerEngine.SetSelfSpawnID(nil)
 		timerEngine.ResetPipeTargetTracking()
 		triggerEngine.HandlePipeReset()
 		killCounters.HandlePipeReset()
@@ -2509,6 +2516,14 @@ func main() {
 		// previous character's tracked-faction set.
 		reloadFactionTracking()
 	})
+	// Spell action correlation: each batch's spell lands are matched with the
+	// pipe's spell actions before triggers see the raw lines, and every
+	// consumer of a line reads the same answer by its sequence number.
+	tailer.SetBatchHooks(
+		func(evs []logparser.LogEvent) { guard.run("timerEngine", func() { timerEngine.PrimeLands(evs) }) },
+		timerEngine.SetLineSeq,
+		timerEngine.EndBatch,
+	)
 	go tailer.Start(context.Background())
 
 	// Log replayer: streams a historical log segment through the same

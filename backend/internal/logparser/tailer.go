@@ -66,6 +66,12 @@ type Tailer struct {
 	remainderStable   bool   // remainder survived one idle poll — safe to flush as a complete line
 	detectedCharacter string // last auto-detected character name (empty when manually configured)
 	paused            bool   // true while a log replay session owns the dispatch pipeline
+	seq               uint64 // last line sequence number handed out (see SetBatchHooks)
+
+	// Batch hooks (SetBatchHooks); nil = disabled.
+	onBatchParsed func([]LogEvent)
+	onLineSeq     func(uint64)
+	onBatchDone   func()
 
 	// rawFeed, when set, makes the live feed also surface lines that match no
 	// known event pattern (chat, system messages, "X is no longer mezzed", …)
@@ -185,6 +191,7 @@ func (t *Tailer) SetPaused(paused bool) {
 type rawLine struct {
 	ts  time.Time
 	msg string
+	seq uint64
 }
 
 // tick is the polling body. It is called every pollInterval and does all file I/O.
@@ -252,16 +259,43 @@ func (t *Tailer) tick() {
 		t.onCharacterChange(changedCharacter)
 	}
 
+	if len(rawLines) == 0 && len(events) == 0 {
+		return
+	}
+	if t.onBatchParsed != nil {
+		t.onBatchParsed(events)
+	}
 	// Deliver raw lines first so trigger handlers see every line.
 	if t.lineHandler != nil {
 		for _, rl := range rawLines {
+			if t.onLineSeq != nil {
+				t.onLineSeq(rl.seq)
+			}
 			t.lineHandler(t.clockGuard(rl.ts), rl.msg)
+		}
+		if t.onLineSeq != nil {
+			t.onLineSeq(0)
 		}
 	}
 	for _, ev := range events {
 		ev.Timestamp = t.clockGuard(ev.Timestamp)
 		t.handler(ev)
 	}
+	if t.onBatchDone != nil {
+		t.onBatchDone()
+	}
+}
+
+// SetBatchHooks registers callbacks around each batch of lines the tailer
+// dispatches. Every line gets a sequence number shared by its raw-line
+// dispatch and its parsed LogEvent (LogEvent.Seq). parsed sees the batch's
+// events before any raw line is dispatched; line is called with each raw
+// line's sequence number just before lineHandler runs for it (and 0 after the
+// last); done runs after the parsed events. Any may be nil. Call before Start.
+func (t *Tailer) SetBatchHooks(parsed func([]LogEvent), line func(uint64), done func()) {
+	t.mu.Lock()
+	t.onBatchParsed, t.onLineSeq, t.onBatchDone = parsed, line, done
+	t.mu.Unlock()
 }
 
 // clockGuard returns ts unchanged unless it diverges from this machine's own
@@ -429,9 +463,11 @@ func (t *Tailer) flushStaleRemainder() ([]LogEvent, []rawLine) {
 	// partial/odd line" reports.
 	slog.Debug("logparser: flushed stale remainder (idle)", "offset", t.offset, "line", msg)
 
-	raws := []rawLine{{ts: ts, msg: msg}}
+	t.seq++
+	raws := []rawLine{{ts: ts, msg: msg, seq: t.seq}}
 	var events []LogEvent
 	if ev, classified := ParseLine(line); classified {
+		ev.Seq = t.seq
 		events = append(events, ev)
 	}
 	return events, raws
@@ -470,14 +506,16 @@ func (t *Tailer) parseChunk(data []byte) ([]LogEvent, []rawLine) {
 		}
 
 		// Feed every line with a valid EQ timestamp to the raw handler (triggers).
+		t.seq++
 		if ts, msg, ok := ParseRawLine(line); ok {
-			raws = append(raws, rawLine{ts: ts, msg: msg})
+			raws = append(raws, rawLine{ts: ts, msg: msg, seq: t.seq})
 		}
 
 		ev, ok := ParseLine(line)
 		if !ok {
 			continue
 		}
+		ev.Seq = t.seq
 		events = append(events, ev)
 	}
 
