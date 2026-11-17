@@ -1,7 +1,27 @@
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import { resolve } from 'path'
+import { readdirSync } from 'fs'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+
+// Fails a production build when docs/help has no articles, so a moved or
+// mis-globbed help folder can't ship an empty Help page.
+function helpDocsCheck() {
+  return {
+    name: 'pq-help-docs-check',
+    apply: 'build' as const,
+    buildStart() {
+      const dir = resolve(__dirname, 'docs/help')
+      let n = 0
+      try {
+        n = readdirSync(dir).filter((f) => f.endsWith('.md')).length
+      } catch {
+        n = 0
+      }
+      if (n === 0) throw new Error(`no help articles found in ${dir}`)
+    },
+  }
+}
 
 export default defineConfig({
   main: {
@@ -33,7 +53,7 @@ export default defineConfig({
         }
       }
     },
-    plugins: [tailwindcss(), react()],
+    plugins: [tailwindcss(), react(), helpDocsCheck()],
     resolve: {
       alias: {
         '@': resolve(__dirname, 'frontend/src')

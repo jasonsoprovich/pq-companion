@@ -53,6 +53,7 @@ const RecipesPage = lazy(() => import('./pages/RecipesPage'))
 const TradeskillLevelingPage = lazy(() => import('./pages/TradeskillLevelingPage'))
 const QuestsPage = lazy(() => import('./pages/QuestsPage'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
+const HelpPage = lazy(() => import('./pages/HelpPage'))
 const InventoryPage = lazy(() => import('./pages/InventoryPage'))
 const SpellChecklistPage = lazy(() => import('./pages/SpellChecklistPage'))
 const InventoryTrackerPage = lazy(() => import('./pages/InventoryTrackerPage'))
@@ -450,6 +451,8 @@ export default function App(): React.ReactElement {
           <Route path="spell-checklist" element={<Navigate to="/characters/spells" replace />} />
           <Route path="key-tracker" element={<Navigate to="/characters/keys" replace />} />
           <Route path="settings" element={<SettingsPage />} />
+          <Route path="help" element={<HelpPage />} />
+          <Route path="help/:slug" element={<HelpPage />} />
         </Route>
       </Routes>
     </HashRouter>

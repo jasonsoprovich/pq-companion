@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { Settings, Search, ChevronLeft, ChevronRight, ChevronDown, Star } from 'lucide-react'
+import { Settings, Search, ChevronLeft, ChevronRight, ChevronDown, Star, LifeBuoy } from 'lucide-react'
 import { getLogStatus } from '../services/api'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
@@ -230,11 +230,25 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
         })}
       </div>
 
-      {/* Bottom — Settings (always visible) */}
+      {/* Bottom — Help and Settings (always visible) */}
       <div
         className="shrink-0 border-t px-2 py-2"
         style={{ borderColor: 'var(--color-border)' }}
       >
+        <NavLink
+          to="/help"
+          className={({ isActive }) =>
+            [
+              'no-drag flex items-center gap-3 rounded px-3 py-2 text-sm transition-colors',
+              isActive
+                ? 'bg-(--color-surface-2) text-(--color-primary) font-medium'
+                : 'text-(--color-muted-foreground) hover:bg-(--color-surface-2) hover:text-(--color-foreground)',
+            ].join(' ')
+          }
+        >
+          <LifeBuoy size={16} />
+          Help
+        </NavLink>
         <NavLink
           // With a large log, jump straight to the tab that explains and
           // fixes it — otherwise Settings reopens wherever the user left off.

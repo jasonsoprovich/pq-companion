@@ -1,10 +1,16 @@
 import React, { useEffect, useState } from 'react'
-import { Minus, Square, X } from 'lucide-react'
+import { HelpCircle, Minus, Square, X } from 'lucide-react'
 import { useWindowDrag } from '../hooks/useWindowDrag'
 
 const isMac = navigator.userAgent.includes('Macintosh')
 
-export default function TitleBar(): React.ReactElement {
+export default function TitleBar({
+  onHelp,
+  helpOpen = false,
+}: {
+  onHelp?: () => void
+  helpOpen?: boolean
+}): React.ReactElement {
   const [maximized, setMaximized] = useState(false)
   const onDragMouseDown = useWindowDrag()
 
@@ -53,6 +59,18 @@ export default function TitleBar(): React.ReactElement {
 
       {/* Spacer pushes the controls to the right edge in normal flow. */}
       <div className="flex-1" />
+
+      {onHelp && (
+        <button
+          onClick={onHelp}
+          className="no-drag mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded transition-colors hover:bg-white/10"
+          style={{ color: helpOpen ? 'var(--color-primary)' : 'var(--color-muted-foreground)' }}
+          title="Help for this page (F1)"
+          data-tour="help-drawer-button"
+        >
+          <HelpCircle size={15} />
+        </button>
+      )}
 
       {/* Window controls — Windows/Linux only */}
       {!isMac && (

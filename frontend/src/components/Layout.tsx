@@ -1,4 +1,4 @@
-import React, { useEffect, useState, Suspense } from 'react'
+import React, { lazy, useEffect, useState, Suspense } from 'react'
 import { Outlet } from 'react-router-dom'
 import TitleBar from './TitleBar'
 import Sidebar from './Sidebar'
@@ -7,15 +7,24 @@ import UpdateNotification from './UpdateNotification'
 import BackfillProgressBar from './BackfillProgressBar'
 import ZealNotification from './ZealNotification'
 import ZealVersionWarning from './ZealVersionWarning'
+import { HelpCircle } from 'lucide-react'
+
+// Lazy so the bundled help articles stay out of the startup chunk.
+const HelpDrawer = lazy(() => import('./guide/HelpDrawer'))
 
 export default function Layout(): React.ReactElement {
   const [searchOpen, setSearchOpen] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
+  const nativeFrame = !!window.electron?.window.nativeFrame
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault()
         setSearchOpen((prev) => !prev)
+      } else if (e.key === 'F1') {
+        e.preventDefault()
+        setHelpOpen((prev) => !prev)
       }
     }
     window.addEventListener('keydown', handler)
@@ -29,7 +38,7 @@ export default function Layout(): React.ReactElement {
     >
       {/* Under Wine the window manager draws the frame (see main's
           useNativeMainFrame), so our own title bar would be a second one. */}
-      {!window.electron?.window.nativeFrame && <TitleBar />}
+      {!nativeFrame && <TitleBar onHelp={() => setHelpOpen((v) => !v)} helpOpen={helpOpen} />}
       <div className="flex min-h-0 flex-1">
         <Sidebar onSearchClick={() => setSearchOpen(true)} />
         <main
@@ -54,6 +63,27 @@ export default function Layout(): React.ReactElement {
         </main>
       </div>
       <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
+      {helpOpen && (
+        <Suspense fallback={null}>
+          <HelpDrawer onClose={() => setHelpOpen(false)} />
+        </Suspense>
+      )}
+      {/* Without our title bar (Wine), the help button floats instead. */}
+      {nativeFrame && !helpOpen && (
+        <button
+          onClick={() => setHelpOpen(true)}
+          className="fixed bottom-3 right-3 z-30 flex h-8 w-8 items-center justify-center rounded-full shadow-lg"
+          style={{
+            backgroundColor: 'var(--color-surface-2)',
+            border: '1px solid var(--color-border)',
+            color: 'var(--color-muted-foreground)',
+          }}
+          title="Help for this page (F1)"
+          data-tour="help-drawer-button"
+        >
+          <HelpCircle size={16} />
+        </button>
+      )}
       <ZealVersionWarning />
       <BackfillProgressBar />
       <UpdateNotification />
