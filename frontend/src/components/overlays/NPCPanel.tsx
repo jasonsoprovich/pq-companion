@@ -34,6 +34,7 @@ import TargetPinButton from '../TargetPinButton'
 import CopyTargetStatsButton from '../CopyTargetStatsButton'
 import ItemDetailModal from '../ItemDetailModal'
 import { ItemIcon } from '../Icon'
+import ItemHoverCard from '../ItemHoverCard'
 import { ResistChip } from '../ResistChip'
 import NPCCasterSummarySection from './NPCCasterSummarySection'
 import NPCDistanceChip from './NPCDistanceChip'
@@ -284,7 +285,6 @@ function LootSection({
           <button
             key={`${drop.id}-${item.item_id}`}
             onClick={() => onItemClick(item.item_id)}
-            title={wished ? 'On your wishlist' : undefined}
             className="flex w-full items-center gap-2 border-t py-0.5 pr-1 text-left"
             style={{
               borderColor: 'var(--color-border)',
@@ -297,11 +297,19 @@ function LootSection({
             }}
           >
             <ItemIcon id={item.item_icon} name={item.item_name} size={20} />
-            <span
-              className="flex-1 truncate text-xs underline decoration-dotted"
-              style={{ color: rarityColor(eff) }}
-            >
-              {item.item_name}
+            {/* The item card opens on the name text only, not the row. */}
+            <span className="flex min-w-0 flex-1">
+              <ItemHoverCard
+                itemId={item.item_id}
+                clickHint={wished ? 'On your wishlist · click to open' : 'Click to open'}
+              >
+                <span
+                  className="max-w-full truncate text-xs underline decoration-dotted"
+                  style={{ color: rarityColor(eff) }}
+                >
+                  {item.item_name}
+                </span>
+              </ItemHoverCard>
             </span>
             {upgrade && (
               <span

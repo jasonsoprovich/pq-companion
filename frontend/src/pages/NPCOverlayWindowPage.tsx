@@ -30,6 +30,7 @@ import OverlayLockButton from '../components/OverlayLockButton'
 import TargetPinButton from '../components/TargetPinButton'
 import CopyTargetStatsButton from '../components/CopyTargetStatsButton'
 import { ItemIcon } from '../components/Icon'
+import ItemHoverCard from '../components/ItemHoverCard'
 import { ResistChip } from '../components/ResistChip'
 import NPCCasterSummarySection from '../components/overlays/NPCCasterSummarySection'
 import NPCDistanceChip from '../components/overlays/NPCDistanceChip'
@@ -220,15 +221,6 @@ function LootContent({
         return (
           <div
             key={`${drop.id}-${item.item_id}`}
-            title={
-              onItemClick
-                ? wished
-                  ? 'On your wishlist · click to open in the item database'
-                  : 'Open in the item database'
-                : wished
-                  ? 'On your wishlist'
-                  : undefined
-            }
             onClick={onItemClick ? () => onItemClick(item.item_id) : undefined}
             role={onItemClick ? 'button' : undefined}
             style={{
@@ -247,20 +239,31 @@ function LootContent({
             }}
           >
             <ItemIcon id={item.item_icon} name={item.item_name} size={18} />
-            <span
-              style={{
-                flex: 1,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                fontSize: 11,
-                color: rarityColor(eff),
-                fontWeight: 500,
-                textDecoration: onItemClick ? 'underline dotted' : undefined,
-              }}
-            >
-              {item.item_name}
-            </span>
+            {/* The item card opens on the name text only, not the row. */}
+            <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', display: 'flex' }}>
+              <ItemHoverCard
+                itemId={item.item_id}
+                clickHint={[
+                  wished && 'On your wishlist',
+                  onItemClick && 'Click to open in the item database',
+                ].filter(Boolean).join(' · ') || undefined}
+              >
+                <span
+                  style={{
+                    maxWidth: '100%',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    fontSize: 11,
+                    color: rarityColor(eff),
+                    fontWeight: 500,
+                    textDecoration: onItemClick ? 'underline dotted' : undefined,
+                  }}
+                >
+                  {item.item_name}
+                </span>
+              </ItemHoverCard>
+            </div>
             {upgrade && (
               <span
                 title={`Gear upgrade for your active character (${upgrade.slot_label})`}
