@@ -13,7 +13,8 @@
  *    overlay:setup:apply) and the Arrange map lets you move them.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, ArrowRight, CheckCircle2, Keyboard, Layers, LayoutGrid, Loader2, Monitor, X } from 'lucide-react'
+import { Keyboard, Layers, LayoutGrid, Loader2, Monitor } from 'lucide-react'
+import Wizard from '../guide/Wizard'
 import { useEscapeToClose } from '../../hooks/useEscapeToClose'
 import { getConfig, listCharacters } from '../../services/api'
 import { OVERLAY_CATALOG, OVERLAY_CATEGORIES } from '../../lib/overlayCatalog'
@@ -320,358 +321,264 @@ export default function OverlaySetupWizard({ onClose }: { onClose: () => void })
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(2px)' }}
+    <Wizard
+      icon={<LayoutGrid size={20} />}
+      title={`Overlay Setup${step ? ` — ${STEP_TITLES[step]}` : ''}`}
+      steps={steps.map((s) => ({ id: s, label: STEP_TITLES[s] }))}
+      currentStep={step}
+      showStepLabels
+      onClose={onClose}
+      closeDisabled={saving}
+      closeTitle="Skip — set up overlays later from the Overlays page"
+      wide={placed}
+      bodyClassName={placed ? 'flex min-h-0 flex-1 flex-col' : 'flex-1 overflow-y-auto px-6 py-5'}
+      onBack={() => setStep(steps[stepIndex - 1])}
+      backDisabled={saving || placed}
+      backHidden={placed}
+      footerCenter={
+        <span className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+          {picked.size} overlay{picked.size === 1 ? '' : 's'} picked
+        </span>
+      }
+      primary={
+        step !== 'options' && step !== 'arrange'
+          ? {
+              label: 'Next',
+              onClick: () => setStep(steps[stepIndex + 1]),
+              disabled: loading || !step || (step === 'pick' && picked.size === 0),
+            }
+          : {
+              label: saving ? 'Opening…' : placed ? 'Done' : 'Place overlays',
+              onClick: () => (placed ? onClose() : void apply()),
+              busy: saving,
+              variant: 'finish',
+            }
+      }
     >
-      <div
-        className={`flex w-full flex-col rounded-lg shadow-2xl ${placed ? 'max-w-5xl' : 'max-w-2xl'}`}
-        style={{
-          backgroundColor: 'var(--color-surface)',
-          border: '1px solid var(--color-border)',
-          maxHeight: '90vh',
-        }}
-      >
-        {/* Header */}
-        <div
-          className="flex items-center justify-between border-b px-6 py-4"
-          style={{ borderColor: 'var(--color-border)' }}
-        >
-          <div className="flex items-center gap-3">
-            <LayoutGrid size={20} style={{ color: 'var(--color-primary)' }} />
-            <h2 className="text-base font-semibold" style={{ color: 'var(--color-foreground)' }}>
-              Overlay Setup{step ? ` — ${STEP_TITLES[step]}` : ''}
-            </h2>
-          </div>
-          <button
-            onClick={onClose}
-            disabled={saving}
-            className="rounded p-1"
-            style={{ color: 'var(--color-muted-foreground)', cursor: 'pointer' }}
-            title="Skip — set up overlays later from the Overlays page"
-          >
-            <X size={16} />
-          </button>
+      {loading || !step ? (
+        <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+          <Loader2 size={14} className="animate-spin" /> Loading…
         </div>
-
-        {/* Step indicator */}
-        <div
-          className="flex items-center gap-2 border-b px-6 py-3"
-          style={{ borderColor: 'var(--color-border)' }}
-        >
-          {steps.map((s, i) => (
-            <React.Fragment key={s}>
-              <div className="flex items-center gap-1.5">
-                <div
-                  className="flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold"
-                  style={{
-                    backgroundColor: i <= stepIndex ? 'var(--color-primary)' : 'var(--color-surface-2)',
-                    color: i <= stepIndex ? '#fff' : 'var(--color-muted-foreground)',
-                    border: '1px solid var(--color-border)',
-                  }}
-                >
-                  {i + 1}
-                </div>
-                <span className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-                  {STEP_TITLES[s]}
-                </span>
-              </div>
-              {i < steps.length - 1 && (
-                <div
-                  className="h-px flex-1"
-                  style={{ backgroundColor: i < stepIndex ? 'var(--color-primary)' : 'var(--color-border)' }}
-                />
-              )}
-            </React.Fragment>
-          ))}
-        </div>
-
-        {/* Body */}
-        <div className={placed ? 'flex min-h-0 flex-1 flex-col' : 'flex-1 overflow-y-auto px-6 py-5'}>
-          {loading || !step ? (
-            <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
-              <Loader2 size={14} className="animate-spin" /> Loading…
-            </div>
-          ) : step === 'layout' ? (
-            <div className="space-y-3">
-              <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
-                Your current layout, {current?.name}, already has {current?.windows} window
-                {current?.windows === 1 ? '' : 's'}.{' '}
-                <span style={{ color: 'var(--color-muted-foreground)' }}>
-                  Switch between layouts any time from the Overlays page.
-                </span>
-              </p>
-              {([
-                ['new', 'Make a new layout', `Keeps ${current?.name} as it is and switches to the new one.`],
-                ['replace', `Replace ${current?.name}`, 'Closes its windows and puts the new picks in their place.'],
-              ] as const).map(([value, label, hint]) => {
-                const on = mode === value
-                return (
-                  <label
-                    key={value}
-                    className="flex cursor-pointer items-start gap-3 rounded-md px-3 py-2.5"
-                    style={{
-                      backgroundColor: on ? 'var(--color-surface-2)' : 'transparent',
-                      border: `1px solid ${on ? 'var(--color-primary)' : 'var(--color-border)'}`,
-                    }}
-                  >
-                    <input
-                      type="radio"
-                      name="overlay-setup-mode"
-                      checked={on}
-                      onChange={() => setMode(value)}
-                      className="mt-1"
-                      style={{ accentColor: 'var(--color-primary)' }}
-                    />
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
-                        {label}
-                      </span>
-                      <span className="block text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-                        {hint}
-                      </span>
-                      {value === 'new' && on && (
-                        <input
-                          value={newName}
-                          onChange={(e) => setNewName(e.target.value)}
-                          maxLength={40}
-                          placeholder="Layout name"
-                          className="mt-2 w-full max-w-xs rounded px-2 py-1 text-sm"
-                          style={{
-                            backgroundColor: 'var(--color-background)',
-                            border: '1px solid var(--color-border)',
-                            color: 'var(--color-foreground)',
-                          }}
-                        />
-                      )}
-                    </span>
-                  </label>
-                )
-              })}
-            </div>
-          ) : step === 'arrange' ? (
-            <>
-              <p className="flex items-center gap-2 px-6 pt-4 text-sm" style={{ color: 'var(--color-foreground)' }}>
-                <span>
-                  Your overlays are open around the edges of the screen. Drag them here or on screen
-                  to where you want them.
-                </span>
-              </p>
-              <p className="flex items-center gap-1.5 px-6 pt-1 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-                <Layers size={12} className="shrink-0" />
-                Tip: drop one overlay on another&rsquo;s title strip to stack them as tabs in one window.
-              </p>
-              <div className="h-[56vh] min-h-[320px]">
-                <ArrangeView compact />
-              </div>
-            </>
-          ) : step === 'pick' ? (
-            <div className="space-y-4">
-              <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
-                Pick the overlays to start with.{' '}
-                <span style={{ color: 'var(--color-muted-foreground)' }}>
-                  {abbr
-                    ? `The ticked ones suit ${/^[AEIOU]/.test(CLASS_FULL[abbr] ?? abbr) ? 'an' : 'a'} ${CLASS_FULL[abbr] ?? abbr}.`
-                    : 'Set your class in Settings for picks that suit it.'}{' '}
-                  You can add or remove any overlay later from the Overlays page.
-                </span>
-              </p>
-              {OVERLAY_CATEGORIES.map((cat) => {
-                const entries = OVERLAY_CATALOG.filter((e) => e.category === cat.id)
-                if (entries.length === 0) return null
-                return (
-                  <div key={cat.id}>
-                    <h3
-                      className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide"
-                      style={{ color: 'var(--color-muted)' }}
-                    >
-                      {cat.label}
-                    </h3>
-                    <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-                      {entries.map((e) => {
-                        const on = picked.has(e.name)
-                        const Icon = e.icon
-                        return (
-                          <label
-                            key={e.name}
-                            className="flex cursor-pointer items-start gap-2 rounded-md px-2.5 py-2"
-                            style={{
-                              backgroundColor: on ? 'var(--color-surface-2)' : 'transparent',
-                              border: `1px solid ${on ? e.color + '80' : 'var(--color-border)'}`,
-                            }}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={on}
-                              onChange={() => toggle(e.name)}
-                              className="mt-0.5 shrink-0"
-                              style={{ accentColor: 'var(--color-primary)' }}
-                            />
-                            <Icon size={14} className="mt-0.5 shrink-0" style={{ color: e.color }} />
-                            <span className="min-w-0">
-                              <span
-                                className="flex items-center gap-1.5 text-xs font-semibold"
-                                style={{ color: 'var(--color-foreground)' }}
-                              >
-                                {e.label}
-                                {suggested.has(e.name) && (
-                                  <span
-                                    className="rounded px-1 text-[9px] font-medium uppercase"
-                                    style={{ backgroundColor: 'rgba(201,168,76,0.15)', color: '#c9a84c' }}
-                                  >
-                                    Suggested
-                                  </span>
-                                )}
-                              </span>
-                              <span
-                                className="block text-[11px] leading-snug"
-                                style={{ color: 'var(--color-muted-foreground)' }}
-                              >
-                                {e.blurb}
-                              </span>
-                            </span>
-                          </label>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          ) : step === 'monitor' ? (
-            <div className="space-y-3">
-              <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
-                Which monitor is EverQuest on?{' '}
-                <span style={{ color: 'var(--color-muted-foreground)' }}>
-                  The overlays open there. You can move any of them to another monitor later.
-                </span>
-              </p>
-              <div className="space-y-1.5">
-                {displays.map((d) => {
-                  const on = d.id === displayId
-                  return (
-                    <label
-                      key={d.id}
-                      className="flex cursor-pointer items-center gap-3 rounded-md px-3 py-2.5"
-                      style={{
-                        backgroundColor: on ? 'var(--color-surface-2)' : 'transparent',
-                        border: `1px solid ${on ? 'var(--color-primary)' : 'var(--color-border)'}`,
-                      }}
-                    >
-                      <input
-                        type="radio"
-                        name="overlay-monitor"
-                        checked={on}
-                        onChange={() => setDisplayId(d.id)}
-                        style={{ accentColor: 'var(--color-primary)' }}
-                      />
-                      <Monitor size={16} style={{ color: 'var(--color-muted-foreground)' }} />
-                      <span className="text-sm" style={{ color: 'var(--color-foreground)' }}>
-                        {d.label}
-                        {d.isPrimary ? ' (main)' : ''}
-                      </span>
-                      <span className="ml-auto text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-                        {d.width}×{d.height}
-                      </span>
-                    </label>
-                  )
-                })}
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-5">
-              <div className="space-y-2">
-                <h3 className="flex items-center gap-2 text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
-                  <Keyboard size={14} /> Show/hide hotkey
-                </h3>
-                <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-                  Hides every overlay at once and brings them back, from in game. Change it or add
-                  hotkeys for single overlays in Settings → Hotkeys.
-                </p>
-                <HotkeyField value={hotkey} taken={taken} onChange={setHotkey} />
-              </div>
-              <label className="flex cursor-pointer items-start gap-2.5">
+      ) : step === 'layout' ? (
+        <div className="space-y-3">
+          <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+            Your current layout, {current?.name}, already has {current?.windows} window
+            {current?.windows === 1 ? '' : 's'}.{' '}
+            <span style={{ color: 'var(--color-muted-foreground)' }}>
+              Switch between layouts any time from the Overlays page.
+            </span>
+          </p>
+          {([
+            ['new', 'Make a new layout', `Keeps ${current?.name} as it is and switches to the new one.`],
+            ['replace', `Replace ${current?.name}`, 'Closes its windows and puts the new picks in their place.'],
+          ] as const).map(([value, label, hint]) => {
+            const on = mode === value
+            return (
+              <label
+                key={value}
+                className="flex cursor-pointer items-start gap-3 rounded-md px-3 py-2.5"
+                style={{
+                  backgroundColor: on ? 'var(--color-surface-2)' : 'transparent',
+                  border: `1px solid ${on ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                }}
+              >
                 <input
-                  type="checkbox"
-                  checked={idleOn}
-                  onChange={(e) => setIdleOn(e.target.checked)}
-                  className="mt-0.5"
+                  type="radio"
+                  name="overlay-setup-mode"
+                  checked={on}
+                  onChange={() => setMode(value)}
+                  className="mt-1"
                   style={{ accentColor: 'var(--color-primary)' }}
                 />
-                <span>
+                <span className="min-w-0 flex-1">
                   <span className="block text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
-                    Collapse overlays when idle
+                    {label}
                   </span>
                   <span className="block text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-                    Overlays with nothing to show (no timers running, no target, no fight) fold to
-                    their title bar after a few seconds and open again when something happens.
-                    Change the delay per overlay on the Overlays page.
+                    {hint}
                   </span>
+                  {value === 'new' && on && (
+                    <input
+                      value={newName}
+                      onChange={(e) => setNewName(e.target.value)}
+                      maxLength={40}
+                      placeholder="Layout name"
+                      className="mt-2 w-full max-w-xs rounded px-2 py-1 text-sm"
+                      style={{
+                        backgroundColor: 'var(--color-background)',
+                        border: '1px solid var(--color-border)',
+                        color: 'var(--color-foreground)',
+                      }}
+                    />
+                  )}
                 </span>
               </label>
-              {error && <p className="text-xs" style={{ color: '#f87171' }}>{error}</p>}
-            </div>
-          )}
+            )
+          })}
         </div>
-
-        {/* Footer */}
-        <div
-          className="flex items-center justify-between border-t px-6 py-4"
-          style={{ borderColor: 'var(--color-border)' }}
-        >
-          <button
-            onClick={() => setStep(steps[stepIndex - 1])}
-            disabled={stepIndex === 0 || saving || placed}
-            className="flex items-center gap-1.5 rounded px-3 py-1.5 text-sm font-medium"
-            style={{
-              backgroundColor: 'transparent',
-              color: 'var(--color-muted-foreground)',
-              border: '1px solid var(--color-border)',
-              cursor: stepIndex === 0 || placed ? 'not-allowed' : 'pointer',
-              opacity: stepIndex === 0 || placed ? 0.4 : 1,
-              visibility: placed ? 'hidden' : 'visible',
-            }}
-          >
-            <ArrowLeft size={14} />
-            Back
-          </button>
-          <span className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-            {picked.size} overlay{picked.size === 1 ? '' : 's'} picked
-          </span>
-          {step !== 'options' && step !== 'arrange' ? (
-            <button
-              onClick={() => setStep(steps[stepIndex + 1])}
-              disabled={loading || !step || (step === 'pick' && picked.size === 0)}
-              className="flex items-center gap-1.5 rounded px-4 py-1.5 text-sm font-semibold"
-              style={{
-                backgroundColor: 'var(--color-primary)',
-                color: '#fff',
-                border: 'none',
-                cursor: 'pointer',
-              }}
-            >
-              Next
-              <ArrowRight size={14} />
-            </button>
-          ) : (
-            <button
-              onClick={() => (placed ? onClose() : void apply())}
-              disabled={saving}
-              className="flex items-center gap-1.5 rounded px-4 py-1.5 text-sm font-semibold"
-              style={{
-                backgroundColor: '#22c55e',
-                color: '#fff',
-                border: 'none',
-                cursor: saving ? 'not-allowed' : 'pointer',
-                opacity: saving ? 0.7 : 1,
-              }}
-            >
-              {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-              {saving ? 'Opening…' : placed ? 'Done' : 'Place overlays'}
-            </button>
-          )}
+      ) : step === 'arrange' ? (
+        <>
+          <p className="flex items-center gap-2 px-6 pt-4 text-sm" style={{ color: 'var(--color-foreground)' }}>
+            <span>
+              Your overlays are open around the edges of the screen. Drag them here or on screen
+              to where you want them.
+            </span>
+          </p>
+          <p className="flex items-center gap-1.5 px-6 pt-1 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+            <Layers size={12} className="shrink-0" />
+            Tip: drop one overlay on another&rsquo;s title strip to stack them as tabs in one window.
+          </p>
+          <div className="h-[56vh] min-h-[320px]">
+            <ArrangeView compact />
+          </div>
+        </>
+      ) : step === 'pick' ? (
+        <div className="space-y-4">
+          <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+            Pick the overlays to start with.{' '}
+            <span style={{ color: 'var(--color-muted-foreground)' }}>
+              {abbr
+                ? `The ticked ones suit ${/^[AEIOU]/.test(CLASS_FULL[abbr] ?? abbr) ? 'an' : 'a'} ${CLASS_FULL[abbr] ?? abbr}.`
+                : 'Set your class in Settings for picks that suit it.'}{' '}
+              You can add or remove any overlay later from the Overlays page.
+            </span>
+          </p>
+          {OVERLAY_CATEGORIES.map((cat) => {
+            const entries = OVERLAY_CATALOG.filter((e) => e.category === cat.id)
+            if (entries.length === 0) return null
+            return (
+              <div key={cat.id}>
+                <h3
+                  className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide"
+                  style={{ color: 'var(--color-muted)' }}
+                >
+                  {cat.label}
+                </h3>
+                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                  {entries.map((e) => {
+                    const on = picked.has(e.name)
+                    const Icon = e.icon
+                    return (
+                      <label
+                        key={e.name}
+                        className="flex cursor-pointer items-start gap-2 rounded-md px-2.5 py-2"
+                        style={{
+                          backgroundColor: on ? 'var(--color-surface-2)' : 'transparent',
+                          border: `1px solid ${on ? e.color + '80' : 'var(--color-border)'}`,
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          onChange={() => toggle(e.name)}
+                          className="mt-0.5 shrink-0"
+                          style={{ accentColor: 'var(--color-primary)' }}
+                        />
+                        <Icon size={14} className="mt-0.5 shrink-0" style={{ color: e.color }} />
+                        <span className="min-w-0">
+                          <span
+                            className="flex items-center gap-1.5 text-xs font-semibold"
+                            style={{ color: 'var(--color-foreground)' }}
+                          >
+                            {e.label}
+                            {suggested.has(e.name) && (
+                              <span
+                                className="rounded px-1 text-[9px] font-medium uppercase"
+                                style={{ backgroundColor: 'rgba(201,168,76,0.15)', color: '#c9a84c' }}
+                              >
+                                Suggested
+                              </span>
+                            )}
+                          </span>
+                          <span
+                            className="block text-[11px] leading-snug"
+                            style={{ color: 'var(--color-muted-foreground)' }}
+                          >
+                            {e.blurb}
+                          </span>
+                        </span>
+                      </label>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
         </div>
-      </div>
-    </div>
+      ) : step === 'monitor' ? (
+        <div className="space-y-3">
+          <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+            Which monitor is EverQuest on?{' '}
+            <span style={{ color: 'var(--color-muted-foreground)' }}>
+              The overlays open there. You can move any of them to another monitor later.
+            </span>
+          </p>
+          <div className="space-y-1.5">
+            {displays.map((d) => {
+              const on = d.id === displayId
+              return (
+                <label
+                  key={d.id}
+                  className="flex cursor-pointer items-center gap-3 rounded-md px-3 py-2.5"
+                  style={{
+                    backgroundColor: on ? 'var(--color-surface-2)' : 'transparent',
+                    border: `1px solid ${on ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="overlay-monitor"
+                    checked={on}
+                    onChange={() => setDisplayId(d.id)}
+                    style={{ accentColor: 'var(--color-primary)' }}
+                  />
+                  <Monitor size={16} style={{ color: 'var(--color-muted-foreground)' }} />
+                  <span className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+                    {d.label}
+                    {d.isPrimary ? ' (main)' : ''}
+                  </span>
+                  <span className="ml-auto text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                    {d.width}×{d.height}
+                  </span>
+                </label>
+              )
+            })}
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-5">
+          <div className="space-y-2">
+            <h3 className="flex items-center gap-2 text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
+              <Keyboard size={14} /> Show/hide hotkey
+            </h3>
+            <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+              Hides every overlay at once and brings them back, from in game. Change it or add
+              hotkeys for single overlays in Settings → Hotkeys.
+            </p>
+            <HotkeyField value={hotkey} taken={taken} onChange={setHotkey} />
+          </div>
+          <label className="flex cursor-pointer items-start gap-2.5">
+            <input
+              type="checkbox"
+              checked={idleOn}
+              onChange={(e) => setIdleOn(e.target.checked)}
+              className="mt-0.5"
+              style={{ accentColor: 'var(--color-primary)' }}
+            />
+            <span>
+              <span className="block text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
+                Collapse overlays when idle
+              </span>
+              <span className="block text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                Overlays with nothing to show (no timers running, no target, no fight) fold to
+                their title bar after a few seconds and open again when something happens.
+                Change the delay per overlay on the Overlays page.
+              </span>
+            </span>
+          </label>
+          {error && <p className="text-xs" style={{ color: '#f87171' }}>{error}</p>}
+        </div>
+      )}
+    </Wizard>
   )
 }
