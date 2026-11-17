@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { Settings, Search, ChevronLeft, ChevronRight, ChevronDown, Star, LifeBuoy } from 'lucide-react'
+import { Settings, Search, ChevronLeft, ChevronRight, ChevronDown, Star, LifeBuoy, Pencil, EyeOff } from 'lucide-react'
 import { getLogStatus } from '../services/api'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
@@ -12,6 +12,10 @@ import { useSidebarPrefs } from '../hooks/useSidebarPrefs'
 import { resolveRememberedRoute } from '../lib/lastSubRoute'
 import { NewDot, useFeatureDots } from '../hooks/useFeatureDots'
 import { usePackUpdates } from '../hooks/usePackUpdates'
+import { hideSidebarItem, toggleSidebarFavorite } from '../lib/sidebarPrefsSave'
+
+// Edit mode pulls in dnd-kit; keep it off the startup chunk.
+const SidebarEditor = lazy(() => import('./SidebarEditor'))
 
 const PACK_UPDATE_TITLE = 'Updates available for your installed trigger packs'
 
@@ -23,7 +27,13 @@ function useNavAttention(): (route: string) => boolean {
   return (route) => route === '/triggers' && packUpdates.length > 0
 }
 
-function SidebarLink({ to, label, icon, end }: NavItem): React.ReactElement {
+function SidebarLink({
+  to,
+  label,
+  icon,
+  end,
+  onContextMenu,
+}: NavItem & { onContextMenu?: (e: React.MouseEvent) => void }): React.ReactElement {
   // Subscribe to navigation so the remembered sub-page (Combat/Raids) is
   // re-resolved after every route change, not just when the sidebar re-renders.
   useLocation()
@@ -33,6 +43,7 @@ function SidebarLink({ to, label, icon, end }: NavItem): React.ReactElement {
     <NavLink
       to={resolveRememberedRoute(to)}
       end={end}
+      onContextMenu={onContextMenu}
       className={({ isActive }) =>
         [
           'no-drag flex items-center gap-3 rounded px-3 py-2 text-sm transition-colors',
@@ -79,6 +90,26 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(loadCollapsed)
   const { navDot } = useFeatureDots()
   const attention = useNavAttention()
+  const [editing, setEditing] = useState(false)
+  // Right-click menu on a nav item: { route, x, y }.
+  const [menu, setMenu] = useState<{ route: string; x: number; y: number } | null>(null)
+  const editSections = useMemo(() => visibleNavSections(flags), [flags])
+
+  useEffect(() => {
+    if (!menu) return
+    const close = (): void => setMenu(null)
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') close()
+    }
+    window.addEventListener('mousedown', close)
+    window.addEventListener('blur', close)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('mousedown', close)
+      window.removeEventListener('blur', close)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [menu])
 
   const toggleSection = (id: string): void => {
     setCollapsed((prev) => {
@@ -173,6 +204,18 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
             <Search size={12} style={{ color: 'var(--color-muted)' }} />
             <span className="text-[11px]" style={{ color: 'var(--color-muted)' }}>Search</span>
           </button>
+          <button
+            onClick={() => setEditing((v) => !v)}
+            data-tour="sidebar-edit"
+            className="flex h-[30px] w-7 shrink-0 items-center justify-center rounded transition-colors hover:bg-(--color-surface-3)"
+            style={{
+              border: '1px solid var(--color-border)',
+              backgroundColor: editing ? 'var(--color-surface-3)' : 'var(--color-surface-2)',
+            }}
+            title={editing ? 'Done editing the menu' : 'Edit menu: reorder, favorite or hide items'}
+          >
+            <Pencil size={12} style={{ color: editing ? 'var(--color-primary)' : 'var(--color-muted)' }} />
+          </button>
         </div>
 
         {/* Character switcher */}
@@ -185,7 +228,17 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
           a scroll viewport that's also a drag region gets flaky/unresponsive
           wheel scrolling in Chromium. Opting out restores smooth scrolling. */}
       <div className="no-drag scrollbar-hidden flex-1 overflow-y-auto">
-        {sections.map((section) => {
+        {editing ? (
+          <Suspense fallback={null}>
+            <SidebarEditor
+              sections={editSections}
+              order={order}
+              hidden={hidden}
+              favorites={favorites}
+              onDone={() => setEditing(false)}
+            />
+          </Suspense>
+        ) : sections.map((section) => {
           const isCollapsed = collapsed[section.id]
           return (
             <React.Fragment key={section.id}>
@@ -221,7 +274,14 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
               {!isCollapsed && (
                 <nav className="space-y-0.5 px-2 py-1">
                   {section.items.map((item) => (
-                    <SidebarLink key={item.to} {...item} />
+                    <SidebarLink
+                      key={item.to}
+                      {...item}
+                      onContextMenu={(e) => {
+                        e.preventDefault()
+                        setMenu({ route: item.to, x: e.clientX, y: e.clientY })
+                      }}
+                    />
                   ))}
                 </nav>
               )}
@@ -229,6 +289,50 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
           )
         })}
       </div>
+
+      {menu && (
+        <div
+          className="no-drag fixed z-50 min-w-40 rounded py-1 text-xs shadow-lg"
+          style={{
+            left: menu.x,
+            top: Math.min(menu.y, window.innerHeight - 110),
+            backgroundColor: 'var(--color-surface-2)',
+            border: '1px solid var(--color-border)',
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          {[
+            {
+              icon: <Star size={12} />,
+              label: favorites.includes(menu.route) ? 'Remove from favorites' : 'Add to favorites',
+              run: () => void toggleSidebarFavorite(menu.route),
+            },
+            {
+              icon: <EyeOff size={12} />,
+              label: 'Hide from menu',
+              run: () => void hideSidebarItem(menu.route),
+            },
+            {
+              icon: <Pencil size={12} />,
+              label: 'Edit menu…',
+              run: () => setEditing(true),
+            },
+          ].map((a) => (
+            <button
+              key={a.label}
+              onClick={() => {
+                a.run()
+                setMenu(null)
+              }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-(--color-surface-3)"
+              style={{ color: 'var(--color-foreground)', cursor: 'pointer' }}
+            >
+              {a.icon}
+              {a.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Bottom — Help and Settings (always visible) */}
       <div
