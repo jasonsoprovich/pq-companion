@@ -428,6 +428,20 @@ const (
 // RollSavedProfile is a named custom Roll Tracker grouping profile. The
 // profile body mirrors rolltracker.RollProfile field for field (the config
 // package can't import rolltracker); the frontend validates it before saving.
+// GettingStartedState is the Getting Started checklist's persisted
+// milestones. Timestamps are RFC 3339; empty means not reached yet.
+type GettingStartedState struct {
+	// LogSeenAt is set the first time setup health sees fresh log
+	// activity, so "logging is on" stays ticked while EQ is closed.
+	LogSeenAt string `yaml:"log_seen_at,omitempty" json:"log_seen_at,omitempty"`
+	// UsedSearchAt is set the first time the user opens Ctrl+K search.
+	UsedSearchAt string `yaml:"used_search_at,omitempty" json:"used_search_at,omitempty"`
+	// ZealSkipped marks the optional Zeal step as skipped.
+	ZealSkipped bool `yaml:"zeal_skipped,omitempty" json:"zeal_skipped,omitempty"`
+	// Dismissed hides the checklist pill even if items remain.
+	Dismissed bool `yaml:"dismissed,omitempty" json:"dismissed,omitempty"`
+}
+
 type RollSavedProfile struct {
 	Name    string          `yaml:"name" json:"name"`
 	Mode    string          `yaml:"mode" json:"mode"`
@@ -878,6 +892,16 @@ type Preferences struct {
 	// the top of the sidebar, in addition to their normal section. A hidden
 	// item is never shown, even if favorited. Empty/omitted = no favorites.
 	SidebarFavorites []string `yaml:"sidebar_favorites,omitempty" json:"sidebar_favorites,omitempty"`
+
+	// ToursSeen lists the ids of in-app guided tours the user has finished
+	// or explicitly skipped. A tour auto-starts on the first visit to its
+	// page until its id is here; replaying from Help ignores the list.
+	ToursSeen []string `yaml:"tours_seen,omitempty" json:"tours_seen,omitempty"`
+
+	// GettingStarted holds the Getting Started checklist's saved
+	// milestones. Items backed by durable state (EQ folder, overlay layout,
+	// installed packs) are derived live and not stored here.
+	GettingStarted GettingStartedState `yaml:"getting_started,omitempty" json:"getting_started"`
 
 	// ── Local TTS (Piper) ─────────────────────────────────────────────────
 	// Opt-in, power-user local neural TTS. Piper is a user-installed external

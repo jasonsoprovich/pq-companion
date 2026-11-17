@@ -8,6 +8,7 @@ import Layout from './components/Layout'
 import OnboardingWizard from './components/OnboardingWizard'
 import OverlaySetupWizard from './components/overlays-hub/OverlaySetupWizard'
 import WhatsNewModal from './components/WhatsNewModal'
+import { GuideProvider } from './components/guide/GuideProvider'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import StackDropHint from './components/StackDropHint'
 import { getConfig, getChangelog, updateConfig, saveConfigChanges, type ChangelogEntry } from './services/api'
@@ -316,7 +317,10 @@ function MainWindowLayout(): React.ReactElement {
           <WhatsNewModal entries={whatsNew.entries} onDismiss={dismissWhatsNew} />
         )}
         <FeatureDotsProvider>
-          <Layout />
+          {/* Tours wait while any setup modal is open. */}
+          <GuideProvider busy={onboardingDone === false || overlaySetup || !!whatsNew}>
+            <Layout />
+          </GuideProvider>
         </FeatureDotsProvider>
       </BackfillProvider>
     </ActiveCharacterProvider>

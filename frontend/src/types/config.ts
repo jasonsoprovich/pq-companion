@@ -406,6 +406,10 @@ export interface Preferences {
   // pinned "Favorites" section at the top of the sidebar in addition to their
   // normal section. A hidden item is never shown, even if favorited.
   sidebar_favorites?: string[]
+  // Ids of guided tours finished or explicitly skipped (lib/tours.ts).
+  tours_seen?: string[]
+  // Getting Started checklist milestones (mirrors GettingStartedState).
+  getting_started?: GettingStartedState
   // ── Local TTS (Piper) ──────────────────────────────────────────────────
   // Opt-in, user-installed local neural TTS (see docs/piper-tts-plan.md).
   // When enabled and pointed at a valid piper executable + .onnx voice model,
@@ -742,4 +746,13 @@ export interface FeatureDotsState {
   activated: string
   launch_eligible: boolean
   seen: string[] | null
+}
+
+// GettingStartedState mirrors config.GettingStartedState: the Getting
+// Started checklist's saved milestones (RFC 3339 timestamps).
+export interface GettingStartedState {
+  log_seen_at?: string
+  used_search_at?: string
+  zeal_skipped?: boolean
+  dismissed?: boolean
 }
