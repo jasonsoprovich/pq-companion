@@ -100,7 +100,9 @@ func NewCastIndex(msgs []CastMessage) *CastIndex {
 		if m.CastOnYou != "" {
 			youByText[m.CastOnYou] = append(youByText[m.CastOnYou], m)
 		}
-		if m.CastOnOther != "" {
+		// A cast_on_other with no words in it (Spirit of Khati Sha's is just
+		// ".") would match nearly every line in the log as a landing.
+		if hasLetter(m.CastOnOther) {
 			otherGroups[m.CastOnOther] = append(otherGroups[m.CastOnOther], m)
 		}
 	}
@@ -172,4 +174,13 @@ func buildMatch(kind MatchKind, target string, cands []CastMessage) *CastMatch {
 		m.SpellName = cands[0].SpellName
 	}
 	return m
+}
+
+func hasLetter(s string) bool {
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+			return true
+		}
+	}
+	return false
 }

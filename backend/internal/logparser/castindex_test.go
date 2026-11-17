@@ -200,3 +200,17 @@ func TestCastIndex_NilSafe(t *testing.T) {
 		t.Errorf("nil index Match should return nil, got %+v", got)
 	}
 }
+
+// Spirit of Khati Sha's cast_on_other is just ".", which turned every line
+// ending in a period ("Ivorwen begins to cast a spell.") into a landing.
+func TestCastIndex_IgnoresWordlessOtherText(t *testing.T) {
+	idx := NewCastIndex(append([]CastMessage{{
+		SpellID: 2631, SpellName: "Spirit of Khati Sha", CastOnOther: ".",
+	}}, indexFixtures...))
+	if m := idx.Match("Ivorwen begins to cast a spell."); m != nil {
+		t.Errorf("matched %+v", m)
+	}
+	if m := idx.Match("a gnoll has been mesmerized."); m == nil || m.SpellName != "Mesmerization" {
+		t.Errorf("real landing lost: %+v", m)
+	}
+}
