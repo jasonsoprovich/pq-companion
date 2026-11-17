@@ -1384,9 +1384,15 @@ func TestSameLandOrphan(t *testing.T) {
 	// for one of those siblings fires on the same self-cast line and must
 	// collapse into the pipeline's correctly-resolved Savage Spirit row
 	// instead of surviving as a duplicate buff.
-	orphanBuff := &ActiveTimer{TargetName: "", Category: CategoryBuff, StartsAt: land}
+	orphanBuff := &ActiveTimer{TargetName: "", Category: CategoryBuff, SpellID: 1234, StartsAt: land}
 	if !sameLandOrphan(orphanBuff, "Kilowatt", land, CategoryBuff) {
 		t.Error("orphan buff on the same land line should merge into the pipeline's resolved buff")
+	}
+	// A trigger's reuse timer starts on the same line as its disc's land
+	// ("Duelist Discipline CD", spell id 0); it isn't a twin.
+	cooldown := &ActiveTimer{SpellName: "Duelist Discipline CD", Category: CategoryBuff, StartsAt: land}
+	if sameLandOrphan(cooldown, "Stonae", land, CategoryBuff) {
+		t.Error("a spell-less cooldown timer must not be absorbed as a buff twin")
 	}
 	// Detrimental orphan must not be absorbed into a resolved buff — category
 	// families must match in both directions.

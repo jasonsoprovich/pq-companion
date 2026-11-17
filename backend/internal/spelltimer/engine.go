@@ -511,7 +511,12 @@ func sameLandOrphan(existing *ActiveTimer, target string, landedAt time.Time, ca
 	} else if category == CategoryBuff {
 		sameKind = existing.Category == CategoryBuff
 	}
+	// A buff twin is tied to a spell. A trigger's reuse timer ("Duelist
+	// Discipline CD", a buff started with spell id 0 on the same line) is its
+	// own row and must survive the land. Detrimental twins can be spell-less
+	// (the Slows pack's generic Vas Ren trigger).
 	return sameKind &&
+		(existing.SpellID > 0 || isDetrimentalCategory(existing.Category)) &&
 		(existing.TargetName == "" || normalizeNPCName(existing.TargetName) == normalizeNPCName(target)) &&
 		!existing.IsCharm &&
 		existing.StartsAt.Equal(landedAt)
@@ -2207,6 +2212,15 @@ func (e *Engine) onSpellLandedSeq(landedAt time.Time, seq uint64, data logparser
 		}
 		if existing.DisplayThresholdSecs > 0 {
 			timer.DisplayThresholdSecs = existing.DisplayThresholdSecs
+		}
+		// A trigger twin of this very spell whose duration isn't one the
+		// spell's formula gives at any level was set on purpose by the
+		// pack or user, e.g. a discipline, where spells_new's duration is
+		// wrong (Duelist lasts 12s, the formula says 30s). Keep it.
+		if sameSpell && existing.SpellID == spell.ID && existing.DurationSeconds > 0 &&
+			existing.StartsAt.Equal(landedAt) && !isFormulaDuration(spell, existing.DurationSeconds) {
+			timer.DurationSeconds = existing.DurationSeconds
+			timer.ExpiresAt = existing.ExpiresAt
 		}
 		if len(existing.TimerAlerts) > 0 {
 			timer.TimerAlerts = existing.TimerAlerts
