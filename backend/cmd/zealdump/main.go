@@ -16,6 +16,7 @@
 //	go run ./cmd/zealdump -considers # one line per consider event
 //	go run ./cmd/zealdump -roster    # raid/group members' appearance, on change
 //	go run ./cmd/zealdump -spells    # one line per spell action (/pipespells)
+//	go run ./cmd/zealdump -report    # record everything; Ctrl+C writes a summary file
 //	go run ./cmd/zealdump -file cap  # replay a capture instead of dialing
 //
 // To keep a capture for later: go run ./cmd/zealdump -raw > capture.txt
@@ -76,6 +77,8 @@ func main() {
 	considers := flag.Bool("considers", false, "print one line per consider event (proposed Zeal PR; type 7 alone, 9 on the combined build) instead of target changes")
 	roster := flag.Bool("roster", false, "print each raid/group member's appearance when it first appears or changes (proposed Zeal PR), and who is missing it")
 	spells := flag.Bool("spells", false, "print one line per spell action (proposed Zeal PR; type 9 alone, 10 on the combined build), with a per-second rate")
+	report := flag.Bool("report", false, "record everything while you play; on Ctrl+C write a test summary with the events behind it to a text file")
+	out := flag.String("out", "", "file for -report (default zealdump-report-<date>-<time>.txt in the current folder)")
 	pipeName := flag.String("pipe", "", "pipe to read (default: first one discovered)")
 	fromFile := flag.String("file", "", "read a saved capture instead of dialing a pipe")
 	flag.Parse()
@@ -107,6 +110,10 @@ func main() {
 	}
 	if *considers {
 		runConsiders(ctx, conn)
+		return
+	}
+	if *report {
+		runReport(ctx, conn, *out)
 		return
 	}
 	if *roster {

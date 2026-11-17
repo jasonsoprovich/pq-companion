@@ -559,6 +559,12 @@ export function DetrimAlertSettings({ config, setConfig }: TimerSettingsProps): 
         insert the effect's name. Can be muted from the bell icon in the
         Detrimental overlay window's header without changing this setting.
       </p>
+      <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+        Same-named mobs: with a Zeal build that sends spell actions, run{' '}
+        <code className="font-mono">/pipespells detrimental</code> once in game
+        and each timer is tied to the exact mob it landed on, so it clears when
+        that mob dies rather than when a namesake does.
+      </p>
       <TimerAlertPrefEditor
         value={withTimerAlertDefaults(config.preferences?.detrim_timer_alert, 'detrim')}
         onChange={(next: TimerAlertPref) =>

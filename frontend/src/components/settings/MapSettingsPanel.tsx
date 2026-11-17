@@ -244,7 +244,9 @@ export default function MapSettingsPanel(): React.ReactElement {
             Draws a faint arrow for each groupmate who is in your zone, from
             Zeal's live group positions. Only members Zeal can see in-zone
             appear — anyone in another zone is left off. Needs Zeal running in
-            game.
+            game. In 3D they're drawn as character models; with a Zeal build
+            that sends appearance and <code>/pipeverbose</code> on, groupmates
+            and raiders show their real race, gender and gear.
           </p>
         </div>
         <div
