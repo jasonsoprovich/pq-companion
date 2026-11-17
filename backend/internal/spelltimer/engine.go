@@ -1495,6 +1495,9 @@ func (e *Engine) startExternal(name string, category string, durationSecs, displ
 	default:
 		cat = CategoryDebuff
 	}
+	if isDetrimentalCategory(cat) && isMountName(targetName) {
+		return false // see onSpellLandedSeq
+	}
 
 	var resolvedIcon int
 	var isCharm bool
@@ -1997,6 +2000,13 @@ func (e *Engine) onSpellLandedSeq(landedAt time.Time, seq uint64, data logparser
 	}
 
 	cat := categorize(spell)
+
+	// A player's mount can glitch loose from its rider and become a
+	// targetable NPC; debuffs landing on it aren't worth a timer.
+	if cat != CategoryBuff && isMountName(target) {
+		slog.Debug("timer-debug: detrimental on a mount skipped", "spell", spellName, "target", target)
+		return
+	}
 
 	// Tracking scope filter, split by category:
 	//
@@ -3292,6 +3302,13 @@ func (e *Engine) ReconcileTargetEffects(target string, targetID int, keep func(s
 // isDetrimentalCategory reports whether a timer category represents a
 // hostile effect cast on an enemy. Mirrors the categories the cast index
 // routes through the detrimental scope path.
+// isMountName reports whether name is a player's mount ("Blesko`s Mount",
+// or the underscored "Blesko`s_Mount" spawn name).
+func isMountName(name string) bool {
+	n := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(name), "_", " "))
+	return strings.HasSuffix(n, "`s mount") || strings.HasSuffix(n, "'s mount")
+}
+
 func isDetrimentalCategory(c Category) bool {
 	switch c {
 	case CategoryDebuff, CategoryDot, CategoryMez, CategoryStun:
