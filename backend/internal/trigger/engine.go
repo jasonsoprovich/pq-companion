@@ -141,8 +141,12 @@ type Engine struct {
 	// HandlePipeReset) so a fresh session starts clean.
 	pipeMu         sync.Mutex
 	prevTargetName string
-	prevTargetHP   int // 0 means "no prior value seen"; we treat that as 100% for threshold purposes
-	prevBuffSet    map[string]bool
+	// hpBelowFired is, per target_hp_below trigger ID, the targets it has
+	// warned about in their current dip below its threshold. A target leaves
+	// the set once seen above the threshold again, so each dip warns once,
+	// however often the target is re-selected or the pipe ticks.
+	hpBelowFired map[string]map[string]bool
+	prevBuffSet  map[string]bool
 
 	histMu  sync.Mutex
 	history []TriggerFired // ring buffer, newest appended last
@@ -483,13 +487,7 @@ func (e *Engine) clearContextTimers() {
 func (e *Engine) HandlePipeTarget(name string, hp int, character string, ts time.Time) {
 	e.pipeMu.Lock()
 	prevName := e.prevTargetName
-	prevHP := e.prevTargetHP
 	e.prevTargetName = name
-	if hp >= 0 {
-		e.prevTargetHP = hp
-	} else {
-		e.prevTargetHP = 0
-	}
 	e.pipeMu.Unlock()
 
 	e.mu.RLock()
@@ -517,17 +515,17 @@ func (e *Engine) HandlePipeTarget(name string, hp int, character string, ts time
 				e.firePipe(t, fmt.Sprintf("target: %s", name), ts)
 			}
 		case PipeKindTargetHPBelow:
-			if hp < 0 {
+			// 0% is a dead mob still targeted: nothing left to warn about.
+			if hp <= 0 || name == "" {
 				continue
 			}
-			// Edge: prev > threshold, now <= threshold. prev==0 with no prior
-			// read counts as "100%" so the first reading below threshold
-			// after selecting a low-HP target fires once.
-			prev := prevHP
-			if prev == 0 {
-				prev = 101
+			if hp > cond.HPThreshold {
+				e.setHPBelowFired(t.ID, name, false)
+				continue
 			}
-			if prev <= cond.HPThreshold || hp > cond.HPThreshold {
+			// Below: warn once per dip, including the first reading after
+			// selecting an already-low target.
+			if e.hpBelowFiredFor(t.ID, name) {
 				continue
 			}
 			if cond.TargetName != "" && !strings.EqualFold(cond.TargetName, name) {
@@ -541,9 +539,34 @@ func (e *Engine) HandlePipeTarget(name string, hp int, character string, ts time
 					continue
 				}
 			}
+			e.setHPBelowFired(t.ID, name, true)
 			e.firePipe(t, fmt.Sprintf("target hp %d%%", hp), ts)
 		}
 	}
+}
+
+func (e *Engine) hpBelowFiredFor(triggerID, target string) bool {
+	e.pipeMu.Lock()
+	defer e.pipeMu.Unlock()
+	return e.hpBelowFired[triggerID][target]
+}
+
+func (e *Engine) setHPBelowFired(triggerID, target string, fired bool) {
+	e.pipeMu.Lock()
+	defer e.pipeMu.Unlock()
+	set := e.hpBelowFired[triggerID]
+	if !fired {
+		delete(set, target)
+		return
+	}
+	if e.hpBelowFired == nil {
+		e.hpBelowFired = map[string]map[string]bool{}
+	}
+	if set == nil || len(set) >= 256 { // bounded over a long raid night
+		set = map[string]bool{}
+		e.hpBelowFired[triggerID] = set
+	}
+	set[target] = true
 }
 
 // lookupTargetAbilities returns the current target's special ability codes,
@@ -685,7 +708,7 @@ func (e *Engine) HandleStrip(kind, spell, target string, ts time.Time) {
 func (e *Engine) HandlePipeReset() {
 	e.pipeMu.Lock()
 	e.prevTargetName = ""
-	e.prevTargetHP = 0
+	e.hpBelowFired = nil
 	e.prevBuffSet = nil
 	e.pipeMu.Unlock()
 }

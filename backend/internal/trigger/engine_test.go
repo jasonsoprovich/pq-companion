@@ -713,6 +713,39 @@ func TestPipe_TargetHPBelowFiresOnceOnTransition(t *testing.T) {
 	}
 }
 
+// The Enrage Soon spam from a raid night: a dead mob stays targeted at 0%,
+// and 0 used to read as "no prior value", so every pipe tick re-fired.
+// Re-selecting the same low mob (A, B, A) mustn't re-warn either; another
+// mob in its own dip still does.
+func TestPipe_TargetHPBelowNoRefireOnDeathOrRetarget(t *testing.T) {
+	s, e := openTestEngine(t)
+	insertPipeTrigger(t, s, e, "enrage", PipeCondition{
+		Kind: PipeKindTargetHPBelow, HPThreshold: 12,
+	})
+	now := time.Now()
+	step := func(name string, hp int) {
+		now = now.Add(100 * time.Millisecond)
+		e.HandlePipeTarget(name, hp, "", now)
+	}
+	step("Aten Ha Ra", 40)
+	step("Aten Ha Ra", 12)
+	for i := 0; i < 10; i++ {
+		step("Aten Ha Ra", 0)
+	}
+	if got := len(e.GetHistory()); got != 1 {
+		t.Fatalf("fires through death = %d, want 1", got)
+	}
+	step("a goranga scout", 80)
+	step("Aten Ha Ra", 8)
+	if got := len(e.GetHistory()); got != 1 {
+		t.Errorf("re-selecting the same low mob re-fired: %d", got)
+	}
+	step("Va Xi Aten Ha Ra", 11)
+	if got := len(e.GetHistory()); got != 2 {
+		t.Errorf("a second mob's dip should fire: %d", got)
+	}
+}
+
 func TestPipe_TargetHPBelowFilters(t *testing.T) {
 	s, e := openTestEngine(t)
 	insertPipeTrigger(t, s, e, "named", PipeCondition{
