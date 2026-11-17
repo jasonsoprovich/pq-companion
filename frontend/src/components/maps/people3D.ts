@@ -2,7 +2,7 @@
 // who it is (RaiderMarker.model) gets its race's model from the user's own
 // client, at its race's height, standing on its arrow and facing its
 // heading. Models load in the background; the arrow shows until they do,
-// and stays under them so people are found from far off.
+// then gives way to a ring at the model's feet (see footprint).
 
 import * as THREE from 'three'
 import { buildCharacter, raceHeight } from '../../lib/characterModels'
@@ -17,6 +17,8 @@ interface Person {
   char: DressedCharacter | null
   // scale is the model's draw scale for its race's height.
   scale: number
+  // feet is the height the model stands at, set when it's placed.
+  feet: number
 }
 
 export class PeopleLayer {
@@ -43,11 +45,11 @@ export class PeopleLayer {
         let p = this.people.get(key)
         if (!p || p.spec !== spec) {
           if (p) this.drop(key, p)
-          p = { spec, char: null, scale: 1 }
+          p = { spec, char: null, scale: 1, feet: m.z }
           this.people.set(key, p)
           this.load(key, p, m, mode === 'luclin')
         }
-        if (p.char) this.place(p.char.object, m, p.scale)
+        if (p.char) this.place(p, m)
       }
     }
     for (const [key, p] of this.people) {
@@ -70,7 +72,7 @@ export class PeopleLayer {
         p.char = char
         const h = model.height ?? raceHeight(model.race)
         p.scale = model.scale ?? (h && char.base.height > 0 ? h / char.base.height : 1)
-        this.place(char.object, m, p.scale)
+        this.place(p, m)
         this.group.add(char.object)
         this.render()
       })
@@ -79,13 +81,26 @@ export class PeopleLayer {
       })
   }
 
-  // place stands o on the floor under m, facing its heading as the arrow
-  // does (models face +y).
-  private place(o: THREE.Object3D, m: RaiderMarker, scale: number): void {
+  // place stands p's model on the floor under m, facing its heading as the
+  // arrow does (models face +y).
+  private place(p: Person, m: RaiderMarker): void {
+    const o = p.char!.object
     const z = this.ground?.(m.x, -m.y, m.z) ?? m.z
+    p.feet = z
     o.position.set(m.x, -m.y, z)
     o.rotation.z = ((m.heading ?? 0) / 512) * Math.PI * 2
-    o.scale.setScalar(scale)
+    o.scale.setScalar(p.scale)
+  }
+
+  /**
+   * footprint is where the model for a marker label stands and how tall it
+   * is drawn, once it has loaded; null while there is no model, so the
+   * marker keeps its arrow.
+   */
+  footprint(label: string): { z: number; height: number } | null {
+    const p = this.people.get(label)
+    if (!p?.char) return null
+    return { z: p.feet, height: p.char.base.height * p.scale }
   }
 
   private drop(key: string, p: Person): void {

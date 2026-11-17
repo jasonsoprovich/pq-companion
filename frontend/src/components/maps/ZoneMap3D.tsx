@@ -302,7 +302,13 @@ export default function ZoneMap3D({
     const markerGroup = new THREE.Group()
     markerGroup.renderOrder = 10
     sc.add(markerGroup)
-    const people = new PeopleLayer(() => scene.current?.render())
+    // A model loading turns its marker's arrow into a ring at its feet.
+    const people = new PeopleLayer(() => {
+      const cur = scene.current
+      if (!cur) return
+      updateMarkers(cur, markersRef.current)
+      cur.render()
+    })
     sc.add(people.group)
     const npcs = new PeopleLayer(() => scene.current?.render())
     sc.add(npcs.group)
@@ -556,8 +562,8 @@ export default function ZoneMap3D({
         }
         resetView(s)
         setStatus('ready')
-        updateMarkers(s, markersRef.current)
         s.people.update(markersRef.current, prefsRef.current.people)
+        updateMarkers(s, markersRef.current)
         updatePins(s, pinsRef.current ?? [])
         updateRings(s, ringsRef.current ?? [], prefsRef.current.dashFaint)
         updateDots(s, showDotsRef.current ? dotsRef.current ?? [] : [])
@@ -584,8 +590,8 @@ export default function ZoneMap3D({
   useEffect(() => {
     const s = scene.current
     if (!s || status !== 'ready') return
-    updateMarkers(s, markers)
     s.people.update(markers, prefsRef.current.people)
+    updateMarkers(s, markers)
     updateTargetLine(s, target ?? null)
     const f = markers.find((r) => r.focus)
     if (f) {
@@ -614,6 +620,7 @@ export default function ZoneMap3D({
     const s = scene.current
     if (!s || status !== 'ready') return
     s.people.update(markersRef.current, prefs.people)
+    updateMarkers(s, markersRef.current)
     s.render()
   }, [prefs.people, status])
 
@@ -1468,6 +1475,24 @@ function matFor(color: string, opacity = 1): THREE.MeshBasicMaterial {
   return m
 }
 
+// footMat is matFor for a ring at a model's feet: depth-tested, so the
+// model stands in it rather than under it, and pulled towards the camera
+// so it doesn't flicker into the floor it lies on.
+const footMats = new Map<string, THREE.MeshBasicMaterial>()
+
+function footMat(color: string, opacity = 1): THREE.MeshBasicMaterial {
+  const key = `${color}|${opacity}`
+  let m = footMats.get(key)
+  if (!m) {
+    m = new THREE.MeshBasicMaterial({
+      color, opacity, transparent: opacity < 1, side: THREE.DoubleSide,
+      polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
+    })
+    footMats.set(key, m)
+  }
+  return m
+}
+
 // The 2D map's raider arrow, pointing north, and a larger copy behind it
 // as its dark casing: wide and solid enough to stand out on the light
 // floors of the Height and Plain styles as well as on textures.
@@ -1484,7 +1509,28 @@ function cross(arm: number): THREE.BufferGeometry {
   return mergeGeometries([bar(Math.PI / 4), bar(-Math.PI / 4)])
 }
 
-let shapes: Record<'chevron' | 'chevronCase' | 'cross' | 'crossCase' | 'ring' | 'ringCase' | 'pin', THREE.BufferGeometry> | null = null
+// FOOT_TICK is the small heading arrow just outside the footprint ring
+// (radius 10), pointing north like the chevron.
+const FOOT_TICK: [number, number][] = [[0, 15], [3, 11.5], [-3, 11.5]]
+
+// footprint is the ring drawn at a character model's feet in place of the
+// arrow, with its heading tick; grow thickens it into its casing.
+function footprint(grow: number): THREE.BufferGeometry {
+  const ring = new THREE.RingGeometry(9.25 - grow, 10.75 + grow, 40)
+  const tick = new THREE.ShapeGeometry(new THREE.Shape(FOOT_TICK.map(([x, y]) => {
+    // Grow the tick about its middle, so the casing rims it evenly.
+    const cy = 12.7
+    const k = 1 + grow / 2.5
+    return new THREE.Vector2(x * k, cy + (y - cy) * k)
+  })))
+  ring.deleteAttribute('uv')
+  tick.deleteAttribute('uv')
+  ring.deleteAttribute('normal')
+  tick.deleteAttribute('normal')
+  return mergeGeometries([ring, tick])
+}
+
+let shapes: Record<'chevron' | 'chevronCase' | 'cross' | 'crossCase' | 'ring' | 'ringCase' | 'pin' | 'foot' | 'footCase', THREE.BufferGeometry> | null = null
 
 function markerShapes(): NonNullable<typeof shapes> {
   if (!shapes) {
@@ -1496,6 +1542,8 @@ function markerShapes(): NonNullable<typeof shapes> {
       ring: new THREE.RingGeometry(9.25, 10.75, 32),
       ringCase: new THREE.RingGeometry(8.25, 11.75, 32),
       pin: new THREE.OctahedronGeometry(1),
+      foot: footprint(0),
+      footCase: footprint(1),
     }
   }
   return shapes
@@ -1518,26 +1566,42 @@ function updateMarkers(s: Scene3D, markers: RaiderMarker[]): void {
         mesh.renderOrder = [10, 11, 12, 13][k]
         m.add(mesh)
       }
-      m.userData = { base: new THREE.Vector3(), px: 1, lift: 0 }
+      m.userData = { base: new THREE.Vector3(), px: 1, lift: 0, min: 0 }
       g.add(m)
     }
     const [casing, shape, ringCase, ring] = m.children as THREE.Mesh[]
-    casing.geometry = r.dead ? sh.crossCase : sh.chevronCase
-    casing.material = matFor('#000000', r.dead ? 0.7 : 1)
-    shape.geometry = r.dead ? sh.cross : sh.chevron
-    shape.material = matFor(r.color, r.dead ? 0.7 : 1)
+    // Someone drawn as their model gets a ring at the feet, with a tick
+    // for the heading, in place of the arrow that would sit in the model.
+    const foot = r.dead ? null : s.people.footprint(r.label)
+    if (foot) {
+      casing.geometry = sh.footCase
+      casing.material = footMat('#000000', 0.85)
+      shape.geometry = sh.foot
+      shape.material = footMat(r.color)
+    } else {
+      casing.geometry = r.dead ? sh.crossCase : sh.chevronCase
+      casing.material = matFor('#000000', r.dead ? 0.7 : 1)
+      shape.geometry = r.dead ? sh.cross : sh.chevron
+      shape.material = matFor(r.color, r.dead ? 0.7 : 1)
+    }
     ringCase.geometry = sh.ringCase
-    ringCase.material = matFor('#000000', 0.7)
+    ringCase.material = foot ? footMat('#000000', 0.7) : matFor('#000000', 0.7)
     ring.geometry = sh.ring
-    ring.material = matFor(HIGHLIGHT)
+    ring.material = foot ? footMat(HIGHLIGHT) : matFor(HIGHLIGHT)
+    // The focus ring sits outside the footprint and its tick.
+    ringCase.scale.setScalar(foot ? 1.6 : 1)
+    ring.scale.setScalar(foot ? 1.6 : 1)
     ringCase.visible = !!r.focus
     ring.visible = !!r.focus
     // Lying flat at the feet, pointing along the heading: EQ's heading
     // turns counter-clockwise from north, as rotation about +z does here.
     // The ring is a child too, so it turns with it, which a circle hides.
     m.rotation.z = r.dead ? 0 : ((r.heading ?? 0) / 512) * Math.PI * 2
-    ;(m.userData.base as THREE.Vector3).set(r.x, -r.y, r.z + 1)
-    m.userData.px = r.focus ? 1.3 : 1
+    ;(m.userData.base as THREE.Vector3).set(r.x, -r.y, foot ? foot.z + 0.2 : r.z + 1)
+    m.userData.px = foot ? 0.6 : r.focus ? 1.3 : 1
+    // A footprint is never smaller than the model's stance: its ring
+    // (radius 10 at scale 1) about a third of the model's height across.
+    m.userData.min = foot ? (foot.height * 0.33) / 10 : 0
   })
 }
 
@@ -1671,9 +1735,9 @@ function scaleToScreen(s: Scene3D, h: number): void {
   const k = worldPerPx(s, h)
   const cam = s.camera.position
   for (const o of [...s.markers.children, ...s.pins.children]) {
-    const { base, px, lift } = o.userData as { base: THREE.Vector3; px: number; lift: number }
+    const { base, px, lift, min } = o.userData as { base: THREE.Vector3; px: number; lift: number; min?: number }
     const per = cam.distanceTo(base) * k
-    o.scale.setScalar(per * px)
+    o.scale.setScalar(Math.max(per * px, min ?? 0))
     o.position.set(base.x, base.y, base.z + per * lift)
   }
 }
