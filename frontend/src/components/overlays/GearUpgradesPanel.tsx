@@ -121,15 +121,19 @@ export function GearUpgradesBody({
   if (g.error) return message(`Couldn't check upgrades: ${g.error}`)
   if (!g.data) return message('Checking…')
   if (g.rows.length === 0) return message('No upgrades drop in this zone.', true)
-  if (!g.data.has_current_gear) {
-    return (
-      <>
+  return (
+    <>
+      {g.targetName && (
+        <p style={{ margin: 0, padding: '5px 10px', fontSize: 10, color: '#4ade80', borderBottom: '1px solid rgba(127,127,127,0.15)' }}>
+          Upgrades from your target, {g.targetName}. Clear the target to see the whole zone.
+        </p>
+      )}
+      {!g.data.has_current_gear && (
         <p style={{ margin: 0, padding: '5px 10px', fontSize: 10, color: '#f59e0b' }}>
           No Zeal export found, so these are ranked by stats alone, not against your gear.
         </p>
-        {children}
-      </>
-    )
-  }
-  return <>{children}</>
+      )}
+      {children}
+    </>
+  )
 }

@@ -4,7 +4,7 @@
  * slot, with the NPCs here that drop them. Renders in a dedicated frameless
  * Electron window.
  */
-import React from 'react'
+import React, { useEffect } from 'react'
 import { ArrowUpCircle, RefreshCw } from 'lucide-react'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { CollapseToggle, useOverlayCollapse } from '../hooks/useOverlayCollapse'
@@ -38,10 +38,21 @@ export default function GearUpgradesWindowPage(): React.ReactElement {
   const chromeFade = useOverlayChromeFade('gearUpgrades', mode === 'display-only')
   // A collapsed window is only its title bar, so keep that visible through
   // the inactive fade.
-  const { collapsed, toggleCollapsed, headerRef } = useOverlayCollapse(mode !== 'display-only')
+  const { collapsed, toggleCollapsed, setCollapsed, headerRef } =
+    useOverlayCollapse(mode !== 'display-only')
   const chrome = chromeFade || collapsed
   const onDragMouseDown = useWindowDrag()
   const g = useZoneGearUpgrades()
+
+  // Fold to the title bar while the zone has no upgrades, like the Item
+  // overlay with no item; open back up when a zone has some, even if it was
+  // folded by hand. Waits for a result so a zone change doesn't flicker it.
+  const settled = !!g.data || g.noCharacter || !!g.error
+  const hasUpgrades = g.zoneRows.length > 0
+  useEffect(() => {
+    if (!settled || mode === 'display-only') return
+    setCollapsed(!hasUpgrades)
+  }, [settled, hasUpgrades, g.zone, mode, setCollapsed])
 
   return (
     <div
@@ -91,7 +102,7 @@ export default function GearUpgradesWindowPage(): React.ReactElement {
           )}
         </div>
         <div className="no-drag" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <CollapseToggle collapsed={collapsed} onToggle={toggleCollapsed} summary={gearUpgradesSummary(g.rows)} />
+          <CollapseToggle collapsed={collapsed} onToggle={toggleCollapsed} summary={hasUpgrades ? gearUpgradesSummary(g.rows) : 'no upgrades here'} />
           <button onClick={g.reload} style={{ ...headerButton, display: 'flex', alignItems: 'center', padding: '2px 4px' }} title="Check again">
             <RefreshCw size={10} />
           </button>

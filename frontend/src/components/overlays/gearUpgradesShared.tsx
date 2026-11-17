@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import ItemHoverCard from '../ItemHoverCard'
 import { useWebSocket, type WsMessage } from '../../hooks/useWebSocket'
 import { useLiveZone } from '../../hooks/useLiveZone'
@@ -7,11 +7,14 @@ import { WSEvent } from '../../lib/wsEvents'
 import {
   getCharacterZoneUpgrades,
   getRespawnState,
+  getOverlayNPCTarget,
   listCharacters,
   type ZoneUpgradeCandidate,
   type ZoneUpgradesResponse,
 } from '../../services/api'
 import type { RespawnState } from '../../types/respawn'
+import type { TargetState } from '../../types/overlay'
+import { normalizeTargetName } from '../../lib/targetName'
 
 // The Gear Upgrades overlay: the Gear Upgrade Finder's "By zone" view cut
 // down to a glance. The active character's best upgrades that drop in the
@@ -35,7 +38,13 @@ export interface ZoneGearUpgrades {
   // No character set up with a class and level for the finder.
   noCharacter: boolean
   data: ZoneUpgradesResponse | null
+  // The rows to show: only the current target's upgrades while an NPC that
+  // drops any is targeted, else the zone's best per slot.
   rows: GearUpgradeSlotRow[]
+  // The zone's rows, whatever is targeted.
+  zoneRows: GearUpgradeSlotRow[]
+  // The targeted NPC's name while rows is narrowed to its drops, else null.
+  targetName: string | null
   loading: boolean
   error: string | null
   reload: () => void
@@ -59,9 +68,64 @@ function useCurrentZone(): string | null {
   return liveZone ?? logZone
 }
 
+// The targeted NPC: its npc_types ids (every variant when the name is
+// ambiguous) and its name, for matching upgrade sources. null with no NPC
+// targeted.
+interface TargetNPC {
+  ids: Set<number>
+  name: string
+  key: string
+}
+
+function targetFromState(s: TargetState | null | undefined): TargetNPC | null {
+  if (!s?.has_target || !s.target_name) return null
+  // Players and player corpses have no loot.
+  if (s.target_type === 0 || s.target_type === 3) return null
+  const ids = new Set<number>()
+  if (s.npc_data?.id) ids.add(s.npc_data.id)
+  for (const v of s.variants ?? []) if (v.npc?.id) ids.add(v.npc.id)
+  const name = s.target_name.replace(/'s corpse$/i, '').replace(/_/g, ' ')
+  return { ids, name, key: normalizeTargetName(name) }
+}
+
+function useTargetNPC(): TargetNPC | null {
+  const [target, setTarget] = useState<TargetNPC | null>(null)
+  const apply = useCallback((s: TargetState | null | undefined) => {
+    const next = targetFromState(s)
+    // The NPC feed broadcasts on every HP tick; keep the same object unless
+    // the target changed.
+    setTarget((prev) => {
+      if (!prev || !next) return prev === next ? prev : next
+      const same = prev.key === next.key && prev.ids.size === next.ids.size &&
+        [...next.ids].every((id) => prev.ids.has(id))
+      return same ? prev : next
+    })
+  }, [])
+  useEffect(() => {
+    getOverlayNPCTarget().then(apply).catch(() => {})
+  }, [apply])
+  useWebSocket(useCallback((msg: WsMessage) => {
+    if (msg.type === WSEvent.OverlayNPCTarget) apply(msg.data as TargetState | null)
+  }, [apply]))
+  return target
+}
+
+// dropsFrom reports whether the targeted NPC is one of an upgrade's sources,
+// by npc id, or by name for a source without one.
+function dropsFrom(c: ZoneUpgradeCandidate, t: TargetNPC): boolean {
+  return c.sources.some((s) =>
+    s.npc_id > 0 && t.ids.size > 0
+      ? t.ids.has(s.npc_id)
+      : normalizeTargetName(s.npc_name.replace(/_/g, ' ')) === t.key,
+  )
+}
+
 // slotRows folds the paired slots (Ear 1 and 2, Wrist, Finger) into one row,
 // since they offer the same items, and drops ammo and empty slots.
-export function slotRows(data: ZoneUpgradesResponse | null): GearUpgradeSlotRow[] {
+export function slotRows(
+  data: ZoneUpgradesResponse | null,
+  keep?: (c: ZoneUpgradeCandidate) => boolean,
+): GearUpgradeSlotRow[] {
   if (!data) return []
   const rows: GearUpgradeSlotRow[] = []
   const byLabel = new Map<string, GearUpgradeSlotRow>()
@@ -75,10 +139,14 @@ export function slotRows(data: ZoneUpgradesResponse | null): GearUpgradeSlotRow[
       rows.push(row)
     }
     for (const c of s.candidates) {
+      if (keep && !keep(c)) continue
       const i = row.candidates.findIndex((x) => x.id === c.id)
       if (i < 0) row.candidates.push(c)
       else if (c.score > row.candidates[i].score) row.candidates[i] = c
     }
+  }
+  for (let i = rows.length - 1; i >= 0; i--) {
+    if (rows[i].candidates.length === 0) rows.splice(i, 1)
   }
   for (const row of rows) {
     row.candidates.sort((a, b) => b.score - a.score)
@@ -136,13 +204,22 @@ export function useZoneGearUpgrades(): ZoneGearUpgrades {
   }, [zone, charId, tick])
 
   const reload = useCallback(() => setTick((t) => t + 1), [])
+  const target = useTargetNPC()
+  const zoneRows = useMemo(() => slotRows(data), [data])
+  const targetRows = useMemo(
+    () => (target ? slotRows(data, (c) => dropsFrom(c, target)) : []),
+    [data, target],
+  )
+  const narrowed = targetRows.length > 0
   return {
     zone,
     zoneName: data?.zone_name || zone || '',
     character,
     noCharacter,
     data,
-    rows: slotRows(data),
+    rows: narrowed ? targetRows : zoneRows,
+    zoneRows,
+    targetName: narrowed && target ? target.name : null,
     loading,
     error,
     reload,
@@ -218,18 +295,23 @@ export function GearUpgradeList({
           {row.candidates.map((c) => (
             <div key={c.id} style={{ display: 'flex', flexDirection: 'column', padding: '2px 0' }}>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0 }}>
-                <ItemHoverCard itemId={c.id} clickHint="Click to open in PQ Companion">
-                  <button
-                    type="button"
-                    onClick={() => onItem(c.id)}
-                    style={{
-                      ...linkButton, flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600,
-                      color: t.item, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {c.name}
-                  </button>
-                </ItemHoverCard>
+                {/* The hover card fires on the name text only: the button
+                    shrinks to fit, the empty row space around it is inert. */}
+                <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
+                  <ItemHoverCard itemId={c.id} clickHint="Click to open in PQ Companion">
+                    <button
+                      type="button"
+                      onClick={() => onItem(c.id)}
+                      style={{
+                        ...linkButton, display: 'inline-block', maxWidth: '100%', verticalAlign: 'bottom',
+                        fontSize: 12, fontWeight: 600, color: t.item,
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {c.name}
+                    </button>
+                  </ItemHoverCard>
+                </div>
                 <span
                   style={{ fontSize: 10, fontWeight: 700, color: t.score, flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}
                   title="Upgrade score with your Gear Upgrade Finder weights"
