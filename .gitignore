@@ -9,6 +9,8 @@
 /docs/*
 # Personal Obsidian vault of follow-up notes; never committed.
 /docs/pq-companion/
+# In-app help + site help source (rendered by frontend/src/lib/help.ts).
+!/docs/help/
 !/docs/db-pipeline.md
 !/docs/enum-audit.md
 !/docs/database-test-plan.md
