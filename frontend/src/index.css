@@ -306,3 +306,13 @@ body {
   color: var(--color-primary);
   background: #fff;
 }
+
+/* Ctrl+K / Settings search: briefly highlight the setting we jumped to
+   (hooks/useFocusAnchor). */
+@keyframes pq-focus-pulse {
+  0%, 60% { box-shadow: 0 0 0 2px var(--color-primary); }
+  100% { box-shadow: 0 0 0 2px transparent; }
+}
+.pq-focus-pulse {
+  animation: pq-focus-pulse 1.8s ease-out;
+}

@@ -7,6 +7,7 @@ import UpdateNotification from './UpdateNotification'
 import BackfillProgressBar from './BackfillProgressBar'
 import ZealNotification from './ZealNotification'
 import ZealVersionWarning from './ZealVersionWarning'
+import { useFocusAnchor } from '../hooks/useFocusAnchor'
 import { HelpCircle } from 'lucide-react'
 
 // Lazy so the bundled help articles stay out of the startup chunk.
@@ -16,6 +17,7 @@ export default function Layout(): React.ReactElement {
   const [searchOpen, setSearchOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
   const nativeFrame = !!window.electron?.window.nativeFrame
+  useFocusAnchor()
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {

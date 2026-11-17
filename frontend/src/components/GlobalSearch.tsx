@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, Sword, Sparkles, Skull, Map, X } from 'lucide-react'
-import { globalSearch, type GlobalSearchResult } from '../services/api'
+import { Search, Sword, Sparkles, Skull, Map, X, Compass, Settings2, LifeBuoy, Settings, LayoutGrid } from 'lucide-react'
+import { getConfig, globalSearch, saveConfigChanges, type GlobalSearchResult } from '../services/api'
+import { NAV_SECTIONS } from '../lib/sidebarNav'
+import { searchSettings, type SettingEntry } from '../lib/settingsIndex'
 import type { Item } from '../types/item'
 import type { Spell } from '../types/spell'
 import type { NPC } from '../types/npc'
@@ -20,6 +22,49 @@ type ResultEntry =
   | { kind: 'spell'; spell: Spell }
   | { kind: 'npc'; npc: NPC }
   | { kind: 'zone'; zone: Zone }
+  | { kind: 'page'; page: PageEntry }
+  | { kind: 'setting'; entry: SettingEntry }
+  | { kind: 'help'; slug: string; title: string; snippet: string }
+
+interface PageEntry {
+  label: string
+  to: string
+  section: string
+  icon: React.ReactNode
+}
+
+// Every navigable page: the sidebar's sections plus the fixed Help and
+// Settings links.
+const PAGES: PageEntry[] = [
+  ...NAV_SECTIONS.flatMap((s) =>
+    s.items.map((i) => ({ label: i.label, to: i.to, section: s.label, icon: i.icon })),
+  ),
+  { label: 'Help', to: '/help', section: 'Help', icon: <LifeBuoy size={16} /> },
+  { label: 'Settings', to: '/settings', section: 'Settings', icon: <Settings size={16} /> },
+]
+
+function searchPages(query: string, limit = 5): PageEntry[] {
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean)
+  if (terms.length === 0) return []
+  return PAGES.map((p) => {
+    const label = p.label.toLowerCase()
+    const hay = `${label} ${p.section.toLowerCase()}`
+    if (!terms.every((t) => hay.includes(t))) return null
+    const score = terms.reduce((n, t) => n + (label.startsWith(t) ? 10 : label.includes(t) ? 5 : 1), 0)
+    return { p, score }
+  })
+    .filter((x): x is { p: PageEntry; score: number } => x !== null)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map((x) => x.p)
+}
+
+// startsWithQuery: does a local result's name start with what was typed?
+// Then pages/settings rank above game data ("lockouts", "audio").
+function startsWithQuery(name: string, query: string): boolean {
+  const q = query.trim().toLowerCase()
+  return q.length > 0 && name.toLowerCase().startsWith(q)
+}
 
 interface Section {
   label: string
@@ -51,9 +96,18 @@ function ResultRow({ entry, active, onHover, onClick }: ResultRowProps): React.R
     name = npcDisplayName(entry.npc)
     subtitle = `Level ${npcLevelLabel(entry.npc)} ${npcClassName(entry.npc.class)}`
     if (entry.npc.zones?.length) subtitle += ` · ${zoneListLabel(entry.npc.zones, 1)}`
-  } else {
+  } else if (entry.kind === 'zone') {
     name = entry.zone.long_name
     subtitle = entry.zone.short_name
+  } else if (entry.kind === 'page') {
+    name = entry.page.label
+    subtitle = `Page · ${entry.page.section}`
+  } else if (entry.kind === 'setting') {
+    name = entry.entry.label
+    subtitle = entry.entry.where
+  } else {
+    name = entry.title
+    subtitle = entry.snippet || 'Help article'
   }
 
   let leadingIcon: React.ReactNode = null
@@ -61,6 +115,16 @@ function ResultRow({ entry, active, onHover, onClick }: ResultRowProps): React.R
     leadingIcon = <ItemIcon id={entry.item.icon} name={entry.item.name} size={24} />
   } else if (entry.kind === 'spell') {
     leadingIcon = <SpellIcon id={entry.spell.new_icon} name={entry.spell.name} size={24} />
+  } else if (entry.kind === 'page') {
+    leadingIcon = <span style={{ color: 'var(--color-muted-foreground)' }}>{entry.page.icon}</span>
+  } else if (entry.kind === 'setting') {
+    leadingIcon = (
+      <span style={{ color: 'var(--color-muted-foreground)' }}>
+        {entry.entry.to.path === '/overlays' ? <LayoutGrid size={16} /> : <Settings2 size={16} />}
+      </span>
+    )
+  } else if (entry.kind === 'help') {
+    leadingIcon = <LifeBuoy size={16} style={{ color: 'var(--color-muted-foreground)' }} />
   }
 
   return (
@@ -89,6 +153,32 @@ function ResultRow({ entry, active, onHover, onClick }: ResultRowProps): React.R
   )
 }
 
+// markSearchUsed records the Getting Started "tried Ctrl+K" milestone the
+// first time search opens.
+let searchUsedMarked = false
+function markSearchUsed(): void {
+  if (searchUsedMarked) return
+  searchUsedMarked = true
+  getConfig()
+    .then((c) => {
+      const gs = c.preferences?.getting_started ?? {}
+      if (gs.used_search_at) return
+      return saveConfigChanges(
+        {
+          ...c,
+          preferences: {
+            ...c.preferences,
+            getting_started: { ...gs, used_search_at: new Date().toISOString() },
+          },
+        },
+        c,
+      )
+    })
+    .catch(() => {
+      searchUsedMarked = false
+    })
+}
+
 // ── Main component ─────────────────────────────────────────────────────────────
 
 interface GlobalSearchProps {
@@ -108,6 +198,8 @@ export default function GlobalSearch({ open, onClose }: GlobalSearchProps): Reac
   // repopulate after the query was cleared). Each run bumps it; only the latest
   // applies.
   const seqRef = useRef(0)
+  // Help articles load on first open so they stay out of the startup chunk.
+  const [helpMod, setHelpMod] = useState<typeof import('../lib/help') | null>(null)
 
   // Reset state when opened
   useEffect(() => {
@@ -116,8 +208,10 @@ export default function GlobalSearch({ open, onClose }: GlobalSearchProps): Reac
       setResults(null)
       setActiveIndex(0)
       setTimeout(() => inputRef.current?.focus(), 0)
+      if (!helpMod) void import('../lib/help').then(setHelpMod)
+      markSearchUsed()
     }
-  }, [open])
+  }, [open, helpMod])
 
   // Debounced search
   const runSearch = useCallback((q: string) => {
@@ -138,6 +232,9 @@ export default function GlobalSearch({ open, onClose }: GlobalSearchProps): Reac
       .finally(() => { if (seq === seqRef.current) setLoading(false) })
   }, [])
 
+  // Local results (pages, settings, help) change on every keystroke.
+  useEffect(() => setActiveIndex(0), [query])
+
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => runSearch(query), 300)
@@ -148,8 +245,47 @@ export default function GlobalSearch({ open, onClose }: GlobalSearchProps): Reac
 
   // Build flat list of entries across sections (for keyboard nav)
   const sections = useMemo<Section[]>(() => {
-    if (!results) return []
     const out: Section[] = []
+    const q = query.trim()
+    const pages = q ? searchPages(q) : []
+    const settings = q ? searchSettings(q, 5) : []
+    const help = q && helpMod ? helpMod.searchHelp(q, 4) : []
+    const local: Section[] = []
+    if (pages.length) {
+      local.push({
+        label: 'Pages',
+        icon: <Compass size={11} />,
+        entries: pages.map((page) => ({ kind: 'page' as const, page })),
+      })
+    }
+    if (settings.length) {
+      local.push({
+        label: 'Settings',
+        icon: <Settings2 size={11} />,
+        entries: settings.map((entry) => ({ kind: 'setting' as const, entry })),
+      })
+    }
+    const localFirst =
+      pages.some((p) => startsWithQuery(p.label, q)) ||
+      settings.some((e) => startsWithQuery(e.label, q))
+    if (localFirst) out.push(...local)
+    const helpSection: Section | null = help.length
+      ? {
+          label: 'Help',
+          icon: <LifeBuoy size={11} />,
+          entries: help.map((h) => ({
+            kind: 'help' as const,
+            slug: h.article.slug,
+            title: h.article.title,
+            snippet: h.snippet,
+          })),
+        }
+      : null
+    if (!results) {
+      if (!localFirst) out.push(...local)
+      if (helpSection) out.push(helpSection)
+      return out
+    }
     if (results.items?.length) {
       out.push({
         label: 'Items',
@@ -180,8 +316,10 @@ export default function GlobalSearch({ open, onClose }: GlobalSearchProps): Reac
         entries: results.zones.map((zone) => ({ kind: 'zone' as const, zone })),
       })
     }
+    if (!localFirst) out.push(...local)
+    if (helpSection) out.push(helpSection)
     return out
-  }, [results])
+  }, [results, query, helpMod])
 
   const flatEntries = useMemo<ResultEntry[]>(
     () => sections.flatMap((s) => s.entries),
@@ -197,8 +335,14 @@ export default function GlobalSearch({ open, onClose }: GlobalSearchProps): Reac
         navigate(`/spells?select=${entry.spell.id}`)
       } else if (entry.kind === 'npc') {
         navigate(`/npcs?select=${entry.npc.id}`)
-      } else {
+      } else if (entry.kind === 'zone') {
         navigate(`/zones?select=${entry.zone.id}`)
+      } else if (entry.kind === 'page') {
+        navigate(entry.page.to)
+      } else if (entry.kind === 'setting') {
+        navigate(entry.entry.to.path + (entry.entry.to.search ?? ''))
+      } else {
+        navigate(`/help/${entry.slug}`)
       }
     },
     [navigate, onClose],
@@ -258,7 +402,7 @@ export default function GlobalSearch({ open, onClose }: GlobalSearchProps): Reac
             type="text"
             className="flex-1 bg-transparent text-sm outline-none placeholder:text-(--color-muted)"
             style={{ color: 'var(--color-foreground)' }}
-            placeholder="Search items, spells, NPCs, zones…"
+            placeholder="Search items, spells, NPCs, zones, pages, settings, help…"
             title={WILDCARD_HINT}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -283,14 +427,13 @@ export default function GlobalSearch({ open, onClose }: GlobalSearchProps): Reac
             </p>
           )}
 
-          {!loading && query.trim() && !flatEntries.length && (
+          {!loading && query.trim() && !flatEntries.length && results !== null && (
             <p className="px-4 py-3 text-xs" style={{ color: 'var(--color-muted)' }}>
               No results for &ldquo;{query}&rdquo;
             </p>
           )}
 
-          {!loading &&
-            sections.map((section) => {
+          {sections.map((section) => {
               const sectionStart = globalIdx
               globalIdx += section.entries.length
               return (
@@ -327,7 +470,7 @@ export default function GlobalSearch({ open, onClose }: GlobalSearchProps): Reac
           {!query.trim() && (
             <div className="px-4 py-6 text-center">
               <p className="text-xs" style={{ color: 'var(--color-muted)' }}>
-                Type to search across items, spells, NPCs, and zones
+                Search game data, or jump to any page, setting or help article
               </p>
             </div>
           )}

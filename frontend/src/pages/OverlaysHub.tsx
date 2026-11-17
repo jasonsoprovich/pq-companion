@@ -97,7 +97,16 @@ export default function OverlaysHub(): React.ReactElement {
       setTab('library')
       setSelected(sel)
     }
-    setSearchParams({}, { replace: true })
+    // Drop only ?panel=; ?focus= (Ctrl+K) must survive until useFocusAnchor
+    // has scrolled to its row.
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete('panel')
+        return next
+      },
+      { replace: true },
+    )
   }, [panelParam, setTab, setSearchParams])
 
   const openGlobal = (): void => {

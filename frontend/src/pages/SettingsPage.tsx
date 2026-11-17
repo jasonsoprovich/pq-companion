@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Navigate, useLocation, useSearchParams } from 'react-router-dom'
-import { Settings, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, FileText, Code2, PanelLeft, Info, Globe, MessageCircle, Coffee, Heart, Eye, Gauge, Download, Headphones, Map as MapIcon, Keyboard as KeyboardIcon } from 'lucide-react'
+import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { Settings, Search, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, FileText, Code2, PanelLeft, Info, Globe, MessageCircle, Coffee, Heart, Eye, Gauge, Download, Headphones, Map as MapIcon, Keyboard as KeyboardIcon } from 'lucide-react'
 import BackfillPanel from '../components/settings/BackfillPanel'
 import SidebarNavSettings from '../components/settings/SidebarNavSettings'
 import EqLogStatusCard from '../components/settings/EqLogStatusCard'
@@ -9,6 +9,7 @@ import PiperTtsSettings from '../components/settings/PiperTtsSettings'
 import KokoroTtsSettings from '../components/settings/KokoroTtsSettings'
 import DiscordWebhookSettings from '../components/settings/DiscordWebhookSettings'
 import { getConfig, saveConfigChanges, getLogStatus, getLogFileInfo, cleanupLog, exportDebugLogs, getServerInfo, testPortAvailability, detectZeal, getZealPipeStatus, getQuarmClientStatus, getEqwStatus, getChangelog, type ServerInfo, type TestPortResult, type ChangelogEntry } from '../services/api'
+import { searchSettings } from '../lib/settingsIndex'
 import { renderChangelogBody } from '../components/WhatsNewModal'
 import type { Config, LogTrimSettings } from '../types/config'
 import { DEFAULT_LOG_TRIM } from '../types/config'
@@ -89,6 +90,9 @@ function TabBar({ tabs, active, onChange, alerts }: TabBarProps): React.ReactEle
   const grouped = new Set(TAB_GROUPS.flatMap((g) => g.ids))
   const { settingsTabDot } = useFeatureDots()
   const leftovers = tabs.filter((t) => !grouped.has(t.id))
+  const navigate = useNavigate()
+  const [query, setQuery] = useState('')
+  const hits = query.trim() ? searchSettings(query, 12) : null
 
   const renderButton = ({ id, label, icon }: TabBarProps['tabs'][number]): React.ReactElement => (
     <button
@@ -130,7 +134,50 @@ function TabBar({ tabs, active, onChange, alerts }: TabBarProps): React.ReactEle
           Settings
         </span>
       </div>
-      {TAB_GROUPS.map((group) => {
+      <div className="relative mb-2" data-tour="settings-search">
+        <Search
+          size={12}
+          className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2"
+          style={{ color: 'var(--color-muted)' }}
+        />
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search settings…"
+          className="w-full rounded py-1 pl-6 pr-1 text-xs outline-none"
+          style={{
+            backgroundColor: 'var(--color-surface-2)',
+            border: '1px solid var(--color-border)',
+            color: 'var(--color-foreground)',
+          }}
+        />
+      </div>
+      {hits && (
+        <div className="mb-1">
+          {hits.length === 0 ? (
+            <p className="px-2 py-1 text-xs" style={{ color: 'var(--color-muted)' }}>
+              No matching settings.
+            </p>
+          ) : (
+            hits.map((h) => (
+              <button
+                key={h.id}
+                onClick={() => {
+                  setQuery('')
+                  navigate(h.to.path + (h.to.search ?? ''))
+                }}
+                className="block w-full rounded px-2 py-1.5 text-left text-xs hover:bg-white/5"
+                style={{ cursor: 'pointer' }}
+              >
+                <span className="block" style={{ color: 'var(--color-foreground)' }}>{h.label}</span>
+                <span className="block text-[10px]" style={{ color: 'var(--color-muted)' }}>{h.where}</span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+      {!hits && TAB_GROUPS.map((group) => {
         const items = group.ids
           .map((id) => byId.get(id))
           .filter((t): t is TabBarProps['tabs'][number] => Boolean(t))
@@ -147,7 +194,7 @@ function TabBar({ tabs, active, onChange, alerts }: TabBarProps): React.ReactEle
           </div>
         )
       })}
-      {leftovers.length > 0 && <div className="mb-1">{leftovers.map(renderButton)}</div>}
+      {!hits && leftovers.length > 0 && <div className="mb-1">{leftovers.map(renderButton)}</div>}
     </nav>
   )
 }
@@ -335,22 +382,23 @@ const MOVED_TO_OVERLAYS_HUB: Record<string, string> = {
   dpscolors: 'dps',
 }
 
+const VALID_TABS: Tab[] = ['general', 'audio', 'accessibility', 'navigation', 'hotkeys', 'discord', 'logs', 'backups', 'maps', 'advanced', 'about', 'changelog', 'developer']
+
 export default function SettingsPage(): React.ReactElement {
   const [searchParams] = useSearchParams()
   // Allow deep-linking to a specific tab via ?tab= (e.g. links to the Logs tab
   // for backfill). Falls back to General for unknown/absent values.
   const [tab, setTab] = useState<Tab>(() => {
-    const valid: Tab[] = ['general', 'audio', 'accessibility', 'navigation', 'hotkeys', 'discord', 'logs', 'backups', 'maps', 'advanced', 'about', 'changelog', 'developer']
     const t = searchParams.get('tab') ?? ''
     // 'gamemaps' was its own tab until the two map tabs merged. Kept as an
     // alias so links written against the old name still land somewhere useful.
     if (t === 'gamemaps') return 'maps'
-    if ((valid as string[]).includes(t)) return t as Tab
+    if ((VALID_TABS as string[]).includes(t)) return t as Tab
     // No (valid) deep link: reopen the tab the user was last on. The hidden
     // Developer tab is never restored — it only shows while dev mode is on.
     try {
       const stored = localStorage.getItem(SETTINGS_TAB_KEY) ?? ''
-      if (stored !== 'developer' && (valid as string[]).includes(stored)) return stored as Tab
+      if (stored !== 'developer' && (VALID_TABS as string[]).includes(stored)) return stored as Tab
     } catch {
       /* fall through */
     }
@@ -362,14 +410,14 @@ export default function SettingsPage(): React.ReactElement {
   useEffect(() => {
     markSettingsTabSeen(tab)
   }, [tab, markSettingsTabSeen])
-  // The sidebar's large-log dot links to ?tab=logs, and Logs and Backup &
-  // Restore link to each other. The initializer above only runs on mount, so
+  // ?tab= links (the large-log dot, Logs <-> Backup & Restore, Ctrl+K and
+  // Settings search results). The initializer above only runs on mount, so
   // also honour the param when navigating here while the page is already
   // open (keyed on location.key so repeat clicks re-apply).
   const location = useLocation()
   useEffect(() => {
-    const t = searchParams.get('tab')
-    if (t === 'logs' || t === 'backups') setTab(t)
+    const t = searchParams.get('tab') as Tab | null
+    if (t && VALID_TABS.includes(t)) setTab(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.key])
   useEffect(() => {
@@ -1045,7 +1093,7 @@ export default function SettingsPage(): React.ReactElement {
       <div className="flex flex-col gap-6">
         {/* ── App ──────────────────────────────────────────────────────────── */}
         {tab === 'general' && (
-        <section
+        <section data-setting="app"
           className="rounded-lg p-4"
           style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
         >
@@ -1359,7 +1407,7 @@ export default function SettingsPage(): React.ReactElement {
 
         {/* ── EverQuest Path ─────────────────────────────────────────────── */}
         {tab === 'general' && (
-        <section
+        <section data-setting="eq-install"
           className="rounded-lg p-4"
           style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
         >
@@ -1439,7 +1487,7 @@ export default function SettingsPage(): React.ReactElement {
 
         {/* ── Zeal integration ───────────────────────────────────────────── */}
         {tab === 'general' && (
-        <section
+        <section data-setting="zeal"
           className="rounded-lg p-4"
           style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
         >
@@ -1646,7 +1694,7 @@ export default function SettingsPage(): React.ReactElement {
 
         {/* ── EQ client version ──────────────────────────────────────────── */}
         {tab === 'general' && (
-        <section
+        <section data-setting="eq-client"
           className="rounded-lg p-4"
           style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
         >
@@ -1732,7 +1780,7 @@ export default function SettingsPage(): React.ReactElement {
 
         {/* ── Preferences ────────────────────────────────────────────────── */}
         {tab === 'general' && (
-        <section
+        <section data-setting="preferences"
           className="rounded-lg p-4"
           style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
         >
@@ -2508,7 +2556,7 @@ function BackendNetworkSection(props: BackendNetworkSectionProps): React.ReactEl
   const dirty = config.server_addr !== originalServerAddr
 
   return (
-    <section
+    <section data-setting="network"
       className="rounded-lg p-4"
       style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
     >
@@ -2725,7 +2773,7 @@ function DiagnosticsSection({
   }
 
   return (
-    <section
+    <section data-setting="diagnostics"
       className="mt-4 rounded-lg p-4"
       style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
     >
