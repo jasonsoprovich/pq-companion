@@ -14,6 +14,8 @@
 //	go run ./cmd/zealdump -deaths    # one line per death event (type 7)
 //	go run ./cmd/zealdump -items     # one line per item window opened
 //	go run ./cmd/zealdump -considers # one line per consider event
+//	go run ./cmd/zealdump -roster    # raid/group members' appearance, on change
+//	go run ./cmd/zealdump -spells    # one line per spell action (/pipespells)
 //	go run ./cmd/zealdump -file cap  # replay a capture instead of dialing
 //
 // To keep a capture for later: go run ./cmd/zealdump -raw > capture.txt
@@ -72,6 +74,8 @@ func main() {
 	deaths := flag.Bool("deaths", false, "print one line per death event (type 7, proposed Zeal PR) instead of target changes")
 	items := flag.Bool("items", false, "print one line per item display event (proposed Zeal PR; type 7 or 8) instead of target changes")
 	considers := flag.Bool("considers", false, "print one line per consider event (proposed Zeal PR; type 7 alone, 9 on the combined build) instead of target changes")
+	roster := flag.Bool("roster", false, "print each raid/group member's appearance when it first appears or changes (proposed Zeal PR), and who is missing it")
+	spells := flag.Bool("spells", false, "print one line per spell action (proposed Zeal PR; type 9 alone, 10 on the combined build), with a per-second rate")
 	pipeName := flag.String("pipe", "", "pipe to read (default: first one discovered)")
 	fromFile := flag.String("file", "", "read a saved capture instead of dialing a pipe")
 	flag.Parse()
@@ -105,7 +109,139 @@ func main() {
 		runConsiders(ctx, conn)
 		return
 	}
+	if *roster {
+		runRoster(ctx, conn)
+		return
+	}
+	if *spells {
+		runSpells(ctx, conn)
+		return
+	}
 	run(ctx, conn, *raw, *every, *types)
+}
+
+// rosterEntry is one raid or group member as the roster mode compares it.
+type rosterEntry struct {
+	name       string
+	inZone     bool // has a spawn id (Zeal omits it, loc and appearance out of zone)
+	appearance *zealpipe.Appearance
+}
+
+// runRoster prints each raid and group member's appearance the first time
+// it's seen and whenever it changes, and flags in-zone members missing it
+// (a Zeal build without the PR) or out-of-zone members carrying it (a bug).
+func runRoster(ctx context.Context, conn io.Reader) {
+	fmt.Println("waiting for raid (type 5) and group (type 6) messages. Ctrl+C to stop.")
+	seen := map[string]string{}
+	dec := json.NewDecoder(conn)
+	for ctx.Err() == nil {
+		var env zealpipe.Envelope
+		if err := dec.Decode(&env); err != nil {
+			if !errors.Is(err, io.EOF) && ctx.Err() == nil {
+				fmt.Fprintf(os.Stderr, "\nread ended: %v\n", err)
+			}
+			break
+		}
+		var entries []rosterEntry
+		var kind string
+		switch env.Type {
+		case zealpipe.MsgRaid:
+			kind = "raid"
+			members, err := zealpipe.DecodeRaid(env.Data)
+			if err != nil {
+				continue
+			}
+			for _, m := range members {
+				entries = append(entries, rosterEntry{m.Name, m.SpawnID != nil, m.Appearance})
+			}
+		case zealpipe.MsgGroup:
+			kind = "group"
+			members, err := zealpipe.DecodeGroup(env.Data)
+			if err != nil {
+				continue
+			}
+			for _, m := range members {
+				entries = append(entries, rosterEntry{m.Name, m.SpawnID != nil, m.Appearance})
+			}
+		default:
+			continue
+		}
+		for _, e := range entries {
+			line := formatRosterEntry(e)
+			key := kind + "/" + e.name
+			if seen[key] == line {
+				continue
+			}
+			seen[key] = line
+			fmt.Printf("%s %-5s %s\n", time.Now().Format("15:04:05"), kind, line)
+		}
+	}
+}
+
+// formatRosterEntry renders one member's appearance (or why it has none).
+func formatRosterEntry(e rosterEntry) string {
+	a := e.appearance
+	switch {
+	case !e.inZone && a == nil:
+		return e.name + ": out of zone, no appearance (ok)"
+	case !e.inZone:
+		return e.name + ": OUT OF ZONE BUT HAS APPEARANCE"
+	case a == nil:
+		return e.name + ": in zone, NO APPEARANCE (Zeal build without the PR?)"
+	}
+	colors := make([]string, len(a.EquipmentColors))
+	for i, c := range a.EquipmentColors {
+		colors[i] = fmt.Sprintf("%06x", c&0xFFFFFF)
+	}
+	return fmt.Sprintf("%s: race=%d gender=%d texture=%d size=%.1f face=%d hair=%d/%d beard=%d/%d equipment=%v colors=%v",
+		e.name, a.Race, a.Gender, a.Texture, a.Size, a.Face, a.HairStyle, a.HairColor,
+		a.BeardStyle, a.BeardColor, a.Equipment, colors)
+}
+
+// runSpells prints one line per spell action and, every 10 seconds, how many
+// arrived per second, so a tester can judge the volume of /pipespells all.
+func runSpells(ctx context.Context, conn io.Reader) {
+	fmt.Println("waiting for spell actions (/pipespells all or detrimental). Ctrl+C to stop.")
+	n, window := 0, 0
+	windowStart := time.Now()
+	dec := json.NewDecoder(conn)
+	for ctx.Err() == nil {
+		var env zealpipe.Envelope
+		if err := dec.Decode(&env); err != nil {
+			if !errors.Is(err, io.EOF) && ctx.Err() == nil {
+				fmt.Fprintf(os.Stderr, "\nread ended: %v\n", err)
+			}
+			break
+		}
+		if env.Type < zealpipe.MsgDeath {
+			continue
+		}
+		p, ok := zealpipe.DecodeProposed(env)
+		if !ok || p.Spell == nil {
+			continue
+		}
+		a := p.Spell
+		n++
+		window++
+		res := "attempt"
+		if a.Success {
+			res = "SUCCESS"
+		}
+		fmt.Printf("%s #%d type=%d spell=%d %s(%d) -> %s(%d) %s\n", time.Now().Format("15:04:05"), n, env.Type,
+			a.SpellID, nameOr(a.SourceName), a.SourceID, nameOr(a.TargetName), a.TargetID, res)
+		if d := time.Since(windowStart); d >= 10*time.Second {
+			fmt.Printf("---- %.1f spell actions/sec over the last %.0fs ----\n", float64(window)/d.Seconds(), d.Seconds())
+			window, windowStart = 0, time.Now()
+		}
+	}
+	fmt.Printf("\n%d spell actions\n", n)
+}
+
+func nameOr(s string) string {
+	if s == "" {
+		return "?"
+	}
+	return s
 }
 
 // runDeaths prints one line per death event with a running total, so a
