@@ -25,6 +25,11 @@ import { normalizeTargetName } from '../../lib/targetName'
 // finder page has the full lists.
 const PER_SLOT = 3
 const SOURCES_SHOWN = 3
+// How many upgrades per slot to fetch: the backend's cap, so every upgrade
+// in the zone is on hand for the target filter, not just the zone view's
+// top few. The backend scores every candidate whatever the limit and only
+// trims the reply, so this costs no extra scoring.
+const FETCH_PER_SLOT = 200
 
 export interface GearUpgradeSlotRow {
   label: string
@@ -122,9 +127,12 @@ function dropsFrom(c: ZoneUpgradeCandidate, t: TargetNPC): boolean {
 
 // slotRows folds the paired slots (Ear 1 and 2, Wrist, Finger) into one row,
 // since they offer the same items, and drops ammo and empty slots.
+// keep narrows the candidates first (the target filter), so a match ranked
+// low in its slot still makes the cut; perSlot caps each row (0 = all).
 export function slotRows(
   data: ZoneUpgradesResponse | null,
   keep?: (c: ZoneUpgradeCandidate) => boolean,
+  perSlot = PER_SLOT,
 ): GearUpgradeSlotRow[] {
   if (!data) return []
   const rows: GearUpgradeSlotRow[] = []
@@ -150,7 +158,7 @@ export function slotRows(
   }
   for (const row of rows) {
     row.candidates.sort((a, b) => b.score - a.score)
-    row.candidates = row.candidates.slice(0, PER_SLOT)
+    if (perSlot > 0) row.candidates = row.candidates.slice(0, perSlot)
   }
   return rows
 }
@@ -190,7 +198,7 @@ export function useZoneGearUpgrades(): ZoneGearUpgrades {
     let live = true
     setLoading(true)
     setError(null)
-    getCharacterZoneUpgrades(charId, zone, { limit: PER_SLOT * 2 })
+    getCharacterZoneUpgrades(charId, zone, { limit: FETCH_PER_SLOT })
       .then((r) => { if (live) setData(r) })
       .catch((e: Error) => {
         if (!live) return
@@ -207,7 +215,8 @@ export function useZoneGearUpgrades(): ZoneGearUpgrades {
   const target = useTargetNPC()
   const zoneRows = useMemo(() => slotRows(data), [data])
   const targetRows = useMemo(
-    () => (target ? slotRows(data, (c) => dropsFrom(c, target)) : []),
+    // Every upgrade the target drops, however many share a slot.
+    () => (target ? slotRows(data, (c) => dropsFrom(c, target), 0) : []),
     [data, target],
   )
   const narrowed = targetRows.length > 0
