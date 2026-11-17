@@ -59,6 +59,8 @@ import DecimalInput from '../components/DecimalInput'
 import SpellSearchPicker from '../components/SpellSearchPicker'
 import ImportTriggersModal from '../components/ImportTriggersModal'
 import PackUpdateModal from '../components/PackUpdateModal'
+import { refreshPackUpdates, usePackUpdates } from '../hooks/usePackUpdates'
+import { NewDot } from '../hooks/useFeatureDots'
 import ActionTemplatesMenu from '../components/ActionTemplatesMenu'
 import BulkActionsModal from '../components/BulkActionsModal'
 import TriggerTesterTab, { MatchRow } from '../components/TriggerTesterTab'
@@ -73,7 +75,6 @@ import {
   getBuiltinPacks,
   installBuiltinPack,
   removeTriggerPack,
-  getPackUpdates,
   listActionTemplates,
   exportTriggerPack,
   exportTriggerCategory,
@@ -2803,10 +2804,10 @@ function PacksTab({ installedPacks, onInstalled }: PacksTabProps): React.ReactEl
   const [updateModal, setUpdateModal] = useState<string | null>(null)
   const [updateApplied, setUpdateApplied] = useState<string | null>(null)
 
+  // Shared with the sidebar and tab dots, so they clear as packs update.
   const refreshUpdates = useCallback(() => {
-    getPackUpdates()
+    refreshPackUpdates()
       .then((list) => setUpdates(new Map(list.map((u) => [u.pack_name, u]))))
-      .catch(() => setUpdates(new Map()))
   }, [])
 
   const toggleExpanded = (packName: string) => {
@@ -3376,6 +3377,7 @@ function DeleteCategoryModal({
 
 export default function TriggersPage(): React.ReactElement {
   const activePlayer = useActivePlayerName()
+  const packUpdates = usePackUpdates()
   const [tab, setTab] = usePersistentState<Tab>('pq-tab:triggers', 'triggers', ['triggers', 'history', 'packs', 'tester'])
   const [triggers, setTriggers] = useState<Trigger[]>([])
   const [loading, setLoading] = useState(true)
@@ -4120,7 +4122,14 @@ export default function TriggersPage(): React.ReactElement {
           >
             {t === 'triggers' && <span>Triggers ({triggers.length})</span>}
             {t === 'history' && <span>History</span>}
-            {t === 'packs' && <span>Packs</span>}
+            {t === 'packs' && (
+              <span className="inline-flex items-center gap-1.5">
+                Packs
+                {packUpdates.length > 0 && (
+                  <NewDot title="Updates available for your installed trigger packs" />
+                )}
+              </span>
+            )}
             {t === 'tester' && <span>Tester</span>}
           </button>
         ))}

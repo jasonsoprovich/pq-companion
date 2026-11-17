@@ -11,12 +11,24 @@ import { visibleNavSections, orderItems, favoriteItems, type NavItem } from '../
 import { useSidebarPrefs } from '../hooks/useSidebarPrefs'
 import { resolveRememberedRoute } from '../lib/lastSubRoute'
 import { NewDot, useFeatureDots } from '../hooks/useFeatureDots'
+import { usePackUpdates } from '../hooks/usePackUpdates'
+
+const PACK_UPDATE_TITLE = 'Updates available for your installed trigger packs'
+
+// useNavAttention is the dot for a nav route that needs a look: pending
+// trigger pack updates on Triggers. Unlike feature dots, it stays until
+// the packs are updated, not until the page is visited.
+function useNavAttention(): (route: string) => boolean {
+  const packUpdates = usePackUpdates()
+  return (route) => route === '/triggers' && packUpdates.length > 0
+}
 
 function SidebarLink({ to, label, icon, end }: NavItem): React.ReactElement {
   // Subscribe to navigation so the remembered sub-page (Combat/Raids) is
   // re-resolved after every route change, not just when the sidebar re-renders.
   useLocation()
   const { navDot } = useFeatureDots()
+  const attention = useNavAttention()
   return (
     <NavLink
       to={resolveRememberedRoute(to)}
@@ -32,7 +44,11 @@ function SidebarLink({ to, label, icon, end }: NavItem): React.ReactElement {
     >
       {icon}
       {label}
-      {navDot(to) && <NewDot className="ml-auto" />}
+      {attention(to) ? (
+        <NewDot className="ml-auto" title={PACK_UPDATE_TITLE} />
+      ) : (
+        navDot(to) && <NewDot className="ml-auto" />
+      )}
     </NavLink>
   )
 }
@@ -62,6 +78,7 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
   const { hidden, order, favorites, flags } = useSidebarPrefs()
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(loadCollapsed)
   const { navDot } = useFeatureDots()
+  const attention = useNavAttention()
 
   const toggleSection = (id: string): void => {
     setCollapsed((prev) => {
@@ -193,8 +210,12 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
                 </span>
                 {/* A collapsed section would hide its items' dots, so the
                     header carries one instead. */}
-                {isCollapsed && section.items.some((i) => navDot(i.to)) && (
-                  <NewDot className="ml-auto" />
+                {isCollapsed && section.items.some((i) => attention(i.to)) ? (
+                  <NewDot className="ml-auto" title={PACK_UPDATE_TITLE} />
+                ) : (
+                  isCollapsed && section.items.some((i) => navDot(i.to)) && (
+                    <NewDot className="ml-auto" />
+                  )
                 )}
               </button>
               {!isCollapsed && (
