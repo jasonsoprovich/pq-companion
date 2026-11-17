@@ -63,6 +63,10 @@ export interface LogTailerStatus {
   large_file: boolean
   // When true, the live feed also surfaces unrecognised lines as log:raw.
   raw_feed: boolean
+  // Character whose log is used (configured, or auto-detected when blank).
+  character: string
+  // Log file mtime (RFC 3339), '' when the file doesn't exist.
+  last_write_at: string
 }
 
 export interface LogFileInfo {

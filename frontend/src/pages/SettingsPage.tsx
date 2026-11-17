@@ -4,6 +4,7 @@ import { Settings, Search, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader
 import BackfillPanel from '../components/settings/BackfillPanel'
 import SidebarNavSettings from '../components/settings/SidebarNavSettings'
 import EqLogStatusCard from '../components/settings/EqLogStatusCard'
+import SetupHealthCard from '../components/settings/SetupHealthCard'
 import { TtsVoiceDefault } from '../components/settings/AlertDefaultsSettings'
 import PiperTtsSettings from '../components/settings/PiperTtsSettings'
 import KokoroTtsSettings from '../components/settings/KokoroTtsSettings'
@@ -1091,6 +1092,8 @@ export default function SettingsPage(): React.ReactElement {
       </div>
 
       <div className="flex flex-col gap-6">
+        {tab === 'general' && <SetupHealthCard />}
+
         {/* ── App ──────────────────────────────────────────────────────────── */}
         {tab === 'general' && (
         <section data-setting="app"

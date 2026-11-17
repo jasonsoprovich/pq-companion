@@ -41,6 +41,9 @@ func (h *logHandler) status(w http.ResponseWriter, r *http.Request) {
 		SizeBytes  int64  `json:"size_bytes"`
 		LargeFile  bool   `json:"large_file"`
 		RawFeed    bool   `json:"raw_feed"`
+		Character  string `json:"character"`
+		// LastWriteAt is the log file's mtime (RFC 3339), "" when absent.
+		LastWriteAt string `json:"last_write_at"`
 	}
 
 	var sizeBytes int64
@@ -61,6 +64,13 @@ func (h *logHandler) status(w http.ResponseWriter, r *http.Request) {
 		SizeBytes:  sizeBytes,
 		LargeFile:  largeFile,
 		RawFeed:    h.tailer.RawFeed(),
+		Character:  s.Character,
+		LastWriteAt: func() string {
+			if s.LastWriteAt.IsZero() {
+				return ""
+			}
+			return s.LastWriteAt.UTC().Format(time.RFC3339)
+		}(),
 	})
 }
 

@@ -44,6 +44,13 @@ type Status struct {
 	Tailing bool `json:"tailing"`
 	// Offset is the byte position the tailer has read up to.
 	Offset int64 `json:"offset"`
+	// Character is the character whose log is used: the configured one, or
+	// the auto-detected one when the config leaves it blank.
+	Character string `json:"character"`
+	// LastWriteAt is the log file's modification time, or zero when the
+	// file doesn't exist. Setup health uses it to tell "logging is on"
+	// from "EQ is closed or /log is off".
+	LastWriteAt time.Time `json:"last_write_at"`
 }
 
 // Tailer watches an EverQuest log file and calls handler for each parsed
@@ -140,14 +147,20 @@ func (t *Tailer) Status() Status {
 		character = ResolveActiveCharacter(cfg.EQPath)
 	}
 	fp := logFilePath(cfg.EQPath, character)
-	_, statErr := os.Stat(fp)
+	fi, statErr := os.Stat(fp)
+	var lastWrite time.Time
+	if statErr == nil {
+		lastWrite = fi.ModTime()
+	}
 
 	return Status{
-		Enabled:    cfg.Preferences.ParseCombatLog,
-		FilePath:   fp,
-		FileExists: statErr == nil,
-		Tailing:    t.file != nil,
-		Offset:     t.offset,
+		Enabled:     cfg.Preferences.ParseCombatLog,
+		FilePath:    fp,
+		FileExists:  statErr == nil,
+		Tailing:     t.file != nil,
+		Offset:      t.offset,
+		Character:   character,
+		LastWriteAt: lastWrite,
 	}
 }
 
