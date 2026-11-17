@@ -9,6 +9,26 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.33.3 — 2026-11-16
+
+Fixes for mez timers that never appeared, a trigger test that could blank the app, kills and charm pets listed in the wrong zone, and alerts that turned your other sounds down on Windows. Also includes PoP flag detection from hail lines and a few overlay and map tweaks.
+
+### Highlights
+- **Turn the 3D map north up** — click the compass in the 3D view to point north up again.
+
+### Fixes
+- **Mez timers missing in "triggers only" mode** — with timer tracking set to triggers only, Mesmerize, Mesmerization and Dazzle triggers fired their alerts but never showed a timer, for both your own triggers and the Enchanter pack's Mez trigger. These timers wait for the spell to land, and in this mode that land was skipped. They now appear as expected, and Custom-type timers for these spells start right away.
+- **Trigger test blanked the whole app** — testing a trigger against a line that matched nothing turned the app window black (triggers and overlays kept running). A no-match test now just says "No match."
+- **Kills recorded in the wrong zone** — after switching characters, the Kill Tracker kept stamping kills with the previous character's zone (for example Lower Guk kills listed as Plane of Knowledge) until you next zoned. It now picks up the new character's zone straight away. Zone-limited kill counters get the same fix.
+- **Charm Pet Finder listed other zones' mobs** — filtering by zone could include NPCs from a different zone (Western Wastes showed Plane of Tactics' War Boars). Only mobs that actually spawn in the zone are listed now.
+- **Alerts turned your other sounds down** — choosing the "Communications" output device for alerts made Windows lower every other app's volume each time an alert played. That choice now plays through your default device.
+- **PoP flags missed when a boss death isn't logged** — raid bosses like the Keeper, Saryrn and Mithaniel often die without a "has been slain" line reaching your log. The flag tracker now also detects these flags from the hail that grants them, and from Seer Mal Nae`Shi's "unlock memories" text.
+- **Pet overlay charm timer squished** — as more pet buffs landed, the charm bar shrank to a sliver. It now keeps its size and the buff list scrolls.
+- **Gear upgrade scores on the NPC overlay pop-out** — the pop-out's loot tab now shows upgrade scores like the in-app NPC panel does.
+- **3D map hid hilly caverns** — Top and Chase views cut the zone at a fixed height above you, which hid rising ground in zones like Plane of Torment and Plane of Tranquility. The cut now sits just under the ceiling above you, and there's no cut at all under open sky.
+- **Darker overlay dropdowns** — the Rolls and Buffs-by-spell overlays' header dropdowns no longer show as dark blocks on a see-through window.
+- **Item Info overlay easier to find** — it's now listed (greyed out, with a "Needs Zeal 1.5.0+" hint) in Manage overlays before Zeal reports an item, instead of being missing.
+
 ## v0.33.2 — 2026-11-08
 
 A fix for the DPS meter reading far too low in Raid mode when soloing mobs whose names have no "a" or "an", with the same fix for the threat meters.
