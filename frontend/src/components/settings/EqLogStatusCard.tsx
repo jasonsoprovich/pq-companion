@@ -62,7 +62,7 @@ export default function EqLogStatusCard({
   )
 
   return (
-    <section className="rounded-lg p-4" style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+    <section data-setting="eq-logging" className="rounded-lg p-4" style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
       <div className="mb-1 flex items-center justify-between">
         <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
           <FileText size={13} /> EverQuest logging &amp; Zeal

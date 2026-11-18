@@ -47,6 +47,14 @@ const SETTINGS_TAB_ENTRIES: SettingEntry[] = [
     anchor: 'eq-install',
   },
   {
+    id: 'eq-logging',
+    label: 'EverQuest logging (Log=TRUE)',
+    where: 'Settings › General',
+    keywords: ['log on', '/log', 'logging', 'eqclient.ini', 'export on camp', 'zeal export'],
+    to: settings('general', 'eq-logging'),
+    anchor: 'eq-logging',
+  },
+  {
     id: 'zeal',
     label: 'Zeal integration',
     where: 'Settings › General',

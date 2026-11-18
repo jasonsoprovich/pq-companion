@@ -8,6 +8,7 @@ import {
   Loader2,
   Users,
   Info,
+  ScrollText,
 } from 'lucide-react'
 import Wizard from './guide/Wizard'
 import {
@@ -17,6 +18,8 @@ import {
   validateEQPath,
   getBackfillInfo,
   runBackfill,
+  probeLog,
+  type LogProbe,
   type DiscoveredCharacter,
   type EqDiagnostics,
 } from '../services/api'
@@ -28,14 +31,15 @@ import { charClassLabel, charClassOptions } from '../lib/enumsCache'
 
 const ZEAL_RELEASE_URL = 'https://github.com/CoastalRedwood/Zeal/releases/latest'
 
-type Step = 'welcome' | 'eq-path' | 'character' | 'zeal' | 'confirm'
+type Step = 'welcome' | 'eq-path' | 'character' | 'logging' | 'zeal' | 'confirm'
 
-const STEPS: Step[] = ['welcome', 'eq-path', 'character', 'zeal', 'confirm']
+const STEPS: Step[] = ['welcome', 'eq-path', 'character', 'logging', 'zeal', 'confirm']
 
 const STEP_TITLES: Record<Step, string> = {
   welcome: 'Welcome',
   'eq-path': 'EverQuest Folder',
   character: 'Character',
+  logging: 'Logging',
   zeal: 'Zeal Integration',
   confirm: 'All Set',
 }
@@ -115,6 +119,39 @@ export default function OnboardingWizard({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step])
+
+  // Logging step: poll the (unsaved) folder + character every 2 s while the
+  // step is open. Detected when the log's mtime moves after the step opened,
+  // or it was written within the last 2 minutes when the step opened.
+  const [probe, setProbe] = useState<LogProbe | null>(null)
+  const [logLive, setLogLive] = useState(false)
+  useEffect(() => {
+    if (step !== 'logging') return
+    let stopped = false
+    let baseline: string | null = null
+    setLogLive(false)
+    const tick = (): void => {
+      probeLog(eqPath.trim(), character.trim())
+        .then((p) => {
+          if (stopped) return
+          setProbe(p)
+          if (!p.last_write_at) return
+          if (baseline === null) {
+            baseline = p.last_write_at
+            if (Date.now() - new Date(p.last_write_at).getTime() < 2 * 60 * 1000) setLogLive(true)
+          } else if (p.last_write_at !== baseline) {
+            setLogLive(true)
+          }
+        })
+        .catch(() => undefined)
+    }
+    tick()
+    const t = window.setInterval(tick, 2000)
+    return () => {
+      stopped = true
+      window.clearInterval(t)
+    }
+  }, [step, eqPath, character])
 
   const stepIndex = STEPS.indexOf(step)
   const hasElectronDialog = Boolean(window.electron?.dialog)
@@ -224,6 +261,8 @@ export default function OnboardingWizard({
         return pathConfirmed
       case 'character':
         return character.trim().length > 0
+      case 'logging':
+        return true
       case 'zeal':
         return true
       case 'confirm':
@@ -241,7 +280,11 @@ export default function OnboardingWizard({
       onBack={goBack}
       primary={
         step !== 'confirm'
-          ? { label: 'Next', onClick: goNext, disabled: !canAdvance }
+          ? {
+              label: step === 'logging' && !logLive ? 'Skip for now' : 'Next',
+              onClick: goNext,
+              disabled: !canAdvance,
+            }
           : {
               label: backfilling ? 'Backfilling…' : saving ? 'Saving…' : 'Finish',
               onClick: () => void handleFinish(),
@@ -467,6 +510,54 @@ export default function OnboardingWizard({
               ))}
             </select>
           </div>
+        </div>
+      )}
+
+      {step === 'logging' && (
+        <div className="space-y-4">
+          <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+            PQ Companion reads EverQuest&apos;s log file, so logging needs to be on
+            in game. Log in as <strong>{character || 'your character'}</strong> and type:
+          </p>
+          <code
+            className="block rounded px-3 py-2 text-sm"
+            style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-primary)' }}
+          >
+            /log on
+          </code>
+          <div
+            className="flex items-center gap-3 rounded p-3 text-sm"
+            style={{
+              backgroundColor: 'var(--color-surface-2)',
+              border: `1px solid ${logLive ? '#22c55e' : 'var(--color-border)'}`,
+            }}
+          >
+            {logLive ? (
+              <CheckCircle2 size={18} style={{ color: '#22c55e' }} />
+            ) : (
+              <Loader2 size={18} className="animate-spin" style={{ color: 'var(--color-muted)' }} />
+            )}
+            <div className="min-w-0">
+              <p style={{ color: 'var(--color-foreground)' }}>
+                {logLive ? 'Log is being written. You\'re good to go.' : 'Waiting for log activity…'}
+              </p>
+              <p className="truncate text-xs" style={{ color: 'var(--color-muted)' }} title={probe?.path}>
+                <ScrollText size={10} className="mr-1 inline" />
+                {probe?.path
+                  ? probe.exists
+                    ? probe.path
+                    : `${probe.path} (not created yet)`
+                  : 'Checking…'}
+              </p>
+            </div>
+          </div>
+          <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+            {probe?.log_enabled
+              ? 'Logging is already set to turn on at every login (eqclient.ini Log=TRUE).'
+              : 'Tip: after setup you can make logging turn on at every login with the switch in Settings → General → EverQuest logging & Zeal.'}{' '}
+            EverQuest not running right now? Skip this step; the Setup health card in Settings shows
+            when the log starts.
+          </p>
         </div>
       )}
 

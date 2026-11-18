@@ -325,6 +325,9 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Get("/server-info", cfg.serverInfo)
 			r.Get("/test-port", cfg.testPort)
 		})
+		r.Route("/setup", func(r chi.Router) {
+			r.Post("/log-probe", cfg.logProbe)
+		})
 		r.Route("/characters", func(r chi.Router) {
 			r.Get("/", charactersH.list)
 			r.Post("/", charactersH.create)

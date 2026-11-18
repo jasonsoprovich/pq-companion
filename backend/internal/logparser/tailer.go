@@ -553,3 +553,9 @@ func logFilePath(eqPath, character string) string {
 	}
 	return filepath.Join(eqPath, "eqlog_"+character+"_pq.proj.txt")
 }
+
+// LogFilePath returns the log file the tailer would use for eqPath and
+// character ("" when either is blank). Exported for the setup probe.
+func LogFilePath(eqPath, character string) string {
+	return logFilePath(eqPath, character)
+}

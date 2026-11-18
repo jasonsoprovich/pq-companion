@@ -123,6 +123,7 @@ async function buildChecks(): Promise<{ checks: HealthCheck[]; fresh: boolean }>
       label: 'Log file',
       level: log.file_exists ? 'ok' : 'error',
       detail: log.file_exists ? log.file_path : `Not found: ${log.file_path}. Type /log on in game.`,
+      fix: log.file_exists ? undefined : { label: 'Logging', to: settingsLink('eq-logging') },
     })
     if (!log.file_exists || !log.last_write_at) {
       checks.push({ id: 'log-activity', label: 'Log activity', level: 'off', detail: 'No log file yet.' })
@@ -135,6 +136,7 @@ async function buildChecks(): Promise<{ checks: HealthCheck[]; fresh: boolean }>
         detail: fresh
           ? `Written ${ago(log.last_write_at)}`
           : `Last written ${ago(log.last_write_at)}. EQ may be closed, or type /log on.`,
+        fix: fresh ? undefined : { label: 'Logging', to: settingsLink('eq-logging') },
       })
     }
   }

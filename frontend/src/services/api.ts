@@ -2618,6 +2618,21 @@ export function validateEQPath(path: string): Promise<ValidateEQPathResponse> {
   return post<ValidateEQPathResponse>('/api/config/validate-eq-path', { path })
 }
 
+export interface LogProbe {
+  character: string
+  path: string
+  exists: boolean
+  size_bytes: number
+  last_write_at: string
+  // eqclient.ini Log=TRUE: logging turns on at every login.
+  log_enabled: boolean
+}
+
+// Stateless check used by the onboarding wizard before config is saved.
+export function probeLog(eqPath: string, character: string): Promise<LogProbe> {
+  return post<LogProbe>('/api/setup/log-probe', { eq_path: eqPath, character })
+}
+
 export function getEqDiagnostics(): Promise<EqDiagnostics> {
   return get<EqDiagnostics>('/api/config/eq-diagnostics')
 }
