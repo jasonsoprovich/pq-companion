@@ -14,9 +14,12 @@ import (
 // Grammar:
 //
 //	literal text      matched exactly (regexp.QuoteMeta)
-//	{name}            captures any text as a named group: (?P<name>.+?),
-//	                  or (?P<name>.+) when it ends the pattern. name is
-//	                  [A-Za-z_][A-Za-z0-9_]* and may appear only once.
+//	{name}            captures any text as a named group. The last capture
+//	                  is greedy, (?P<name>.+), so it runs to the last match
+//	                  of the text after it ("{name} tells you, '{msg}'"
+//	                  keeps apostrophes inside msg); earlier captures are
+//	                  lazy, (?P<name>.+?). name is [A-Za-z_][A-Za-z0-9_]*
+//	                  and may appear only once.
 //	{C} {char} {self} the active character's name   } passed through as-is;
 //	{S} {S1}…{S9}     any text                       } normalizePattern
 //	{N} {N1}…{N9}     a number                       } expands them
@@ -100,6 +103,12 @@ func PlainToRegex(plain string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	lastCapture := -1
+	for i, p := range parts {
+		if p.token != "" && !isReservedToken(p.token) {
+			lastCapture = i
+		}
+	}
 	seen := map[string]bool{}
 	var b strings.Builder
 	for i, p := range parts {
@@ -115,7 +124,7 @@ func PlainToRegex(plain string) (string, error) {
 			return "", fmt.Errorf("{%s} is used more than once", p.token)
 		}
 		seen[p.token] = true
-		if i == len(parts)-1 {
+		if i == lastCapture {
 			b.WriteString("(?P<" + p.token + ">.+)")
 		} else {
 			b.WriteString("(?P<" + p.token + ">.+?)")

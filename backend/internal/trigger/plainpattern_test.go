@@ -12,7 +12,9 @@ func TestPlainToRegex(t *testing.T) {
 		{plain: "You have been slain", want: `You have been slain`},
 		{plain: "Cast it. (now?)", want: `Cast it\. \(now\?\)`},
 		{plain: "{name} tells you, {msg}", want: `(?P<name>.+?) tells you, (?P<msg>.+)`},
-		{plain: "{who} begins to cast a spell.", want: `(?P<who>.+?) begins to cast a spell\.`},
+		{plain: "{name} tells you, '{msg}'", want: `(?P<name>.+?) tells you, '(?P<msg>.+)'`},
+		{plain: "{who} begins to cast a spell.", want: `(?P<who>.+) begins to cast a spell\.`},
+		{plain: "{a} hits {b} for {N} points", want: `(?P<a>.+?) hits (?P<b>.+) for {N} points`},
 		{plain: "{C} has fallen", want: `{C} has fallen`},
 		{plain: "{S} hits {char} for {N} points", want: `{S} hits {char} for {N} points`},
 		{plain: "a {{brace}} here", want: `a \{brace\} here`},
@@ -66,6 +68,7 @@ func TestRegexToPlainRoundTrip(t *testing.T) {
 		`\d{2} points`,
 		`[Aa]bc`,
 		`(?P<who>.+) tells you, (?P<msg>.+)`, // greedy mid-pattern capture: re-emits as lazy
+		`(?P<who>.+?) begins to cast`,        // lazy last capture: re-emits as greedy
 		`(?P<x>[0-9]+) points`,
 		`trailing\`,
 	}
@@ -92,6 +95,12 @@ func TestPlainPatternMatchesAndSubstitutes(t *testing.T) {
 			plain:    "{name} tells you, {msg}",
 			line:     "Soandso tells you, 'need a port, 50pp?'",
 			captures: map[string]string{"name": "Soandso", "msg": "'need a port, 50pp?'"},
+		},
+		{
+			// Apostrophes inside a quoted chat message stay in the capture.
+			plain:    "{name} tells you, '{msg}'",
+			line:     "Soandso tells you, 'it's fine, don't worry'",
+			captures: map[string]string{"name": "Soandso", "msg": "it's fine, don't worry"},
 		},
 		{
 			plain:    "Your {spell} spell has worn off.",
