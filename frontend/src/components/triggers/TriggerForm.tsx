@@ -718,6 +718,12 @@ export default function TriggerForm({ initial, prefill, categories, onCategories
   const [plainPending, setPlainPending] = useState(false)
   const [plainBlocked, setPlainBlocked] = useState<string | null>(null)
   const plainInit = useRef(false)
+  // Latest values, so a mode-switch conversion that returns after the user
+  // kept typing is ignored instead of overwriting the newer text.
+  const plainTextRef = useRef(plainText)
+  plainTextRef.current = plainText
+  const patternRef = useRef(pattern)
+  patternRef.current = pattern
 
   useEffect(() => {
     if (plainInit.current) return
@@ -1209,8 +1215,10 @@ export default function TriggerForm({ initial, prefill, categories, onCategories
                             setPatternMode('regex')
                             return
                           }
-                          convertTriggerPattern('regex', plainText)
+                          const sent = plainText
+                          convertTriggerPattern('regex', sent)
                             .then((r) => {
+                              if (plainTextRef.current !== sent) return
                               if (r.ok) {
                                 setPlainError(null)
                                 handlePatternChange(r.result ?? '')
@@ -1219,7 +1227,9 @@ export default function TriggerForm({ initial, prefill, categories, onCategories
                                 setPlainError(r.error ?? 'Invalid pattern')
                               }
                             })
-                            .catch(() => setPlainError("Couldn't check the pattern"))
+                            .catch(() => {
+                              if (plainTextRef.current === sent) setPlainError("Couldn't check the pattern")
+                            })
                           return
                         }
                         if (patternMode === 'plain') return
@@ -1230,8 +1240,10 @@ export default function TriggerForm({ initial, prefill, categories, onCategories
                           setPatternMode('plain')
                           return
                         }
-                        convertTriggerPattern('plain', pattern)
+                        const sentRegex = pattern
+                        convertTriggerPattern('plain', sentRegex)
                           .then((r) => {
+                            if (patternRef.current !== sentRegex) return
                             if (r.ok) {
                               setPlainText(r.result ?? '')
                               setPatternMode('plain')
