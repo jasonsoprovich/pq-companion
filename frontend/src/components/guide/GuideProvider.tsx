@@ -25,7 +25,9 @@ interface GuideValue {
   seen: string[]
   loaded: boolean
   active: TourDef | null
-  startTour: (id: string) => void
+  // auto: started by useAutoTour on the page itself. It doesn't navigate
+  // (keeps the user's tab/panel) and fails silently.
+  startTour: (id: string, opts?: { auto?: boolean }) => void
 }
 
 const GuideContext = createContext<GuideValue>({
@@ -100,17 +102,17 @@ export function GuideProvider({
   }, [notice])
 
   const startTour = useCallback(
-    (id: string) => {
+    (id: string, opts?: { auto?: boolean }) => {
       const def = tourById(id)
       if (!def) return
       const seq = ++startSeq.current
       setActive(null)
       const target = def.route
-      if (location.pathname + location.search !== target) navigate(target)
+      if (!opts?.auto && location.pathname + location.search !== target) navigate(target)
       void waitForAnchor(def.ready, READY_TIMEOUT_MS).then((ok) => {
         if (seq !== startSeq.current) return
         if (ok) setActive(def)
-        else setNotice(`Couldn't start the "${def.title}" tour on this page.`)
+        else if (!opts?.auto) setNotice(`Couldn't start the "${def.title}" tour on this page.`)
       })
     },
     [location.pathname, location.search, navigate],
@@ -173,6 +175,6 @@ export function useAutoTour(id: string): void {
     if (fired.current || !loaded || busy || active) return
     if (seen.includes(id)) return
     fired.current = true
-    startTour(id)
+    startTour(id, { auto: true })
   }, [id, busy, seen, loaded, active, startTour])
 }

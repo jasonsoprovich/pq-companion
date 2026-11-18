@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useAutoTour } from '../components/guide/GuideProvider'
 import { useEscapeToClose } from '../hooks/useEscapeToClose'
 import {
   Zap,
@@ -3376,6 +3377,7 @@ function DeleteCategoryModal({
 }
 
 export default function TriggersPage(): React.ReactElement {
+  useAutoTour('triggers')
   const activePlayer = useActivePlayerName()
   const packUpdates = usePackUpdates()
   const [tab, setTab] = usePersistentState<Tab>('pq-tab:triggers', 'triggers', ['triggers', 'history', 'packs', 'tester'])
@@ -4018,7 +4020,7 @@ export default function TriggersPage(): React.ReactElement {
                   Clear All
                 </button>
               )}
-              <div className="relative flex">
+              <div className="relative flex" data-tour="triggers-new">
                 <button
                   onClick={() => {
                     setNewMenuOpen(false)
@@ -4112,10 +4114,12 @@ export default function TriggersPage(): React.ReactElement {
       <div
         className="flex gap-0 border-b shrink-0"
         style={{ borderColor: 'var(--color-border)' }}
+        data-tour="triggers-tabs"
       >
         {(['triggers', 'history', 'packs', 'tester'] as Tab[]).map((t) => (
           <button
             key={t}
+            data-tour={`triggers-tab-${t}`}
             onClick={() => setTab(t)}
             className="px-4 py-2 text-xs font-medium capitalize transition-colors"
             style={tabStyle(t)}

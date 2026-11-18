@@ -4,6 +4,7 @@
  * appearance) and lives in the hub's global Overlay settings; the rest are
  * each overlay's own alerts, shown in that overlay's drawer.
  */
+import { useAutoTour } from '../../guide/GuideProvider'
 import React from 'react'
 import type { Config, TimerAlertPref } from '../../../types/config'
 import TimerAlertPrefEditor from '../../settings/TimerAlertPrefEditor'
@@ -25,12 +26,13 @@ interface TimerSettingsProps {
 
 // Used by Buff, Detrimental, Filtered and Custom timers alike.
 export function SharedTimerSettings({ config, setConfig }: TimerSettingsProps): React.ReactElement {
+  useAutoTour('timers')
   return (
     <SettingsSection
       title="Timers"
       description="Shared by every timer overlay: which spells are tracked, when timers show, and how the bars look."
     >
-      <div>
+      <div data-tour="timers-tracking">
         <p className="mb-1 text-sm" style={{ color: 'var(--color-foreground)' }}>
           Tracking mode
         </p>
@@ -155,7 +157,7 @@ export function SharedTimerSettings({ config, setConfig }: TimerSettingsProps): 
         </label>
       </div>
 
-      <div className="mt-4">
+      <div className="mt-4" data-tour="timers-thresholds">
         <p className="mb-1 text-sm" style={{ color: 'var(--color-foreground)' }}>
           Display thresholds
         </p>
@@ -413,7 +415,7 @@ export function SharedTimerSettings({ config, setConfig }: TimerSettingsProps): 
           </span>
         </label>
 
-        <label className="mt-3 flex items-start gap-2 cursor-pointer">
+        <label data-tour="timers-seconds" className="mt-3 flex items-start gap-2 cursor-pointer">
           <input
             type="checkbox"
             checked={config.spell_timer?.timer_show_seconds ?? false}
@@ -593,6 +595,7 @@ export function DetrimAlertSettings({ config, setConfig }: TimerSettingsProps): 
 
 // CH Chain: chain call tracking, possible misses and the secondary chain.
 export function CHChainSettings({ config, setConfig }: TimerSettingsProps): React.ReactElement {
+  useAutoTour('chchain')
   return (
     <SettingsSection title="Chain tracking">
       <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
@@ -605,7 +608,7 @@ export function CHChainSettings({ config, setConfig }: TimerSettingsProps): Reac
         and <code className="font-mono">target</code>.
       </p>
 
-      <label className="mb-3 flex items-start gap-2 cursor-pointer">
+      <label data-tour="chchain-enable" className="mb-3 flex items-start gap-2 cursor-pointer">
         <input
           type="checkbox"
           checked={config.ch_chain?.enabled ?? false}
@@ -622,7 +625,7 @@ export function CHChainSettings({ config, setConfig }: TimerSettingsProps): Reac
         </span>
       </label>
 
-      <label className="mb-3 flex items-start gap-2 cursor-pointer">
+      <label data-tour="chchain-miss" className="mb-3 flex items-start gap-2 cursor-pointer">
         <input
           type="checkbox"
           checked={config.ch_chain?.possible_miss_enabled ?? true}
@@ -698,7 +701,7 @@ export function CHChainSettings({ config, setConfig }: TimerSettingsProps): Reac
         />
       </label>
 
-      <label className="mb-3 flex items-start gap-2 cursor-pointer">
+      <label data-tour="chchain-secondary" className="mb-3 flex items-start gap-2 cursor-pointer">
         <input
           type="checkbox"
           checked={config.ch_chain?.secondary_enabled ?? false}

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
+import { useAutoTour } from '../components/guide/GuideProvider'
 import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { Settings, Search, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, FileText, Code2, PanelLeft, Info, Globe, MessageCircle, Coffee, Heart, Eye, Gauge, Download, Headphones, Map as MapIcon, Keyboard as KeyboardIcon } from 'lucide-react'
 import BackfillPanel from '../components/settings/BackfillPanel'
@@ -126,6 +127,7 @@ function TabBar({ tabs, active, onChange, alerts }: TabBarProps): React.ReactEle
 
   return (
     <nav
+      data-tour="settings-tabs"
       className="flex w-44 shrink-0 flex-col gap-0.5 overflow-y-auto border-r p-2"
       style={{ borderColor: 'var(--color-border)' }}
     >
@@ -386,6 +388,7 @@ const MOVED_TO_OVERLAYS_HUB: Record<string, string> = {
 const VALID_TABS: Tab[] = ['general', 'audio', 'accessibility', 'navigation', 'hotkeys', 'discord', 'logs', 'backups', 'maps', 'advanced', 'about', 'changelog', 'developer']
 
 export default function SettingsPage(): React.ReactElement {
+  useAutoTour('settings')
   const [searchParams] = useSearchParams()
   // Allow deep-linking to a specific tab via ?tab= (e.g. links to the Logs tab
   // for backfill). Falls back to General for unknown/absent values.
