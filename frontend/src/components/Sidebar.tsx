@@ -1,6 +1,6 @@
 import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { Settings, Search, ChevronLeft, ChevronRight, ChevronDown, Star, LifeBuoy, Pencil, EyeOff, Rocket } from 'lucide-react'
+import { Settings, Search, ChevronLeft, ChevronRight, ChevronDown, Star, LifeBuoy, Pencil, EyeOff, Rocket, X } from 'lucide-react'
 import { getLogStatus } from '../services/api'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
@@ -359,6 +359,19 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
             <span className="tabular-nums" style={{ color: 'var(--color-muted-foreground)' }}>
               {gettingStarted.doneCount}/{gettingStarted.total}
             </span>
+            <button
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                gettingStarted.setDismissed(true)
+              }}
+              className="-mr-1 rounded p-0.5 hover:bg-(--color-surface-3)"
+              style={{ color: 'var(--color-muted)', cursor: 'pointer' }}
+              title="Hide this reminder (the checklist stays in Help → Quick Start)"
+              aria-label="Hide getting started reminder"
+            >
+              <X size={11} />
+            </button>
           </NavLink>
         )}
         <NavLink

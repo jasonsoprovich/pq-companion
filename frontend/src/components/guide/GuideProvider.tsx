@@ -14,7 +14,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { getConfig, saveConfigChanges } from '../../services/api'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { WSEvent } from '../../lib/wsEvents'
-import { tourById, type TourDef } from '../../lib/tours'
+import { TOURS, tourById, type TourDef } from '../../lib/tours'
 import Tour from './Tour'
 
 const READY_TIMEOUT_MS = 3000
@@ -118,14 +118,17 @@ export function GuideProvider({
     [location.pathname, location.search, navigate],
   )
 
-  const markSeen = useCallback((id: string) => {
-    setSeen((s) => (s.includes(id) ? s : [...s, id]))
+  const markSeen = useCallback((ids: string[]) => {
+    setSeen((s) => Array.from(new Set([...s, ...ids])))
     getConfig()
       .then((c) => {
         const cur = c.preferences?.tours_seen ?? []
-        if (cur.includes(id)) return
+        if (ids.every((id) => cur.includes(id))) return
         return saveConfigChanges(
-          { ...c, preferences: { ...c.preferences, tours_seen: [...cur, id] } },
+          {
+            ...c,
+            preferences: { ...c.preferences, tours_seen: Array.from(new Set([...cur, ...ids])) },
+          },
           c,
         )
       })
@@ -135,7 +138,7 @@ export function GuideProvider({
   const end = useCallback(
     (def: TourDef) => {
       setActive(null)
-      markSeen(def.id)
+      markSeen([def.id])
     },
     [markSeen],
   )
@@ -148,7 +151,18 @@ export function GuideProvider({
   return (
     <GuideContext.Provider value={value}>
       {children}
-      {active && <Tour def={active} onEnd={() => end(active)} />}
+      {active && (
+        <Tour
+          def={active}
+          onEnd={() => end(active)}
+          // Marks every tour seen so none auto-start again; Help → Tours
+          // can still replay any of them.
+          onSkipAll={() => {
+            setActive(null)
+            markSeen(TOURS.map((t) => t.id))
+          }}
+        />
+      )}
       {notice && (
         <div
           className="fixed bottom-4 left-1/2 z-[60] -translate-x-1/2 rounded px-3 py-2 text-sm shadow-lg"

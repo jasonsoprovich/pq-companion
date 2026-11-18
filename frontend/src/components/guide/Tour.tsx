@@ -39,9 +39,11 @@ function nextPresent(def: TourDef, from: number, dir: 1 | -1): number {
 export default function Tour({
   def,
   onEnd,
+  onSkipAll,
 }: {
   def: TourDef
   onEnd: () => void
+  onSkipAll?: () => void
 }): React.ReactElement | null {
   const [index, setIndex] = useState(() => nextPresent(def, 0, 1))
   const [rect, setRect] = useState<Rect | null>(null)
@@ -184,6 +186,19 @@ export default function Tour({
         <div className="mt-3 flex items-center justify-between">
           <span className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
             {position} of {presentSteps.length}
+            {onSkipAll && (
+              <>
+                {' · '}
+                <button
+                  onClick={onSkipAll}
+                  className="underline"
+                  style={{ color: 'var(--color-muted-foreground)', cursor: 'pointer' }}
+                  title="Don't show any more tours. You can replay them from Help → Tours."
+                >
+                  Skip all tours
+                </button>
+              </>
+            )}
           </span>
           <div className="flex gap-2">
             {prevIndex !== -1 && (
