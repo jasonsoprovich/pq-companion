@@ -19,6 +19,7 @@ import {
   ChevronDown,
   ChevronRight,
   Pin,
+  HelpCircle,
 } from 'lucide-react'
 import { useVoices } from '../../hooks/useVoices'
 import { useTTSVoices } from '../../hooks/usePiperStatus'
@@ -38,6 +39,7 @@ import {
   runTriggerTest,
   type CreateTriggerRequest,
   type Character,
+  convertTriggerPattern,
 } from '../../services/api'
 import { useActivePlayerName } from '../../hooks/useActivePlayerName'
 import { compileTriggerRegex } from '../../lib/triggerRegex'
@@ -405,6 +407,65 @@ function SampleLineTester({
 
 // ── Trigger form ──────────────────────────────────────────────────────────────
 
+// FormSection is one collapsible group of the trigger editor. The ? opens
+// the help drawer (the Triggers article) without leaving the form.
+function FormSection({
+  title,
+  hint,
+  summary,
+  open,
+  onToggle,
+  children,
+}: {
+  title: string
+  hint: string
+  summary?: string
+  open: boolean
+  onToggle?: () => void
+  children: React.ReactNode
+}): React.ReactElement {
+  return (
+    <section className="rounded-md" style={{ border: '1px solid var(--color-border)' }}>
+      <div className="flex items-center gap-2 px-3 py-2">
+        <button
+          type="button"
+          onClick={onToggle}
+          disabled={!onToggle}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          style={{ cursor: onToggle ? 'pointer' : 'default' }}
+        >
+          {onToggle && (
+            <ChevronDown
+              size={12}
+              style={{
+                color: 'var(--color-muted)',
+                transition: 'transform 0.15s',
+                transform: open ? 'none' : 'rotate(-90deg)',
+              }}
+            />
+          )}
+          <span className="text-xs font-semibold" style={{ color: 'var(--color-foreground)' }}>
+            {title}
+          </span>
+          <span className="truncate text-[11px]" style={{ color: 'var(--color-muted)' }}>
+            {open ? hint : summary}
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new Event('pq:open-help'))}
+          className="shrink-0 rounded p-0.5"
+          style={{ color: 'var(--color-muted)', cursor: 'pointer' }}
+          title="Help for triggers (F1)"
+        >
+          <HelpCircle size={12} />
+        </button>
+      </div>
+      {open && <div className="space-y-4 px-3 pb-3">{children}</div>}
+    </section>
+  )
+}
+
 export interface TriggerFormProps {
   initial?: Trigger
   prefill?: TriggerPrefill
@@ -646,6 +707,94 @@ export default function TriggerForm({ initial, prefill, categories, onCategories
     else setPatternError(null)
   }
 
+  // ── Plain-text pattern mode ──────────────────────────────────────────────
+  // The stored pattern is always the regex. Plain mode is an editing view
+  // converted by the backend grammar (internal/trigger/plainpattern.go). A
+  // form opens in Plain when its pattern is empty or converts back exactly;
+  // otherwise Regex, with Plain disabled and the reason shown.
+  const [patternMode, setPatternMode] = useState<'plain' | 'regex'>(pattern.trim() ? 'regex' : 'plain')
+  const [plainText, setPlainText] = useState('')
+  const [plainError, setPlainError] = useState<string | null>(null)
+  const [plainPending, setPlainPending] = useState(false)
+  const [plainBlocked, setPlainBlocked] = useState<string | null>(null)
+  const plainInit = useRef(false)
+
+  useEffect(() => {
+    if (plainInit.current) return
+    plainInit.current = true
+    if (!pattern.trim()) return
+    convertTriggerPattern('plain', pattern)
+      .then((r) => {
+        if (r.ok) {
+          setPlainText(r.result ?? '')
+          setPatternMode('plain')
+        } else {
+          setPlainBlocked(r.error ?? 'not plain text')
+        }
+      })
+      .catch(() => undefined)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Plain → regex as the user types.
+  useEffect(() => {
+    if (patternMode !== 'plain' || !plainInit.current) return
+    if (!plainText.trim()) {
+      setPlainError(null)
+      setPlainPending(false)
+      handlePatternChange('')
+      return
+    }
+    let stale = false
+    setPlainPending(true)
+    const t = window.setTimeout(() => {
+      convertTriggerPattern('regex', plainText)
+        .then((r) => {
+          if (stale) return
+          if (r.ok) {
+            setPlainError(null)
+            handlePatternChange(r.result ?? '')
+          } else {
+            setPlainError(r.error ?? 'Invalid pattern')
+          }
+        })
+        .catch(() => {
+          if (!stale) setPlainError("Couldn't check the pattern")
+        })
+        .finally(() => {
+          if (!stale) setPlainPending(false)
+        })
+    }, 150)
+    return () => {
+      stale = true
+      window.clearTimeout(t)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plainText, patternMode])
+
+  // In Regex mode, keep track of whether Plain is available for this regex.
+  useEffect(() => {
+    if (patternMode !== 'regex') return
+    if (!pattern.trim()) {
+      setPlainBlocked(null)
+      return
+    }
+    let stale = false
+    const t = window.setTimeout(() => {
+      convertTriggerPattern('plain', pattern)
+        .then((r) => {
+          if (stale) return
+          setPlainBlocked(r.ok ? null : (r.error ?? 'not plain text'))
+          if (r.ok) setPlainText(r.result ?? '')
+        })
+        .catch(() => undefined)
+    }, 300)
+    return () => {
+      stale = true
+      window.clearTimeout(t)
+    }
+  }, [pattern, patternMode])
+
   const handleActionChange = (index: number, action: Action) => {
     actionsTouched.current = true
     setActions((prev) => prev.map((a, i) => (i === index ? action : a)))
@@ -756,6 +905,10 @@ export default function TriggerForm({ initial, prefill, categories, onCategories
       setPipeError(null)
       pipeCondition = pc
     } else {
+      if (patternMode === 'plain' && (plainPending || plainError)) {
+        setPatternError(plainError ?? 'Still checking the pattern, try again.')
+        return
+      }
       if (!pattern.trim()) return
       if (!validatePattern(pattern)) return
 
@@ -857,6 +1010,27 @@ export default function TriggerForm({ initial, prefill, categories, onCategories
     (source === 'pipe' || (pattern.trim() && !patternError)) &&
     !submitting
 
+  // Sections: Basics is always open; Actions and Timer start open when
+  // they hold something; Advanced opens only when it has non-default values.
+  const advancedSet =
+    excludePatternsText.trim() !== '' || refireCooldown > 0 || repeatReset > 0
+  const [openSections, setOpenSections] = useState(() => ({
+    actions: true,
+    timer: timerType !== 'none',
+    advanced: advancedSet,
+  }))
+  const toggleSection = (k: 'actions' | 'timer' | 'advanced'): void =>
+    setOpenSections((o) => ({ ...o, [k]: !o[k] }))
+  const advancedSummary = advancedSet
+    ? [
+        excludePatternsText.trim() ? 'exclusions' : '',
+        refireCooldown > 0 ? `${refireCooldown}s cooldown` : '',
+        repeatReset > 0 ? 'repeat count' : '',
+      ]
+        .filter(Boolean)
+        .join(', ')
+    : 'Defaults'
+
   return (
     <form
       onSubmit={handleSubmit}
@@ -873,947 +1047,1071 @@ export default function TriggerForm({ initial, prefill, categories, onCategories
         </div>
       </div>
 
-      {/* Name */}
-      <div className="space-y-1">
-        <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
-          Name
-        </label>
-        <input
-          ref={nameRef}
-          type="text"
-          placeholder="e.g. Mez Wore Off"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          className="w-full rounded px-3 py-1.5 text-sm outline-none"
-          style={inputStyle}
-          disabled={submitting}
-        />
-      </div>
-
-      {/* Category */}
-      <div className="space-y-1">
-        <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
-          Category
-        </label>
-        {creatingCat ? (
-          <div className="space-y-1">
-            <div className="flex gap-2">
-              <input
-                type="text"
-                autoFocus
-                placeholder="New category name"
-                value={newCatName}
-                onChange={(e) => setNewCatName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') { e.preventDefault(); handleAddCategory() }
-                  else if (e.key === 'Escape') { e.preventDefault(); setCreatingCat(false); setCatError(null) }
-                }}
-                className="flex-1 rounded px-3 py-1.5 text-sm outline-none"
-                style={inputStyle}
-                disabled={addingCat}
-              />
-              <button
-                type="button"
-                onClick={handleAddCategory}
-                disabled={addingCat || !newCatName.trim()}
-                className="rounded px-3 py-1.5 text-xs font-semibold"
-                style={{
-                  backgroundColor: 'var(--color-primary)',
-                  color: 'var(--color-background)',
-                  border: '1px solid transparent',
-                  cursor: 'pointer',
-                }}
-              >
-                Add
-              </button>
-              <button
-                type="button"
-                onClick={() => { setCreatingCat(false); setCatError(null); setNewCatName('') }}
-                disabled={addingCat}
-                className="rounded px-3 py-1.5 text-xs"
-                style={{
-                  backgroundColor: 'var(--color-surface-2)',
-                  color: 'var(--color-muted-foreground)',
-                  border: '1px solid var(--color-border)',
-                  cursor: 'pointer',
-                }}
-              >
-                Cancel
-              </button>
-            </div>
-            {catError && (
-              <p className="text-[11px]" style={{ color: 'var(--color-danger)' }}>{catError}</p>
-            )}
-          </div>
-        ) : (
-          <select
-            value={categoryId}
-            onChange={(e) => handleCategorySelect(e.target.value)}
-            className="w-full rounded px-3 py-1.5 text-sm outline-none"
-            style={inputStyle}
-            disabled={submitting}
-          >
-            <option value="">Uncategorized</option>
-            {orderedCategories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.parent_id ? `  ↳ ${c.name}` : c.name}{c.is_builtin ? ' (pack)' : ''}
-              </option>
-            ))}
-            {/* Defensive: keep the current value selectable even if the
-                category list hasn't loaded or doesn't include it yet. */}
-            {categoryId && !categoriesById.has(categoryId) && (
-              <option value={categoryId}>{initial?.pack_name || categoryId}</option>
-            )}
-            <option value="__new__">+ New category…</option>
-          </select>
-        )}
-      </div>
-
-      {/* Source toggle */}
-      <div className="space-y-1">
-        <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
-          Match source
-        </label>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => setSource('log')}
-            className="flex-1 rounded px-3 py-1.5 text-xs font-semibold"
-            style={{
-              backgroundColor: source === 'log' ? 'var(--color-primary)' : 'var(--color-surface-2)',
-              color: source === 'log' ? '#fff' : 'var(--color-foreground)',
-              border: '1px solid var(--color-border)',
-              cursor: 'pointer',
-            }}
-          >
-            Log line (regex)
-          </button>
-          <button
-            type="button"
-            onClick={() => setSource('pipe')}
-            className="flex-1 rounded px-3 py-1.5 text-xs font-semibold"
-            style={{
-              backgroundColor: source === 'pipe' ? 'var(--color-primary)' : 'var(--color-surface-2)',
-              color: source === 'pipe' ? '#fff' : 'var(--color-foreground)',
-              border: '1px solid var(--color-border)',
-              cursor: 'pointer',
-            }}
-          >
-            Zeal pipe event
-          </button>
-        </div>
-        <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
-          Pipe triggers fire on live game state (target HP, buff changes, /pipe commands) and require Zeal running.
-        </p>
-      </div>
-
-      {/* Pattern — log source only */}
-      {source === 'log' && (
+      <FormSection title="Basics" hint="What to watch for, and for which characters." open>
+        {/* Name */}
         <div className="space-y-1">
           <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
-            Pattern (regex)
+            Name
           </label>
           <input
+            ref={nameRef}
             type="text"
-            placeholder="e.g. Your .+ spell has worn off\."
-            value={pattern}
-            onChange={(e) => handlePatternChange(e.target.value)}
-            className="w-full rounded px-3 py-1.5 text-sm outline-none font-mono"
-            style={{
-              ...inputStyle,
-              border: `1px solid ${patternError ? 'var(--color-danger)' : 'var(--color-border)'}`,
-            }}
-            disabled={submitting}
-          />
-          {patternError && (
-            <p className="text-[11px]" style={{ color: 'var(--color-danger)' }}>
-              {patternError}
-            </p>
-          )}
-          <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
-            Matched against the log message text (after the timestamp).
-          </p>
-          <p className="text-[10px] leading-snug" style={{ color: 'var(--color-muted)' }}>
-            Reuse capture groups in the alert/TTS text: <span className="font-mono">{'{1}'}</span>,{' '}
-            <span className="font-mono">{'{2}'}</span> (or <span className="font-mono">$1</span>,{' '}
-            GINA-style <span className="font-mono">{'{S1}'}</span>) for numbered groups,{' '}
-            <span className="font-mono">{'{name}'}</span> for named groups like{' '}
-            <span className="font-mono">(?P&lt;name&gt;…)</span>. Built-ins:{' '}
-            <span className="font-mono">{'{c}'}</span> = your character (works in the
-            pattern too), <span className="font-mono">{'{repeated}'}</span> = match count
-            within the repeat window, <span className="font-mono">{'{target}'}</span> = the mob you’re
-            fighting — or set “Target from capture” below to pull it from the matched line
-            (a groupmate’s slow victim, a proc target).
-          </p>
-          {source === 'log' && (
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
-                Target from capture
-              </label>
-              <input
-                type="text"
-                value={timerTargetCapture}
-                onChange={(e) => setTimerTargetCapture(e.target.value)}
-                placeholder="e.g. target"
-                className="w-24 rounded px-2 py-0.5 text-xs outline-none text-center font-mono"
-                style={inputStyle}
-                disabled={submitting}
-                title="Name (or number) of a capture group holding who the spell/proc hit. Its text fills {target} in the alert & TTS text AND shows as the grey 'on <target>' suffix on timers. Capture it from the line itself, e.g. (?P<target>[A-Za-z' ]+) is ensnared. Empty (or an unmatched self-cast branch) = fall back to the mob you're currently fighting."
-              />
-              <span className="text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
-                fills <span className="font-mono">{'{target}'}</span> &amp; the “on &lt;name&gt;” timer
-                suffix; capture like <span className="font-mono">(?P&lt;target&gt;[A-Za-z&#39; ]+)</span>
-              </span>
-            </div>
-          )}
-
-          {/* Additional patterns — any enabled pattern fires the trigger. */}
-          <div className="space-y-1 pt-1">
-            <div className="flex items-center justify-between">
-              <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
-                Additional patterns
-              </label>
-              <button
-                type="button"
-                onClick={() => setExtraPatterns((prev) => [...prev, { pattern: '', enabled: true }])}
-                className="text-[11px] rounded px-2 py-0.5"
-                style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-muted-foreground)' }}
-                disabled={submitting}
-              >
-                + Add pattern
-              </button>
-            </div>
-            {extraPatterns.length > 0 && (
-              <p className="text-[10px] leading-snug" style={{ color: 'var(--color-muted)' }}>
-                The trigger fires when the main pattern <em>or</em> any enabled pattern below
-                matches; the matching pattern's capture groups fill the alert text. Uncheck a
-                row to disable it without deleting.
-              </p>
-            )}
-            {extraPatterns.map((ep, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={ep.enabled}
-                  onChange={(e) => {
-                    const v = e.target.checked
-                    setExtraPatterns((prev) => prev.map((p, j) => (j === i ? { ...p, enabled: v } : p)))
-                  }}
-                  disabled={submitting}
-                />
-                <input
-                  type="text"
-                  value={ep.pattern}
-                  onChange={(e) => {
-                    const v = e.target.value
-                    setExtraPatterns((prev) => prev.map((p, j) => (j === i ? { ...p, pattern: v } : p)))
-                    if (extraErrors.length > 0) setExtraErrors([])
-                  }}
-                  className="flex-1 rounded px-3 py-1.5 text-sm outline-none font-mono"
-                  style={{ ...inputStyle, opacity: ep.enabled ? 1 : 0.5 }}
-                  placeholder="^(.+) is behind you\.$"
-                  disabled={submitting}
-                />
-                {timerType !== 'none' && (
-                  <DecimalInput
-                    min={0}
-                    value={ep.timer_duration_secs ?? 0}
-                    onValue={(v) => {
-                      setExtraPatterns((prev) => prev.map((p, j) => (j === i ? { ...p, timer_duration_secs: v } : p)))
-                    }}
-                    className="w-16 rounded px-2 py-1.5 text-xs outline-none text-center"
-                    style={{ ...inputStyle, opacity: ep.enabled ? 1 : 0.5 }}
-                    disabled={submitting}
-                    title="Timer duration override (seconds) when THIS pattern matches. 0 = use the trigger's duration above."
-                  />
-                )}
-                <button
-                  type="button"
-                  onClick={() => setExtraPatterns((prev) => prev.filter((_, j) => j !== i))}
-                  style={{ color: 'var(--color-muted-foreground)' }}
-                  disabled={submitting}
-                >
-                  <X size={13} />
-                </button>
-              </div>
-            ))}
-            {extraErrors.map((msg, i) => (
-              <p key={i} className="text-[11px]" style={{ color: 'var(--color-danger)' }}>
-                {msg}
-              </p>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Pipe condition — pipe source only */}
-      {source === 'pipe' && (
-        <div className="space-y-2 rounded p-3" style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
-          <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
-            Pipe condition
-          </label>
-          <select
-            value={pipeKind}
-            onChange={(e) => { setPipeKind(e.target.value as PipeConditionKind); setPipeError(null) }}
+            placeholder="e.g. Mez Wore Off"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
             className="w-full rounded px-3 py-1.5 text-sm outline-none"
             style={inputStyle}
             disabled={submitting}
-          >
-            <option value="target_hp_below">Target HP drops below…</option>
-            <option value="target_name">Target name becomes…</option>
-            <option value="buff_landed">Buff lands on me</option>
-            <option value="buff_faded">Buff fades from me</option>
-            <option value="pipe_command">In-game /pipe text</option>
-            <option value="buff_stripped">My buff is stripped</option>
-            <option value="debuff_stripped">My debuff is dispelled off a mob</option>
-          </select>
+          />
+        </div>
 
-          {pipeKind === 'target_hp_below' && (
-            <div className="flex items-center gap-3">
-              <input
-                type="range"
-                min={1}
-                max={99}
-                value={pipeHPThreshold}
-                onChange={(e) => setPipeHPThreshold(Number(e.target.value))}
-                style={{ flex: 1 }}
-                disabled={submitting}
-              />
-              <span
-                className="tabular-nums text-xs"
-                style={{ color: 'var(--color-foreground)', minWidth: '3.5rem' }}
-              >
-                {pipeHPThreshold}% HP
-              </span>
+        {/* Category */}
+        <div className="space-y-1">
+          <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
+            Category
+          </label>
+          {creatingCat ? (
+            <div className="space-y-1">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  autoFocus
+                  placeholder="New category name"
+                  value={newCatName}
+                  onChange={(e) => setNewCatName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); handleAddCategory() }
+                    else if (e.key === 'Escape') { e.preventDefault(); setCreatingCat(false); setCatError(null) }
+                  }}
+                  className="flex-1 rounded px-3 py-1.5 text-sm outline-none"
+                  style={inputStyle}
+                  disabled={addingCat}
+                />
+                <button
+                  type="button"
+                  onClick={handleAddCategory}
+                  disabled={addingCat || !newCatName.trim()}
+                  className="rounded px-3 py-1.5 text-xs font-semibold"
+                  style={{
+                    backgroundColor: 'var(--color-primary)',
+                    color: 'var(--color-background)',
+                    border: '1px solid transparent',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Add
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setCreatingCat(false); setCatError(null); setNewCatName('') }}
+                  disabled={addingCat}
+                  className="rounded px-3 py-1.5 text-xs"
+                  style={{
+                    backgroundColor: 'var(--color-surface-2)',
+                    color: 'var(--color-muted-foreground)',
+                    border: '1px solid var(--color-border)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+              {catError && (
+                <p className="text-[11px]" style={{ color: 'var(--color-danger)' }}>{catError}</p>
+              )}
             </div>
+          ) : (
+            <select
+              value={categoryId}
+              onChange={(e) => handleCategorySelect(e.target.value)}
+              className="w-full rounded px-3 py-1.5 text-sm outline-none"
+              style={inputStyle}
+              disabled={submitting}
+            >
+              <option value="">Uncategorized</option>
+              {orderedCategories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.parent_id ? `  ↳ ${c.name}` : c.name}{c.is_builtin ? ' (pack)' : ''}
+                </option>
+              ))}
+              {/* Defensive: keep the current value selectable even if the
+                  category list hasn't loaded or doesn't include it yet. */}
+              {categoryId && !categoriesById.has(categoryId) && (
+                <option value={categoryId}>{initial?.pack_name || categoryId}</option>
+              )}
+              <option value="__new__">+ New category…</option>
+            </select>
           )}
-          {pipeKind === 'target_hp_below' && (
-            <div className="flex gap-2">
+        </div>
+
+        {/* Source toggle */}
+        <div className="space-y-1">
+          <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
+            Match source
+          </label>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setSource('log')}
+              className="flex-1 rounded px-3 py-1.5 text-xs font-semibold"
+              style={{
+                backgroundColor: source === 'log' ? 'var(--color-primary)' : 'var(--color-surface-2)',
+                color: source === 'log' ? '#fff' : 'var(--color-foreground)',
+                border: '1px solid var(--color-border)',
+                cursor: 'pointer',
+              }}
+            >
+              Log line
+            </button>
+            <button
+              type="button"
+              onClick={() => setSource('pipe')}
+              className="flex-1 rounded px-3 py-1.5 text-xs font-semibold"
+              style={{
+                backgroundColor: source === 'pipe' ? 'var(--color-primary)' : 'var(--color-surface-2)',
+                color: source === 'pipe' ? '#fff' : 'var(--color-foreground)',
+                border: '1px solid var(--color-border)',
+                cursor: 'pointer',
+              }}
+            >
+              Zeal pipe event
+            </button>
+          </div>
+          <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+            Pipe triggers fire on live game state (target HP, buff changes, /pipe commands) and require Zeal running.
+          </p>
+        </div>
+
+        {/* Pattern — log source only */}
+        {source === 'log' && (
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
+                Pattern
+              </label>
+              <div className="ml-auto flex overflow-hidden rounded" style={{ border: '1px solid var(--color-border)' }}>
+                {(['plain', 'regex'] as const).map((m) => {
+                  const active = patternMode === m
+                  const blocked = m === 'plain' && patternMode === 'regex' && !!plainBlocked
+                  return (
+                    <button
+                      key={m}
+                      type="button"
+                      disabled={blocked || submitting}
+                      onClick={() => {
+                        if (m === 'regex') {
+                          setPatternMode('regex')
+                          return
+                        }
+                        if (patternMode === 'plain') return
+                        // Convert the current regex fresh: the background
+                        // check may lag behind the last keystroke.
+                        if (!pattern.trim()) {
+                          setPlainText('')
+                          setPatternMode('plain')
+                          return
+                        }
+                        convertTriggerPattern('plain', pattern)
+                          .then((r) => {
+                            if (r.ok) {
+                              setPlainText(r.result ?? '')
+                              setPatternMode('plain')
+                            } else {
+                              setPlainBlocked(r.error ?? 'not plain text')
+                            }
+                          })
+                          .catch(() => undefined)
+                      }}
+                      title={
+                        blocked
+                          ? `This pattern ${plainBlocked}, so it can only be edited as regex.`
+                          : m === 'plain'
+                            ? 'Type the line as it appears; {name} captures any text'
+                            : 'Edit the regular expression directly'
+                      }
+                      className="px-2 py-0.5 text-[11px] font-medium disabled:opacity-40"
+                      style={{
+                        backgroundColor: active ? 'var(--color-primary)' : 'var(--color-surface-2)',
+                        color: active ? 'var(--color-background)' : 'var(--color-muted-foreground)',
+                      }}
+                    >
+                      {m === 'plain' ? 'Plain text' : 'Regex'}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+            {patternMode === 'plain' ? (
               <input
                 type="text"
-                placeholder="Only this mob (optional)"
+                placeholder="e.g. {name} has been slain by {C}"
+                value={plainText}
+                onChange={(e) => {
+                  setPlainText(e.target.value)
+                  if (patternError) setPatternError(null)
+                }}
+                className="w-full rounded px-3 py-1.5 text-sm outline-none font-mono"
+                style={{
+                  ...inputStyle,
+                  border: `1px solid ${plainError || patternError ? 'var(--color-danger)' : 'var(--color-border)'}`,
+                }}
+                disabled={submitting}
+              />
+            ) : (
+              <input
+                type="text"
+                placeholder="e.g. Your .+ spell has worn off\."
+                value={pattern}
+                onChange={(e) => handlePatternChange(e.target.value)}
+                className="w-full rounded px-3 py-1.5 text-sm outline-none font-mono"
+                style={{
+                  ...inputStyle,
+                  border: `1px solid ${patternError ? 'var(--color-danger)' : 'var(--color-border)'}`,
+                }}
+                disabled={submitting}
+              />
+            )}
+            {(patternMode === 'plain' ? plainError || patternError : patternError) && (
+              <p className="text-[11px]" style={{ color: 'var(--color-danger)' }}>
+                {patternMode === 'plain' ? plainError || patternError : patternError}
+              </p>
+            )}
+            {patternMode === 'regex' && plainBlocked && pattern.trim() && (
+              <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+                Plain text is off: this pattern {plainBlocked}.
+              </p>
+            )}
+            {patternMode === 'plain' ? (
+              <p className="text-[11px] leading-snug" style={{ color: 'var(--color-muted)' }}>
+                Type the line as it appears in your log; it can match anywhere in the
+                line. <span className="font-mono">{'{name}'}</span> captures any text,
+                and you can use it in alert text the same way.{' '}
+                <span className="font-mono">{'{C}'}</span> is your character,{' '}
+                <span className="font-mono">{'{N}'}</span> a number,{' '}
+                <span className="font-mono">{'{{ }}'}</span> literal braces.
+                {pattern && (
+                  <>
+                    {' '}Regex: <span className="font-mono">{pattern}</span>
+                  </>
+                )}
+              </p>
+            ) : (
+              <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+                Matched against the log message text (after the timestamp).
+              </p>
+            )}
+            {patternMode === 'regex' && (
+            <p className="text-[10px] leading-snug" style={{ color: 'var(--color-muted)' }}>
+              Reuse capture groups in the alert/TTS text: <span className="font-mono">{'{1}'}</span>,{' '}
+              <span className="font-mono">{'{2}'}</span> (or <span className="font-mono">$1</span>,{' '}
+              GINA-style <span className="font-mono">{'{S1}'}</span>) for numbered groups,{' '}
+              <span className="font-mono">{'{name}'}</span> for named groups like{' '}
+              <span className="font-mono">(?P&lt;name&gt;…)</span>. Built-ins:{' '}
+              <span className="font-mono">{'{c}'}</span> = your character (works in the
+              pattern too), <span className="font-mono">{'{repeated}'}</span> = match count
+              within the repeat window, <span className="font-mono">{'{target}'}</span> = the mob you’re
+              fighting — or set “Target from capture” below to pull it from the matched line
+              (a groupmate’s slow victim, a proc target).
+            </p>
+            )}
+            {source === 'log' && (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+                  Target from capture
+                </label>
+                <input
+                  type="text"
+                  value={timerTargetCapture}
+                  onChange={(e) => setTimerTargetCapture(e.target.value)}
+                  placeholder="e.g. target"
+                  className="w-24 rounded px-2 py-0.5 text-xs outline-none text-center font-mono"
+                  style={inputStyle}
+                  disabled={submitting}
+                  title="Name (or number) of a capture group holding who the spell/proc hit. Its text fills {target} in the alert & TTS text AND shows as the grey 'on <target>' suffix on timers. Capture it from the line itself, e.g. (?P<target>[A-Za-z' ]+) is ensnared. Empty (or an unmatched self-cast branch) = fall back to the mob you're currently fighting."
+                />
+                <span className="text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
+                  fills <span className="font-mono">{'{target}'}</span> &amp; the “on &lt;name&gt;” timer
+                  suffix; capture like <span className="font-mono">(?P&lt;target&gt;[A-Za-z&#39; ]+)</span>
+                </span>
+              </div>
+            )}
+
+            {/* Additional patterns — any enabled pattern fires the trigger. */}
+            <div className="space-y-1 pt-1">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
+                  Additional patterns
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setExtraPatterns((prev) => [...prev, { pattern: '', enabled: true }])}
+                  className="text-[11px] rounded px-2 py-0.5"
+                  style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-muted-foreground)' }}
+                  disabled={submitting}
+                >
+                  + Add pattern
+                </button>
+              </div>
+              {extraPatterns.length > 0 && (
+                <p className="text-[10px] leading-snug" style={{ color: 'var(--color-muted)' }}>
+                  The trigger fires when the main pattern <em>or</em> any enabled pattern below
+                  matches; the matching pattern's capture groups fill the alert text. Uncheck a
+                  row to disable it without deleting.
+                </p>
+              )}
+              {extraPatterns.map((ep, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={ep.enabled}
+                    onChange={(e) => {
+                      const v = e.target.checked
+                      setExtraPatterns((prev) => prev.map((p, j) => (j === i ? { ...p, enabled: v } : p)))
+                    }}
+                    disabled={submitting}
+                  />
+                  <input
+                    type="text"
+                    value={ep.pattern}
+                    onChange={(e) => {
+                      const v = e.target.value
+                      setExtraPatterns((prev) => prev.map((p, j) => (j === i ? { ...p, pattern: v } : p)))
+                      if (extraErrors.length > 0) setExtraErrors([])
+                    }}
+                    className="flex-1 rounded px-3 py-1.5 text-sm outline-none font-mono"
+                    style={{ ...inputStyle, opacity: ep.enabled ? 1 : 0.5 }}
+                    placeholder="^(.+) is behind you\.$"
+                    disabled={submitting}
+                  />
+                  {timerType !== 'none' && (
+                    <DecimalInput
+                      min={0}
+                      value={ep.timer_duration_secs ?? 0}
+                      onValue={(v) => {
+                        setExtraPatterns((prev) => prev.map((p, j) => (j === i ? { ...p, timer_duration_secs: v } : p)))
+                      }}
+                      className="w-16 rounded px-2 py-1.5 text-xs outline-none text-center"
+                      style={{ ...inputStyle, opacity: ep.enabled ? 1 : 0.5 }}
+                      disabled={submitting}
+                      title="Timer duration override (seconds) when THIS pattern matches. 0 = use the trigger's duration above."
+                    />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setExtraPatterns((prev) => prev.filter((_, j) => j !== i))}
+                    style={{ color: 'var(--color-muted-foreground)' }}
+                    disabled={submitting}
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              ))}
+              {extraErrors.map((msg, i) => (
+                <p key={i} className="text-[11px]" style={{ color: 'var(--color-danger)' }}>
+                  {msg}
+                </p>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Pipe condition — pipe source only */}
+        {source === 'pipe' && (
+          <div className="space-y-2 rounded p-3" style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
+            <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
+              Pipe condition
+            </label>
+            <select
+              value={pipeKind}
+              onChange={(e) => { setPipeKind(e.target.value as PipeConditionKind); setPipeError(null) }}
+              className="w-full rounded px-3 py-1.5 text-sm outline-none"
+              style={inputStyle}
+              disabled={submitting}
+            >
+              <option value="target_hp_below">Target HP drops below…</option>
+              <option value="target_name">Target name becomes…</option>
+              <option value="buff_landed">Buff lands on me</option>
+              <option value="buff_faded">Buff fades from me</option>
+              <option value="pipe_command">In-game /pipe text</option>
+              <option value="buff_stripped">My buff is stripped</option>
+              <option value="debuff_stripped">My debuff is dispelled off a mob</option>
+            </select>
+
+            {pipeKind === 'target_hp_below' && (
+              <div className="flex items-center gap-3">
+                <input
+                  type="range"
+                  min={1}
+                  max={99}
+                  value={pipeHPThreshold}
+                  onChange={(e) => setPipeHPThreshold(Number(e.target.value))}
+                  style={{ flex: 1 }}
+                  disabled={submitting}
+                />
+                <span
+                  className="tabular-nums text-xs"
+                  style={{ color: 'var(--color-foreground)', minWidth: '3.5rem' }}
+                >
+                  {pipeHPThreshold}% HP
+                </span>
+              </div>
+            )}
+            {pipeKind === 'target_hp_below' && (
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Only this mob (optional)"
+                  value={pipeTargetName}
+                  onChange={(e) => setPipeTargetName(e.target.value)}
+                  className="min-w-0 flex-1 rounded px-3 py-1.5 text-sm outline-none"
+                  style={inputStyle}
+                  disabled={submitting}
+                />
+                <select
+                  value={pipeSpecialAbility}
+                  onChange={(e) => setPipeSpecialAbility(Number(e.target.value))}
+                  title="Only fire when the target's NPC data has this special ability"
+                  className="min-w-0 flex-1 rounded px-3 py-1.5 text-sm outline-none"
+                  style={inputStyle}
+                  disabled={submitting}
+                >
+                  <option value={0}>Any mob</option>
+                  {SPECIAL_ABILITY_CODES.map((c) => (
+                    <option key={c} value={c}>Has {specialAbilityName(c)}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {pipeKind === 'target_name' && (
+              <input
+                type="text"
+                placeholder="e.g. Vulak`Aerr"
                 value={pipeTargetName}
                 onChange={(e) => setPipeTargetName(e.target.value)}
-                className="min-w-0 flex-1 rounded px-3 py-1.5 text-sm outline-none"
+                className="w-full rounded px-3 py-1.5 text-sm outline-none"
                 style={inputStyle}
                 disabled={submitting}
               />
-              <select
-                value={pipeSpecialAbility}
-                onChange={(e) => setPipeSpecialAbility(Number(e.target.value))}
-                title="Only fire when the target's NPC data has this special ability"
-                className="min-w-0 flex-1 rounded px-3 py-1.5 text-sm outline-none"
-                style={inputStyle}
-                disabled={submitting}
-              >
-                <option value={0}>Any mob</option>
-                {SPECIAL_ABILITY_CODES.map((c) => (
-                  <option key={c} value={c}>Has {specialAbilityName(c)}</option>
-                ))}
-              </select>
-            </div>
-          )}
-          {pipeKind === 'target_name' && (
-            <input
-              type="text"
-              placeholder="e.g. Vulak`Aerr"
-              value={pipeTargetName}
-              onChange={(e) => setPipeTargetName(e.target.value)}
-              className="w-full rounded px-3 py-1.5 text-sm outline-none"
-              style={inputStyle}
-              disabled={submitting}
-            />
-          )}
-          {(pipeKind === 'buff_landed' || pipeKind === 'buff_faded') && (
-            <input
-              type="text"
-              placeholder="e.g. Shield of Words"
-              value={pipeSpellName}
-              onChange={(e) => setPipeSpellName(e.target.value)}
-              className="w-full rounded px-3 py-1.5 text-sm outline-none"
-              style={inputStyle}
-              disabled={submitting}
-            />
-          )}
-          {(pipeKind === 'buff_stripped' || pipeKind === 'debuff_stripped') && (
-            <div className="space-y-1">
+            )}
+            {(pipeKind === 'buff_landed' || pipeKind === 'buff_faded') && (
               <input
                 type="text"
-                placeholder="Spell name (optional, blank = any)"
+                placeholder="e.g. Shield of Words"
                 value={pipeSpellName}
                 onChange={(e) => setPipeSpellName(e.target.value)}
                 className="w-full rounded px-3 py-1.5 text-sm outline-none"
                 style={inputStyle}
                 disabled={submitting}
               />
-              <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
-                {pipeKind === 'buff_stripped'
-                  ? 'Fires when one of your buffs leaves the buff window with '
-                    + 'more than 12 s left and nothing replaced it. Clicking '
-                    + 'a buff off also counts.'
-                  : 'Fires when one of your detrimentals wears off with more '
-                    + 'than 12 s left and a dispel lands on that mob, or two '
-                    + 'of them fade at once. Works without Zeal.'}
-                {' '}Use <code>{'{spell}'}</code>
-                {pipeKind === 'debuff_stripped' && (
-                  <> and <code>{'{target}'}</code> (the mob)</>
-                )}
-                {' '}in the action text.
-              </p>
-            </div>
-          )}
-          {pipeKind === 'pipe_command' && (
-            <div className="space-y-1">
-              <input
-                type="text"
-                placeholder="e.g. pull"
-                value={pipeCommandText}
-                onChange={(e) => setPipeCommandText(e.target.value)}
-                className="w-full rounded px-3 py-1.5 text-sm outline-none"
-                style={inputStyle}
-                disabled={submitting}
-              />
-              <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
-                Triggers when you type <code>/pipe {pipeCommandText || '<text>'}</code> in-game (exact, case-sensitive).
-              </p>
-            </div>
-          )}
+            )}
+            {(pipeKind === 'buff_stripped' || pipeKind === 'debuff_stripped') && (
+              <div className="space-y-1">
+                <input
+                  type="text"
+                  placeholder="Spell name (optional, blank = any)"
+                  value={pipeSpellName}
+                  onChange={(e) => setPipeSpellName(e.target.value)}
+                  className="w-full rounded px-3 py-1.5 text-sm outline-none"
+                  style={inputStyle}
+                  disabled={submitting}
+                />
+                <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+                  {pipeKind === 'buff_stripped'
+                    ? 'Fires when one of your buffs leaves the buff window with '
+                      + 'more than 12 s left and nothing replaced it. Clicking '
+                      + 'a buff off also counts.'
+                    : 'Fires when one of your detrimentals wears off with more '
+                      + 'than 12 s left and a dispel lands on that mob, or two '
+                      + 'of them fade at once. Works without Zeal.'}
+                  {' '}Use <code>{'{spell}'}</code>
+                  {pipeKind === 'debuff_stripped' && (
+                    <> and <code>{'{target}'}</code> (the mob)</>
+                  )}
+                  {' '}in the action text.
+                </p>
+              </div>
+            )}
+            {pipeKind === 'pipe_command' && (
+              <div className="space-y-1">
+                <input
+                  type="text"
+                  placeholder="e.g. pull"
+                  value={pipeCommandText}
+                  onChange={(e) => setPipeCommandText(e.target.value)}
+                  className="w-full rounded px-3 py-1.5 text-sm outline-none"
+                  style={inputStyle}
+                  disabled={submitting}
+                />
+                <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+                  Triggers when you type <code>/pipe {pipeCommandText || '<text>'}</code> in-game (exact, case-sensitive).
+                </p>
+              </div>
+            )}
 
-          {pipeError && (
-            <p className="text-[11px]" style={{ color: 'var(--color-danger)' }}>
-              {pipeError}
+            {pipeError && (
+              <p className="text-[11px]" style={{ color: 'var(--color-danger)' }}>
+                {pipeError}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Characters */}
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
+              Active for characters
+            </label>
+            {allChars.length > 0 && (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={selectAllChars}
+                  className="text-[10px]"
+                  style={{ color: 'var(--color-muted-foreground)' }}
+                >
+                  All
+                </button>
+                <span style={{ color: 'var(--color-border)' }}>·</span>
+                <button
+                  type="button"
+                  onClick={clearAllChars}
+                  className="text-[10px]"
+                  style={{ color: 'var(--color-muted-foreground)' }}
+                >
+                  None
+                </button>
+              </div>
+            )}
+          </div>
+          {allChars.length === 0 ? (
+            <p className="text-[11px] italic" style={{ color: 'var(--color-muted)' }}>
+              No characters discovered yet — this trigger will fire for any active character.
+            </p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {allChars.map((c) => {
+                const sel = selectedChars.has(c.name)
+                const className = c.class >= 0 ? CLASS_NAMES[c.class] : null
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => toggleChar(c.name)}
+                    className="text-[11px] px-2 py-0.5 rounded font-medium"
+                    title={className ? `${c.name} — ${className}` : c.name}
+                    style={{
+                      backgroundColor: sel ? 'var(--color-primary)' : 'var(--color-surface-2)',
+                      color: sel ? 'var(--color-primary-foreground)' : 'var(--color-muted-foreground)',
+                      border: `1px solid ${sel ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                      opacity: sel ? 1 : 0.75,
+                    }}
+                  >
+                    {c.name}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+          {allChars.length > 0 && selectedChars.size === 0 && (
+            <p className="text-[11px] italic" style={{ color: 'var(--color-warning)' }}>
+              No characters selected — trigger will fire for any active character.
             </p>
           )}
         </div>
-      )}
 
-      {/* Exclude patterns — log source only (pipe matches are typed, not regex) */}
-      {source === 'log' && (
-      <div className="space-y-1">
-        <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
-          Exclude patterns (one regex per line, optional)
-        </label>
-        <textarea
-          value={excludePatternsText}
-          onChange={(e) => { setExcludePatternsText(e.target.value); if (excludeErrors.length > 0) setExcludeErrors([]) }}
-          rows={Math.min(8, Math.max(2, excludePatternsText.split('\n').length))}
-          className="w-full rounded px-3 py-1.5 text-xs outline-none font-mono"
-          style={{
-            ...inputStyle,
-            border: `1px solid ${excludeErrors.length > 0 ? 'var(--color-danger)' : 'var(--color-border)'}`,
-            resize: 'vertical',
-          }}
-          disabled={submitting}
-          placeholder={`\\b[Mm]aster[.!]\ntells you, '[Tt]hat'll be `}
-        />
-        {excludeErrors.length > 0 ? (
-          <ul className="text-[11px]" style={{ color: 'var(--color-danger)' }}>
-            {excludeErrors.map((m, i) => (<li key={i}>{m}</li>))}
-          </ul>
-        ) : (
-          <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
-            Suppresses this trigger when any of these regexes also matches the same line — useful for filtering
-            pet/merchant tells out of a broad pattern, or silencing specific bazaar-trader names.
-          </p>
+        {/* Sample-line tester — log source only (pipe conditions aren't
+            driven by pasted log lines). */}
+        {source === 'log' && (
+          <SampleLineTester buildDraft={buildTestDraft} disabled={submitting} />
         )}
-      </div>
-      )}
 
-      {/* Sample-line tester — log source only (pipe conditions aren't
-          driven by pasted log lines). */}
-      {source === 'log' && (
-        <SampleLineTester buildDraft={buildTestDraft} disabled={submitting} />
-      )}
+      </FormSection>
 
-      {/* Refire cooldown — applies to any trigger (log or pipe) */}
-      <div className="space-y-1">
-        <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
-          Refire cooldown (seconds)
-        </label>
-        <DecimalInput
-          min={0}
-          value={refireCooldown}
-          onValue={setRefireCooldown}
-          className="w-28 rounded px-3 py-1.5 text-xs outline-none"
-          style={{ ...inputStyle, border: '1px solid var(--color-border)' }}
-          disabled={submitting}
-        />
-        <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
-          After firing, ignore further matches for this many seconds. 0 = fire on every match.
-          Useful for spammy lines (rampage, resists) without flooding alerts.
-        </p>
-      </div>
+      <FormSection
+        title="Actions"
+        hint="What happens when it fires: text, speech, a sound, clipboard or Discord."
+        summary={`${actions.length} action${actions.length === 1 ? '' : 's'}`}
+        open={openSections.actions}
+        onToggle={() => toggleSection('actions')}
+      >
+        {/* Actions */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
+              Actions
+            </label>
+            <div className="flex items-center gap-1.5">
+              <ActionTemplatesMenu
+                currentActions={actions}
+                onApply={(a) => {
+                  actionsTouched.current = true
+                  setActions(a)
+                }}
+              />
+              <button
+                type="button"
+                onClick={handleAddAction}
+                className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded"
+                style={{
+                  backgroundColor: 'var(--color-surface-2)',
+                  color: 'var(--color-muted-foreground)',
+                  border: '1px solid var(--color-border)',
+                }}
+              >
+                <Plus size={10} /> Add
+              </button>
+            </div>
+          </div>
+          {actions.length === 0 && (
+            <p className="text-[11px] italic" style={{ color: 'var(--color-muted)' }}>
+              No actions — trigger will be logged to history only.
+            </p>
+          )}
+          {actions.map((action, i) => (
+            <ActionEditor
+              key={i}
+              action={action}
+              index={i}
+              onChange={handleActionChange}
+              onRemove={handleActionRemove}
+            />
+          ))}
+        </div>
 
-      {/* Repeat count window — log triggers only (pipe fires have no line run) */}
-      {source === 'log' && (
+      </FormSection>
+
+      <FormSection
+        title="Timer"
+        hint="Optionally start a timer bar on a timer overlay."
+        summary={timerType === 'none' ? 'No timer' : `${timerType} timer`}
+        open={openSections.timer}
+        onToggle={() => toggleSection('timer')}
+      >
+        {/* Timer */}
+        <div className="space-y-2">
+          <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
+            Spell timer
+          </label>
+          <div className="flex gap-1">
+            {(['none', 'buff', 'detrimental', 'custom'] as TimerType[]).map((tt) => {
+              const active = timerType === tt
+              return (
+                <button
+                  key={tt}
+                  type="button"
+                  onClick={() => setTimerType(tt)}
+                  className="flex-1 rounded px-2 py-1 text-xs font-medium capitalize"
+                  style={{
+                    backgroundColor: active ? 'var(--color-primary)' : 'var(--color-surface-2)',
+                    color: active ? 'var(--color-background)' : 'var(--color-muted-foreground)',
+                    border: '1px solid transparent',
+                  }}
+                  title={tt === 'custom' ? 'Counts down on the Custom Timers overlay' : undefined}
+                >
+                  {tt === 'none' ? 'No timer' : tt}
+                </button>
+              )
+            })}
+          </div>
+          {timerType !== 'none' && (
+            <>
+              <div className="flex gap-2">
+                <div className="flex items-center gap-1.5 flex-1">
+                  <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+                    Duration (s)
+                  </label>
+                  <DecimalInput
+                    min={0}
+                    value={timerDuration}
+                    onValue={setTimerDuration}
+                    className="w-20 rounded px-2 py-0.5 text-xs outline-none text-center"
+                    style={inputStyle}
+                    disabled={submitting}
+                  />
+                </div>
+                {source === 'log' && (
+                  <input
+                    type="text"
+                    placeholder="worn-off regex (optional)"
+                    value={wornOffPattern}
+                    onChange={(e) => setWornOffPattern(e.target.value)}
+                    className="flex-1 rounded px-2 py-0.5 text-xs outline-none font-mono"
+                    style={inputStyle}
+                    disabled={submitting}
+                  />
+                )}
+              </div>
+              {source === 'log' && (
+                <div className="flex items-center gap-1.5">
+                  <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+                    Duration from capture
+                  </label>
+                  <input
+                    type="text"
+                    value={timerDurationCapture}
+                    onChange={(e) => setTimerDurationCapture(e.target.value)}
+                    placeholder="e.g. 2"
+                    className="w-20 rounded px-2 py-0.5 text-xs outline-none text-center font-mono"
+                    style={inputStyle}
+                    disabled={submitting}
+                    title="Capture group number or name whose text supplies the duration (400 / 6:40 / 6m40s). Falls back to the fixed duration when it doesn't parse."
+                  />
+                  <span className="text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
+                    group # or name; parses 400 / 6:40 / 6m40s
+                  </span>
+                </div>
+              )}
+              {source === 'log' && (
+                <div className="flex items-center gap-1.5">
+                  <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+                    Timer name from capture
+                  </label>
+                  <input
+                    type="text"
+                    value={timerKeyCapture}
+                    onChange={(e) => setTimerKeyCapture(e.target.value)}
+                    placeholder="1 or {1} {2}"
+                    className="w-28 rounded px-2 py-0.5 text-xs outline-none text-center font-mono"
+                    style={inputStyle}
+                    disabled={submitting}
+                    title="Capture group number or name whose text names the timer (e.g. the spell name), or a template combining groups such as {1} {2} or {S1}: {S2}. Each distinct name runs its own countdown. The worn-off pattern must capture the same value. Empty = use the trigger name."
+                  />
+                  <span className="text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
+                    group # / name, or a template like {'{1} {2}'}; empty = trigger name
+                  </span>
+                </div>
+              )}
+              {source === 'log' && timerType === 'custom' && (
+                <div className="flex items-center gap-1.5">
+                  <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+                    Stack timers
+                  </label>
+                  <Toggle checked={timerStack} onChange={setTimerStack} />
+                  <span className="text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
+                    start a new bar each time this fires instead of restarting the existing one — e.g. one row per mob killed
+                  </span>
+                </div>
+              )}
+              {source === 'log' && timerType === 'custom' && !timerStack && (
+                <div className="flex items-center gap-1.5">
+                  <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+                    Repeat timer
+                  </label>
+                  <Toggle checked={timerRepeat} onChange={setTimerRepeat} />
+                  {timerRepeat && (
+                    <>
+                      <label className="text-[11px] shrink-0 ml-1" style={{ color: 'var(--color-muted-foreground)' }}>
+                        max cycles
+                      </label>
+                      <DecimalInput
+                        min={0}
+                        value={timerRepeatMax}
+                        onValue={(v) => setTimerRepeatMax(Math.max(0, Math.floor(v)))}
+                        className="w-16 rounded px-2 py-0.5 text-xs outline-none text-center"
+                        style={inputStyle}
+                        disabled={submitting}
+                        title="Stop after this many restarts. 0 = until the worn-off pattern clears it (with a safety cap of 200)."
+                      />
+                    </>
+                  )}
+                  <span className="text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
+                    restart each time it runs out — for waves on a fixed cadence; the worn-off pattern stops it
+                  </span>
+                </div>
+              )}
+              {timerPolicyEligible && (
+                <div className="flex items-center gap-1.5">
+                  <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+                    Keep first countdown
+                  </label>
+                  <Toggle checked={timerIfIdle} onChange={setTimerIfIdle} />
+                  <span className="text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
+                    ignore this trigger while its timer is running — no restart, no alerts; the worn-off pattern or expiry allows a new start
+                  </span>
+                </div>
+              )}
+              {timerPolicyEligible && (
+                <div className="flex items-center gap-1.5">
+                  <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+                    Clear on zone or character change
+                  </label>
+                  <Toggle checked={timerClearOnContextChange} onChange={setTimerClearOnContextChange} />
+                  <span className="text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
+                    remove this timer when you zone, switch characters or start a log replay
+                  </span>
+                </div>
+              )}
+              <div className="flex items-center gap-1.5">
+                <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+                  Display threshold (s)
+                </label>
+                <DecimalInput
+                  min={0}
+                  value={displayThreshold}
+                  onValue={setDisplayThreshold}
+                  className="w-20 rounded px-2 py-0.5 text-xs outline-none text-center"
+                  style={inputStyle}
+                  disabled={submitting}
+                  title="Hide this timer until remaining ≤ this value. 0 uses the global default."
+                />
+                <span className="text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
+                  0 = use global default
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+                  Bar color
+                </label>
+                <input
+                  type="color"
+                  value={barColor || '#38bdf8'}
+                  onChange={(e) => setBarColor(e.target.value)}
+                  className="h-6 w-10 rounded cursor-pointer p-0"
+                  style={{ border: '1px solid var(--color-border)', background: 'transparent' }}
+                  disabled={submitting}
+                  title="Custom color for this trigger's timer bar (overrides the automatic color)"
+                />
+                {barColor ? (
+                  <button
+                    type="button"
+                    onClick={() => setBarColor('')}
+                    className="text-[10px] underline"
+                    style={{ color: 'var(--color-muted)' }}
+                  >
+                    reset to automatic
+                  </button>
+                ) : (
+                  <span className="text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
+                    automatic (click swatch to set)
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
+                  Pin to top
+                </label>
+                <Toggle checked={pinned} onChange={setPinned} />
+                <span className="text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
+                  keep this timer above unpinned timers in its overlay
+                </span>
+              </div>
+
+              {timerType === 'custom' && (
+                <div className="space-y-1">
+                  <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
+                    Custom Timers window
+                  </label>
+                  {creatingGroup ? (
+                    <div className="space-y-1">
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          autoFocus
+                          placeholder="New window name"
+                          value={newGroupName}
+                          onChange={(e) => setNewGroupName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') { e.preventDefault(); handleAddGroup() }
+                            else if (e.key === 'Escape') { e.preventDefault(); setCreatingGroup(false); setGroupError(null) }
+                          }}
+                          className="flex-1 rounded px-3 py-1.5 text-sm outline-none"
+                          style={inputStyle}
+                          disabled={addingGroup}
+                        />
+                        <button
+                          type="button"
+                          onClick={handleAddGroup}
+                          disabled={addingGroup || !newGroupName.trim()}
+                          className="rounded px-3 py-1.5 text-xs font-semibold"
+                          style={{
+                            backgroundColor: 'var(--color-primary)',
+                            color: 'var(--color-background)',
+                            border: '1px solid transparent',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Add
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setCreatingGroup(false); setGroupError(null); setNewGroupName('') }}
+                          disabled={addingGroup}
+                          className="rounded px-3 py-1.5 text-xs"
+                          style={{
+                            backgroundColor: 'var(--color-surface-2)',
+                            color: 'var(--color-muted-foreground)',
+                            border: '1px solid var(--color-border)',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                      {groupError && (
+                        <p className="text-[11px]" style={{ color: 'var(--color-danger)' }}>{groupError}</p>
+                      )}
+                    </div>
+                  ) : (
+                    <select
+                      value={customGroupID}
+                      onChange={(e) => handleGroupSelect(e.target.value)}
+                      className="w-full rounded px-3 py-1.5 text-sm outline-none"
+                      style={inputStyle}
+                      disabled={submitting}
+                    >
+                      <option value="">Custom Timers (default window)</option>
+                      {timerGroups.map((g) => (
+                        <option key={g.id} value={g.id}>{g.name}</option>
+                      ))}
+                      {/* Defensive: keep the current value selectable even if the
+                          group list hasn't loaded or doesn't include it yet
+                          (e.g. the group was just deleted elsewhere). */}
+                      {customGroupID && !timerGroups.some((g) => g.id === customGroupID) && (
+                        <option value={customGroupID}>(unknown window)</option>
+                      )}
+                      <option value="__new__">+ New window…</option>
+                    </select>
+                  )}
+                  <p className="text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
+                    Split raid/boss timers into their own popout window — manage windows from
+                    Custom Timers in the Overlays dashboard.
+                  </p>
+                </div>
+              )}
+
+              {/* Fading-soon alerts */}
+              <div className="space-y-2 pt-2" style={{ borderTop: '1px solid var(--color-border)' }}>
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
+                    Fading-soon alerts
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setTimerAlerts((prev) => [...prev, newTimerAlert()])}
+                    className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded"
+                    style={{
+                      backgroundColor: 'var(--color-surface-2)',
+                      color: 'var(--color-muted-foreground)',
+                      border: '1px solid var(--color-border)',
+                    }}
+                  >
+                    <Plus size={10} /> Add
+                  </button>
+                </div>
+                {timerAlerts.length === 0 ? (
+                  <p className="text-[11px] italic" style={{ color: 'var(--color-muted)' }}>
+                    No fading alerts — timer counts down silently. Add one to get notified before it expires.
+                  </p>
+                ) : (
+                  <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+                    Use <code style={{ color: 'var(--color-foreground)' }}>{'{spell}'}</code> in the message to insert the spell name.
+                  </p>
+                )}
+                {timerAlerts.map((alert, i) => (
+                  <TimerAlertRow
+                    key={alert.id}
+                    alert={alert}
+                    voices={voices}
+                    onChange={(next) =>
+                      setTimerAlerts((prev) => prev.map((a, idx) => (idx === i ? next : a)))
+                    }
+                    onRemove={() =>
+                      setTimerAlerts((prev) => prev.filter((_, idx) => idx !== i))
+                    }
+                  />
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+      </FormSection>
+
+      <FormSection
+        title="Advanced"
+        hint="Exclusions, cooldowns and repeat counting."
+        summary={advancedSummary}
+        open={openSections.advanced}
+        onToggle={() => toggleSection('advanced')}
+      >
+        {/* Exclude patterns — log source only (pipe matches are typed, not regex) */}
+        {source === 'log' && (
         <div className="space-y-1">
           <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
-            Repeat count window (seconds)
+            Exclude patterns (one regex per line, optional)
+          </label>
+          <textarea
+            value={excludePatternsText}
+            onChange={(e) => { setExcludePatternsText(e.target.value); if (excludeErrors.length > 0) setExcludeErrors([]) }}
+            rows={Math.min(8, Math.max(2, excludePatternsText.split('\n').length))}
+            className="w-full rounded px-3 py-1.5 text-xs outline-none font-mono"
+            style={{
+              ...inputStyle,
+              border: `1px solid ${excludeErrors.length > 0 ? 'var(--color-danger)' : 'var(--color-border)'}`,
+              resize: 'vertical',
+            }}
+            disabled={submitting}
+            placeholder={`\\b[Mm]aster[.!]\ntells you, '[Tt]hat'll be `}
+          />
+          {excludeErrors.length > 0 ? (
+            <ul className="text-[11px]" style={{ color: 'var(--color-danger)' }}>
+              {excludeErrors.map((m, i) => (<li key={i}>{m}</li>))}
+            </ul>
+          ) : (
+            <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+              Suppresses this trigger when any of these regexes also matches the same line — useful for filtering
+              pet/merchant tells out of a broad pattern, or silencing specific bazaar-trader names.
+            </p>
+          )}
+        </div>
+        )}
+
+        {/* Refire cooldown — applies to any trigger (log or pipe) */}
+        <div className="space-y-1">
+          <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
+            Refire cooldown (seconds)
           </label>
           <DecimalInput
             min={0}
-            value={repeatReset}
-            onValue={setRepeatReset}
+            value={refireCooldown}
+            onValue={setRefireCooldown}
             className="w-28 rounded px-3 py-1.5 text-xs outline-none"
             style={{ ...inputStyle, border: '1px solid var(--color-border)' }}
             disabled={submitting}
           />
           <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
-            Counts matches that land within this many seconds of each other. Use{' '}
-            <span className="font-mono">{'{repeated}'}</span> in the alert text (e.g.
-            “PBAE hit {'{repeated}'}”) and the one alert updates in place instead of
-            stacking. Sound and TTS play once per burst. 0 = off.
+            After firing, ignore further matches for this many seconds. 0 = fire on every match.
+            Useful for spammy lines (rampage, resists) without flooding alerts.
           </p>
         </div>
-      )}
 
-      {/* Characters */}
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between">
-          <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
-            Active for characters
-          </label>
-          {allChars.length > 0 && (
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={selectAllChars}
-                className="text-[10px]"
-                style={{ color: 'var(--color-muted-foreground)' }}
-              >
-                All
-              </button>
-              <span style={{ color: 'var(--color-border)' }}>·</span>
-              <button
-                type="button"
-                onClick={clearAllChars}
-                className="text-[10px]"
-                style={{ color: 'var(--color-muted-foreground)' }}
-              >
-                None
-              </button>
-            </div>
-          )}
-        </div>
-        {allChars.length === 0 ? (
-          <p className="text-[11px] italic" style={{ color: 'var(--color-muted)' }}>
-            No characters discovered yet — this trigger will fire for any active character.
-          </p>
-        ) : (
-          <div className="flex flex-wrap gap-1.5">
-            {allChars.map((c) => {
-              const sel = selectedChars.has(c.name)
-              const className = c.class >= 0 ? CLASS_NAMES[c.class] : null
-              return (
-                <button
-                  key={c.id}
-                  type="button"
-                  onClick={() => toggleChar(c.name)}
-                  className="text-[11px] px-2 py-0.5 rounded font-medium"
-                  title={className ? `${c.name} — ${className}` : c.name}
-                  style={{
-                    backgroundColor: sel ? 'var(--color-primary)' : 'var(--color-surface-2)',
-                    color: sel ? 'var(--color-primary-foreground)' : 'var(--color-muted-foreground)',
-                    border: `1px solid ${sel ? 'var(--color-primary)' : 'var(--color-border)'}`,
-                    opacity: sel ? 1 : 0.75,
-                  }}
-                >
-                  {c.name}
-                </button>
-              )
-            })}
-          </div>
-        )}
-        {allChars.length > 0 && selectedChars.size === 0 && (
-          <p className="text-[11px] italic" style={{ color: 'var(--color-warning)' }}>
-            No characters selected — trigger will fire for any active character.
-          </p>
-        )}
-      </div>
-
-      {/* Timer */}
-      <div className="space-y-2">
-        <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
-          Spell timer
-        </label>
-        <div className="flex gap-1">
-          {(['none', 'buff', 'detrimental', 'custom'] as TimerType[]).map((tt) => {
-            const active = timerType === tt
-            return (
-              <button
-                key={tt}
-                type="button"
-                onClick={() => setTimerType(tt)}
-                className="flex-1 rounded px-2 py-1 text-xs font-medium capitalize"
-                style={{
-                  backgroundColor: active ? 'var(--color-primary)' : 'var(--color-surface-2)',
-                  color: active ? 'var(--color-background)' : 'var(--color-muted-foreground)',
-                  border: '1px solid transparent',
-                }}
-                title={tt === 'custom' ? 'Counts down on the Custom Timers overlay' : undefined}
-              >
-                {tt === 'none' ? 'No timer' : tt}
-              </button>
-            )
-          })}
-        </div>
-        {timerType !== 'none' && (
-          <>
-            <div className="flex gap-2">
-              <div className="flex items-center gap-1.5 flex-1">
-                <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
-                  Duration (s)
-                </label>
-                <DecimalInput
-                  min={0}
-                  value={timerDuration}
-                  onValue={setTimerDuration}
-                  className="w-20 rounded px-2 py-0.5 text-xs outline-none text-center"
-                  style={inputStyle}
-                  disabled={submitting}
-                />
-              </div>
-              {source === 'log' && (
-                <input
-                  type="text"
-                  placeholder="worn-off regex (optional)"
-                  value={wornOffPattern}
-                  onChange={(e) => setWornOffPattern(e.target.value)}
-                  className="flex-1 rounded px-2 py-0.5 text-xs outline-none font-mono"
-                  style={inputStyle}
-                  disabled={submitting}
-                />
-              )}
-            </div>
-            {source === 'log' && (
-              <div className="flex items-center gap-1.5">
-                <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
-                  Duration from capture
-                </label>
-                <input
-                  type="text"
-                  value={timerDurationCapture}
-                  onChange={(e) => setTimerDurationCapture(e.target.value)}
-                  placeholder="e.g. 2"
-                  className="w-20 rounded px-2 py-0.5 text-xs outline-none text-center font-mono"
-                  style={inputStyle}
-                  disabled={submitting}
-                  title="Capture group number or name whose text supplies the duration (400 / 6:40 / 6m40s). Falls back to the fixed duration when it doesn't parse."
-                />
-                <span className="text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
-                  group # or name; parses 400 / 6:40 / 6m40s
-                </span>
-              </div>
-            )}
-            {source === 'log' && (
-              <div className="flex items-center gap-1.5">
-                <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
-                  Timer name from capture
-                </label>
-                <input
-                  type="text"
-                  value={timerKeyCapture}
-                  onChange={(e) => setTimerKeyCapture(e.target.value)}
-                  placeholder="1 or {1} {2}"
-                  className="w-28 rounded px-2 py-0.5 text-xs outline-none text-center font-mono"
-                  style={inputStyle}
-                  disabled={submitting}
-                  title="Capture group number or name whose text names the timer (e.g. the spell name), or a template combining groups such as {1} {2} or {S1}: {S2}. Each distinct name runs its own countdown. The worn-off pattern must capture the same value. Empty = use the trigger name."
-                />
-                <span className="text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
-                  group # / name, or a template like {'{1} {2}'}; empty = trigger name
-                </span>
-              </div>
-            )}
-            {source === 'log' && timerType === 'custom' && (
-              <div className="flex items-center gap-1.5">
-                <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
-                  Stack timers
-                </label>
-                <Toggle checked={timerStack} onChange={setTimerStack} />
-                <span className="text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
-                  start a new bar each time this fires instead of restarting the existing one — e.g. one row per mob killed
-                </span>
-              </div>
-            )}
-            {source === 'log' && timerType === 'custom' && !timerStack && (
-              <div className="flex items-center gap-1.5">
-                <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
-                  Repeat timer
-                </label>
-                <Toggle checked={timerRepeat} onChange={setTimerRepeat} />
-                {timerRepeat && (
-                  <>
-                    <label className="text-[11px] shrink-0 ml-1" style={{ color: 'var(--color-muted-foreground)' }}>
-                      max cycles
-                    </label>
-                    <DecimalInput
-                      min={0}
-                      value={timerRepeatMax}
-                      onValue={(v) => setTimerRepeatMax(Math.max(0, Math.floor(v)))}
-                      className="w-16 rounded px-2 py-0.5 text-xs outline-none text-center"
-                      style={inputStyle}
-                      disabled={submitting}
-                      title="Stop after this many restarts. 0 = until the worn-off pattern clears it (with a safety cap of 200)."
-                    />
-                  </>
-                )}
-                <span className="text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
-                  restart each time it runs out — for waves on a fixed cadence; the worn-off pattern stops it
-                </span>
-              </div>
-            )}
-            {timerPolicyEligible && (
-              <div className="flex items-center gap-1.5">
-                <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
-                  Keep first countdown
-                </label>
-                <Toggle checked={timerIfIdle} onChange={setTimerIfIdle} />
-                <span className="text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
-                  ignore this trigger while its timer is running — no restart, no alerts; the worn-off pattern or expiry allows a new start
-                </span>
-              </div>
-            )}
-            {timerPolicyEligible && (
-              <div className="flex items-center gap-1.5">
-                <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
-                  Clear on zone or character change
-                </label>
-                <Toggle checked={timerClearOnContextChange} onChange={setTimerClearOnContextChange} />
-                <span className="text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
-                  remove this timer when you zone, switch characters or start a log replay
-                </span>
-              </div>
-            )}
-            <div className="flex items-center gap-1.5">
-              <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
-                Display threshold (s)
-              </label>
-              <DecimalInput
-                min={0}
-                value={displayThreshold}
-                onValue={setDisplayThreshold}
-                className="w-20 rounded px-2 py-0.5 text-xs outline-none text-center"
-                style={inputStyle}
-                disabled={submitting}
-                title="Hide this timer until remaining ≤ this value. 0 uses the global default."
-              />
-              <span className="text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
-                0 = use global default
-              </span>
-            </div>
-
-            <div className="flex items-center gap-1.5">
-              <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
-                Bar color
-              </label>
-              <input
-                type="color"
-                value={barColor || '#38bdf8'}
-                onChange={(e) => setBarColor(e.target.value)}
-                className="h-6 w-10 rounded cursor-pointer p-0"
-                style={{ border: '1px solid var(--color-border)', background: 'transparent' }}
-                disabled={submitting}
-                title="Custom color for this trigger's timer bar (overrides the automatic color)"
-              />
-              {barColor ? (
-                <button
-                  type="button"
-                  onClick={() => setBarColor('')}
-                  className="text-[10px] underline"
-                  style={{ color: 'var(--color-muted)' }}
-                >
-                  reset to automatic
-                </button>
-              ) : (
-                <span className="text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
-                  automatic (click swatch to set)
-                </span>
-              )}
-            </div>
-
-            <div className="flex items-center gap-1.5">
-              <label className="text-[11px] shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>
-                Pin to top
-              </label>
-              <Toggle checked={pinned} onChange={setPinned} />
-              <span className="text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
-                keep this timer above unpinned timers in its overlay
-              </span>
-            </div>
-
-            {timerType === 'custom' && (
-              <div className="space-y-1">
-                <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
-                  Custom Timers window
-                </label>
-                {creatingGroup ? (
-                  <div className="space-y-1">
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        autoFocus
-                        placeholder="New window name"
-                        value={newGroupName}
-                        onChange={(e) => setNewGroupName(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') { e.preventDefault(); handleAddGroup() }
-                          else if (e.key === 'Escape') { e.preventDefault(); setCreatingGroup(false); setGroupError(null) }
-                        }}
-                        className="flex-1 rounded px-3 py-1.5 text-sm outline-none"
-                        style={inputStyle}
-                        disabled={addingGroup}
-                      />
-                      <button
-                        type="button"
-                        onClick={handleAddGroup}
-                        disabled={addingGroup || !newGroupName.trim()}
-                        className="rounded px-3 py-1.5 text-xs font-semibold"
-                        style={{
-                          backgroundColor: 'var(--color-primary)',
-                          color: 'var(--color-background)',
-                          border: '1px solid transparent',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        Add
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { setCreatingGroup(false); setGroupError(null); setNewGroupName('') }}
-                        disabled={addingGroup}
-                        className="rounded px-3 py-1.5 text-xs"
-                        style={{
-                          backgroundColor: 'var(--color-surface-2)',
-                          color: 'var(--color-muted-foreground)',
-                          border: '1px solid var(--color-border)',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                    {groupError && (
-                      <p className="text-[11px]" style={{ color: 'var(--color-danger)' }}>{groupError}</p>
-                    )}
-                  </div>
-                ) : (
-                  <select
-                    value={customGroupID}
-                    onChange={(e) => handleGroupSelect(e.target.value)}
-                    className="w-full rounded px-3 py-1.5 text-sm outline-none"
-                    style={inputStyle}
-                    disabled={submitting}
-                  >
-                    <option value="">Custom Timers (default window)</option>
-                    {timerGroups.map((g) => (
-                      <option key={g.id} value={g.id}>{g.name}</option>
-                    ))}
-                    {/* Defensive: keep the current value selectable even if the
-                        group list hasn't loaded or doesn't include it yet
-                        (e.g. the group was just deleted elsewhere). */}
-                    {customGroupID && !timerGroups.some((g) => g.id === customGroupID) && (
-                      <option value={customGroupID}>(unknown window)</option>
-                    )}
-                    <option value="__new__">+ New window…</option>
-                  </select>
-                )}
-                <p className="text-[10px] italic" style={{ color: 'var(--color-muted)' }}>
-                  Split raid/boss timers into their own popout window — manage windows from
-                  Custom Timers in the Overlays dashboard.
-                </p>
-              </div>
-            )}
-
-            {/* Fading-soon alerts */}
-            <div className="space-y-2 pt-2" style={{ borderTop: '1px solid var(--color-border)' }}>
-              <div className="flex items-center justify-between">
-                <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
-                  Fading-soon alerts
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setTimerAlerts((prev) => [...prev, newTimerAlert()])}
-                  className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded"
-                  style={{
-                    backgroundColor: 'var(--color-surface-2)',
-                    color: 'var(--color-muted-foreground)',
-                    border: '1px solid var(--color-border)',
-                  }}
-                >
-                  <Plus size={10} /> Add
-                </button>
-              </div>
-              {timerAlerts.length === 0 ? (
-                <p className="text-[11px] italic" style={{ color: 'var(--color-muted)' }}>
-                  No fading alerts — timer counts down silently. Add one to get notified before it expires.
-                </p>
-              ) : (
-                <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
-                  Use <code style={{ color: 'var(--color-foreground)' }}>{'{spell}'}</code> in the message to insert the spell name.
-                </p>
-              )}
-              {timerAlerts.map((alert, i) => (
-                <TimerAlertRow
-                  key={alert.id}
-                  alert={alert}
-                  voices={voices}
-                  onChange={(next) =>
-                    setTimerAlerts((prev) => prev.map((a, idx) => (idx === i ? next : a)))
-                  }
-                  onRemove={() =>
-                    setTimerAlerts((prev) => prev.filter((_, idx) => idx !== i))
-                  }
-                />
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* Actions */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
-            Actions
-          </label>
-          <div className="flex items-center gap-1.5">
-            <ActionTemplatesMenu
-              currentActions={actions}
-              onApply={(a) => {
-                actionsTouched.current = true
-                setActions(a)
-              }}
+        {/* Repeat count window — log triggers only (pipe fires have no line run) */}
+        {source === 'log' && (
+          <div className="space-y-1">
+            <label className="text-[11px] font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
+              Repeat count window (seconds)
+            </label>
+            <DecimalInput
+              min={0}
+              value={repeatReset}
+              onValue={setRepeatReset}
+              className="w-28 rounded px-3 py-1.5 text-xs outline-none"
+              style={{ ...inputStyle, border: '1px solid var(--color-border)' }}
+              disabled={submitting}
             />
-            <button
-              type="button"
-              onClick={handleAddAction}
-              className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded"
-              style={{
-                backgroundColor: 'var(--color-surface-2)',
-                color: 'var(--color-muted-foreground)',
-                border: '1px solid var(--color-border)',
-              }}
-            >
-              <Plus size={10} /> Add
-            </button>
+            <p className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
+              Counts matches that land within this many seconds of each other. Use{' '}
+              <span className="font-mono">{'{repeated}'}</span> in the alert text (e.g.
+              “PBAE hit {'{repeated}'}”) and the one alert updates in place instead of
+              stacking. Sound and TTS play once per burst. 0 = off.
+            </p>
           </div>
-        </div>
-        {actions.length === 0 && (
-          <p className="text-[11px] italic" style={{ color: 'var(--color-muted)' }}>
-            No actions — trigger will be logged to history only.
-          </p>
         )}
-        {actions.map((action, i) => (
-          <ActionEditor
-            key={i}
-            action={action}
-            index={i}
-            onChange={handleActionChange}
-            onRemove={handleActionRemove}
-          />
-        ))}
-      </div>
+
+      </FormSection>
 
       {error && (
         <p className="text-xs" style={{ color: 'var(--color-danger)' }}>

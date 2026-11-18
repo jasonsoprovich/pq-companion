@@ -18,6 +18,16 @@ A regex trigger engine for any log line. Each trigger fires one or more actions:
 - **Copy to clipboard** — drop matched text straight onto your clipboard, handy for capturing a name or a number to paste elsewhere.
 - **Discord webhook** — post the matched alert straight to a Discord channel via a webhook URL you paste in, for alerts you want your raid or guild to see outside the game.
 
+### Starting from a template
+
+**New Trigger** opens a short picker: a **Text alert** (speak or show a message when a line appears), a **Spell timer** (pick a spell; its timer and fading warning are filled in), a **Mob emote warning** (paste the emote, get a red on-screen warning plus speech), a **Tell or chat alert** (tells, group, guild, raid, OOC, shout or auction, optionally from one person), a **Countdown timer**, **Start blank**, or **Install a pack**. Each one creates the trigger in a click or two, or opens it in the full editor first.
+
+### Plain text or regex
+
+The editor groups its fields into **Basics**, **Actions**, **Timer** and **Advanced**; Timer and Advanced stay folded until they hold something.
+
+Patterns can be typed as **Plain text**: write the line as it appears in your log and it matches anywhere in the line. `{name}` (any word you like) captures whatever text is there, and you can reuse it in the alert, for example `{name} tells you, '{msg}'` with the alert `{name} sent a tell`. `{C}` is your character's name, `{N}` a number, and `{{` `}}` are literal braces. The trigger always stores the regex, so switching to **Regex** shows exactly what will match. A regex that uses real regex features (like `\w+` or alternation) opens in Regex mode and stays there; the editor says why.
+
 ### Multiple patterns & GINA tokens
 
 A single trigger can hold several regex patterns, each with its own on/off toggle, so different log lines that mean the same thing all drive one alert. Patterns understand GINA-style `{c}` (your character name) and `{target}` tokens, so shared community triggers work without rewriting them, and any regex capture group can be substituted into the alert text.

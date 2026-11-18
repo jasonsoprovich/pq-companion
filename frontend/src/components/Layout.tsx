@@ -29,13 +29,17 @@ export default function Layout(): React.ReactElement {
         setHelpOpen((prev) => !prev)
       }
     }
-    // Lets other UI (the Getting Started checklist) open Ctrl+K.
+    // Lets other UI open Ctrl+K (the Getting Started checklist)...
     const openSearch = (): void => setSearchOpen(true)
+    // ...and open the help drawer on this page's article (trigger editor ?).
+    const openHelp = (): void => setHelpOpen(true)
     window.addEventListener('keydown', handler)
     window.addEventListener('pq:open-search', openSearch)
+    window.addEventListener('pq:open-help', openHelp)
     return () => {
       window.removeEventListener('keydown', handler)
       window.removeEventListener('pq:open-search', openSearch)
+      window.removeEventListener('pq:open-help', openHelp)
     }
   }, [])
 
