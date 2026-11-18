@@ -676,6 +676,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 			r.Put("/{id}", triggerH.update)
 			r.Delete("/{id}", triggerH.del)
 			r.Get("/history", triggerH.history)
+			r.Post("/pattern/convert", triggerH.convertPattern)
 			r.Post("/import", triggerH.importPack)
 			r.Post("/import/preview", triggerH.importPreview)
 			r.Post("/import/commit", triggerH.importCommit)
