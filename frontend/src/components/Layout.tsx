@@ -29,8 +29,14 @@ export default function Layout(): React.ReactElement {
         setHelpOpen((prev) => !prev)
       }
     }
+    // Lets other UI (the Getting Started checklist) open Ctrl+K.
+    const openSearch = (): void => setSearchOpen(true)
     window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
+    window.addEventListener('pq:open-search', openSearch)
+    return () => {
+      window.removeEventListener('keydown', handler)
+      window.removeEventListener('pq:open-search', openSearch)
+    }
   }, [])
 
   return (

@@ -15,6 +15,7 @@ import { usePersistentState } from '../hooks/usePersistentState'
 import { HELP_ARTICLES, helpArticle, searchHelp } from '../lib/help'
 import { TOURS } from '../lib/tours'
 import { useGuide, useAutoTour } from '../components/guide/GuideProvider'
+import GettingStartedChecklist from '../components/guide/GettingStartedChecklist'
 import HelpMarkdown from '../components/guide/HelpMarkdown'
 
 type Tab = 'quickstart' | 'reference' | 'tours'
@@ -28,10 +29,12 @@ export default function HelpPage(): React.ReactElement {
   const navigate = useNavigate()
   const [tab, setTab] = usePersistentState<Tab>('pq-tab:help', 'quickstart', TABS)
 
-  // A deep link to an article always lands on Reference.
+  // A deep link to an article always lands on Reference; ?tab= picks one.
+  const tabParam = searchParams.get('tab')
   useEffect(() => {
     if (slug) setTab('reference')
-  }, [slug, setTab])
+    else if (tabParam && (TABS as readonly string[]).includes(tabParam)) setTab(tabParam as Tab)
+  }, [slug, tabParam, setTab])
 
   useAutoTour('help')
 
@@ -100,6 +103,9 @@ function QuickStartTab({
         <h1 className="mb-1 text-xl font-semibold" style={{ color: 'var(--color-foreground)' }}>
           {qs?.title ?? 'Quick Start'}
         </h1>
+        <div className="mt-4">
+          <GettingStartedChecklist />
+        </div>
         {qs ? <HelpMarkdown body={qs.body} onOpenArticle={onOpenArticle} /> : null}
       </div>
     </div>

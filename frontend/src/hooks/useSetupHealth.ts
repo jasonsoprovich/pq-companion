@@ -187,7 +187,7 @@ async function buildChecks(): Promise<{ checks: HealthCheck[]; fresh: boolean }>
 }
 
 let logSeenSaved = false
-function saveLogSeen(): void {
+export function saveLogSeen(): void {
   if (logSeenSaved) return
   logSeenSaved = true
   getConfig()

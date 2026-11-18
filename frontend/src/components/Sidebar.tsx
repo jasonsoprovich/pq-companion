@@ -1,6 +1,6 @@
 import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { Settings, Search, ChevronLeft, ChevronRight, ChevronDown, Star, LifeBuoy, Pencil, EyeOff } from 'lucide-react'
+import { Settings, Search, ChevronLeft, ChevronRight, ChevronDown, Star, LifeBuoy, Pencil, EyeOff, Rocket } from 'lucide-react'
 import { getLogStatus } from '../services/api'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
@@ -13,6 +13,7 @@ import { resolveRememberedRoute } from '../lib/lastSubRoute'
 import { NewDot, useFeatureDots } from '../hooks/useFeatureDots'
 import { usePackUpdates } from '../hooks/usePackUpdates'
 import { hideSidebarItem, toggleSidebarFavorite } from '../lib/sidebarPrefsSave'
+import { useGettingStarted } from '../hooks/useGettingStarted'
 
 // Edit mode pulls in dnd-kit; keep it off the startup chunk.
 const SidebarEditor = lazy(() => import('./SidebarEditor'))
@@ -91,6 +92,9 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
   const { navDot } = useFeatureDots()
   const attention = useNavAttention()
   const [editing, setEditing] = useState(false)
+  const gettingStarted = useGettingStarted({ delayMs: 4000 })
+  const showChecklistPill =
+    gettingStarted.loaded && !gettingStarted.dismissed && gettingStarted.doneCount < gettingStarted.total
   // Right-click menu on a nav item: { route, x, y }.
   const [menu, setMenu] = useState<{ route: string; x: number; y: number } | null>(null)
   const editSections = useMemo(() => visibleNavSections(flags), [flags])
@@ -339,6 +343,24 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
         className="shrink-0 border-t px-2 py-2"
         style={{ borderColor: 'var(--color-border)' }}
       >
+        {showChecklistPill && (
+          <NavLink
+            to="/help?tab=quickstart"
+            className="no-drag mb-1 flex items-center gap-2 rounded px-3 py-1.5 text-xs font-medium"
+            style={{
+              backgroundColor: 'var(--color-surface-2)',
+              border: '1px solid var(--color-border)',
+              color: 'var(--color-primary)',
+            }}
+            title="Finish setting up PQ Companion"
+          >
+            <Rocket size={13} />
+            <span className="flex-1">Getting started</span>
+            <span className="tabular-nums" style={{ color: 'var(--color-muted-foreground)' }}>
+              {gettingStarted.doneCount}/{gettingStarted.total}
+            </span>
+          </NavLink>
+        )}
         <NavLink
           to="/help"
           className={({ isActive }) =>
