@@ -3946,6 +3946,19 @@ function prewarmTriggerVoices(trigger: Trigger): void {
   prewarmLocalTtsVoices(trigger, isKokoroVoice, kokoroSynthesize)
 }
 
+export interface PatternConvertResult {
+  ok: boolean
+  result?: string
+  error?: string
+}
+
+// Plain-text ↔ regex trigger patterns. The grammar lives in Go
+// (internal/trigger/plainpattern.go); to: 'regex' converts plain text,
+// to: 'plain' converts a regex back only when it round-trips exactly.
+export function convertTriggerPattern(to: 'regex' | 'plain', text: string): Promise<PatternConvertResult> {
+  return post<PatternConvertResult>('/api/triggers/pattern/convert', { to, text })
+}
+
 export function createTrigger(req: CreateTriggerRequest): Promise<Trigger> {
   return post<Trigger>('/api/triggers', req).then((t) => {
     prewarmTriggerVoices(t)

@@ -77,9 +77,9 @@ export const TOURS: TourDef[] = [
         anchor: 'triggers-new',
         title: 'Make your own',
         body:
-          'New Trigger starts from a spell, with its timer and alerts ' +
-          'filled in for you. The arrow next to it makes a custom trigger ' +
-          'from scratch.',
+          'New Trigger offers templates: a text alert, spell timer, boss ' +
+          'emote warning, tell alert or countdown, each in a few clicks. ' +
+          'The arrow jumps straight to a spell timer or a blank trigger.',
       },
       {
         anchor: 'triggers-tab-packs',

@@ -65,7 +65,9 @@ import { NewDot } from '../hooks/useFeatureDots'
 import ActionTemplatesMenu from '../components/ActionTemplatesMenu'
 import BulkActionsModal from '../components/BulkActionsModal'
 import TriggerTesterTab, { MatchRow } from '../components/TriggerTesterTab'
-import { buildSpellTriggerPrefill, secsLabel, type SpellTimerTriggerPrefill } from '../lib/spellHelpers'
+import { buildSpellTriggerPrefill, secsLabel } from '../lib/spellHelpers'
+import type { TriggerPrefill } from '../lib/triggerTemplates'
+import TriggerTemplatePicker from '../components/triggers/TriggerTemplatePicker'
 import {
   listTriggers,
   createTrigger,
@@ -552,7 +554,7 @@ function SampleLineTester({
 
 interface TriggerFormProps {
   initial?: Trigger
-  prefill?: SpellTimerTriggerPrefill
+  prefill?: TriggerPrefill
   /** Categories for the dropdown; built-in entries are shown but flagged. */
   categories: TriggerCategory[]
   /** Called after the form creates a new category inline, so the parent
@@ -597,7 +599,7 @@ function TriggerForm({ initial, prefill, categories, onCategoriesChanged, timerG
   )
   const [pipeError, setPipeError] = useState<string | null>(null)
   const [actions, setActions] = useState<Action[]>(
-    initial?.actions ?? [{ type: 'overlay_text', text: prefill?.name ?? '', duration_secs: 5, color: '', sound_path: '', volume: 0, voice: '' }],
+    initial?.actions ?? prefill?.actions ?? [{ type: 'overlay_text', text: prefill?.name ?? '', duration_secs: 5, color: '', sound_path: '', volume: 0, voice: '' }],
   )
   // True once the user edits actions in this session — the async default-
   // template prefill below must never clobber their work.
@@ -3385,7 +3387,8 @@ export default function TriggersPage(): React.ReactElement {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
-  const [createPrefill, setCreatePrefill] = useState<SpellTimerTriggerPrefill | undefined>(undefined)
+  const [createPrefill, setCreatePrefill] = useState<TriggerPrefill | undefined>(undefined)
+  const [showTemplates, setShowTemplates] = useState(false)
   const [showSpellPicker, setShowSpellPicker] = useState(false)
   const [newMenuOpen, setNewMenuOpen] = useState(false)
   const [emptyNewMenuOpen, setEmptyNewMenuOpen] = useState(false)
@@ -4024,7 +4027,7 @@ export default function TriggersPage(): React.ReactElement {
                 <button
                   onClick={() => {
                     setNewMenuOpen(false)
-                    setShowSpellPicker(true)
+                    setShowTemplates(true)
                   }}
                   className="flex items-center gap-1.5 text-xs pl-3 pr-2.5 py-1.5 rounded-l font-medium"
                   style={{
@@ -4320,17 +4323,22 @@ export default function TriggersPage(): React.ReactElement {
 
               {/* Empty state */}
               {triggers.length === 0 && !showCreate && (
-                <div className="flex h-full flex-col items-center justify-center gap-3 py-16">
+                <div className="flex h-full flex-col items-center justify-center gap-3 py-16 text-center">
                   <Zap size={32} style={{ color: 'var(--color-muted)' }} />
-                  <p className="text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
-                    No triggers yet.
+                  <p className="text-sm font-medium" style={{ color: 'var(--color-foreground)' }}>
+                    No triggers yet
+                  </p>
+                  <p className="max-w-sm text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                    Triggers watch your log and speak, show a message or start a timer.
+                    The quickest start is a pack for your class; or make one from a
+                    template in a few clicks.
                   </p>
                   <div className="flex gap-2">
                     <div className="relative flex">
                       <button
                         onClick={() => {
                           setEmptyNewMenuOpen(false)
-                          setShowSpellPicker(true)
+                          setShowTemplates(true)
                         }}
                         className="flex items-center gap-1.5 text-xs pl-3 pr-2.5 py-1.5 rounded-l font-medium"
                         style={{
@@ -4585,6 +4593,37 @@ export default function TriggersPage(): React.ReactElement {
             </div>
           </div>
         </div>
+      )}
+
+      {showTemplates && (
+        <TriggerTemplatePicker
+          onClose={() => setShowTemplates(false)}
+          onCreated={(t) => {
+            handleCreated(t)
+            setShowTemplates(false)
+            setTab('triggers')
+          }}
+          onOpenEditor={(p) => {
+            setCreatePrefill(p)
+            setShowCreate(true)
+            setShowTemplates(false)
+            setTab('triggers')
+          }}
+          onSpellTimer={() => {
+            setShowTemplates(false)
+            setShowSpellPicker(true)
+          }}
+          onBlank={() => {
+            setCreatePrefill(undefined)
+            setShowCreate(true)
+            setShowTemplates(false)
+            setTab('triggers')
+          }}
+          onPacks={() => {
+            setShowTemplates(false)
+            setTab('packs')
+          }}
+        />
       )}
 
       {showSpellPicker && (
