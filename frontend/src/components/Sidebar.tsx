@@ -92,7 +92,7 @@ export default function Sidebar({ onSearchClick }: SidebarProps): React.ReactEle
   const { navDot } = useFeatureDots()
   const attention = useNavAttention()
   const [editing, setEditing] = useState(false)
-  const gettingStarted = useGettingStarted({ delayMs: 4000 })
+  const gettingStarted = useGettingStarted({ delayMs: 4000, skipWhenDismissed: true })
   const showChecklistPill =
     gettingStarted.loaded && !gettingStarted.dismissed && gettingStarted.doneCount < gettingStarted.total
   // Right-click menu on a nav item: { route, x, y }.

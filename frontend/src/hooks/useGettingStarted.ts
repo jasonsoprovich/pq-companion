@@ -60,9 +60,15 @@ async function overlaysConfigured(): Promise<boolean> {
   return !!layouts?.layouts.some((l) => l.windows.length > 0)
 }
 
-async function compute(): Promise<{ items: ChecklistItem[]; dismissed: boolean }> {
+async function compute(
+  skipWhenDismissed: boolean,
+): Promise<{ items: ChecklistItem[]; dismissed: boolean }> {
   const cfg = await getConfig()
   const gs = cfg.preferences?.getting_started ?? {}
+  // The sidebar pill has nothing to show once the list is dismissed (or was
+  // auto-dismissed on completion), so skip the folder, Zeal, layout and
+  // trigger checks entirely.
+  if (skipWhenDismissed && gs.dismissed) return { items: [], dismissed: true }
   const eqPath = cfg.eq_path?.trim() ?? ''
   const [valid, zeal, overlays, triggers, log] = await Promise.all([
     eqPath ? validateEQPath(eqPath).then((v) => v.valid).catch(() => false) : Promise.resolve(false),
@@ -117,15 +123,23 @@ async function compute(): Promise<{ items: ChecklistItem[]; dismissed: boolean }
   return { items, dismissed: !!gs.dismissed }
 }
 
-export function useGettingStarted(opts: { delayMs?: number } = {}): GettingStarted {
+// Focus refreshes (every alt-tab back from EQ) are throttled to this.
+const FOCUS_REFRESH_MS = 60 * 1000
+
+export function useGettingStarted(
+  opts: { delayMs?: number; skipWhenDismissed?: boolean } = {},
+): GettingStarted {
+  const skipWhenDismissed = !!opts.skipWhenDismissed
   const [items, setItems] = useState<ChecklistItem[]>([])
   const [dismissed, setDismissedState] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const seq = useRef(0)
+  const lastRun = useRef(0)
 
   const refresh = useCallback(() => {
     const n = ++seq.current
-    compute()
+    lastRun.current = Date.now()
+    compute(skipWhenDismissed)
       .then((r) => {
         if (n !== seq.current) return
         setItems(r.items)
@@ -138,13 +152,15 @@ export function useGettingStarted(opts: { delayMs?: number } = {}): GettingStart
         }
       })
       .catch(() => undefined)
-  }, [])
+  }, [skipWhenDismissed])
 
   useEffect(() => {
     // The sidebar pill delays its first check so it stays off the startup
     // critical path.
     const t = window.setTimeout(refresh, opts.delayMs ?? 0)
-    const onFocus = (): void => refresh()
+    const onFocus = (): void => {
+      if (Date.now() - lastRun.current >= FOCUS_REFRESH_MS) refresh()
+    }
     window.addEventListener('focus', onFocus)
     return () => {
       window.clearTimeout(t)
