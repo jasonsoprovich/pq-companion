@@ -1200,7 +1200,26 @@ export default function TriggerForm({ initial, prefill, categories, onCategories
                       disabled={blocked || submitting}
                       onClick={() => {
                         if (m === 'regex') {
-                          setPatternMode('regex')
+                          if (patternMode === 'regex') return
+                          // Convert the latest plain text first: a pending
+                          // debounced conversion would otherwise be dropped
+                          // and Regex would show an older pattern. Invalid
+                          // plain text stays in Plain so it can be fixed.
+                          if (!plainText.trim()) {
+                            setPatternMode('regex')
+                            return
+                          }
+                          convertTriggerPattern('regex', plainText)
+                            .then((r) => {
+                              if (r.ok) {
+                                setPlainError(null)
+                                handlePatternChange(r.result ?? '')
+                                setPatternMode('regex')
+                              } else {
+                                setPlainError(r.error ?? 'Invalid pattern')
+                              }
+                            })
+                            .catch(() => setPlainError("Couldn't check the pattern"))
                           return
                         }
                         if (patternMode === 'plain') return

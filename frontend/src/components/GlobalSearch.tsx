@@ -201,16 +201,20 @@ export default function GlobalSearch({ open, onClose }: GlobalSearchProps): Reac
   // Help articles load on first open so they stay out of the startup chunk.
   const [helpMod, setHelpMod] = useState<typeof import('../lib/help') | null>(null)
 
-  // Reset state when opened
+  // Reset state when opened. Only `open` may drive this: the help module
+  // resolving mid-typing must not clear the query.
   useEffect(() => {
     if (open) {
       setQuery('')
       setResults(null)
       setActiveIndex(0)
       setTimeout(() => inputRef.current?.focus(), 0)
-      if (!helpMod) void import('../lib/help').then(setHelpMod)
       markSearchUsed()
     }
+  }, [open])
+
+  useEffect(() => {
+    if (open && !helpMod) void import('../lib/help').then(setHelpMod)
   }, [open, helpMod])
 
   // Debounced search

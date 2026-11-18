@@ -129,17 +129,20 @@ export default function TriggerTemplatePicker({
   const [channel, setChannel] = useState<ChatChannel>('tell')
   const [from, setFrom] = useState('')
   const [seconds, setSeconds] = useState(60)
-  const [regex, setRegex] = useState('')
+  // The last conversion and the line it came from; a regex only counts
+  // while it matches the line as currently typed.
+  const [conv, setConv] = useState<{ source: string; regex: string }>({ source: '', regex: '' })
   const [patternError, setPatternError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
 
   const plainLine = template === 'chat' ? chatLine(channel, from) : line
+  const regex = conv.source === plainLine ? conv.regex : ''
 
   // Convert the plain line to regex as the user types.
   useEffect(() => {
     if (!template || !plainLine.trim()) {
-      setRegex('')
+      setConv({ source: '', regex: '' })
       setPatternError(null)
       return
     }
@@ -148,7 +151,7 @@ export default function TriggerTemplatePicker({
       convertTriggerPattern('regex', plainLine)
         .then((r) => {
           if (stale) return
-          setRegex(r.ok ? (r.result ?? '') : '')
+          setConv({ source: plainLine, regex: r.ok ? (r.result ?? '') : '' })
           setPatternError(r.ok ? null : (r.error ?? 'Invalid pattern'))
         })
         .catch(() => {
