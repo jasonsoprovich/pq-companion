@@ -22,6 +22,9 @@ import { useTimerAppearance, type TimerAppearance } from '../hooks/useTimerAppea
 import OverlayLockButton from '../components/OverlayLockButton'
 import { clearTimers, getTimerState } from '../services/api'
 import { chainPositionColor } from '../lib/chChainPositionColor'
+import { parseLabel, positionLetter } from '../lib/chChainLabel'
+import { useChainStyle } from '../lib/chChainStyle'
+import CHChainLanes, { ChainStyleToggle } from '../components/overlays/CHChainLanes'
 import type { ActiveTimer, TimerState } from '../types/timer'
 
 // Which chain the overlay is showing. 'main' = ch_chain timers (001-style
@@ -33,15 +36,6 @@ const VIEW_STORAGE_KEY = 'chChain:view'
 
 function loadView(): ChainView {
   return localStorage.getItem(VIEW_STORAGE_KEY) === 'ramp' ? 'ramp' : 'main'
-}
-
-// positionLetter maps a ramp-chain position back to its letter marker for
-// the badge (1 → A, 2 → B). Falls back to the number outside A–Z range.
-function positionLetter(position: number): string {
-  if (position >= 1 && position <= 26) {
-    return String.fromCharCode(64 + position)
-  }
-  return String(position)
 }
 
 // ChainToggle is the small Main/Secondary segmented switch in the header, styled
@@ -69,14 +63,6 @@ function ChainToggle({ view, onChange }: { view: ChainView; onChange: (v: ChainV
 function fmtRemaining(secs: number): string {
   if (secs <= 0) return '0s'
   return `${Math.ceil(secs)}s`
-}
-
-// parseLabel splits the matcher's "#N  Target  ← Caster" label into a numeric
-// chain position (for sorting + a badge) and the remaining display text.
-function parseLabel(label: string): { position: number; text: string } {
-  const m = /^#(\d+)\s+(.*)$/.exec(label)
-  if (!m) return { position: Number.MAX_SAFE_INTEGER, text: label }
-  return { position: parseInt(m[1], 10), text: m[2] }
 }
 
 // computeCadence derives the chain's live spacing from the gaps between
@@ -271,6 +257,7 @@ export default function CHChainOverlayWindowPage(): React.ReactElement {
   const [state, setState] = useState<TimerState | null>(null)
   const [view, setView] = useState<ChainView>(loadView)
   const appearance = useTimerAppearance()
+  const [chainStyle, setChainStyle] = useChainStyle()
   const chConfig = useCHChainConfig()
   const secondaryEnabled = chConfig?.secondary_enabled ?? false
   // With the secondary chain off in settings, always show the main chain —
@@ -400,6 +387,7 @@ export default function CHChainOverlayWindowPage(): React.ReactElement {
         </div>
         <div className="no-drag" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <CollapseToggle collapsed={collapsed} onToggle={toggleCollapsed} summary={collapsedSummary} />
+          <ChainStyleToggle style={chainStyle} onChange={setChainStyle} variant="overlay" />
           {secondaryEnabled && <ChainToggle view={activeView} onChange={changeView} />}
           <button
             onClick={() => clearTimers(activeCategory).catch(() => {})}
@@ -443,13 +431,16 @@ export default function CHChainOverlayWindowPage(): React.ReactElement {
           flex: 1,
           overflow: 'auto',
           display: 'flex',
-          flexDirection: appearance.stackFromBottom ? 'column-reverse' : 'column',
+          flexDirection:
+            chainStyle === 'list' && appearance.stackFromBottom ? 'column-reverse' : 'column',
         }}
       >
         {state === null ? (
           <p style={{ padding: 12, fontSize: 11, color: 'rgba(255,255,255,0.3)', textAlign: 'center', margin: 0 }}>
             Connecting…
           </p>
+        ) : chainStyle === 'lanes' && chain.length > 0 ? (
+          <CHChainLanes timers={chain} letters={activeView === 'ramp'} appearance={appearance} variant="overlay" />
         ) : displayList.length === 0 ? (
           <div
             style={{

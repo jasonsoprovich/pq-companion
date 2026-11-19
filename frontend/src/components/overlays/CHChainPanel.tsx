@@ -16,6 +16,9 @@ import { useAnimatedChainList } from '../../hooks/useAnimatedChainList'
 import { useTimerAppearance, type TimerAppearance } from '../../hooks/useTimerAppearance'
 import { clearTimers, getTimerState } from '../../services/api'
 import { chainPositionColor } from '../../lib/chChainPositionColor'
+import { parseLabel, positionLetter } from '../../lib/chChainLabel'
+import { useChainStyle } from '../../lib/chChainStyle'
+import CHChainLanes, { ChainStyleToggle } from './CHChainLanes'
 import OverlayWindow from '../OverlayWindow'
 import type { ActiveTimer, TimerState } from '../../types/timer'
 
@@ -41,15 +44,6 @@ function loadView(): ChainView {
   return localStorage.getItem(VIEW_STORAGE_KEY) === 'ramp' ? 'ramp' : 'main'
 }
 
-// positionLetter maps a ramp-chain position back to its letter marker for the
-// badge (1 → A, 2 → B). Falls back to the number outside A–Z range.
-function positionLetter(position: number): string {
-  if (position >= 1 && position <= 26) {
-    return String.fromCharCode(64 + position)
-  }
-  return String(position)
-}
-
 // ChainToggle is the compact Main/Secondary segmented control shown in the
 // header, styled after CHChainOverlayWindowPage's toggle but using dashboard
 // surface tokens instead of the overlay's rgba-on-transparent palette.
@@ -71,14 +65,6 @@ function ChainToggle({ view, onChange }: { view: ChainView; onChange: (v: ChainV
 function fmtRemaining(secs: number): string {
   if (secs <= 0) return '0s'
   return `${Math.ceil(secs)}s`
-}
-
-// parseLabel splits the matcher's "#N  Target  ← Caster" label into a numeric
-// chain position (for sorting + a badge) and the remaining display text.
-function parseLabel(label: string): { position: number; text: string } {
-  const m = /^#(\d+)\s+(.*)$/.exec(label)
-  if (!m) return { position: Number.MAX_SAFE_INTEGER, text: label }
-  return { position: parseInt(m[1], 10), text: m[2] }
 }
 
 // computeCadence derives the chain's live spacing from the gaps between
@@ -228,6 +214,7 @@ export default function CHChainPanel({
   const [state, setState] = useState<TimerState | null>(null)
   const [view, setView] = useState<ChainView>(loadView)
   const appearance = useTimerAppearance()
+  const [chainStyle, setChainStyle] = useChainStyle()
   const chConfig = useCHChainConfig()
   const secondaryEnabled = chConfig?.secondary_enabled ?? false
   // With the secondary chain off in settings, always show the main chain —
@@ -297,6 +284,7 @@ export default function CHChainPanel({
       }
       headerRight={
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <ChainStyleToggle style={chainStyle} onChange={setChainStyle} variant="panel" />
           {secondaryEnabled && <ChainToggle view={activeView} onChange={changeView} />}
           <button
             onClick={() => clearTimers(activeCategory).catch(() => {})}
@@ -331,6 +319,8 @@ export default function CHChainPanel({
             <HeartPulse size={28} style={{ opacity: 0.2, color: '#3b82f6' }} />
             <p style={{ fontSize: 12, margin: 0 }}>Connecting…</p>
           </div>
+        ) : chainStyle === 'lanes' && chain.length > 0 ? (
+          <CHChainLanes timers={chain} letters={activeView === 'ramp'} appearance={appearance} variant="panel" />
         ) : displayList.length === 0 ? (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: 'var(--color-muted)', padding: 16 }}>
             <HeartPulse size={28} style={{ opacity: 0.2, color: '#3b82f6' }} />

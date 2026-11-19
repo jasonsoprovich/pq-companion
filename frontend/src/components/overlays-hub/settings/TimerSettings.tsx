@@ -12,6 +12,7 @@ import DetrimSpellOverridesEditor from '../../settings/DetrimSpellOverridesEdito
 import ExpiredKeepOverridesEditor from '../../settings/ExpiredKeepOverridesEditor'
 import { withTimerAlertDefaults } from '../../../lib/timerAlerts'
 import { resolveFillOpacity } from '../../../hooks/useTimerAppearance'
+import { useChainStyle } from '../../../lib/chChainStyle'
 import { SettingsSection } from './SettingsSection'
 import {
   CH_CHAIN_DEFAULT_PATTERN,
@@ -596,6 +597,7 @@ export function DetrimAlertSettings({ config, setConfig }: TimerSettingsProps): 
 // CH Chain: chain call tracking, possible misses and the secondary chain.
 export function CHChainSettings({ config, setConfig }: TimerSettingsProps): React.ReactElement {
   useAutoTour('chchain')
+  const [chainStyle, setChainStyle] = useChainStyle()
   return (
     <SettingsSection title="Chain tracking">
       <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
@@ -624,6 +626,29 @@ export function CHChainSettings({ config, setConfig }: TimerSettingsProps): Reac
           Enable CH chain tracking
         </span>
       </label>
+
+      <div className="mb-3 flex flex-col gap-1">
+        <span className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>Overlay style</span>
+        <div className="flex gap-3">
+          {(['list', 'lanes'] as const).map((v) => (
+            <label key={v} className="flex items-center gap-1.5 cursor-pointer text-sm" style={{ color: 'var(--color-foreground)' }}>
+              <input
+                type="radio"
+                name="chchain-style"
+                checked={chainStyle === v}
+                onChange={() => setChainStyle(v)}
+              />
+              {v === 'list' ? 'List' : 'Lanes'}
+            </label>
+          ))}
+        </div>
+        <span className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+          List shows one countdown bar per call. Lanes shows one row per heal target, with
+          each call's number sliding toward the target's name; the heal lands when it
+          reaches the name (works best in a wide, short window). Also switchable from the
+          overlay's header.
+        </span>
+      </div>
 
       <label data-tour="chchain-miss" className="mb-3 flex items-start gap-2 cursor-pointer">
         <input
