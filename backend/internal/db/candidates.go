@@ -141,6 +141,14 @@ var excludedGearItems = map[int]bool{
 	21843: true, // Cursed Cap of Dulein — no merchant/drop/forage source found, not obtainable by players
 }
 
+// questCombineTradeskillList holds the tradeskill_recipe.tradeskill values
+// for quest combines rather than player crafting: 75 is the quest-combine skill
+// (nofail, no skill check — e.g. Elemental pattern + emblem in the Mystical
+// Furnace of Ro → Rosrak's Sleeves of the Primal), and 0 is the legacy
+// quest-container combine (Rubicite, Lustrous Russet). Their outputs are raid
+// or quest gear, so the "Hide crafted" filter must not hide them.
+const questCombineTradeskillList = "0, 75"
+
 // CandidateFilter selects items usable in a slot by a character. A zero
 // ClassBit/RaceBit/MaxLevel means "don't filter on that axis".
 type CandidateFilter struct {
@@ -149,7 +157,7 @@ type CandidateFilter struct {
 	RaceBit        int  // items.races bit for the character's race
 	MaxLevel       int  // character level; items requiring a higher level are excluded
 	ExcludePoP     bool // drop Planes-of-Power-gated items (not yet obtainable)
-	ExcludeCrafted bool // drop tradeskill-made items (results of a recipe combine)
+	ExcludeCrafted bool // drop player-crafted items (tradeskill recipe products; quest combines kept)
 	ExcludeNoDrop  bool // drop NO DROP items (can't be traded for)
 	FocusOnly      bool // keep only items that carry a focus effect
 	// ItemIDs, when non-empty, restricts the scan to exactly these items (a
@@ -192,9 +200,14 @@ func (db *DB) UpgradeCandidates(f CandidateFilter) ([]UpgradeCandidate, error) {
 	}
 	if f.ExcludeCrafted {
 		// successcount > 0 marks an item produced by a recipe combine (vs a
-		// component or container). The item_id index keeps this subquery cheap.
+		// component or container). Only real player tradeskills count as
+		// "crafted": quest combines (see questCombineTradeskills) make raid and
+		// quest armor such as the Plane of Time class sets. The item_id index
+		// keeps this subquery cheap.
 		where += " AND NOT EXISTS (SELECT 1 FROM tradeskill_recipe_entries tre" +
-			" WHERE tre.item_id = i.id AND tre.successcount > 0)"
+			" JOIN tradeskill_recipe r ON r.id = tre.recipe_id" +
+			" WHERE tre.item_id = i.id AND tre.successcount > 0" +
+			" AND r.tradeskill NOT IN (" + questCombineTradeskillList + "))"
 	}
 	if f.FocusOnly {
 		where += " AND i.focuseffect > 0"

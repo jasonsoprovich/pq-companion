@@ -218,11 +218,165 @@ func (db *DB) buildPoPGated() (map[int]bool, error) {
 		}
 	}
 
-	// Gate items whose every known source is a PoP zone.
+	// Recipe routes: a combine is another way to get its products, available
+	// pre-PoP only when every component is. Without this a quest-combine item
+	// (Rosrak's Sleeves of the Primal: PoTime pattern + emblem) had no source
+	// row at all and was never gated.
+	recipes, err := db.loadPoPRecipes()
+	if err != nil {
+		return nil, err
+	}
+	for id := range resolvePoPRoutes(gated, hasPoP, hasNonPoP, recipes) {
+		gated[id] = true
+	}
+	return gated, nil
+}
+
+// popRecipe is one enabled tradeskill recipe reduced to what PoP gating needs:
+// its consumed components and the items it newly produces.
+type popRecipe struct {
+	components []int
+	products   []int
+}
+
+// loadPoPRecipes reads every enabled recipe. Components are entries consumed by
+// the combine (componentcount > 0, not the container). Products are successful
+// outputs that weren't also inputs, so a tool the combine hands back (recipe
+// 9954 returns its Tanaan Smithing Hammer) isn't treated as made by it.
+func (db *DB) loadPoPRecipes() ([]popRecipe, error) {
+	rows, err := db.Query(`SELECT e.recipe_id, e.item_id, e.successcount,
+	    e.componentcount, e.iscontainer
+	  FROM tradeskill_recipe_entries e
+	  JOIN tradeskill_recipe r ON r.id = e.recipe_id
+	  WHERE r.enabled = 1 AND e.item_id > 0`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	type entries struct {
+		comps map[int]bool
+		outs  []int
+	}
+	byRecipe := map[int]*entries{}
+	order := []int{}
+	for rows.Next() {
+		var recipeID, itemID, success, comp, container int
+		if err := rows.Scan(&recipeID, &itemID, &success, &comp, &container); err != nil {
+			return nil, err
+		}
+		e := byRecipe[recipeID]
+		if e == nil {
+			e = &entries{comps: map[int]bool{}}
+			byRecipe[recipeID] = e
+			order = append(order, recipeID)
+		}
+		if comp > 0 && container == 0 {
+			e.comps[itemID] = true
+		}
+		if success > 0 {
+			e.outs = append(e.outs, itemID)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	out := make([]popRecipe, 0, len(order))
+	for _, id := range order {
+		e := byRecipe[id]
+		r := popRecipe{}
+		for c := range e.comps {
+			r.components = append(r.components, c)
+		}
+		for _, o := range e.outs {
+			if !e.comps[o] {
+				r.products = append(r.products, o)
+			}
+		}
+		if len(r.components) > 0 && len(r.products) > 0 {
+			out = append(out, r)
+		}
+	}
+	return out, nil
+}
+
+// resolvePoPRoutes returns the items that are PoP-only once recipe routes are
+// counted alongside the direct sources (hasPoP/hasNonPoP). Each route is PoP,
+// available, or unknown:
+//
+//   - a direct source is PoP or available by its zone;
+//   - a recipe is available when every component is available, and PoP when
+//     any component is PoP-gated; otherwise (a component with no known source)
+//     it's unknown.
+//
+// An item is gated when it has at least one PoP route and no available one.
+// Unknown routes neither gate nor clear an item, so missing data never hides a
+// recipe-only item and never un-hides an item that drops only in PoP. tagged
+// items (explicit PoP era) are always gated.
+//
+// Both sets only ever grow, so each is a fixed point; chained combines (a
+// combine whose component is itself combined) settle within a few passes.
+func resolvePoPRoutes(tagged, hasPoP, hasNonPoP map[int]bool, recipes []popRecipe) map[int]bool {
+	avail := map[int]bool{}
+	for id := range hasNonPoP {
+		if !tagged[id] {
+			avail[id] = true
+		}
+	}
+	for changed := true; changed; {
+		changed = false
+		for _, r := range recipes {
+			if !allIn(r.components, avail) {
+				continue
+			}
+			for _, p := range r.products {
+				if !avail[p] && !tagged[p] {
+					avail[p] = true
+					changed = true
+				}
+			}
+		}
+	}
+
+	gated := map[int]bool{}
+	for id := range tagged {
+		gated[id] = true
+	}
 	for id := range hasPoP {
-		if !hasNonPoP[id] {
+		if !avail[id] {
 			gated[id] = true
 		}
 	}
-	return gated, nil
+	for changed := true; changed; {
+		changed = false
+		for _, r := range recipes {
+			if !anyIn(r.components, gated) {
+				continue
+			}
+			for _, p := range r.products {
+				if !avail[p] && !gated[p] {
+					gated[p] = true
+					changed = true
+				}
+			}
+		}
+	}
+	return gated
+}
+
+func allIn(ids []int, set map[int]bool) bool {
+	for _, id := range ids {
+		if !set[id] {
+			return false
+		}
+	}
+	return true
+}
+
+func anyIn(ids []int, set map[int]bool) bool {
+	for _, id := range ids {
+		if set[id] {
+			return true
+		}
+	}
+	return false
 }

@@ -1164,21 +1164,26 @@ func (h *charactersHandler) equippedItemsForSlot(byLoc map[string][]zeal.Invento
 	return items
 }
 
-// statLineFromBlock copies the capped attribute/resist totals from a derived
-// stat block into a StatLine. Only the fields used as cap references matter;
-// HP/Mana/AC are carried for completeness but unused by the cap math.
+// statLineFromBlock builds the cap-headroom reference from a derived stat block.
+// The attributes and Flowing Thought come from the RAW (uncapped) totals:
+// upgrade.Score clamps both sides of a swap to the cap itself, and feeding it
+// already-capped totals made an over-cap stat look like a real loss when the
+// worn item was removed (raw WIS 300, cap 280, worn +20 → "−20 effective",
+// though the character stays capped at 280). Resists have no raw total; their
+// 500 cap is out of reach in practice.
+//
+// Attack is the gear's worn ATK only: the 250 soft cap applies to worn ATK, so
+// AA (and buff) attack mustn't use up that headroom.
 func statLineFromBlock(b statBlock) upgrade.StatLine {
 	return upgrade.StatLine{
 		HP: b.HP, Mana: b.Mana, AC: b.AC,
-		STR: b.STR, STA: b.STA, AGI: b.AGI, DEX: b.DEX,
-		WIS: b.WIS, INT: b.INT, CHA: b.CHA,
+		STR: b.STRRaw, STA: b.STARaw, AGI: b.AGIRaw, DEX: b.DEXRaw,
+		WIS: b.WISRaw, INT: b.INTRaw, CHA: b.CHARaw,
 		MR: b.MR, FR: b.FR, CR: b.CR, DR: b.DR, PR: b.PR,
-		// Attack and mana regen are the headroom references for the soft-capped
-		// ATK (250) and Flowing Thought (15) scoring terms. Only worn FT counts
-		// against the item FT cap — b.ManaRegen (AA/buff flat regen) is uncapped
-		// and never item-sourced, so folding it in here would falsely report the
-		// 15 cap as reached and hide real FT upgrades.
-		Attack: b.Attack, ManaRegen: b.FT,
+		// Only worn FT counts against the item FT cap. b.ManaRegen (AA/buff flat
+		// regen) is uncapped and never item-sourced, so folding it in would
+		// falsely report the 15 cap as reached and hide real FT upgrades.
+		Attack: b.Breakdown.Attack.Item, ManaRegen: b.FTRaw,
 	}
 }
 

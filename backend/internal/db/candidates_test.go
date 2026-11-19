@@ -187,3 +187,38 @@ func TestFocusOptions_Enchanter(t *testing.T) {
 	}
 	t.Logf("enchanter focus options: %d", len(opts))
 }
+
+// TestUpgradeCandidates_ExcludeCraftedKeepsQuestCombines guards the Discord
+// report where Rosrak's Sleeves of the Primal (PoTime shaman armor) vanished
+// from the finder: it's the product of a quest combine (tradeskill 75), not
+// player crafting, so "Hide crafted" must keep it while still hiding real
+// blacksmithing output.
+func TestUpgradeCandidates_ExcludeCraftedKeepsQuestCombines(t *testing.T) {
+	d := openTestDB(t)
+	const (
+		armsBit    = 0x80
+		shamanBit  = 1 << 9
+		rosrakArms = 11529 // Rosrak's Sleeves of the Primal (quest combine)
+		bandedArms = 3060  // Banded Sleeves (blacksmithing)
+	)
+	cands, err := d.UpgradeCandidates(db.CandidateFilter{
+		SlotMask:       armsBit,
+		ClassBit:       shamanBit,
+		MaxLevel:       65,
+		ExcludeCrafted: true,
+		ItemIDs:        []int{rosrakArms, bandedArms},
+	})
+	if err != nil {
+		t.Fatalf("UpgradeCandidates: %v", err)
+	}
+	got := map[int]bool{}
+	for _, c := range cands {
+		got[c.ID] = true
+	}
+	if !got[rosrakArms] {
+		t.Errorf("quest-combine item %d hidden by ExcludeCrafted", rosrakArms)
+	}
+	if got[bandedArms] {
+		t.Errorf("blacksmithing item %d not hidden by ExcludeCrafted", bandedArms)
+	}
+}
