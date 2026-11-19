@@ -135,7 +135,6 @@ func applyClassTweaks(class int, w *Weights) {
 // DefaultWeights returns the starting weight set for a 0-indexed class.
 func DefaultWeights(class int) Weights {
 	w := archetypeWeights[ArchetypeFor(class)]
-	w.FocusBonus = DefaultFocusBonus
 	applyClassTweaks(class, &w)
 	return w
 }

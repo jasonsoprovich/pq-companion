@@ -12,7 +12,9 @@
 //
 // Focus effects are intentionally NOT scored here — they do not stack (only the
 // best focus of a type applies), so summing them into a raw stat score is
-// wrong. The API surfaces focus as a separate axis instead.
+// wrong. The API lists items carrying a wanted focus separately instead, with
+// their plain stat score. (Saved weight profiles may still carry an old
+// "focus_bonus" key; it's ignored.)
 //
 // ATK and worn haste are effect-derived (not flat item columns) and are left
 // out of phase-1 scoring; they can be layered on later as additional weights.
@@ -116,19 +118,7 @@ type Weights struct {
 	// far above a shield or stat-stick, while a tank (low DPS, high AC) still
 	// prefers a shield offhand. Zero for casters. Applied in Score.
 	DPS float64 `json:"dps"`
-	// FocusBonus is the score bump (on the same HP-equivalent axis) given to a
-	// candidate that carries one of the character's priority focus effects which
-	// they don't already have equipped. Applied by the API layer, not Score —
-	// focus is a separate axis from raw stats. See DefaultFocusBonus.
-	FocusBonus float64 `json:"focus_bonus"`
 }
-
-// DefaultFocusBonus is the fallback priority-focus bonus when a weight set
-// doesn't specify one (e.g. profiles saved before the field existed). On the
-// HP-equivalent scale, ~100 means a wanted, not-yet-equipped focus is worth
-// about 100 HP of ranking — enough to float a focus item over a modest stat
-// upgrade without burying large ones.
-const DefaultFocusBonus = 100
 
 // Context carries the character state needed for cap-aware scoring.
 type Context struct {

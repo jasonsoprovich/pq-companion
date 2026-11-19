@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/jasonsoprovich/pq-companion/backend/internal/buffmod"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/character"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/upgrade"
@@ -88,7 +89,7 @@ func TestScoreSlotCands_TwoHanderNetsOutOffhand(t *testing.T) {
 	ctx := upgrade.Context{Level: 60}
 	weights := upgrade.Weights{HP: 1}
 
-	_, _, results, _ := h.scoreSlotCands(character.Character{}, ctx, weights, slot, byLoc, worn, true, "", 10, nil, nil, nil, wc, nil, cands)
+	_, _, results, _, _ := h.scoreSlotCands(character.Character{}, ctx, weights, slot, byLoc, worn, true, "", 10, nil, nil, wc, nil, cands)
 	if len(results) != 1 {
 		t.Fatalf("got %d results, want 1", len(results))
 	}
@@ -128,7 +129,7 @@ func TestScoreSlotCands_OneHanderUnaffected(t *testing.T) {
 	ctx := upgrade.Context{Level: 60}
 	weights := upgrade.Weights{HP: 1}
 
-	_, _, results, _ := h.scoreSlotCands(character.Character{}, ctx, weights, slot, byLoc, worn, true, "", 10, nil, nil, nil, wc, nil, cands)
+	_, _, results, _, _ := h.scoreSlotCands(character.Character{}, ctx, weights, slot, byLoc, worn, true, "", 10, nil, nil, wc, nil, cands)
 	if len(results) != 1 {
 		t.Fatalf("got %d results, want 1", len(results))
 	}
@@ -165,7 +166,7 @@ func TestScoreSlotCands_TwoHanderExcludedFromSecondary(t *testing.T) {
 	ctx := upgrade.Context{Level: 60}
 	weights := upgrade.Weights{HP: 1, AC: 1}
 
-	_, _, results, _ := h.scoreSlotCands(character.Character{}, ctx, weights, slot, byLoc, worn, true, "", 10, nil, nil, nil, wc, nil, cands)
+	_, _, results, _, _ := h.scoreSlotCands(character.Character{}, ctx, weights, slot, byLoc, worn, true, "", 10, nil, nil, wc, nil, cands)
 	if len(results) != 0 {
 		t.Fatalf("got %d results, want 0 (2H candidate must be excluded from the Secondary slot view)", len(results))
 	}
@@ -199,21 +200,21 @@ func TestScoreSlotCands_WeaponStyleFilter(t *testing.T) {
 	weights := upgrade.Weights{HP: 1}
 
 	t.Run("dw excludes 2H", func(t *testing.T) {
-		_, _, results, _ := h.scoreSlotCands(character.Character{}, ctx, weights, slot, byLoc, worn, true, "dw", 10, nil, nil, nil, wc, nil, cands)
+		_, _, results, _, _ := h.scoreSlotCands(character.Character{}, ctx, weights, slot, byLoc, worn, true, "dw", 10, nil, nil, wc, nil, cands)
 		if len(results) != 1 || results[0].ID != 2 {
 			t.Fatalf("got %+v, want only the 1H candidate", results)
 		}
 	})
 
 	t.Run("2h excludes 1H", func(t *testing.T) {
-		_, _, results, _ := h.scoreSlotCands(character.Character{}, ctx, weights, slot, byLoc, worn, true, "2h", 10, nil, nil, nil, wc, nil, cands)
+		_, _, results, _, _ := h.scoreSlotCands(character.Character{}, ctx, weights, slot, byLoc, worn, true, "2h", 10, nil, nil, wc, nil, cands)
 		if len(results) != 1 || results[0].ID != 3 {
 			t.Fatalf("got %+v, want only the 2H candidate", results)
 		}
 	})
 
 	t.Run("empty style includes both", func(t *testing.T) {
-		_, _, results, _ := h.scoreSlotCands(character.Character{}, ctx, weights, slot, byLoc, worn, true, "", 10, nil, nil, nil, wc, nil, cands)
+		_, _, results, _, _ := h.scoreSlotCands(character.Character{}, ctx, weights, slot, byLoc, worn, true, "", 10, nil, nil, wc, nil, cands)
 		if len(results) != 2 {
 			t.Fatalf("got %d results, want 2", len(results))
 		}
@@ -305,5 +306,132 @@ func TestScore_AAAttackLeavesWornHeadroom(t *testing.T) {
 	res := upgrade.Score(ctx, upgrade.Weights{ATK: 1}, upgrade.StatLine{Attack: 0}, upgrade.StatLine{Attack: 50})
 	if res.Score != 50 {
 		t.Errorf("worn ATK upgrade scored %v, want 50", res.Score)
+	}
+}
+
+// TestScoreSlotCands_PriorityContract pins the priority-focus results rules:
+// wanted-focus items are always listed in priority (stat losses included, no
+// limit), they never take a ranked row, a stat loss never enters the ranked
+// list unless show_all asks for downgrades, and priority is the same either
+// way.
+func TestScoreSlotCands_PriorityContract(t *testing.T) {
+	h := &charactersHandler{}
+	wc := h.newWornCache()
+	slot, ok := upgradeSlotByKey("arms")
+	if !ok {
+		t.Fatal("arms slot not found")
+	}
+	cands := []db.UpgradeCandidate{
+		{ID: 1, Name: "Plain A", HP: 50, Slots: slot.Mask},
+		{ID: 2, Name: "Plain B", HP: 40, Slots: slot.Mask},
+		{ID: 3, Name: "Wanted loss", HP: -30, Slots: slot.Mask, FocusEffect: 500},
+		{ID: 4, Name: "Wanted gain", HP: 60, Slots: slot.Mask, FocusEffect: 501},
+		{ID: 5, Name: "Unwanted focus", HP: 10, Slots: slot.Mask, FocusEffect: 502},
+	}
+	// Unknown foci (no lookup entry) match by exact spell id.
+	pf := &priorityFocus{selected: []int{500, 501}, top: 65,
+		lookup: func(int) (buffmod.Modifier, bool) { return buffmod.Modifier{}, false }}
+	ctx := upgrade.Context{Level: 65}
+	weights := upgrade.Weights{HP: 1}
+	ids := func(rs []upgradeResult) []int {
+		out := []int{}
+		for _, r := range rs {
+			out = append(out, r.ID)
+		}
+		return out
+	}
+	eq := func(a, b []int) bool {
+		if len(a) != len(b) {
+			return false
+		}
+		for i := range a {
+			if a[i] != b[i] {
+				return false
+			}
+		}
+		return true
+	}
+
+	_, _, results, priority, _ := h.scoreSlotCands(character.Character{}, ctx, weights, slot, nil, nil, false, "", 2, pf, nil, wc, nil, cands)
+	if got := ids(results); !eq(got, []int{4, 1}) {
+		t.Errorf("ranked = %v, want [4 1] (limit 2, positive only)", got)
+	}
+	if got := ids(priority); !eq(got, []int{4, 3}) {
+		t.Errorf("priority = %v, want [4 3] (every wanted item, by score, no limit)", got)
+	}
+	if results[0].ID == 3 {
+		t.Error("a stat-loss priority item became the best pick")
+	}
+	for _, r := range priority {
+		if !r.PriorityFocus {
+			t.Errorf("priority item %d not flagged", r.ID)
+		}
+	}
+	if priority[1].Score != -30 {
+		t.Errorf("wanted loss score = %v, want the plain -30", priority[1].Score)
+	}
+
+	_, _, all, priorityAll, _ := h.scoreSlotCands(character.Character{}, ctx, weights, slot, nil, nil, true, "", 10, pf, nil, wc, nil, cands)
+	if got := ids(all); !eq(got, []int{4, 1, 2, 5, 3}) {
+		t.Errorf("show_all ranked = %v, want every candidate by score", got)
+	}
+	if !eq(ids(priorityAll), ids(priority)) {
+		t.Errorf("priority changed with show_all: %v vs %v", ids(priorityAll), ids(priority))
+	}
+
+	// Already wearing the wanted focus 501 elsewhere: item 4 drops out of priority.
+	pf.worn = []int{501}
+	_, _, _, priorityWorn, _ := h.scoreSlotCands(character.Character{}, ctx, weights, slot, nil, nil, false, "", 2, pf, nil, wc, nil, cands)
+	if got := ids(priorityWorn); !eq(got, []int{3}) {
+		t.Errorf("priority with 501 worn = %v, want [3]", got)
+	}
+}
+
+// TestMergeItemPriority: the item-scores endpoint reports a wanted focus even
+// as a stat loss, keeping the item's best slot.
+func TestMergeItemPriority(t *testing.T) {
+	m := map[int]itemPriorityFocus{}
+	mergeItemPriority(m, []upgradeResult{{ID: 7, Score: -40, FocusName: "Affliction Haste IV"}}, "Ear 1")
+	mergeItemPriority(m, []upgradeResult{{ID: 7, Score: -10, FocusName: "Affliction Haste IV"}}, "Ear 2")
+	got, ok := m[7]
+	if !ok {
+		t.Fatal("negative-score priority item missing")
+	}
+	if got.Score != -10 || got.Slot != "Ear 2" {
+		t.Errorf("got %+v, want the better slot (Ear 2, -10)", got)
+	}
+}
+
+// TestPriorityFocusMatch_RealAfflictionHaste runs the rank rules on quarm.db's
+// real Affliction Haste foci: picking III means III or better.
+func TestPriorityFocusMatch_RealAfflictionHaste(t *testing.T) {
+	d := openFocusTestDB(t)
+	h := &charactersHandler{db: d}
+	lookup := h.newFocusLookup()
+	const (
+		ah2 = 2361
+		ah3 = 2362
+		ah4 = 3534
+	)
+	for _, id := range []int{ah2, ah3, ah4} {
+		if _, ok := lookup(id); !ok {
+			t.Fatalf("focus spell %d didn't resolve to a categorised modifier", id)
+		}
+	}
+	cases := []struct {
+		name string
+		cand int
+		worn []int
+		want bool
+	}{
+		{"IV satisfies a III pick", ah4, nil, true},
+		{"II doesn't satisfy a III pick", ah2, nil, false},
+		{"IV still wanted while wearing III", ah4, []int{ah3}, true},
+		{"III not wanted while wearing IV", ah3, []int{ah4}, false},
+	}
+	for _, c := range cases {
+		if got := priorityFocusMatch(c.cand, []int{ah3}, c.worn, lookup, 65); got != c.want {
+			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+		}
 	}
 }

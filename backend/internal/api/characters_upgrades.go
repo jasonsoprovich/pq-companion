@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/jasonsoprovich/pq-companion/backend/internal/buffmod"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/character"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db/enums"
@@ -139,9 +140,10 @@ type upgradeResult struct {
 	ProcName    string              `json:"proc_name"`
 	Score       float64             `json:"score"`
 	Deltas      []upgrade.StatDelta `json:"deltas"`
-	// PriorityFocus is true when this candidate carries one of the character's
-	// priority focus effects that they don't already have equipped — the score
-	// includes the focus bonus and the UI flags it.
+	// PriorityFocus is true when this candidate carries a focus the character
+	// asked for (that rank or better) and doesn't already wear. Score stays the
+	// plain stat score; priority items are also listed in the response's
+	// separate priority array so they show even when they're a stat loss.
 	PriorityFocus bool `json:"priority_focus"`
 	// ReplacesSecondary is true when this candidate is a two-handed weapon
 	// shown in the Primary slot — equipping it also unequips the current
@@ -161,8 +163,13 @@ type upgradesResponse struct {
 	CurrentItems   []upgradeCurrentItem `json:"current_items"`
 	BaselineItemID int                  `json:"baseline_item_id"`
 	Candidates     []upgradeResult      `json:"candidates"`
-	Considered     int                  `json:"considered"`
-	HasCurrentGear bool                 `json:"has_current_gear"`
+	// Priority is every candidate carrying a wanted focus (priorityFocusMatch),
+	// sorted by stat score, with no limit and no score gate. Candidates is
+	// unaffected by it.
+	Priority       []upgradeResult `json:"priority"`
+	Considered     int             `json:"considered"`
+	HasCurrentGear bool            `json:"has_current_gear"`
+	Caps           upgradeCaps     `json:"caps"`
 }
 
 // upgrades handles GET /api/characters/{id}/upgrades?slot=<key>&show_all=&limit=
@@ -203,6 +210,9 @@ func (h *charactersHandler) upgrades(w http.ResponseWriter, r *http.Request) {
 	excludeCrafted := r.URL.Query().Get("hide_crafted") != "0" && r.URL.Query().Get("hide_crafted") != "false"
 	// NO DROP gear is shown by default; ?hide_nodrop=1 drops it.
 	excludeNoDrop := r.URL.Query().Get("hide_nodrop") == "1" || r.URL.Query().Get("hide_nodrop") == "true"
+	// focus_only keeps only items carrying a focus effect, across every
+	// candidate rather than just the ones that made the ranked list.
+	focusOnly := r.URL.Query().Get("focus_only") == "1" || r.URL.Query().Get("focus_only") == "true"
 	// weapon_style narrows Primary-slot candidates to a hand preference: "dw"
 	// (dual wield — 1H only, for classes that won't ever equip a 2H regardless
 	// of stats) or "2h" (two-handed only). Empty/anything else means no filter.
@@ -228,12 +238,17 @@ func (h *charactersHandler) upgrades(w http.ResponseWriter, r *http.Request) {
 
 	byLoc, hasGear := h.loadEquipped(cfg.EQPath, char.Name)
 	worn := h.resolveWornItems(byLoc)
-	prioritySet := h.priorityFocusSet(id)
-	equippedFocus := h.equippedFocusSet(worn)
+	pf := h.newPriorityFocus(char, worn)
 	wornLore := h.equippedLoreSet(worn)
 	wc := h.newWornCache()
 	hasteByLoc := h.hasteByLocation(byLoc, worn, wc)
-	current, baselineID, results, considered, err := h.scoreSlot(char, ctx, weights, slot, byLoc, worn, showAll, excludePoP, excludeCrafted, excludeNoDrop, weaponStyle, limit, prioritySet, equippedFocus, wornLore, wc, hasteByLoc)
+	filter := db.CandidateFilter{
+		ExcludePoP:     excludePoP,     // finder-local "Show PoP gear" toggle (default hide)
+		ExcludeCrafted: excludeCrafted, // finder-local "Hide crafted gear" toggle (default hide)
+		ExcludeNoDrop:  excludeNoDrop,  // finder-local "Hide NO DROP" toggle (default show)
+		FocusOnly:      focusOnly,
+	}
+	current, baselineID, results, priority, considered, err := h.scoreSlot(char, ctx, weights, slot, byLoc, worn, showAll, filter, weaponStyle, limit, pf, wornLore, wc, hasteByLoc)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load upgrade candidates")
 		return
@@ -248,8 +263,10 @@ func (h *charactersHandler) upgrades(w http.ResponseWriter, r *http.Request) {
 		CurrentItems:   current,
 		BaselineItemID: baselineID,
 		Candidates:     results,
+		Priority:       priority,
 		Considered:     considered,
 		HasCurrentGear: hasGear,
+		Caps:           buildUpgradeCaps(ctx, hasteByLoc),
 	})
 }
 
@@ -324,7 +341,10 @@ type overviewSlot struct {
 	SlotLabel    string               `json:"slot_label"`
 	CurrentItems []upgradeCurrentItem `json:"current_items"`
 	Best         *upgradeResult       `json:"best"`
-	Considered   int                  `json:"considered"`
+	// PriorityBest is the top-scoring wanted-focus item for the slot, if any.
+	// It never replaces Best, which stays the best stat pick.
+	PriorityBest *upgradeResult `json:"priority_best,omitempty"`
+	Considered   int            `json:"considered"`
 }
 
 type overviewResponse struct {
@@ -333,6 +353,7 @@ type overviewResponse struct {
 	Weights        upgrade.Weights `json:"weights"`
 	Slots          []overviewSlot  `json:"slots"`
 	HasCurrentGear bool            `json:"has_current_gear"`
+	Caps           upgradeCaps     `json:"caps"`
 }
 
 // upgradeSweep is the per-request state shared by the all-slots views
@@ -345,14 +366,14 @@ type upgradeSweep struct {
 	byLoc          map[string][]zeal.InventoryEntry
 	worn           map[int]*db.Item
 	hasGear        bool
-	prioritySet    map[int]bool
-	equippedFocus  map[int]bool
+	priority       *priorityFocus
 	wornLore       map[int]bool
 	wc             *wornCache
 	hasteByLoc     map[string]int
 	excludePoP     bool
 	excludeCrafted bool
 	excludeNoDrop  bool
+	focusOnly      bool
 	weaponStyle    string
 }
 
@@ -397,12 +418,12 @@ func (h *charactersHandler) loadUpgradeSweep(w http.ResponseWriter, r *http.Requ
 		excludePoP:     !(q.Get("show_pop") == "1" || q.Get("show_pop") == "true"),
 		excludeCrafted: q.Get("hide_crafted") != "0" && q.Get("hide_crafted") != "false",
 		excludeNoDrop:  q.Get("hide_nodrop") == "1" || q.Get("hide_nodrop") == "true",
+		focusOnly:      q.Get("focus_only") == "1" || q.Get("focus_only") == "true",
 		weaponStyle:    q.Get("weapon_style"),
 	}
 	sw.byLoc, sw.hasGear = h.loadEquipped(cfg.EQPath, char.Name)
 	sw.worn = h.resolveWornItems(sw.byLoc)
-	sw.prioritySet = h.priorityFocusSet(id)
-	sw.equippedFocus = h.equippedFocusSet(sw.worn)
+	sw.priority = h.newPriorityFocus(char, sw.worn)
 	sw.wornLore = h.equippedLoreSet(sw.worn)
 	sw.wc = h.newWornCache()
 	sw.hasteByLoc = h.hasteByLocation(sw.byLoc, sw.worn, sw.wc)
@@ -426,19 +447,20 @@ func (h *charactersHandler) sweepCandidates(sw *upgradeSweep) ([]db.UpgradeCandi
 		ExcludePoP:     sw.excludePoP,
 		ExcludeCrafted: sw.excludeCrafted,
 		ExcludeNoDrop:  sw.excludeNoDrop,
+		FocusOnly:      sw.focusOnly,
 	})
 }
 
 // scoreSweepSlot scores the sweep's candidates that fit one slot.
-func (h *charactersHandler) scoreSweepSlot(sw *upgradeSweep, s upgradeSlot, cands []db.UpgradeCandidate, limit int) (current []upgradeCurrentItem, results []upgradeResult, considered int) {
+func (h *charactersHandler) scoreSweepSlot(sw *upgradeSweep, s upgradeSlot, cands []db.UpgradeCandidate, limit int) (current []upgradeCurrentItem, results, priority []upgradeResult, considered int) {
 	var slotCands []db.UpgradeCandidate
 	for _, c := range cands {
 		if c.Slots&s.Mask != 0 {
 			slotCands = append(slotCands, c)
 		}
 	}
-	current, _, results, considered = h.scoreSlotCands(sw.char, sw.ctx, sw.weights, s, sw.byLoc, sw.worn, false, sw.weaponStyle, limit, sw.prioritySet, sw.equippedFocus, sw.wornLore, sw.wc, sw.hasteByLoc, slotCands)
-	return current, results, considered
+	current, _, results, priority, considered = h.scoreSlotCands(sw.char, sw.ctx, sw.weights, s, sw.byLoc, sw.worn, false, sw.weaponStyle, limit, sw.priority, sw.wornLore, sw.wc, sw.hasteByLoc, slotCands)
+	return current, results, priority, considered
 }
 
 // upgradesOverview handles GET /api/characters/{id}/upgrades/overview — the
@@ -460,16 +482,20 @@ func (h *charactersHandler) upgradesOverview(w http.ResponseWriter, r *http.Requ
 
 	slots := make([]overviewSlot, 0, len(upgradeSlots))
 	for _, s := range upgradeSlots {
-		current, results, considered := h.scoreSweepSlot(sw, s, allCands, 1)
-		var best *upgradeResult
+		current, results, priority, considered := h.scoreSweepSlot(sw, s, allCands, 1)
+		var best, priorityBest *upgradeResult
 		if len(results) > 0 {
 			best = &results[0]
+		}
+		if len(priority) > 0 {
+			priorityBest = &priority[0]
 		}
 		slots = append(slots, overviewSlot{
 			Slot:         s.Key,
 			SlotLabel:    s.Label,
 			CurrentItems: current,
 			Best:         best,
+			PriorityBest: priorityBest,
 			Considered:   considered,
 		})
 	}
@@ -480,6 +506,7 @@ func (h *charactersHandler) upgradesOverview(w http.ResponseWriter, r *http.Requ
 		Weights:        sw.weights,
 		Slots:          slots,
 		HasCurrentGear: sw.hasGear,
+		Caps:           buildUpgradeCaps(sw.ctx, sw.hasteByLoc),
 	})
 }
 
@@ -495,7 +522,10 @@ type zoneUpgradeSlot struct {
 	SlotLabel    string               `json:"slot_label"`
 	CurrentItems []upgradeCurrentItem `json:"current_items"`
 	Candidates   []zoneUpgradeResult  `json:"candidates"`
-	Considered   int                  `json:"considered"`
+	// Priority lists the zone's wanted-focus items for the slot (see
+	// upgradesResponse.Priority).
+	Priority   []zoneUpgradeResult `json:"priority"`
+	Considered int                 `json:"considered"`
 }
 
 type zoneUpgradesResponse struct {
@@ -556,16 +586,20 @@ func (h *charactersHandler) upgradesZone(w http.ResponseWriter, r *http.Request)
 
 	slots := make([]zoneUpgradeSlot, 0, len(upgradeSlots))
 	for _, s := range upgradeSlots {
-		current, results, considered := h.scoreSweepSlot(sw, s, zoneCands, limit)
-		cands := make([]zoneUpgradeResult, 0, len(results))
-		for _, res := range results {
-			cands = append(cands, zoneUpgradeResult{upgradeResult: res, Sources: sources[res.ID]})
+		current, results, priority, considered := h.scoreSweepSlot(sw, s, zoneCands, limit)
+		withSources := func(rs []upgradeResult) []zoneUpgradeResult {
+			out := make([]zoneUpgradeResult, 0, len(rs))
+			for _, res := range rs {
+				out = append(out, zoneUpgradeResult{upgradeResult: res, Sources: sources[res.ID]})
+			}
+			return out
 		}
 		slots = append(slots, zoneUpgradeSlot{
 			Slot:         s.Key,
 			SlotLabel:    s.Label,
 			CurrentItems: current,
-			Candidates:   cands,
+			Candidates:   withSources(results),
+			Priority:     withSources(priority),
 			Considered:   considered,
 		})
 	}
@@ -587,10 +621,19 @@ type itemUpgradeScore struct {
 	Slot  string  `json:"slot_label"`
 }
 
+// itemPriorityFocus flags an item carrying a wanted focus, with its signed
+// stat score (it can be a stat loss) and the slot that score is for.
+type itemPriorityFocus struct {
+	Score     float64 `json:"score"`
+	Slot      string  `json:"slot_label"`
+	FocusName string  `json:"focus_name"`
+}
+
 // upgradesItems handles GET /api/characters/{id}/upgrades/items?ids=1,2,3 —
 // the Gear Upgrade Finder score for specific items (an NPC's loot table, the
-// Item Info overlay), keyed by item id. Only actual upgrades (score > 0) are
-// returned; an item fitting several slots reports its best one. Like the zone
+// Item Info overlay), keyed by item id. scores holds only actual upgrades
+// (score > 0); priority holds items carrying a wanted focus whatever their
+// score. An item fitting several slots reports its best one in each. Like the zone
 // view, PoP and crafted gear are never filtered — the caller named the items.
 func (h *charactersHandler) upgradesItems(w http.ResponseWriter, r *http.Request) {
 	var ids []int
@@ -600,7 +643,9 @@ func (h *charactersHandler) upgradesItems(w http.ResponseWriter, r *http.Request
 		}
 	}
 	if len(ids) == 0 {
-		writeJSON(w, http.StatusOK, map[string]any{"scores": map[int]itemUpgradeScore{}})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"scores": map[int]itemUpgradeScore{}, "priority": map[int]itemPriorityFocus{},
+		})
 		return
 	}
 	if len(ids) > 500 {
@@ -628,17 +673,30 @@ func (h *charactersHandler) upgradesItems(w http.ResponseWriter, r *http.Request
 		return
 	}
 	scores := make(map[int]itemUpgradeScore)
+	priority := make(map[int]itemPriorityFocus)
 	if len(cands) > 0 {
 		for _, s := range upgradeSlots {
-			_, results, _ := h.scoreSweepSlot(sw, s, cands, len(cands))
+			_, results, prio, _ := h.scoreSweepSlot(sw, s, cands, len(cands))
 			for _, res := range results {
 				if res.Score > 0 && res.Score > scores[res.ID].Score {
 					scores[res.ID] = itemUpgradeScore{Score: res.Score, Slot: s.Label}
 				}
 			}
+			mergeItemPriority(priority, prio, s.Label)
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"scores": scores})
+	writeJSON(w, http.StatusOK, map[string]any{"scores": scores, "priority": priority})
+}
+
+// mergeItemPriority folds one slot's wanted-focus results into the per-item
+// priority map, keeping each item's best slot. Scores are signed: a wanted
+// focus on a stat downgrade is still reported.
+func mergeItemPriority(into map[int]itemPriorityFocus, prio []upgradeResult, slotLabel string) {
+	for _, res := range prio {
+		if cur, ok := into[res.ID]; !ok || res.Score > cur.Score {
+			into[res.ID] = itemPriorityFocus{Score: res.Score, Slot: slotLabel, FocusName: res.FocusName}
+		}
+	}
 }
 
 // upgradeMaxLevel is the reqlevel ceiling for candidate items. When PoP gear is
@@ -668,43 +726,38 @@ func charClassBit(char character.Character) int {
 // query and calls scoreSlotCands directly.
 func (h *charactersHandler) scoreSlot(
 	char character.Character, ctx upgrade.Context, weights upgrade.Weights,
-	slot upgradeSlot, byLoc map[string][]zeal.InventoryEntry, worn map[int]*db.Item, showAll, excludePoP, excludeCrafted, excludeNoDrop bool, weaponStyle string, limit int,
-	prioritySet, equippedFocus, wornLore map[int]bool, wc *wornCache, hasteByLoc map[string]int,
-) (current []upgradeCurrentItem, baselineID int, results []upgradeResult, considered int, err error) {
-	cands, err := h.db.UpgradeCandidates(db.CandidateFilter{
-		SlotMask:       slot.Mask,
-		ClassBit:       charClassBit(char),
-		RaceBit:        enums.RaceBitForCharRace(char.Race),
-		MaxLevel:       upgradeMaxLevel(char.Level, excludePoP),
-		ExcludePoP:     excludePoP,     // finder-local "Show PoP gear" toggle (default hide)
-		ExcludeCrafted: excludeCrafted, // finder-local "Hide crafted gear" toggle (default hide)
-		ExcludeNoDrop:  excludeNoDrop,  // finder-local "Hide NO DROP" toggle (default show)
-	})
+	slot upgradeSlot, byLoc map[string][]zeal.InventoryEntry, worn map[int]*db.Item, showAll bool, filter db.CandidateFilter, weaponStyle string, limit int,
+	pf *priorityFocus, wornLore map[int]bool, wc *wornCache, hasteByLoc map[string]int,
+) (current []upgradeCurrentItem, baselineID int, results, priority []upgradeResult, considered int, err error) {
+	// filter carries the toggles (PoP / crafted / NO DROP / focus only); the
+	// character's slot, class, race and level are filled in here.
+	filter.SlotMask = slot.Mask
+	filter.ClassBit = charClassBit(char)
+	filter.RaceBit = enums.RaceBitForCharRace(char.Race)
+	filter.MaxLevel = upgradeMaxLevel(char.Level, filter.ExcludePoP)
+	cands, err := h.db.UpgradeCandidates(filter)
 	if err != nil {
 		// Propagate: a locked/corrupt quarm.db must not be reported to the user
 		// as "no upgrades" (indistinguishable from best-in-slot).
-		return nil, 0, nil, 0, err
+		return nil, 0, nil, nil, 0, err
 	}
-	current, baselineID, results, considered = h.scoreSlotCands(char, ctx, weights, slot, byLoc, worn, showAll, weaponStyle, limit, prioritySet, equippedFocus, wornLore, wc, hasteByLoc, cands)
-	return current, baselineID, results, considered, nil
+	current, baselineID, results, priority, considered = h.scoreSlotCands(char, ctx, weights, slot, byLoc, worn, showAll, weaponStyle, limit, pf, wornLore, wc, hasteByLoc, cands)
+	return current, baselineID, results, priority, considered, nil
 }
 
 // scoreSlotCands scores a pre-fetched candidate set for one slot against the
 // item worn in that physical slot (slot.Index picks Ear 1 vs Ear 2, etc.). It
 // takes a pre-parsed equipped map so a multi-slot sweep parses
 // the Quarmy export only once. Returns the worn items, the baseline item id, the
-// ranked results (truncated to limit), and how many candidates were considered.
+// ranked results (truncated to limit), the wanted-focus items (pf; never
+// truncated or score-gated, and never taking a ranked row), and how many
+// candidates were considered.
 func (h *charactersHandler) scoreSlotCands(
 	char character.Character, ctx upgrade.Context, weights upgrade.Weights,
 	slot upgradeSlot, byLoc map[string][]zeal.InventoryEntry, worn map[int]*db.Item, showAll bool, weaponStyle string, limit int,
-	prioritySet, equippedFocus, wornLore map[int]bool, wc *wornCache, hasteByLoc map[string]int,
+	pf *priorityFocus, wornLore map[int]bool, wc *wornCache, hasteByLoc map[string]int,
 	cands []db.UpgradeCandidate,
-) (current []upgradeCurrentItem, baselineID int, results []upgradeResult, considered int) {
-	focusBonus := weights.FocusBonus
-	if focusBonus <= 0 {
-		focusBonus = upgrade.DefaultFocusBonus
-	}
-
+) (current []upgradeCurrentItem, baselineID int, results, priority []upgradeResult, considered int) {
 	// Worn haste is best-of-type: a candidate only gains haste if it beats the
 	// best the character already wears in OTHER slots (toward the level cap).
 	otherHaste := 0
@@ -761,6 +814,7 @@ func (h *charactersHandler) scoreSlotCands(
 		wornHere[h.db.CanonicalItemID(ci.ID)] = true
 	}
 	results = make([]upgradeResult, 0, len(cands))
+	priority = make([]upgradeResult, 0)
 	for _, c := range cands {
 		if wornHere[c.ID] {
 			continue // don't suggest what's already equipped in this slot
@@ -795,16 +849,13 @@ func (h *charactersHandler) scoreSlotCands(
 		}
 		res := upgrade.Score(ctx, weights, slotCur, h.candStatLine(c, wc))
 		score := res.Score
-		// Priority focus the character wants but doesn't already have equipped
-		// gets a bonus so a focus item floats up over modest stat upgrades.
-		priority := c.FocusEffect > 0 && prioritySet[c.FocusEffect] && !equippedFocus[c.FocusEffect]
-		if priority {
-			score += focusBonus
-		}
-		if !showAll && score <= 0 {
+		// A wanted focus (that rank or better, not already worn) is listed in
+		// priority whatever its stat score; the score itself stays honest.
+		wanted := pf.match(c.FocusEffect)
+		if !wanted && !showAll && score <= 0 {
 			continue
 		}
-		results = append(results, upgradeResult{
+		r := upgradeResult{
 			ID:                c.ID,
 			Name:              c.Name,
 			Icon:              c.Icon,
@@ -820,16 +871,26 @@ func (h *charactersHandler) scoreSlotCands(
 			ProcName:          c.ProcName,
 			Score:             score,
 			Deltas:            res.Deltas,
-			PriorityFocus:     priority,
+			PriorityFocus:     wanted,
 			ReplacesSecondary: replacesSecondary,
 			SecondaryItemName: secondaryName,
-		})
+		}
+		if wanted {
+			priority = append(priority, r)
+		}
+		if showAll || score > 0 {
+			results = append(results, r)
+		}
 	}
-	sort.SliceStable(results, func(i, j int) bool { return results[i].Score > results[j].Score })
+	byScore := func(rs []upgradeResult) {
+		sort.SliceStable(rs, func(i, j int) bool { return rs[i].Score > rs[j].Score })
+	}
+	byScore(results)
+	byScore(priority)
 	if len(results) > limit {
 		results = results[:limit]
 	}
-	return current, baselineID, results, considered
+	return current, baselineID, results, priority, considered
 }
 
 // resolveWeights returns the character's saved upgrade weights, falling back to
@@ -840,13 +901,10 @@ func (h *charactersHandler) resolveWeights(char character.Character) upgrade.Wei
 		var wts upgrade.Weights
 		if json.Unmarshal([]byte(raw), &wts) == nil {
 			// Backfill weights added after this profile was saved, so an older
-			// saved set picks up DPS/focus scoring instead of silently using 0
+			// saved set picks up DPS/ATK/haste scoring instead of silently using 0
 			// (JSON can't distinguish a missing key from an intentional 0).
 			if !strings.Contains(raw, `"dps"`) {
 				wts.DPS = def.DPS
-			}
-			if !strings.Contains(raw, `"focus_bonus"`) {
-				wts.FocusBonus = def.FocusBonus
 			}
 			if !strings.Contains(raw, `"atk"`) {
 				wts.ATK = def.ATK
@@ -950,15 +1008,69 @@ func (h *charactersHandler) resetUpgradeWeights(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, upgrade.DefaultWeights(char.Class))
 }
 
-// priorityFocusSet returns the character's priority focus-effect spell ids.
-func (h *charactersHandler) priorityFocusSet(charID int) map[int]bool {
-	set := map[int]bool{}
-	if ids, err := h.store.GetPriorityFocus(charID); err == nil {
-		for _, id := range ids {
-			set[id] = true
+// priorityFocus is the per-request state for matching candidates against the
+// character's wanted foci: the picked spells, the focus spells their worn items
+// carry, and a memoized spell → modifier lookup. A nil *priorityFocus matches
+// nothing.
+type priorityFocus struct {
+	selected []int
+	worn     []int
+	top      int
+	lookup   focusLookup
+}
+
+// newPriorityFocus loads the character's picked foci. Worn foci come from the
+// equipped items only (AA foci stack on top, so they don't make an item focus
+// redundant).
+func (h *charactersHandler) newPriorityFocus(char character.Character, worn map[int]*db.Item) *priorityFocus {
+	pf := &priorityFocus{top: focusTopLevel(char), lookup: h.newFocusLookup()}
+	if ids, err := h.store.GetPriorityFocus(char.ID); err == nil {
+		pf.selected = ids
+	}
+	seen := map[int]bool{}
+	for _, item := range worn {
+		if item.FocusEffect > 0 && !seen[item.FocusEffect] {
+			seen[item.FocusEffect] = true
+			pf.worn = append(pf.worn, item.FocusEffect)
 		}
 	}
-	return set
+	return pf
+}
+
+// match reports whether a candidate's focus spell is a wanted one the
+// character doesn't already have (see priorityFocusMatch).
+func (pf *priorityFocus) match(focusSpell int) bool {
+	if pf == nil || len(pf.selected) == 0 {
+		return false
+	}
+	return priorityFocusMatch(focusSpell, pf.selected, pf.worn, pf.lookup, pf.top)
+}
+
+// newFocusLookup returns a memoized focus spell → primary categorised modifier
+// resolver. "Primary" is the first categorised effect, the same rule
+// focusCandidates uses to file an item under a category.
+func (h *charactersHandler) newFocusLookup() focusLookup {
+	type entry struct {
+		m  buffmod.Modifier
+		ok bool
+	}
+	cache := map[int]entry{}
+	return func(spellID int) (buffmod.Modifier, bool) {
+		if e, hit := cache[spellID]; hit {
+			return e.m, e.ok
+		}
+		var e entry
+		if sp, err := h.db.GetSpell(spellID); err == nil && sp != nil {
+			for _, m := range buffmod.FocusModifiers(sp) {
+				if m.Category != "" {
+					e = entry{m: m, ok: true}
+					break
+				}
+			}
+		}
+		cache[spellID] = e
+		return e.m, e.ok
+	}
 }
 
 // resolveWornItems resolves every distinct worn item id in the equipped map to
@@ -978,19 +1090,6 @@ func (h *charactersHandler) resolveWornItems(byLoc map[string][]zeal.InventoryEn
 		}
 	}
 	return out
-}
-
-// equippedFocusSet returns the focus effects the character already has equipped
-// (any slot). A priority focus already in this set earns no bonus — only the
-// best of a focus type matters, so getting another copy is not an upgrade.
-func (h *charactersHandler) equippedFocusSet(worn map[int]*db.Item) map[int]bool {
-	set := map[int]bool{}
-	for _, item := range worn {
-		if item.FocusEffect > 0 {
-			set[item.FocusEffect] = true
-		}
-	}
-	return set
 }
 
 // equippedLoreSet returns the canonical IDs of LORE items the character
@@ -1030,16 +1129,51 @@ func (h *charactersHandler) focusOptions(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusNotFound, "character not found")
 		return
 	}
-	classBit := 0
-	if char.Class >= 0 {
-		classBit = 1 << char.Class
-	}
-	opts, err := h.db.FocusOptions(classBit, char.Level)
+	// Match the finder's level ceiling: with Show PoP gear on, a pre-65
+	// character browses level-65 Planes gear, so its foci belong in the picker.
+	showPoP := r.URL.Query().Get("show_pop") == "1" || r.URL.Query().Get("show_pop") == "true"
+	opts, err := h.db.FocusOptions(charClassBit(char), upgradeMaxLevel(char.Level, !showPoP))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, opts)
+	// Tag each option with its focus type so the picker can group ranks
+	// together, and flag the ones the character already wears.
+	wornFocus := map[int]bool{}
+	cfg := h.mgr.Get()
+	if cfg.EQPath != "" {
+		if byLoc, ok := h.loadEquipped(cfg.EQPath, char.Name); ok {
+			for _, item := range h.resolveWornItems(byLoc) {
+				if item.FocusEffect > 0 {
+					wornFocus[item.FocusEffect] = true
+				}
+			}
+		}
+	}
+	labels := map[string]string{}
+	for _, c := range buffmod.Categories {
+		labels[c.ID] = c.Label
+	}
+	lookup := h.newFocusLookup()
+	out := make([]focusOptionView, 0, len(opts))
+	for _, o := range opts {
+		v := focusOptionView{FocusOption: o, Worn: wornFocus[o.SpellID]}
+		if m, ok := lookup(o.SpellID); ok {
+			v.Category, v.CategoryLabel, v.Percent = m.Category, labels[m.Category], m.Percent
+		}
+		out = append(out, v)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// focusOptionView is a priority-picker option plus its focus type (empty for
+// a one-off focus outside the known categories) and whether it's worn.
+type focusOptionView struct {
+	db.FocusOption
+	Category      string `json:"category"`
+	CategoryLabel string `json:"category_label"`
+	Percent       int    `json:"percent"`
+	Worn          bool   `json:"worn"`
 }
 
 // priorityFocus handles GET /api/characters/{id}/priority-focus.

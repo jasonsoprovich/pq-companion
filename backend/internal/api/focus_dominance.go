@@ -10,13 +10,17 @@ func focusComparable(category string) bool {
 }
 
 // focusDominates reports whether focus a is at least as good as focus b for a
-// character casting spells up to topLevel: the same kind of focus, at least
-// the same strength, and applying to at least every spell b applies to. It's a
+// character casting spells up to topLevel: the same effect (SPA), at least the
+// same strength, and applying to at least every spell b applies to. It's a
 // partial order. Two foci that each cover spells the other doesn't (one
 // beneficial-only, one detrimental-only) dominate neither way, and callers
 // fall back to exact spell-id matching for them.
+//
+// Categories aren't required to match: they're derived from the SPA and
+// limits, and the limits check is the real test. That lets a broad Spell Haste
+// cover a narrower Affliction Haste of the same or lower percent.
 func focusDominates(a, b buffmod.Modifier, topLevel int) bool {
-	if a.Category != b.Category || !focusComparable(a.Category) || a.SPA != b.SPA {
+	if a.SPA != b.SPA || !focusComparable(a.Category) || !focusComparable(b.Category) {
 		return false
 	}
 	if a.Percent < b.Percent {
