@@ -1255,6 +1255,11 @@ func (h *charactersHandler) statCapMods(char character.Character) upgrade.StatLi
 // worn-entries map. ok is false when no export exists, so callers can disable
 // current-item comparison. Dual slots (Ear/Wrist/Fingers) collect under one
 // canonical location, so a location may hold two entries.
+//
+// Only worn slots (equipSlots) are kept. The export also lists bags, bank and
+// shared bank, and every caller treats this map as "what's equipped": worn
+// haste, worn foci, and worn LORE items would otherwise count items sitting in
+// a bag or the bank.
 func (h *charactersHandler) loadEquipped(eqPath, charName string) (byLoc map[string][]zeal.InventoryEntry, ok bool) {
 	path := zeal.FindQuarmyFile(eqPath, charName)
 	if path == "" {
@@ -1266,7 +1271,7 @@ func (h *charactersHandler) loadEquipped(eqPath, charName string) (byLoc map[str
 	}
 	byLoc = make(map[string][]zeal.InventoryEntry)
 	for _, e := range q.Inventory {
-		if e.ID > 0 {
+		if e.ID > 0 && equipSlots[e.Location] {
 			byLoc[e.Location] = append(byLoc[e.Location], e)
 		}
 	}

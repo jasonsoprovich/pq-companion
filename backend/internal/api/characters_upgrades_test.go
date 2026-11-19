@@ -435,3 +435,27 @@ func TestPriorityFocusMatch_RealAfflictionHaste(t *testing.T) {
 		}
 	}
 }
+
+// TestLoadEquipped_WornSlotsOnly: the Quarmy export also lists bags, bank and
+// shared bank. The finder's "equipped" map must hold worn slots only, or a
+// haste item or focus sitting in the bank counts as worn.
+func TestLoadEquipped_WornSlotsOnly(t *testing.T) {
+	_, file, _, _ := runtime.Caller(0)
+	testdata := filepath.Join(filepath.Dir(file), "..", "..", "..", "testdata")
+	if _, err := os.Stat(filepath.Join(testdata, "Osui-Quarmy.txt")); err != nil {
+		t.Skip("Osui-Quarmy.txt fixture not present")
+	}
+	h := &charactersHandler{}
+	byLoc, ok := h.loadEquipped(testdata, "Osui")
+	if !ok {
+		t.Fatal("loadEquipped found no export")
+	}
+	for loc := range byLoc {
+		if !equipSlots[loc] {
+			t.Errorf("non-worn location %q in the equipped map", loc)
+		}
+	}
+	if len(byLoc["Ear"]) == 0 || len(byLoc["Fingers"]) == 0 {
+		t.Errorf("expected worn ear/finger entries, got %v", byLoc)
+	}
+}
