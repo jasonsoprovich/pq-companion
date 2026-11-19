@@ -27,6 +27,11 @@ func TestIsPoPGated_QuestSources(t *testing.T) {
 		// Drops only from unspawned Plane of Time NPCs — invisible to the
 		// spawn2 join, caught via the id-derived home zone.
 		{9444, "Mask of Conceptual Energy (unspawned PoP NPC drop)", true},
+		// Quest combines have no drop row of their own; they're gated through
+		// their components (PoTime pattern + PoK emblem → PoP).
+		{11529, "Rosrak's Sleeves of the Primal (PoTime quest combine)", true},
+		{9829, "Scaled Avatar's Helm (Ornate pattern combine)", true},
+		{4161, "Rubicite Helm (pre-PoP quest-container combine)", false},
 	}
 	for _, c := range cases {
 		if got := d.IsPoPGated(c.id); got != c.wantGate {
