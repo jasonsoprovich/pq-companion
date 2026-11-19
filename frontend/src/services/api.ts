@@ -2909,7 +2909,6 @@ export interface UpgradeWeights {
   haste: number
   mana_regen: number
   dps: number
-  focus_bonus: number
 }
 
 export interface UpgradeStatDelta {
@@ -2961,8 +2960,28 @@ export interface UpgradesResponse {
   current_items: UpgradeCurrentItem[]
   baseline_item_id: number
   candidates: UpgradeCandidate[]
+  // Every candidate carrying a wanted priority focus, by stat score, with no
+  // limit or score gate (stat losses included). Independent of candidates.
+  priority: UpgradeCandidate[]
   considered: number
   has_current_gear: boolean
+  caps: UpgradeCaps
+}
+
+// UpgradeCapEntry is one cap the scorer applies: the cap, the character's raw
+// (uncapped) total, and how much of the cap comes from AAs.
+export interface UpgradeCapEntry {
+  stat: string
+  cap: number
+  current: number
+  aa?: number
+}
+
+export interface UpgradeCaps {
+  attrs: UpgradeCapEntry[]
+  ft: UpgradeCapEntry
+  atk: UpgradeCapEntry
+  haste: UpgradeCapEntry
 }
 
 export interface UpgradeWeightsResponse {
@@ -2983,6 +3002,7 @@ export function getCharacterUpgrades(
     showPoP?: boolean
     hideCrafted?: boolean
     hideNoDrop?: boolean
+    focusOnly?: boolean
     weaponStyle?: UpgradeWeaponStyle
     limit?: number
     weights?: UpgradeWeights
@@ -2995,6 +3015,7 @@ export function getCharacterUpgrades(
   if (opts.hideCrafted === false) p.set('hide_crafted', '0')
   // NO DROP gear is shown by default; only send the param to hide it.
   if (opts.hideNoDrop) p.set('hide_nodrop', '1')
+  if (opts.focusOnly) p.set('focus_only', '1')
   if (opts.weaponStyle) p.set('weapon_style', opts.weaponStyle)
   if (opts.limit) p.set('limit', String(opts.limit))
   if (opts.weights) p.set('weights', JSON.stringify(opts.weights))
@@ -3039,6 +3060,9 @@ export interface UpgradeOverviewSlot {
   slot_label: string
   current_items: UpgradeCurrentItem[]
   best: UpgradeCandidate | null
+  // The top wanted-focus item for the slot (can be a stat loss); never
+  // replaces best.
+  priority_best?: UpgradeCandidate
   considered: number
 }
 
@@ -3048,6 +3072,7 @@ export interface UpgradesOverviewResponse {
   weights: UpgradeWeights
   slots: UpgradeOverviewSlot[]
   has_current_gear: boolean
+  caps: UpgradeCaps
 }
 
 export function getCharacterUpgradesOverview(
@@ -3085,6 +3110,7 @@ export interface ZoneUpgradeSlot {
   slot_label: string
   current_items: UpgradeCurrentItem[]
   candidates: ZoneUpgradeCandidate[]
+  priority: ZoneUpgradeCandidate[]
   considered: number
 }
 
@@ -3128,13 +3154,27 @@ export interface ItemUpgradeScore {
   slot_label: string
 }
 
+// ItemPriorityFocus flags an item carrying one of the character's wanted
+// foci. score is signed: the item can be a stat loss.
+export interface ItemPriorityFocus {
+  score: number
+  slot_label: string
+  focus_name: string
+}
+
+export interface ItemUpgradeScoresResponse {
+  scores: Record<string, ItemUpgradeScore>
+  priority: Record<string, ItemPriorityFocus>
+}
+
 // getCharacterItemUpgradeScores scores specific items with the Gear Upgrade
-// Finder's saved weights. Only upgrades (score > 0) come back, keyed by id.
+// Finder's saved weights. scores holds only upgrades (score > 0); priority
+// holds wanted-focus items whatever their score. Both keyed by item id.
 export function getCharacterItemUpgradeScores(
   id: number,
   itemIds: number[],
-): Promise<{ scores: Record<string, ItemUpgradeScore> }> {
-  return get<{ scores: Record<string, ItemUpgradeScore> }>(
+): Promise<ItemUpgradeScoresResponse> {
+  return get<ItemUpgradeScoresResponse>(
     `/api/characters/${id}/upgrades/items?ids=${itemIds.join(',')}`,
   )
 }
@@ -3143,10 +3183,18 @@ export interface FocusOption {
   spell_id: number
   name: string
   count: number
+  // Focus type (e.g. "affliction_haste"); '' for a one-off focus.
+  category: string
+  category_label: string
+  percent: number
+  worn: boolean
 }
 
-export function getCharacterFocusOptions(id: number): Promise<FocusOption[]> {
-  return get<FocusOption[]>(`/api/characters/${id}/focus-options`)
+// getCharacterFocusOptions lists the foci on gear the character can use. With
+// showPoP it includes level-65 Planes gear, matching the finder's ceiling.
+export function getCharacterFocusOptions(id: number, showPoP?: boolean): Promise<FocusOption[]> {
+  const qs = showPoP ? '?show_pop=1' : ''
+  return get<FocusOption[]>(`/api/characters/${id}/focus-options${qs}`)
 }
 
 export function getCharacterPriorityFocus(id: number): Promise<{ spell_ids: number[] }> {

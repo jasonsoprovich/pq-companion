@@ -2,10 +2,18 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   getCharacterItemUpgradeScores,
   listCharacters,
+  type ItemPriorityFocus,
   type ItemUpgradeScore,
 } from '../services/api'
 import { useWebSocket, type WsMessage } from './useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
+
+export interface UpgradeInfo {
+  // Upgrades only (score > 0).
+  scores: Map<number, ItemUpgradeScore>
+  // Items carrying one of the character's wanted foci, whatever their score.
+  priority: Map<number, ItemPriorityFocus>
+}
 
 /**
  * Returns the Gear Upgrade Finder score for each of itemIds that would be an
@@ -16,12 +24,20 @@ import { WSEvent } from '../lib/wsEvents'
  * config updates (a fresh Zeal export changes what's equipped).
  */
 export function useUpgradeScores(itemIds: number[]): Map<number, ItemUpgradeScore> {
-  const [scores, setScores] = useState<Map<number, ItemUpgradeScore>>(new Map())
+  return useUpgradeInfo(itemIds).scores
+}
+
+/**
+ * useUpgradeScores plus the wanted-focus flags: priority lists items carrying
+ * a focus the character picked in the finder, even when they're a stat loss.
+ */
+export function useUpgradeInfo(itemIds: number[]): UpgradeInfo {
+  const [info, setInfo] = useState<UpgradeInfo>(EMPTY)
   const [rev, setRev] = useState(0)
   const key = [...new Set(itemIds)].sort((a, b) => a - b).join(',')
 
   useEffect(() => {
-    setScores(new Map())
+    setInfo(EMPTY)
     if (!key) return
     let cancelled = false
     listCharacters()
@@ -33,7 +49,9 @@ export function useUpgradeScores(itemIds: number[]): Map<number, ItemUpgradeScor
       })
       .then((r) => {
         if (cancelled || !r) return
-        setScores(new Map(Object.entries(r.scores).map(([id, s]) => [Number(id), s])))
+        const byId = <T,>(rec: Record<string, T> | undefined): Map<number, T> =>
+          new Map(Object.entries(rec ?? {}).map(([id, v]) => [Number(id), v]))
+        setInfo({ scores: byId(r.scores), priority: byId(r.priority) })
       })
       .catch(() => {})
     return () => {
@@ -48,5 +66,7 @@ export function useUpgradeScores(itemIds: number[]): Map<number, ItemUpgradeScor
   }, [])
   useWebSocket(handle)
 
-  return scores
+  return info
 }
+
+const EMPTY: UpgradeInfo = { scores: new Map(), priority: new Map() }

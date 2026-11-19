@@ -10,7 +10,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { Check, ChevronRight, MapPin, X } from 'lucide-react'
 import { useAppNavigate } from '../../hooks/useAppNavigate'
 import { useLiveZone } from '../../hooks/useLiveZone'
-import { useUpgradeScores } from '../../hooks/useUpgradeScores'
+import { useUpgradeInfo } from '../../hooks/useUpgradeScores'
 import {
   useItemInfoSettings,
   type ItemInfoSettings,
@@ -758,7 +758,9 @@ export default function ItemInfoCard({
   const settings = useItemInfoSettings(surface)
   const data = useSummaryData(item.id)
   const { zone } = useLiveZone()
-  const upgrade = useUpgradeScores([item.id]).get(item.id)
+  const upgradeInfo = useUpgradeInfo([item.id])
+  const upgrade = upgradeInfo.scores.get(item.id)
+  const wanted = upgradeInfo.priority.get(item.id)
   const navigate = useAppNavigate()
   const vis = useMemo(() => (key: string) => !settings.hidden.has(key), [settings.hidden])
   const openItem = () => navigate(`/items?select=${item.id}`)
@@ -796,6 +798,15 @@ export default function ItemInfoCard({
               title="Gear Upgrade Finder score for your active character"
             >
               +{upgrade.score.toFixed(0)} upgrade · {upgrade.slot_label}
+            </div>
+          )}
+          {wanted && (
+            <div
+              style={{ fontSize: 11, fontWeight: 600, color: '#eab308', margin: '0 0 2px' }}
+              title="Carries a focus you picked in the Gear Upgrade Finder and don't already wear"
+            >
+              Wanted focus: {wanted.focus_name}
+              {!upgrade && ` · stats ${wanted.score >= 0 ? '+' : ''}${wanted.score.toFixed(0)} · ${wanted.slot_label}`}
             </div>
           )}
         </div>

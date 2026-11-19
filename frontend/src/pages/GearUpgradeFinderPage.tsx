@@ -39,6 +39,8 @@ import {
   type ZoneItemSource,
   type UpgradeWeaponStyle,
   type FocusOption,
+  type UpgradeCaps,
+  type UpgradeCapEntry,
 } from '../services/api'
 import type { Item, ItemSources, ItemQuests } from '../types/item'
 import type { WishlistEntry } from '../types/wishlist'
@@ -110,12 +112,11 @@ const STAT_LABEL: Record<string, string> = Object.fromEntries(
   STAT_KEYS.map((s) => [s.key, s.label]),
 )
 
-// Every editable weight, in display order: the STAT_KEYS grid plus the two
-// weights that only live in the editor (DPS, focus bonus), not the delta chips.
+// Every editable weight, in display order: the STAT_KEYS grid plus the weight
+// that only lives in the editor (DPS), not the delta chips.
 const WEIGHT_ROWS: { key: keyof UpgradeWeights; label: string }[] = [
   ...STAT_KEYS,
   { key: 'dps', label: 'Weapon DPS' },
-  { key: 'focus_bonus', label: 'Focus bonus' },
 ]
 
 // Importance presets per weight. Each weight lives on its own scale (1 AC is
@@ -133,7 +134,6 @@ const WEIGHT_PRESETS: Partial<Record<keyof UpgradeWeights, number[]>> = {
   haste: [0, 5, 10, 12, 15],
   mana_regen: [0, 5, 15, 25, 40],
   dps: [0, 40, 100, 180, 250],
-  focus_bonus: [0, 50, 100, 200, 400],
 }
 
 // Caveats for the conditional weights, so they don't read as broken when a
@@ -143,7 +143,6 @@ const WEIGHT_NOTE: Partial<Record<keyof UpgradeWeights, string>> = {
   haste: 'best worn haste wins, level-capped',
   mana_regen: 'capped at 15 — no gain once capped; 0 for pure melee',
   dps: 'weapon slots only (Primary / Secondary / Range)',
-  focus_bonus: 'only applies when a Priority focus is set',
 }
 
 function presetsFor(key: keyof UpgradeWeights): number[] {
@@ -152,7 +151,7 @@ function presetsFor(key: keyof UpgradeWeights): number[] {
 
 // stepFor picks a sensible number-input step for each weight's scale.
 function stepFor(key: keyof UpgradeWeights): number {
-  if (key === 'dps' || key === 'focus_bonus') return 10
+  if (key === 'dps') return 10
   if (key === 'mana_regen' || key === 'haste') return 1
   return 0.1
 }
@@ -279,7 +278,9 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
     const id = setTimeout(() => {
       setLoading(true)
       setError(null)
-      getCharacterUpgrades(selected.id, { slot, showAll, showPoP, hideCrafted, hideNoDrop, weaponStyle, weights, limit: 100 })
+      getCharacterUpgrades(selected.id, {
+        slot, showAll, showPoP, hideCrafted, hideNoDrop, focusOnly, weaponStyle, weights, limit: 100,
+      })
         .then((r) => {
           if (!cancelled) setData(r)
         })
@@ -294,7 +295,7 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
       cancelled = true
       clearTimeout(id)
     }
-  }, [selected, slot, showAll, showPoP, hideCrafted, hideNoDrop, weaponStyle, weights, reload])
+  }, [selected, slot, showAll, showPoP, hideCrafted, hideNoDrop, focusOnly, weaponStyle, weights, reload])
 
   // Fetch the all-slots overview on demand (entering overview mode, or weights
   // change while in it).
@@ -375,9 +376,14 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
       setPriorityFocus([])
       return
     }
-    getCharacterFocusOptions(selected.id).then(setFocusOptions).catch(() => setFocusOptions([]))
     getCharacterPriorityFocus(selected.id).then((r) => setPriorityFocus(r.spell_ids)).catch(() => setPriorityFocus([]))
   }, [selected])
+  // The picker lists foci on gear the finder can suggest, so it follows the
+  // Show PoP gear toggle (level-65 Planes gear for a pre-65 character).
+  useEffect(() => {
+    if (!selected) return
+    getCharacterFocusOptions(selected.id, showPoP).then(setFocusOptions).catch(() => setFocusOptions([]))
+  }, [selected, showPoP])
 
   // Toggle a focus effect in the character's priority set, persist, and re-rank.
   const togglePriorityFocus = useCallback(
@@ -441,11 +447,13 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
       .catch(() => {})
   }
 
+  // Wanted-focus items show once, in their own group above the ranked list
+  // (which can also contain them when they're stat upgrades).
+  const priorityList = useMemo(() => data?.priority ?? [], [data])
   const visible = useMemo(() => {
-    let list = data?.candidates ?? []
-    if (focusOnly) list = list.filter((c) => c.focus_effect > 0)
-    return list
-  }, [data, focusOnly])
+    const pinned = new Set(priorityList.map((c) => c.id))
+    return (data?.candidates ?? []).filter((c) => !pinned.has(c.id))
+  }, [data, priorityList])
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -551,7 +559,7 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
               </label>
               <label className="flex items-center gap-1" style={{ color: 'var(--color-muted-foreground)' }}>
                 <input type="checkbox" checked={focusOnly} onChange={(e) => setFocusOnly(e.target.checked)} />
-                Focus only
+                <span title="Only items with a focus effect">Focus only</span>
               </label>
               <label className="flex items-center gap-1" style={{ color: 'var(--color-muted-foreground)' }}
                 title="Hide NO DROP items (can't be traded for — must farm yourself)">
@@ -596,6 +604,7 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
                 <Sliders size={12} /> Weights{weightsCustom ? ' *' : ''}
               </button>
             </div>
+            {data?.caps && weights && <CapsLine caps={data.caps} weights={weights} />}
           </div>
           )}
 
@@ -654,6 +663,9 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
                   color: showWeights ? 'var(--color-primary)' : 'var(--color-muted)' }}>
                 <Sliders size={12} /> Weights{weightsCustom ? ' *' : ''}
               </button>
+              {mode === 'overview' && overview?.caps && weights && (
+                <CapsLine caps={overview.caps} weights={weights} />
+              )}
             </div>
           )}
 
@@ -728,7 +740,7 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
               <div className="flex items-center justify-center gap-2 py-10 text-sm" style={{ color: 'var(--color-muted)' }}>
                 <Loader2 size={16} className="animate-spin" /> Scoring items…
               </div>
-            ) : visible.length === 0 ? (
+            ) : visible.length === 0 && priorityList.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-2 py-10 text-sm"
                 style={{ color: 'var(--color-muted)' }}>
                 <Star size={24} />
@@ -736,6 +748,18 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
                   : 'No upgrades found — looks like this slot is already strong.'}
               </div>
             ) : (
+              <>
+              {priorityList.length > 0 && (
+                <PriorityGroup>
+                  {priorityList.map((c) => (
+                    <ResultRow key={c.id} rank="★" cand={c} onOpen={openItem}
+                      wishlisted={wishEntry(c.id, BUCKET_FOR_SLOT[slot]) !== undefined}
+                      onStar={() => toggleWish(c.id, BUCKET_FOR_SLOT[slot])}
+                      hideScore={slot === 'ammo'} />
+                  ))}
+                </PriorityGroup>
+              )}
+              {visible.length > 0 && (
               <table className="w-full text-sm" style={{ borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ color: 'var(--color-muted)' }} className="text-left text-xs">
@@ -754,10 +778,14 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
                   ))}
                 </tbody>
               </table>
+              )}
+              </>
             )}
             {data && (
               <div className="py-2 text-center text-[11px]" style={{ color: 'var(--color-muted)' }}>
-                {visible.length} shown · {data.considered} items considered for {data.slot_label}
+                {visible.length + priorityList.length} shown
+                {priorityList.length > 0 && ` (${priorityList.length} wanted focus)`}
+                {' · '}{data.considered} items considered for {data.slot_label}
               </div>
             )}
           </div>
@@ -865,6 +893,10 @@ function WeightsEditor({
 
 // ── Priority focus picker ──────────────────────────────────────────────────────
 
+// FocusPanel lists the foci on gear this class can use, grouped by focus type
+// so the ranks of one line sit together. Picking one means "this rank or
+// better": items with an equal or stronger focus covering the same spells are
+// listed in the Wanted focus group, even when they're a stat loss.
 function FocusPanel({
   options, selected, onToggle,
 }: {
@@ -875,7 +907,25 @@ function FocusPanel({
   const [filter, setFilter] = useState('')
   const sel = new Set(selected)
   const q = filter.trim().toLowerCase()
-  const shown = q ? options.filter((o) => matchesSearch(o.name, q)) : options
+  const shown = q
+    ? options.filter((o) => matchesSearch(o.name, q) || matchesSearch(o.category_label ?? '', q))
+    : options
+  // Group by focus type; one-off foci (no known type) go last as "Other".
+  const groups = useMemo(() => {
+    const byLabel = new Map<string, FocusOption[]>()
+    for (const o of shown) {
+      const label = o.category_label || 'Other'
+      const list = byLabel.get(label) ?? []
+      list.push(o)
+      byLabel.set(label, list)
+    }
+    const out = [...byLabel.entries()].map(([label, opts]) => ({
+      label,
+      opts: [...opts].sort((a, b) => b.percent - a.percent || a.name.localeCompare(b.name)),
+    }))
+    out.sort((a, b) => (a.label === 'Other' ? 1 : b.label === 'Other' ? -1 : a.label.localeCompare(b.label)))
+    return out
+  }, [shown])
   return (
     <div className="shrink-0 border-b px-6 py-2"
       style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}>
@@ -885,10 +935,10 @@ function FocusPanel({
           Priority focus effects
         </span>
         <span className="text-[11px]" style={{ color: 'var(--color-muted)' }}>
-          Click any below to prioritize it — an upgrade carrying one you don't
-          already wear is boosted and flagged. This is the list of focuses found
-          on gear your class can use ({options.length}); type to filter it, not to
-          search for new ones.
+          Pick the foci you&apos;re after. Items with that focus or a stronger one
+          you don&apos;t already wear are pinned in a Wanted focus group, even when
+          their stats are worse. Covers focus gear your class can use
+          ({options.length}); type to filter.
         </span>
         {options.length > 0 && (
           <div className="ml-auto" style={{ position: 'relative' }}>
@@ -911,24 +961,94 @@ function FocusPanel({
           class's gear actually carries.
         </p>
       ) : (
-        <div className="flex flex-wrap gap-1" style={{ maxHeight: 150, overflowY: 'auto' }}>
-          {shown.map((o) => {
-            const on = sel.has(o.spell_id)
-            return (
-              <button key={o.spell_id} onClick={() => onToggle(o.spell_id)}
-                className="flex items-center gap-1 rounded px-2 py-0.5 text-[11px]"
-                title={`${o.count} item${o.count === 1 ? '' : 's'} carry this focus`}
-                style={{ border: '1px solid var(--color-border)',
-                  backgroundColor: on ? 'rgba(234,179,8,0.18)' : 'var(--color-surface-2)',
-                  color: on ? '#eab308' : 'var(--color-muted-foreground)' }}>
-                {on && <Check size={10} />}
-                {o.name}
-                <span style={{ color: 'var(--color-muted)' }}>·{o.count}</span>
-              </button>
-            )
-          })}
+        <div className="flex flex-col gap-1" style={{ maxHeight: 190, overflowY: 'auto' }}>
+          {groups.map((g) => (
+            <div key={g.label} className="flex flex-wrap items-center gap-1">
+              <span className="w-32 shrink-0 text-[10px] font-semibold uppercase"
+                style={{ color: 'var(--color-muted)' }}>{g.label}</span>
+              {g.opts.map((o) => {
+                const on = sel.has(o.spell_id)
+                return (
+                  <button key={o.spell_id} onClick={() => onToggle(o.spell_id)}
+                    className="flex items-center gap-1 rounded px-2 py-0.5 text-[11px]"
+                    title={`${o.count} item${o.count === 1 ? '' : 's'} carry this focus`
+                      + (o.worn ? ' · you wear it' : '')}
+                    style={{ border: '1px solid var(--color-border)',
+                      backgroundColor: on ? 'rgba(234,179,8,0.18)' : 'var(--color-surface-2)',
+                      color: on ? '#eab308' : 'var(--color-muted-foreground)' }}>
+                    {on && <Check size={10} />}
+                    {o.name}
+                    {o.worn && (
+                      <span className="rounded px-1 text-[9px]"
+                        style={{ backgroundColor: 'rgba(34,197,94,0.15)', color: '#22c55e' }}>worn</span>
+                    )}
+                    <span style={{ color: 'var(--color-muted)' }}>·{o.count}</span>
+                  </button>
+                )
+              })}
+            </div>
+          ))}
         </div>
       )}
+    </div>
+  )
+}
+
+// PriorityGroup is the pinned "Wanted focus" table above the ranked results:
+// items carrying a picked focus, by stat score, whether or not they gain stats.
+function PriorityGroup({ children }: { children: React.ReactNode }): React.ReactElement {
+  return (
+    <div className="mb-3 rounded" style={{ border: '1px solid rgba(234,179,8,0.35)' }}>
+      <div className="flex items-center gap-2 px-2 py-1 text-xs"
+        style={{ backgroundColor: 'rgba(234,179,8,0.08)', color: '#eab308' }}>
+        <Target size={12} />
+        <span className="font-semibold">Wanted focus</span>
+        <span style={{ color: 'var(--color-muted)' }}>
+          carries a focus you picked and don&apos;t already wear · score is stats only
+          (red = a stat loss)
+        </span>
+      </div>
+      <table className="w-full text-sm" style={{ borderCollapse: 'collapse' }}>
+        <tbody>{children}</tbody>
+      </table>
+    </div>
+  )
+}
+
+// CapsLine shows the caps the scorer is applying: the level + AA attribute
+// caps for stats this character weighs (or is over), plus FT / ATK / haste
+// when weighted. A stat at or past its cap scores nothing more from gear.
+function CapsLine({ caps, weights }: { caps: UpgradeCaps; weights: UpgradeWeights }): React.ReactElement | null {
+  const entries: { label: string; e: UpgradeCapEntry }[] = []
+  for (const e of caps.attrs) {
+    const w = weights[e.stat as keyof UpgradeWeights] ?? 0
+    if (w > 0 || e.current > e.cap) entries.push({ label: e.stat.toUpperCase(), e })
+  }
+  if (weights.mana_regen > 0) entries.push({ label: 'FT', e: caps.ft })
+  if (weights.atk > 0) entries.push({ label: 'Worn ATK', e: caps.atk })
+  if (weights.haste > 0) entries.push({ label: 'Haste', e: caps.haste })
+  if (entries.length === 0) return null
+  return (
+    <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px]"
+      style={{ color: 'var(--color-muted)' }}>
+      <span title="The caps the upgrade score applies, from your level and stat-cap AAs (Planar Power, Innate Enlightenment)">
+        Caps:
+      </span>
+      {entries.map(({ label, e }) => {
+        const over = e.current > e.cap
+        const at = e.current >= e.cap
+        return (
+          <span key={e.stat}
+            title={over
+              ? `${e.current - e.cap} over the cap: more ${label} from gear scores nothing`
+              : at ? `At the cap: more ${label} from gear scores nothing`
+                : `${e.cap - e.current} below the cap`}
+            style={{ color: over ? '#f59e0b' : at ? 'var(--color-muted-foreground)' : 'var(--color-muted)' }}>
+            {label} {e.current}/{e.cap}
+            {e.aa ? ` (+${e.aa} AA)` : ''}
+          </span>
+        )
+      })}
     </div>
   )
 }
@@ -981,7 +1101,7 @@ function EffectPills({ cand }: { cand: UpgradeCandidate }): React.ReactElement |
 function ResultRow({
   rank, cand, onOpen, wishlisted, onStar, hideScore,
 }: {
-  rank: number
+  rank: React.ReactNode
   cand: UpgradeCandidate
   onOpen: (id: number) => void
   wishlisted: boolean
@@ -1048,7 +1168,9 @@ function ResultRow({
           </div>
         </td>
         <td className="px-2 py-1.5 text-right font-mono text-xs"
-          style={{ color: !hideScore && cand.score > 0 ? '#22c55e' : 'var(--color-muted)' }}>
+          title={!hideScore && cand.score < 0 ? 'Stat loss with your weights' : undefined}
+          style={{ color: hideScore || cand.score === 0 ? 'var(--color-muted)'
+            : cand.score > 0 ? '#22c55e' : '#f87171' }}>
           {hideScore ? (
             <span title={AMMO_NO_STATS_NOTE}>—</span>
           ) : (
@@ -1486,6 +1608,9 @@ function OverviewRow({
               {s.considered === 0 ? 'no usable items' : 'no upgrade'}
             </span>
           )}
+          {s.priority_best && s.priority_best.id !== best?.id && (
+            <PriorityPick cand={s.priority_best} onOpen={onOpen} hideScore={s.slot === 'ammo'} />
+          )}
         </td>
         <td className="px-2 py-1.5 text-right font-mono text-xs"
           style={{ color: best && s.slot !== 'ammo' ? '#22c55e' : 'var(--color-muted)' }}>
@@ -1511,6 +1636,38 @@ function OverviewRow({
         </tr>
       )}
     </>
+  )
+}
+
+// PriorityPick is the compact "Focus:" line under a slot's best stat pick: the
+// top item carrying a wanted focus, with its stats-only score (often a loss).
+function PriorityPick({
+  cand, onOpen, hideScore,
+}: {
+  cand: UpgradeCandidate
+  onOpen: (id: number) => void
+  hideScore?: boolean
+}): React.ReactElement {
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
+      <span className="font-semibold" style={{ color: '#eab308' }}
+        title="Top item for this slot carrying a focus you picked and don't already wear">
+        Focus:
+      </span>
+      <button onClick={() => onOpen(cand.id)}
+        className="flex items-center gap-1 underline decoration-dotted"
+        style={{ color: 'var(--color-primary)' }}>
+        <ItemIcon id={cand.icon} name={cand.name} size={14} /> {cand.name}
+      </button>
+      <span style={{ color: '#eab308' }}>{cand.focus_name}</span>
+      {!hideScore && (
+        <span className="font-mono"
+          title="Stats-only score with your weights"
+          style={{ color: cand.score > 0 ? '#22c55e' : cand.score < 0 ? '#f87171' : 'var(--color-muted)' }}>
+          {cand.score > 0 ? '+' : ''}{cand.score.toFixed(0)}
+        </span>
+      )}
+    </div>
   )
 }
 
@@ -1627,16 +1784,25 @@ function ZoneView({
   isWishlisted: (id: number, bucket: string) => boolean
   onToggleWish: (id: number, bucket: string) => void
 }): React.ReactElement {
-  // Ammo grants no stats in game, so its scores are meaningless here.
+  // Ammo grants no stats in game, so its scores are meaningless here. Each
+  // slot's wanted-focus items lead its list, whatever their score (they carry
+  // priority_focus, so the row badges them); duplicates show once.
   const slots = useMemo(
-    () => (data?.slots ?? []).filter((s) => s.slot !== 'ammo'),
+    () => (data?.slots ?? [])
+      .filter((s) => s.slot !== 'ammo')
+      .map((s) => {
+        const priority = s.priority ?? []
+        if (priority.length === 0) return s
+        const pinned = new Set(priority.map((c) => c.id))
+        return { ...s, candidates: [...priority, ...s.candidates.filter((c) => !pinned.has(c.id))] }
+      }),
     [data],
   )
   // Slots with upgrades, biggest best-upgrade first.
   const withUpgrades = useMemo(
     () => slots
       .filter((s) => s.candidates.length > 0)
-      .sort((a, b) => b.candidates[0].score - a.candidates[0].score),
+      .sort((a, b) => topScore(b) - topScore(a)),
     [slots],
   )
   const flat = useMemo(() => {
@@ -1771,6 +1937,12 @@ function ZoneView({
   )
 }
 
+// topScore is a zone slot's best score (wanted-focus items lead the list, so
+// the first row isn't always the highest).
+function topScore(s: { candidates: { score: number }[] }): number {
+  return Math.max(...s.candidates.map((c) => c.score))
+}
+
 // ZoneResultRow is one zone upgrade: the item, its score and stat changes, and
 // the NPCs in the zone that drop it (top two inline, the rest on expand).
 function ZoneResultRow({
@@ -1820,8 +1992,10 @@ function ZoneResultRow({
           )}
         </div>
       </td>
-      <td className="px-2 py-1.5 text-right font-mono text-xs" style={{ color: '#22c55e' }}>
-        +{cand.score.toFixed(0)}
+      <td className="px-2 py-1.5 text-right font-mono text-xs"
+        title={cand.score < 0 ? 'Stat loss with your weights; listed for its wanted focus' : undefined}
+        style={{ color: cand.score > 0 ? '#22c55e' : cand.score < 0 ? '#f87171' : 'var(--color-muted)' }}>
+        {cand.score > 0 ? '+' : ''}{cand.score.toFixed(0)}
       </td>
       <td className="px-2 py-1.5">
         <DeltaChips cand={cand} />

@@ -129,6 +129,8 @@ function dropsFrom(c: ZoneUpgradeCandidate, t: TargetNPC): boolean {
 // since they offer the same items, and drops ammo and empty slots.
 // keep narrows the candidates first (the target filter), so a match ranked
 // low in its slot still makes the cut; perSlot caps each row (0 = all).
+// Wanted-focus items (the slot's priority list) always show, first, whatever
+// their score, and don't count against perSlot.
 export function slotRows(
   data: ZoneUpgradesResponse | null,
   keep?: (c: ZoneUpgradeCandidate) => boolean,
@@ -138,7 +140,8 @@ export function slotRows(
   const rows: GearUpgradeSlotRow[] = []
   const byLabel = new Map<string, GearUpgradeSlotRow>()
   for (const s of data.slots) {
-    if (s.slot === 'ammo' || s.candidates.length === 0) continue
+    const priority = s.priority ?? []
+    if (s.slot === 'ammo' || (s.candidates.length === 0 && priority.length === 0)) continue
     const label = s.slot_label.replace(/ \d$/, '')
     let row = byLabel.get(label)
     if (!row) {
@@ -146,7 +149,7 @@ export function slotRows(
       byLabel.set(label, row)
       rows.push(row)
     }
-    for (const c of s.candidates) {
+    for (const c of [...priority, ...s.candidates]) {
       if (keep && !keep(c)) continue
       const i = row.candidates.findIndex((x) => x.id === c.id)
       if (i < 0) row.candidates.push(c)
@@ -157,8 +160,11 @@ export function slotRows(
     if (rows[i].candidates.length === 0) rows.splice(i, 1)
   }
   for (const row of rows) {
-    row.candidates.sort((a, b) => b.score - a.score)
-    if (perSlot > 0) row.candidates = row.candidates.slice(0, perSlot)
+    const wanted = row.candidates.filter((c) => c.priority_focus)
+    const rest = row.candidates.filter((c) => !c.priority_focus)
+    wanted.sort((a, b) => b.score - a.score)
+    rest.sort((a, b) => b.score - a.score)
+    row.candidates = [...wanted, ...(perSlot > 0 ? rest.slice(0, perSlot) : rest)]
   }
   return rows
 }
@@ -240,8 +246,10 @@ export function gearUpgradesSummary(rows: GearUpgradeSlotRow[]): string | null {
   if (rows.length === 0) return null
   let best: { name: string; slot: string; score: number } | null = null
   for (const r of rows) {
-    const c = r.candidates[0]
-    if (c && (!best || c.score > best.score)) best = { name: c.name, slot: r.label, score: c.score }
+    // Wanted-focus items lead each row, so look past them for the best score.
+    for (const c of r.candidates) {
+      if (c.score > 0 && (!best || c.score > best.score)) best = { name: c.name, slot: r.label, score: c.score }
+    }
   }
   const n = `${rows.length} slot${rows.length === 1 ? '' : 's'}`
   return best ? `${n} · best: ${best.name} (${best.slot})` : n
@@ -321,11 +329,24 @@ export function GearUpgradeList({
                     </button>
                   </ItemHoverCard>
                 </div>
+                {c.priority_focus && (
+                  <span
+                    style={{ fontSize: 9, fontWeight: 700, color: '#eab308', flexShrink: 0 }}
+                    title={`Wanted focus: ${c.focus_name}`}
+                  >
+                    focus
+                  </span>
+                )}
                 <span
-                  style={{ fontSize: 10, fontWeight: 700, color: t.score, flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}
-                  title="Upgrade score with your Gear Upgrade Finder weights"
+                  style={{
+                    fontSize: 10, fontWeight: 700, flexShrink: 0, fontVariantNumeric: 'tabular-nums',
+                    color: c.score >= 0 ? t.score : '#f87171',
+                  }}
+                  title={c.score >= 0
+                    ? 'Upgrade score with your Gear Upgrade Finder weights'
+                    : 'Stat loss with your weights; shown for its wanted focus'}
                 >
-                  +{Math.round(c.score)}
+                  {c.score >= 0 ? '+' : ''}{Math.round(c.score)}
                 </span>
               </div>
               <div style={{ fontSize: 10, color: t.npc, lineHeight: 1.35 }}>
