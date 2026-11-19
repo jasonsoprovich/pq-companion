@@ -96,7 +96,7 @@ function PetCard({
   interactive: boolean
   onFinder: () => void
 }): React.ReactElement {
-  const { charm, timers } = usePetTimers(state.name)
+  const { charm, timers } = usePetTimers(state.name, state.pet_id)
   const { untimed, age: healthAge } = useUntimedEffects(state, timers, charm)
   const s = state.stats
   const kindColor = state.kind === 'charm' ? CHARM : state.kind === 'summoned' ? SUMMONED : MUTED
