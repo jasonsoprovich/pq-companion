@@ -20,7 +20,7 @@ import { useNPCTargetDistance, type NPCTargetDistance } from '../hooks/useNPCTar
 import { useLiveValue } from '../hooks/useLiveValue'
 import { LIVE_TTL, STALE_OPACITY, fmtLiveAge } from '../lib/live'
 import { useWishlistItemIds } from '../hooks/useWishlistItemIds'
-import { useUpgradeScores } from '../hooks/useUpgradeScores'
+import { useUpgradeInfo } from '../hooks/useUpgradeScores'
 import { useActiveCharacterLevel } from '../hooks/useActiveCharacterLevel'
 import { useOverlayEntityLinks } from '../hooks/useOverlayEntityLinks'
 import { openEntityInMain } from '../lib/overlayNav'
@@ -188,7 +188,7 @@ function LootContent({
 
   // Gear Upgrade Finder scores for the active character, matching the
   // in-app NPC panel and the Item Info overlay.
-  const upgrades = useUpgradeScores(
+  const { scores: upgrades, priority: wantedFocus } = useUpgradeInfo(
     [...(loot?.drops ?? []), ...(loot?.zone_wide_drops ?? [])]
       .flatMap((d) => d.items.map((i) => i.item_id)),
   )
@@ -218,6 +218,7 @@ function LootContent({
         const eff = effectiveDropPct(drop, item)
         const wished = wishlistItemIds.has(item.item_id)
         const upgrade = upgrades.get(item.item_id)
+        const wanted = wantedFocus.get(item.item_id)
         return (
           <div
             key={`${drop.id}-${item.item_id}`}
@@ -264,6 +265,17 @@ function LootContent({
                 </span>
               </ItemHoverCard>
             </div>
+            {wanted && (
+              <span
+                title={`Wanted focus: ${wanted.focus_name} · stats ${wanted.score >= 0 ? '+' : ''}${wanted.score.toFixed(0)} (${wanted.slot_label})`}
+                style={{
+                  fontSize: 9, fontWeight: 700, color: '#eab308', flexShrink: 0,
+                  backgroundColor: 'rgba(234,179,8,0.15)', borderRadius: 3, padding: '0 3px',
+                }}
+              >
+                focus
+              </span>
+            )}
             {upgrade && (
               <span
                 title={`Gear upgrade for your active character (${upgrade.slot_label})`}

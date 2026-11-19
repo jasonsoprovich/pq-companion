@@ -14,7 +14,7 @@ import { useWishlistItemIds } from '../../hooks/useWishlistItemIds'
 import { useTargetTimers } from '../../hooks/useTargetTimers'
 import { useTargetPlayer } from '../../hooks/useTargetPlayer'
 import { useActiveCharacterLevel } from '../../hooks/useActiveCharacterLevel'
-import { useUpgradeScores } from '../../hooks/useUpgradeScores'
+import { useUpgradeInfo } from '../../hooks/useUpgradeScores'
 import { useNPCTargetDistance, type NPCTargetDistance } from '../../hooks/useNPCTargetDistance'
 import { useLiveValue } from '../../hooks/useLiveValue'
 import { LIVE_TTL, STALE_OPACITY, fmtLiveAge } from '../../lib/live'
@@ -234,7 +234,7 @@ function LootSection({
 
   // Gear Upgrade Finder scores for the active character, so an upgrade on
   // the table reads at a glance without opening the Gear Upgrades page.
-  const upgrades = useUpgradeScores(
+  const { scores: upgrades, priority: wantedFocus } = useUpgradeInfo(
     [...(loot?.drops ?? []), ...(loot?.zone_wide_drops ?? [])]
       .flatMap((d) => d.items.map((i) => i.item_id)),
   )
@@ -281,6 +281,7 @@ function LootSection({
         const eff = effectiveDropPct(drop, item)
         const wished = wishlistItemIds.has(item.item_id)
         const upgrade = upgrades.get(item.item_id)
+        const wanted = wantedFocus.get(item.item_id)
         return (
           <button
             key={`${drop.id}-${item.item_id}`}
@@ -311,6 +312,15 @@ function LootSection({
                 </span>
               </ItemHoverCard>
             </span>
+            {wanted && (
+              <span
+                className="shrink-0 rounded px-1 text-[9px] font-semibold"
+                style={{ backgroundColor: 'rgba(234,179,8,0.15)', color: '#eab308' }}
+                title={`Wanted focus: ${wanted.focus_name} · stats ${wanted.score >= 0 ? '+' : ''}${wanted.score.toFixed(0)} (${wanted.slot_label})`}
+              >
+                focus
+              </span>
+            )}
             {upgrade && (
               <span
                 className="shrink-0 text-[11px] font-semibold tabular-nums"
