@@ -1367,21 +1367,28 @@ func main() {
 		}
 		return c.SpawnID == 0 || (st.TargetID != nil && *st.TargetID == c.SpawnID)
 	})
+	// Standing estimate: each faction's caps plus the character's race/class/
+	// deity modifier (see factiontracker.ComputeInfo). Race/class come from
+	// the character row (class stored 0-based), deity from the Zeal export.
+	factionEngine.SetFactionInfoResolver(func(characterID, factionID int) (factiontracker.FactionInfo, bool) {
+		fd, err := database.GetFactionStandingData(factionID)
+		if err != nil || fd == nil {
+			return factiontracker.FactionInfo{}, false
+		}
+		race, class, deity := 0, 0, 0
+		if c, ok, err := charStore.Get(characterID); err == nil && ok {
+			if c.Race > 0 {
+				race = c.Race
+			}
+			if c.Class >= 0 {
+				class = c.Class + 1
+			}
+			deity, _ = charStore.GetDeity(characterID)
+		}
+		return factiontracker.ComputeInfo(fd.Base, fd.MinCap, fd.MaxCap, fd.Mods, race, class, deity), true
+	})
 	factionEngine.SetPersistFunc(func(characterID int, tally factiontracker.Tally) {
-		row := character.FactionTallyRow{
-			CharacterID:         characterID,
-			FactionID:           tally.FactionID,
-			FactionName:         tally.FactionName,
-			Better:              tally.Better,
-			Worse:               tally.Worse,
-			EstimatedNet:        tally.EstimatedNet,
-			Unresolved:          tally.Unresolved,
-			LastBucket:          tally.LastBucket,
-			LastConsiderSuspect: tally.LastConsiderSuspect,
-		}
-		if tally.LastConsideredAt != nil {
-			row.LastConsideredAt = tally.LastConsideredAt.Unix()
-		}
+		row := api.FactionRowFromTally(characterID, tally)
 		if err := charStore.UpsertFactionTally(row); err != nil {
 			slog.Warn("persist faction tally", "err", err)
 		}
@@ -1409,21 +1416,7 @@ func main() {
 		}
 		tallies := make([]factiontracker.Tally, len(tallyRows))
 		for i, row := range tallyRows {
-			t := factiontracker.Tally{
-				FactionID:           row.FactionID,
-				FactionName:         row.FactionName,
-				Better:              row.Better,
-				Worse:               row.Worse,
-				EstimatedNet:        row.EstimatedNet,
-				Unresolved:          row.Unresolved,
-				LastBucket:          row.LastBucket,
-				LastConsiderSuspect: row.LastConsiderSuspect,
-			}
-			if row.LastConsideredAt > 0 {
-				ts := time.Unix(row.LastConsideredAt, 0)
-				t.LastConsideredAt = &ts
-			}
-			tallies[i] = t
+			tallies[i] = api.FactionTallyFromRow(row)
 		}
 		factionEngine.SetCharacter(c.ID, tallies)
 	}

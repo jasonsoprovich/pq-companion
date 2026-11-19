@@ -10,7 +10,8 @@ import {
   resetFactionSession,
 } from '../services/api'
 import type { Faction, FactionSearchResult, FactionWishlistEntry, FactionTally } from '../types/faction'
-import { BUCKET_ORDER, BUCKET_LABEL, BUCKET_COLOR, bucketIndex, type FactionBucket } from '../lib/factionBuckets'
+import { BUCKET_LABEL, type FactionBucket } from '../lib/factionBuckets'
+import FactionStandingBar from '../components/FactionStandingBar'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useEscapeToClose } from '../hooks/useEscapeToClose'
@@ -29,47 +30,6 @@ const searchDebounceMs = 250
 // size every time they open the page.
 const bannerCollapsedKey = 'pq-factions-banner-collapsed'
 
-// BucketBar renders the nine classic EQ faction disposition ranges as a
-// segmented scale, highlighting the faction's most recent /con reading.
-// Bucket-level precision only — EQ never gives us a position within a
-// bucket, so the marker sits at the whole segment, not an exact point.
-function BucketBar({ bucket, suspect }: { bucket?: string; suspect?: boolean }): React.ReactElement {
-  const idx = bucket ? bucketIndex(bucket) : -1
-  return (
-    <div className="flex items-center gap-1.5">
-      <div className="flex flex-1 gap-0.5">
-        {BUCKET_ORDER.map((b, i) => {
-          const active = i === idx
-          return (
-            <div
-              key={b}
-              title={BUCKET_LABEL[b]}
-              className="h-2 flex-1 rounded-sm transition-opacity"
-              style={{
-                backgroundColor: BUCKET_COLOR[b],
-                opacity: idx === -1 ? 0.25 : active ? 1 : 0.2,
-                outline: active ? '1px solid var(--color-foreground)' : 'none',
-              }}
-            />
-          )
-        })}
-      </div>
-      <span
-        className="w-28 shrink-0 text-right text-[11px]"
-        style={{ color: idx === -1 ? 'var(--color-muted-foreground)' : 'var(--color-foreground)' }}
-        title={idx === -1 ? 'Consider an NPC of this faction in-game to set a baseline' : undefined}
-      >
-        {idx === -1 ? 'Needs /con' : BUCKET_LABEL[bucket as FactionBucket]}
-      </span>
-      {suspect && (
-        <span title="Reading taken while illusioned — may not reflect your true faction">
-          <Eye size={12} style={{ color: 'var(--color-warning, #f59e0b)' }} />
-        </span>
-      )}
-    </div>
-  )
-}
-
 function TallyRow({
   entry,
   tally,
@@ -83,6 +43,7 @@ function TallyRow({
   const worse = tally?.worse ?? 0
   const net = tally?.estimated_net ?? 0
   const unresolved = tally?.unresolved ?? 0
+  const inferred = tally?.inferred ?? 0
   const netColor =
     net > 0 ? 'var(--color-success)' : net < 0 ? '#f87171' : 'var(--color-muted-foreground)'
 
@@ -99,6 +60,11 @@ function TallyRow({
           <div className="mt-1 flex items-center gap-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
             <span style={{ color: 'var(--color-success)' }}>{better} better</span>
             <span style={{ color: '#f87171' }}>{worse} worse</span>
+            {inferred > 0 && (
+              <span title="Changes with no kill line in view (e.g. raid kills) whose size was taken from your recent kills of the same faction">
+                {inferred} inferred
+              </span>
+            )}
             {unresolved > 0 && <span>{unresolved} unresolved</span>}
           </div>
         </div>
@@ -121,7 +87,7 @@ function TallyRow({
           <Trash2 size={14} />
         </button>
       </div>
-      <BucketBar bucket={tally?.last_bucket} suspect={tally?.last_consider_suspect} />
+      <FactionStandingBar tally={tally} />
     </div>
   )
 }
@@ -179,7 +145,7 @@ function PreviewCard({
           <X size={14} />
         </button>
       </div>
-      <BucketBar bucket={tally?.last_bucket} suspect={tally?.last_consider_suspect} />
+      <FactionStandingBar tally={tally} />
     </div>
   )
 }
@@ -404,6 +370,19 @@ export default function FactionsPage(): React.ReactElement {
               better/worse or estimated net, which only build up from here forward. And since that illusion
               check only runs live, a backfilled reading can never carry the suspect marker (or catch a
               faction-perception spell like Alliance on the NPC), even if it was taken under one at the time.
+            </p>
+          )}
+          {!bannerCollapsed && (
+            <p className="mt-2 text-sm" style={{ color: 'var(--color-muted-foreground)' }}>
+              <strong>Standing estimate.</strong> Your faction is a hidden personal value (usually
+              −2000 to +2000) plus a fixed modifier for your race, class and deity — <code>/con</code>{' '}
+              shows the sum, which is why some factions run past ±2000 (Claws of Veeshan starts you 800
+              lower). Once a &ldquo;could not possibly get any worse/better&rdquo; line pins you at the cap,
+              or a clean <code>/con</code> narrows you to a bucket, the bar shows the range you must be in,
+              moved by every change since. Changes not tied to a kill widen the range; the next clean{' '}
+              <code>/con</code> narrows it again, and wins outright if the two disagree. XP potions
+              multiply faction gains by an amount the client never sees, so with one running you&rsquo;re
+              likely further along than shown — <code>/con</code> now and then to correct it.
             </p>
           )}
         </div>

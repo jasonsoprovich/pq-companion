@@ -2,6 +2,8 @@ package character
 
 import (
 	"database/sql"
+	"fmt"
+	"strings"
 	"time"
 )
 
@@ -26,8 +28,43 @@ type FactionTallyRow struct {
 	LastConsideredAt int64 `json:"last_considered_at"`
 	// LastConsiderSuspect flags that LastBucket may be wrong because the
 	// player had an illusion active at the time of the reading.
-	LastConsiderSuspect bool  `json:"last_consider_suspect"`
-	UpdatedAt           int64 `json:"updated_at"`
+	LastConsiderSuspect bool `json:"last_consider_suspect"`
+	// Inferred, MaxStep and the Range* fields mirror factiontracker.Tally's
+	// standing estimate. RangeAt is a Unix timestamp, 0 when unset.
+	Inferred    int    `json:"inferred"`
+	MaxStep     int    `json:"max_step"`
+	RangeKnown  bool   `json:"range_known"`
+	RangeLo     int    `json:"range_lo"`
+	RangeHi     int    `json:"range_hi"`
+	RangeSource string `json:"range_source"`
+	RangeAt     int64  `json:"range_at"`
+	UpdatedAt   int64  `json:"updated_at"`
+}
+
+// factionTallyCols is the column list shared by every tally SELECT, in
+// scanFactionTally's order.
+const factionTallyCols = `character_id, faction_id, faction_name, better, worse, estimated_net,
+	unresolved, last_bucket, last_considered_at, last_consider_suspect, inferred, max_step,
+	range_known, range_lo, range_hi, range_source, range_at, updated_at`
+
+func scanFactionTally(sc rowScanner) (FactionTallyRow, error) {
+	var r FactionTallyRow
+	var suspect, known int
+	err := sc.Scan(
+		&r.CharacterID, &r.FactionID, &r.FactionName, &r.Better, &r.Worse, &r.EstimatedNet,
+		&r.Unresolved, &r.LastBucket, &r.LastConsideredAt, &suspect, &r.Inferred, &r.MaxStep,
+		&known, &r.RangeLo, &r.RangeHi, &r.RangeSource, &r.RangeAt, &r.UpdatedAt,
+	)
+	r.LastConsiderSuspect = suspect != 0
+	r.RangeKnown = known != 0
+	return r, err
+}
+
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 func (s *Store) migrateFactionTally() error {
@@ -48,7 +85,24 @@ func (s *Store) migrateFactionTally() error {
 			FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE CASCADE
 		)
 	`)
-	return err
+	if err != nil {
+		return err
+	}
+	// Standing-estimate columns, added after the table first shipped.
+	for _, stmt := range []string{
+		`ALTER TABLE character_faction_tally ADD COLUMN inferred INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE character_faction_tally ADD COLUMN max_step INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE character_faction_tally ADD COLUMN range_known INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE character_faction_tally ADD COLUMN range_lo INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE character_faction_tally ADD COLUMN range_hi INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE character_faction_tally ADD COLUMN range_source TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE character_faction_tally ADD COLUMN range_at INTEGER NOT NULL DEFAULT 0`,
+	} {
+		if _, err := s.db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+			return fmt.Errorf("add faction tally column: %w", err)
+		}
+	}
+	return nil
 }
 
 // ListFactionTallies returns every persisted tally row for the character.
@@ -56,8 +110,7 @@ func (s *Store) migrateFactionTally() error {
 // (ordered) entries by faction_id.
 func (s *Store) ListFactionTallies(characterID int) ([]FactionTallyRow, error) {
 	rows, err := s.db.Query(
-		`SELECT character_id, faction_id, faction_name, better, worse, estimated_net,
-		        unresolved, last_bucket, last_considered_at, last_consider_suspect, updated_at
+		`SELECT `+factionTallyCols+`
 		 FROM character_faction_tally
 		 WHERE character_id = ?`,
 		characterID,
@@ -68,15 +121,10 @@ func (s *Store) ListFactionTallies(characterID int) ([]FactionTallyRow, error) {
 	defer rows.Close()
 	out := []FactionTallyRow{}
 	for rows.Next() {
-		var r FactionTallyRow
-		var suspect int
-		if err := rows.Scan(
-			&r.CharacterID, &r.FactionID, &r.FactionName, &r.Better, &r.Worse, &r.EstimatedNet,
-			&r.Unresolved, &r.LastBucket, &r.LastConsideredAt, &suspect, &r.UpdatedAt,
-		); err != nil {
+		r, err := scanFactionTally(rows)
+		if err != nil {
 			return nil, err
 		}
-		r.LastConsiderSuspect = suspect != 0
 		out = append(out, r)
 	}
 	return out, rows.Err()
@@ -86,15 +134,13 @@ func (s *Store) ListFactionTallies(characterID int) ([]FactionTallyRow, error) {
 // tally, overwriting whatever was there. Called after every tally mutation
 // so the persisted state never lags the in-memory session engine.
 func (s *Store) UpsertFactionTally(row FactionTallyRow) error {
-	suspect := 0
-	if row.LastConsiderSuspect {
-		suspect = 1
-	}
 	_, err := s.db.Exec(
 		`INSERT INTO character_faction_tally
 		   (character_id, faction_id, faction_name, better, worse, estimated_net,
-		    unresolved, last_bucket, last_considered_at, last_consider_suspect, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		    unresolved, last_bucket, last_considered_at, last_consider_suspect,
+		    inferred, max_step, range_known, range_lo, range_hi, range_source, range_at,
+		    updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT (character_id, faction_id) DO UPDATE SET
 		   faction_name = excluded.faction_name,
 		   better = excluded.better,
@@ -104,9 +150,18 @@ func (s *Store) UpsertFactionTally(row FactionTallyRow) error {
 		   last_bucket = excluded.last_bucket,
 		   last_considered_at = excluded.last_considered_at,
 		   last_consider_suspect = excluded.last_consider_suspect,
+		   inferred = excluded.inferred,
+		   max_step = excluded.max_step,
+		   range_known = excluded.range_known,
+		   range_lo = excluded.range_lo,
+		   range_hi = excluded.range_hi,
+		   range_source = excluded.range_source,
+		   range_at = excluded.range_at,
 		   updated_at = excluded.updated_at`,
 		row.CharacterID, row.FactionID, row.FactionName, row.Better, row.Worse, row.EstimatedNet,
-		row.Unresolved, row.LastBucket, row.LastConsideredAt, suspect, time.Now().Unix(),
+		row.Unresolved, row.LastBucket, row.LastConsideredAt, boolInt(row.LastConsiderSuspect),
+		row.Inferred, row.MaxStep, boolInt(row.RangeKnown), row.RangeLo, row.RangeHi,
+		row.RangeSource, row.RangeAt, time.Now().Unix(),
 	)
 	return err
 }
@@ -146,24 +201,17 @@ func (s *Store) MergeBackfillConsiderReading(characterID, factionID int, faction
 }
 
 func (s *Store) getFactionTally(characterID, factionID int) (FactionTallyRow, bool, error) {
-	var r FactionTallyRow
-	var suspect int
-	err := s.db.QueryRow(
-		`SELECT character_id, faction_id, faction_name, better, worse, estimated_net,
-		        unresolved, last_bucket, last_considered_at, last_consider_suspect, updated_at
+	r, err := scanFactionTally(s.db.QueryRow(
+		`SELECT `+factionTallyCols+`
 		 FROM character_faction_tally WHERE character_id = ? AND faction_id = ?`,
 		characterID, factionID,
-	).Scan(
-		&r.CharacterID, &r.FactionID, &r.FactionName, &r.Better, &r.Worse, &r.EstimatedNet,
-		&r.Unresolved, &r.LastBucket, &r.LastConsideredAt, &suspect, &r.UpdatedAt,
-	)
+	))
 	if err == sql.ErrNoRows {
 		return FactionTallyRow{}, false, nil
 	}
 	if err != nil {
 		return FactionTallyRow{}, false, err
 	}
-	r.LastConsiderSuspect = suspect != 0
 	return r, true, nil
 }
 

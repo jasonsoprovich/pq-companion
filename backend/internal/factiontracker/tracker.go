@@ -113,6 +113,7 @@ type Engine struct {
 	isIllusioned     IsIllusionedProvider
 	isSuspect        ConsiderSuspectProvider
 	isPet            ConsiderPetProvider
+	resolveInfo      FactionInfoResolver
 	persist          PersistFunc
 	clearPersisted   ClearPersistedFunc
 
@@ -126,6 +127,13 @@ type Engine struct {
 	characterID int
 	tallies     map[string]*Tally // key: strings.ToLower(FactionName)
 	pending     []pendingKill
+
+	// infoCache memoizes resolveInfo per faction id for the current
+	// character (cleared on SetCharacter). recent holds recent attributed
+	// changes per faction key and direction ("+"/"-" suffix) for inferring
+	// the size of unattributed ones.
+	infoCache map[int]*FactionInfo
+	recent    map[string][]recentHit
 
 	// pipeSeen is set by the first pipe consider this Zeal session; from then
 	// on the pipe is the primary /con source and a log reading only counts
@@ -143,6 +151,8 @@ func NewEngine(hub *ws.Hub, resolve NPCFactionResolver) *Engine {
 		hub:           hub,
 		resolve:       resolve,
 		tallies:       make(map[string]*Tally),
+		infoCache:     make(map[int]*FactionInfo),
+		recent:        make(map[string][]recentHit),
 		now:           time.Now,
 		after:         func(d time.Duration, fn func()) { time.AfterFunc(d, fn) },
 		pipeConsiders: make(map[string]time.Time),
@@ -240,6 +250,55 @@ func (e *Engine) ResetPipe() {
 	e.mu.Unlock()
 }
 
+// SetFactionInfoResolver registers the resolver for a faction's caps and the
+// active character's modifier. Optional — without it no standing range is
+// estimated. Clears the cache, so call it again (or SetCharacter) when the
+// character's race, class or deity becomes known.
+func (e *Engine) SetFactionInfoResolver(fn FactionInfoResolver) {
+	e.mu.Lock()
+	e.resolveInfo = fn
+	e.infoCache = make(map[int]*FactionInfo)
+	state := e.stateLocked()
+	e.mu.Unlock()
+	e.broadcast(state)
+}
+
+// infoLocked returns the faction's info, or nil when unknown. Must be
+// called with mu held.
+func (e *Engine) infoLocked(factionID int) *FactionInfo {
+	if factionID == 0 || e.resolveInfo == nil {
+		return nil
+	}
+	if fi, ok := e.infoCache[factionID]; ok {
+		return fi
+	}
+	var fi *FactionInfo
+	if info, ok := e.resolveInfo(e.characterID, factionID); ok {
+		fi = &info
+	}
+	e.infoCache[factionID] = fi
+	return fi
+}
+
+// FillInfo sets Info on tallies read straight from storage (a non-active
+// character's history), uncached.
+func (e *Engine) FillInfo(characterID int, tallies []Tally) {
+	e.mu.Lock()
+	fn := e.resolveInfo
+	e.mu.Unlock()
+	if fn == nil {
+		return
+	}
+	for i := range tallies {
+		if tallies[i].FactionID == 0 {
+			continue
+		}
+		if info, ok := fn(characterID, tallies[i].FactionID); ok {
+			tallies[i].Info = &info
+		}
+	}
+}
+
 // SetPersistFunc registers the callback invoked after every tally mutation.
 // Optional — the engine works in-memory-only if never set (e.g. tests).
 func (e *Engine) SetPersistFunc(fn PersistFunc) {
@@ -272,6 +331,8 @@ func (e *Engine) SetCharacter(characterID int, tallies []Tally) {
 	}
 	e.tallies = newTallies
 	e.pending = nil
+	e.infoCache = make(map[int]*FactionInfo)
+	e.recent = make(map[string][]recentHit)
 	state := e.stateLocked()
 	e.mu.Unlock()
 	e.broadcast(state)
@@ -288,8 +349,11 @@ func (e *Engine) Reset() {
 	for _, t := range e.tallies {
 		t.Better, t.Worse, t.EstimatedNet, t.Unresolved = 0, 0, 0, 0
 		t.LastBucket, t.LastConsideredAt, t.LastConsiderSuspect = "", nil, false
+		t.Inferred, t.MaxStep = 0, 0
+		t.clearRange()
 	}
 	e.pending = nil
+	e.recent = make(map[string][]recentHit)
 	state := e.stateLocked()
 	e.mu.Unlock()
 
@@ -323,7 +387,7 @@ func (e *Engine) Handle(ev logparser.LogEvent) {
 		if !ok {
 			return
 		}
-		e.handleFactionChanged(data.Faction, data.Direction, ev.Timestamp)
+		e.handleFactionChanged(data.Faction, data.Direction, data.AtCap, ev.Timestamp)
 	case logparser.EventConsidered:
 		data, ok := ev.Data.(logparser.ConsideredData)
 		if !ok || data.Bucket == "" {
@@ -416,41 +480,77 @@ func (e *Engine) tallyLocked(key, factionName string, factionID int) *Tally {
 // handleFactionChanged tallies a "got better/worse" line for whichever
 // faction it names — creating a new tally entry the first time this faction
 // is seen — and, if a pending kill within correlationWindow has a matching
-// signed hit for it, attributes its point value as an estimate.
-func (e *Engine) handleFactionChanged(factionName, direction string, ts time.Time) {
+// signed hit for it, attributes its point value as an estimate. With no
+// match, recent attributed changes to the same faction may still supply the
+// size (Inferred). A capped line ("could not possibly get any…") changes
+// nothing but pins the standing estimate to the faction's cap.
+func (e *Engine) handleFactionChanged(factionName, direction string, atCap bool, ts time.Time) {
 	key := strings.ToLower(factionName)
+	better := direction == "better"
 
 	e.mu.Lock()
 	factionID := 0
-	if _, exists := e.tallies[key]; !exists && e.resolveFactionID != nil {
+	if t, exists := e.tallies[key]; (!exists || t.FactionID == 0) && e.resolveFactionID != nil {
 		factionID, _ = e.resolveFactionID(factionName)
 	}
 	tally := e.tallyLocked(key, factionName, factionID)
-	if direction == "better" {
-		tally.Better++
-	} else {
-		tally.Worse++
+	if tally.FactionID == 0 && factionID != 0 {
+		tally.FactionID = factionID
 	}
+	info := e.infoLocked(tally.FactionID)
 
 	e.gcPendingLocked(ts)
-	matched := false
 	// Newest-first so a burst of identical rapid kills (e.g. a fast-respawning
 	// script encounter) consumes its own most recent hit rather than an older
 	// one that a later line might still need.
+	val, matched := 0, false
 	for i := len(e.pending) - 1; i >= 0; i-- {
-		val, ok := e.pending[i].hits[key]
+		v, ok := e.pending[i].hits[key]
 		if !ok {
 			continue
 		}
-		if (direction == "better" && val > 0) || (direction == "worse" && val < 0) {
-			tally.EstimatedNet += val
+		if (better && v > 0) || (!better && v < 0) {
+			val, matched = v, true
 			delete(e.pending[i].hits, key)
-			matched = true
 			break
 		}
 	}
-	if !matched {
-		tally.Unresolved++
+
+	switch {
+	case atCap:
+		// The hit was clamped to nothing: personal faction sits exactly at
+		// the cap. Not a change, so better/worse are left alone.
+		if info != nil {
+			c := info.MinCap
+			if better {
+				c = info.MaxCap
+			}
+			tally.setRange(c, c, RangeSourceCap, ts)
+		}
+	case matched:
+		e.countLocked(tally, better)
+		tally.EstimatedNet += val
+		if a := abs(val); a > tally.MaxStep {
+			tally.MaxStep = a
+		}
+		e.rememberLocked(key, val, ts)
+		if info != nil {
+			tally.shiftRange(val, *info)
+		}
+	default:
+		e.countLocked(tally, better)
+		if v, ok := e.inferLocked(key, better, ts); ok {
+			tally.EstimatedNet += v
+			tally.Inferred++
+			if info != nil {
+				tally.shiftRange(v, *info)
+			}
+		} else {
+			tally.Unresolved++
+			if info != nil {
+				tally.widenRange(better, *info)
+			}
+		}
 	}
 	snapshot := *tally
 	charID := e.characterID
@@ -461,6 +561,59 @@ func (e *Engine) handleFactionChanged(factionName, direction string, ts time.Tim
 	if e.persist != nil {
 		e.persist(charID, snapshot)
 	}
+}
+
+func (e *Engine) countLocked(t *Tally, better bool) {
+	if better {
+		t.Better++
+	} else {
+		t.Worse++
+	}
+}
+
+func abs(v int) int {
+	if v < 0 {
+		return -v
+	}
+	return v
+}
+
+func recentKey(key string, positive bool) string {
+	if positive {
+		return key + "+"
+	}
+	return key + "-"
+}
+
+// rememberLocked records an attributed change for later inference. Must be
+// called with mu held.
+func (e *Engine) rememberLocked(key string, v int, ts time.Time) {
+	rk := recentKey(key, v > 0)
+	hits := append(e.recent[rk], recentHit{value: v, at: ts})
+	if len(hits) > inferKeep {
+		hits = hits[len(hits)-inferKeep:]
+	}
+	e.recent[rk] = hits
+}
+
+// inferLocked returns the size of an unattributed change when every
+// attributed change to the same faction and direction within inferWindow
+// had the same value — e.g. a raid clearing one kind of mob, most of
+// whose deaths the player doesn't see logged. Must be called with mu held.
+func (e *Engine) inferLocked(key string, better bool, ts time.Time) (int, bool) {
+	hits := e.recent[recentKey(key, better)]
+	val, n := 0, 0
+	for _, h := range hits {
+		if ts.Sub(h.at) > inferWindow || h.at.After(ts.Add(correlationWindow)) {
+			continue
+		}
+		if n > 0 && h.value != val {
+			return 0, false
+		}
+		val = h.value
+		n++
+	}
+	return val, n > 0
 }
 
 // handleConsidered takes a log /con reading. Before any pipe consider has
@@ -540,6 +693,11 @@ func (e *Engine) applyConsidered(c ConsiderContext, suspect bool, ts time.Time) 
 	tally.LastBucket = string(c.Bucket)
 	tally.LastConsideredAt = &ts
 	tally.LastConsiderSuspect = suspect
+	// Only a clean reading with an exact modifier says where personal
+	// faction is.
+	if info := e.infoLocked(tally.FactionID); !suspect && info != nil && info.ModifierExact {
+		tally.applyCon(c.Bucket, *info, ts)
+	}
 	snapshot := *tally
 	charID := e.characterID
 	state := e.stateLocked()
@@ -571,7 +729,12 @@ func (e *Engine) gcPendingLocked(now time.Time) {
 func (e *Engine) stateLocked() State {
 	out := make([]Tally, 0, len(e.tallies))
 	for _, t := range e.tallies {
-		out = append(out, *t)
+		tc := *t
+		if fi := e.infoLocked(t.FactionID); fi != nil {
+			info := *fi
+			tc.Info = &info
+		}
+		out = append(out, tc)
 	}
 	return State{Tallies: out}
 }

@@ -203,6 +203,7 @@ type QuarmyData struct {
 	Level       int               `json:"level"`
 	Class       int               `json:"class"`
 	Race        int               `json:"race"`
+	Deity       int               `json:"deity"` // server deity id (201-216, 396 Agnostic), 0 if absent
 	Stats       CharStats         `json:"stats"`
 	Inventory   []InventoryEntry  `json:"inventory"`
 	AAs         []AAEntry         `json:"aas"`

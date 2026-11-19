@@ -52,3 +52,26 @@ export const BUCKET_COLOR: Record<FactionBucket, string> = {
 export function bucketIndex(bucket: string): number {
   return BUCKET_ORDER.indexOf(bucket as FactionBucket)
 }
+
+// Lowest total (modified) faction value /con reports as each bucket, per
+// EQMacEmu's CalculateFaction (common/faction.cpp). Scowling has no floor.
+export const BUCKET_MIN: Record<FactionBucket, number> = {
+  scowling: -Infinity,
+  threatening: -750,
+  dubious: -500,
+  apprehensive: -100,
+  indifferent: 0,
+  amiable: 100,
+  kindly: 500,
+  warmly: 750,
+  ally: 1100,
+}
+
+// bucketForTotal maps a total (personal + modifier) faction value to the
+// bucket /con would report.
+export function bucketForTotal(total: number): FactionBucket {
+  for (let i = BUCKET_ORDER.length - 1; i > 0; i--) {
+    if (total >= BUCKET_MIN[BUCKET_ORDER[i]]) return BUCKET_ORDER[i]
+  }
+  return 'scowling'
+}

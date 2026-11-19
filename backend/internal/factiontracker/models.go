@@ -75,6 +75,26 @@ type Tally struct {
 	// invisibility or hide, feign death, a faction buff, or being engaged
 	// with the NPC. The server's /con answer reflects all of those.
 	LastConsiderSuspect bool `json:"last_consider_suspect,omitempty"`
+	// Inferred counts changes that matched no kill but took their size from
+	// recent attributed changes to the same faction (see standing.go). They
+	// are included in EstimatedNet and not counted in Unresolved.
+	Inferred int `json:"inferred,omitempty"`
+	// MaxStep is the largest attributed change seen for this faction, used
+	// to bound how far an unattributed change can move the estimate.
+	MaxStep int `json:"max_step,omitempty"`
+	// RangeKnown, RangeLo and RangeHi hold the estimated personal faction
+	// value range (see standing.go). Only set once a cap line or a clean
+	// /con has anchored it. RangeSource says which ("cap"/"con") set the
+	// current anchor and RangeAt when.
+	RangeKnown  bool       `json:"range_known,omitempty"`
+	RangeLo     int        `json:"range_lo"`
+	RangeHi     int        `json:"range_hi"`
+	RangeSource string     `json:"range_source,omitempty"`
+	RangeAt     *time.Time `json:"range_at,omitempty"`
+	// Info is the faction's caps and this character's modifier, filled in
+	// when the state is built so the UI can place the range on the /con
+	// scale. Not persisted.
+	Info *FactionInfo `json:"info,omitempty"`
 }
 
 // State is the full tracker payload broadcast over WebSocket and returned by

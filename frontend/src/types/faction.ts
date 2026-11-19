@@ -44,6 +44,29 @@ export interface FactionTally {
   // last_consider_suspect flags that last_bucket may be wrong because the
   // player had an illusion active at the time of the reading.
   last_consider_suspect?: boolean
+  // inferred counts changes that matched no kill but took their size from
+  // recent attributed changes to the same faction (included in
+  // estimated_net, not in unresolved).
+  inferred?: number
+  // Standing estimate: the range the character's personal faction value
+  // must lie in, once a "could not possibly get any worse/better" line
+  // (range_source "cap") or a clean /con ("con") has anchored it.
+  range_known?: boolean
+  range_lo: number
+  range_hi: number
+  range_source?: 'cap' | 'con'
+  range_at?: string
+  info?: FactionInfo
+}
+
+// The faction's personal-value caps and this character's race/class/deity
+// modifier: /con shows personal + modifier. modifier_exact is false when an
+// unknown race/class/deity could change the modifier.
+export interface FactionInfo {
+  min_cap: number
+  max_cap: number
+  modifier: number
+  modifier_exact: boolean
 }
 
 export interface FactionSessionState {

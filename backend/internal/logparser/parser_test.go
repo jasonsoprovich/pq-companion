@@ -745,6 +745,20 @@ func TestParseLine(t *testing.T) {
 			wantType: EventFactionChanged,
 			wantData: FactionChangedData{Faction: "Bloodsabers", Direction: "better"},
 		},
+		{
+			name:     "faction: capped worse",
+			line:     "[Mon Apr 13 06:00:00 2026] Your faction standing with Claws of Veeshan could not possibly get any worse.",
+			wantOK:   true,
+			wantType: EventFactionChanged,
+			wantData: FactionChangedData{Faction: "Claws of Veeshan", Direction: "worse", AtCap: true},
+		},
+		{
+			name:     "faction: capped better",
+			line:     "[Mon Apr 13 06:00:00 2026] Your faction standing with Bloodsabers could not possibly get any better.",
+			wantOK:   true,
+			wantType: EventFactionChanged,
+			wantData: FactionChangedData{Faction: "Bloodsabers", Direction: "better", AtCap: true},
+		},
 
 		// --- Generic NPC dialogue (quest hail/turn-in flavor text) ---
 		{

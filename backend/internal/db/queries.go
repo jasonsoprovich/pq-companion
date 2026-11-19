@@ -1179,6 +1179,44 @@ func (db *DB) GetFactionByID(id int) (*Faction, error) {
 	return &f, nil
 }
 
+// FactionStandingData is what faction standing math needs for one faction:
+// faction_list base and personal-value caps, plus its faction_list_mod rows
+// keyed by mod_name ("r<race>", "c<class>", "d<deity>").
+type FactionStandingData struct {
+	Base   int
+	MinCap int
+	MaxCap int
+	Mods   map[string]int
+}
+
+// GetFactionStandingData returns the faction's base, caps and modifiers.
+// Returns sql.ErrNoRows (wrapped) when the faction doesn't exist.
+func (db *DB) GetFactionStandingData(id int) (*FactionStandingData, error) {
+	d := FactionStandingData{Mods: map[string]int{}}
+	if err := db.QueryRow(
+		`SELECT base, min_cap, max_cap FROM faction_list WHERE id = ? AND id != 0`,
+		id,
+	).Scan(&d.Base, &d.MinCap, &d.MaxCap); err != nil {
+		return nil, fmt.Errorf("get faction standing %d: %w", id, err)
+	}
+	rows, err := db.Query(
+		`SELECT mod_name, mod FROM faction_list_mod WHERE faction_id = ?`, id,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get faction mods %d: %w", id, err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		var mod int
+		if err := rows.Scan(&name, &mod); err != nil {
+			return nil, fmt.Errorf("scan faction mod: %w", err)
+		}
+		d.Mods[name] = mod
+	}
+	return &d, rows.Err()
+}
+
 // GetFactionIDByName resolves an exact faction name (any case) to its
 // faction_list id. Returns (0, false) when nothing matches. Used to look up
 // the faction named in a "Your faction standing with X got better/worse."

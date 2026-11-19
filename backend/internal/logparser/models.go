@@ -167,7 +167,8 @@ const (
 	// EventFactionChanged is emitted on "Your faction standing with <Faction>
 	// got better/worse." EQ fires one line per affected faction at the same
 	// timestamp as the triggering kill, quest turn-in, or hail — the line
-	// carries no numeric amount, only the faction name and direction.
+	// carries no numeric amount, only the faction name and direction. Also
+	// emitted (AtCap set) for "...could not possibly get any better/worse."
 	EventFactionChanged EventType = "log:faction_changed"
 
 	// EventRogueEvade is emitted on the active character's "You duck away from
@@ -519,9 +520,13 @@ type SkillUpData struct {
 
 // FactionChangedData is the structured payload for EventFactionChanged.
 // Direction is "better" or "worse" — EQ never logs the point amount.
+// AtCap marks the "could not possibly get any better/worse" form: nothing
+// changed, and the character's personal faction is exactly at the faction's
+// max_cap (better) or min_cap (worse).
 type FactionChangedData struct {
 	Faction   string `json:"faction"`
 	Direction string `json:"direction"`
+	AtCap     bool   `json:"at_cap,omitempty"`
 }
 
 // NPCDialogueData is the structured payload for EventNPCDialogue.

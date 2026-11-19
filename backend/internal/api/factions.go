@@ -44,6 +44,12 @@ type factionSearchResult struct {
 }
 
 func tallyFromRow(row character.FactionTallyRow) factiontracker.Tally {
+	return FactionTallyFromRow(row)
+}
+
+// FactionTallyFromRow converts a persisted tally row to the tracker's Tally.
+// Shared with the server's engine load so the two never drift.
+func FactionTallyFromRow(row character.FactionTallyRow) factiontracker.Tally {
 	t := factiontracker.Tally{
 		FactionID:           row.FactionID,
 		FactionName:         row.FactionName,
@@ -53,12 +59,50 @@ func tallyFromRow(row character.FactionTallyRow) factiontracker.Tally {
 		Unresolved:          row.Unresolved,
 		LastBucket:          row.LastBucket,
 		LastConsiderSuspect: row.LastConsiderSuspect,
+		Inferred:            row.Inferred,
+		MaxStep:             row.MaxStep,
+		RangeKnown:          row.RangeKnown,
+		RangeLo:             row.RangeLo,
+		RangeHi:             row.RangeHi,
+		RangeSource:         row.RangeSource,
 	}
 	if row.LastConsideredAt > 0 {
 		ts := time.Unix(row.LastConsideredAt, 0)
 		t.LastConsideredAt = &ts
 	}
+	if row.RangeAt > 0 {
+		ts := time.Unix(row.RangeAt, 0)
+		t.RangeAt = &ts
+	}
 	return t
+}
+
+// FactionRowFromTally is the inverse of FactionTallyFromRow.
+func FactionRowFromTally(characterID int, t factiontracker.Tally) character.FactionTallyRow {
+	row := character.FactionTallyRow{
+		CharacterID:         characterID,
+		FactionID:           t.FactionID,
+		FactionName:         t.FactionName,
+		Better:              t.Better,
+		Worse:               t.Worse,
+		EstimatedNet:        t.EstimatedNet,
+		Unresolved:          t.Unresolved,
+		LastBucket:          t.LastBucket,
+		LastConsiderSuspect: t.LastConsiderSuspect,
+		Inferred:            t.Inferred,
+		MaxStep:             t.MaxStep,
+		RangeKnown:          t.RangeKnown,
+		RangeLo:             t.RangeLo,
+		RangeHi:             t.RangeHi,
+		RangeSource:         t.RangeSource,
+	}
+	if t.LastConsideredAt != nil {
+		row.LastConsideredAt = t.LastConsideredAt.Unix()
+	}
+	if t.RangeAt != nil {
+		row.RangeAt = t.RangeAt.Unix()
+	}
+	return row
 }
 
 func (h *factionsHandler) search(w http.ResponseWriter, r *http.Request) {
@@ -127,6 +171,7 @@ func (h *factionsHandler) session(w http.ResponseWriter, r *http.Request) {
 	for i, row := range rows {
 		tallies[i] = tallyFromRow(row)
 	}
+	h.engine.FillInfo(charID, tallies)
 	writeJSON(w, http.StatusOK, factiontracker.State{Tallies: tallies})
 }
 

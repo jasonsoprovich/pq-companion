@@ -290,6 +290,11 @@ func (w *Watcher) RefreshAllPersonas() {
 				slog.Warn("zeal: refresh personas: save persona", "character", c.Name, "err", err)
 			}
 		}
+		if data.Deity > 0 {
+			if err := w.charStore.UpdateDeity(c.ID, data.Deity); err != nil {
+				slog.Warn("zeal: refresh personas: save deity", "character", c.Name, "err", err)
+			}
+		}
 		aas := make([]character.AAEntry, len(data.AAs))
 		for i, aa := range data.AAs {
 			aas[i] = character.AAEntry{AAID: aa.ID, Rank: aa.Rank}
@@ -576,6 +581,11 @@ func (w *Watcher) checkQuarmy(path, charName string) {
 	if data.Level > 0 && data.Class > 0 && data.Race > 0 {
 		if err := w.charStore.UpdatePersona(char.ID, data.Class-1, data.Race, data.Level); err != nil {
 			slog.Warn("zeal: save character persona", "character", charName, "err", err)
+		}
+	}
+	if data.Deity > 0 {
+		if err := w.charStore.UpdateDeity(char.ID, data.Deity); err != nil {
+			slog.Warn("zeal: save character deity", "character", charName, "err", err)
 		}
 	}
 	aas := make([]character.AAEntry, len(data.AAs))

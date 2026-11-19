@@ -128,6 +128,7 @@ func (s *Store) migrate() error {
 		`ALTER TABLE characters ADD COLUMN last_zone_at INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE characters ADD COLUMN unspent_aa INTEGER NOT NULL DEFAULT -1`,
 		`ALTER TABLE characters ADD COLUMN unspent_aa_at INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE characters ADD COLUMN deity INTEGER NOT NULL DEFAULT 0`,
 	}
 	for _, stmt := range addColumns {
 		if _, err := s.db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
@@ -357,6 +358,21 @@ func (s *Store) UpdatePersona(id, class, race, level int) error {
 		class, race, level, id,
 	)
 	return err
+}
+
+// UpdateDeity stores the character's server deity id (from the Zeal quarmy
+// export), used for faction deity modifiers. Kept out of Character/
+// UpdatePersona since only the faction tracker reads it.
+func (s *Store) UpdateDeity(id, deity int) error {
+	_, err := s.db.Exec(`UPDATE characters SET deity=? WHERE id=?`, deity, id)
+	return err
+}
+
+// GetDeity returns the character's server deity id, 0 when not yet known.
+func (s *Store) GetDeity(id int) (int, error) {
+	var d int
+	err := s.db.QueryRow(`SELECT deity FROM characters WHERE id=?`, id).Scan(&d)
+	return d, err
 }
 
 // UpdateLastZone records the zone a character was last seen in, keyed by name

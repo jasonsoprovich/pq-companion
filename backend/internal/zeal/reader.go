@@ -620,6 +620,7 @@ func ParseQuarmy(path, character string) (*QuarmyData, error) {
 				data.Level = parseInt(parts[3])
 				data.Class = parseInt(parts[4])
 				data.Race = parseInt(parts[5])
+				data.Deity = parseInt(parts[7])
 				data.Stats = CharStats{
 					BaseSTR: parseInt(parts[10]),
 					BaseSTA: parseInt(parts[11]),
