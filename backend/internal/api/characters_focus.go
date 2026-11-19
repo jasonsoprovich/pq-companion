@@ -235,12 +235,12 @@ func (h *charactersHandler) focusUpgrades(w http.ResponseWriter, r *http.Request
 			}
 		}
 	}
-	// best is the best percent among worn foci that still cover the top spells.
-	best, anyCovering := 0, false
+	// best is the best percent among worn foci that still cover the top spells
+	// (shown as the current value; upgrades are decided by focusDominates).
+	best := 0
 	wornItems := map[int]bool{}
 	for _, m := range current {
 		if m.CoversTop {
-			anyCovering = true
 			if m.Percent > best {
 				best = m.Percent
 			}
@@ -257,13 +257,22 @@ func (h *charactersHandler) focusUpgrades(w http.ResponseWriter, r *http.Request
 	}
 	items := cands[catID]
 	// For hate foci a bigger number isn't plainly better, so never flag upgrades.
-	comparable := catID != "aggro_reduction" && catID != "bash_hate"
+	comparable := focusComparable(catID)
 	for i := range items {
 		items[i].Equipped = wornItems[items[i].ItemID]
-		// An upgrade must still apply to the character's top spells, and either
-		// nothing worn does, or it rolls/gives more than the best worn one.
-		items[i].IsUpgrade = comparable && items[i].CoversTop &&
-			(!anyCovering || items[i].Percent > best)
+		// An upgrade must still apply to the character's top spells, and no worn
+		// item focus may already be at least as strong over at least the same
+		// spells (focusDominates). Only item foci count: AA foci stack on top of
+		// the best item, so they never make an item focus redundant.
+		cand := buffmod.Modifier{SPA: def.SPA, Category: catID,
+			Percent: items[i].Percent, Limits: items[i].Limits}
+		upgrade := comparable && items[i].CoversTop
+		for _, m := range current {
+			if upgrade && m.Source == "item" && focusDominates(m.Modifier, cand, top) {
+				upgrade = false
+			}
+		}
+		items[i].IsUpgrade = upgrade
 	}
 	sort.SliceStable(items, func(a, b int) bool {
 		if items[a].CoversTop != items[b].CoversTop {
