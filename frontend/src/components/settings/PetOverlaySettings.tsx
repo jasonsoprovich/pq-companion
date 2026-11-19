@@ -388,7 +388,7 @@ export function PetWatchListCard({ settings, onChange }: Props): React.ReactElem
   // Quick-add: the beneficial effects on the current pet (timed or listed by
   // its latest /pet health), offered for the list matching its kind.
   const pet = usePetState()
-  const { timers } = usePetTimers(pet.name)
+  const { timers } = usePetTimers(pet.name, pet.pet_id)
   const current = useMemo(() => {
     const names = new Map<string, string>()
     for (const t of timers) if (t.category === 'buff') names.set(fold(t.spell_name), t.spell_name)

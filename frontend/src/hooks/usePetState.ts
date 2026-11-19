@@ -69,7 +69,7 @@ export function usePetOverlaySettings(): PetOverlaySettings {
  * useTargetTimers this ignores the display threshold: the pet card shows every
  * timer on the pet, including ones still hidden from the buff overlay.
  */
-export function usePetTimers(petName: string | undefined): {
+export function usePetTimers(petName: string | undefined, petId?: number): {
   charm: ActiveTimer | null
   timers: ActiveTimer[]
 } {
@@ -91,11 +91,19 @@ export function usePetTimers(petName: string | undefined): {
     }
     if (!petName) return { charm, timers: [] }
     const want = normalizeTargetName(petName)
+    // A timer pinned to a spawn id only counts when it's the pet's: two
+    // same-named mobs (e.g. both Diaku Armsmen tashed before one was
+    // charmed) otherwise both land on the pet. Timers with no id, or a pet
+    // whose id isn't known (no Zeal), fall back to the name.
     const timers = all
-      .filter((t) => !t.is_charm && t.target_name && normalizeTargetName(t.target_name) === want)
+      .filter((t) => {
+        if (t.is_charm || !t.target_name) return false
+        if (normalizeTargetName(t.target_name) !== want) return false
+        return petId === undefined || t.target_id === undefined || t.target_id === petId
+      })
       .sort((a, b) => a.remaining_seconds - b.remaining_seconds)
     return { charm, timers }
-  }, [state, petName])
+  }, [state, petName, petId])
 }
 
 export interface PetDPS {
