@@ -20,6 +20,24 @@ var hintAbilities = map[int]string{
 	5: "flurries",
 }
 
+// hintImmunities are the crowd-control immunities worth calling out when
+// sibling rows disagree, as {immune, not immune} labels. Same-name rows that
+// differ only here are real: the Rathe Council in poearthb alternates
+// mezzable and mez-immune councilmen with identical stats and models.
+var hintImmunities = []struct {
+	code      int
+	immune    string
+	notImmune string
+}{
+	{13, "mez immune", "mezzable"},
+	{12, "slow immune", "slowable"},
+	{15, "stun immune", "stunnable"},
+	{14, "charm immune", "charmable"},
+	{16, "snare immune", "snareable"},
+	{17, "fear immune", "fearable"},
+	{31, "pacify immune", "pacifiable"},
+}
+
 var hintGenders = map[int]string{0: "male", 1: "female", 2: "neuter"}
 
 // annotateVariants fills SpawnChance and Distinguish on a variant set so the
@@ -91,6 +109,16 @@ func variantHints(idx int, out []TargetVariant, traits map[int]db.VariantTraits)
 				hints = append(hints, hintAbilities[code])
 			} else {
 				hints = append(hints, "no "+trimPlural(hintAbilities[code]))
+			}
+		}
+	}
+	for _, imm := range hintImmunities {
+		mine := has(me, imm.code)
+		if differs(func(o TargetVariant) bool { return has(o, imm.code) == mine }) {
+			if mine {
+				hints = append(hints, imm.immune)
+			} else {
+				hints = append(hints, imm.notImmune)
 			}
 		}
 	}
