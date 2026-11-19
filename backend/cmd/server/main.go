@@ -4,8 +4,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -1481,8 +1483,16 @@ func main() {
 		// of the log. Newer evidence wins: see Store.ApplyPopFlagsFile.
 		zealWatcher.SetPopFlagsFileCallback(func(path string) error {
 			f, err := popflag.ReadPopFlagsFile(path, time.Now())
+			var pathErr *fs.PathError
+			if errors.Is(err, popflag.ErrPopFlagsFileSettling) || errors.As(err, &pathErr) {
+				return err // try again on the next poll
+			}
 			if err != nil {
-				return err
+				// Not an export this version understands (e.g. one from an
+				// early Zeal test build). Skip it until the file changes
+				// rather than re-reading it every poll.
+				slog.Info("popflag: Zeal export not recognised", "path", path, "err", err)
+				return nil
 			}
 			applied, err := popflagStore.ApplyPopFlagsFile(f)
 			if err != nil {
