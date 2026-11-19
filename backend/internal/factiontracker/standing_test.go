@@ -170,3 +170,98 @@ func TestComputeInfo(t *testing.T) {
 		t.Errorf("no mods at all should be exact: %+v", got)
 	}
 }
+
+func covBackfill(merged *[]Tally, done *bool) *BackfillHandler {
+	return NewBackfillHandler(BackfillConfig{
+		CharacterID:    testCharID,
+		ResolveKill:    covKillResolver,
+		ResolvePrimary: func(npc string) (int, string, bool) { return covID, "Claws of Veeshan", npc == "a Claws of Veeshan sentry" },
+		ResolveID:      func(name string) (int, bool) { return covID, name == "Claws of Veeshan" },
+		ResolveInfo: func(_, factionID int) (FactionInfo, bool) {
+			return covInfo, factionID == covID
+		},
+		MergeRange: func(t Tally) (bool, error) {
+			*merged = append(*merged, t)
+			return true, nil
+		},
+		OnDone: func() { *done = true },
+	})
+}
+
+func ev(typ logparser.EventType, ts time.Time, data any) logparser.LogEvent {
+	return logparser.LogEvent{Type: typ, Timestamp: ts, Data: data}
+}
+
+func TestBackfill_WalksFromCapLine(t *testing.T) {
+	var merged []Tally
+	done := false
+	h := covBackfill(&merged, &done)
+	ts := time.Date(2026, 3, 1, 20, 0, 0, 0, time.UTC)
+	h.HandleEvent(ev(logparser.EventFactionChanged, ts,
+		logparser.FactionChangedData{Faction: "Claws of Veeshan", Direction: "worse", AtCap: true}))
+	for i := 1; i <= 2; i++ {
+		at := ts.Add(time.Duration(i) * time.Minute)
+		h.HandleEvent(ev(logparser.EventKill, at, logparser.KillData{Killer: "You", Target: "a Kromzek warrior"}))
+		h.HandleEvent(ev(logparser.EventFactionChanged, at,
+			logparser.FactionChangedData{Faction: "Claws of Veeshan", Direction: "better"}))
+	}
+	h.Finalize()
+
+	if !done || len(merged) != 1 || h.Inserted() != 1 {
+		t.Fatalf("done %v merged %d inserted %d", done, len(merged), h.Inserted())
+	}
+	wantRange(t, merged[0], -1990, -1990)
+	if merged[0].RangeSource != RangeSourceCap || merged[0].MaxStep != 5 {
+		t.Fatalf("merged = %+v", merged[0])
+	}
+}
+
+// The archive overlap replays the same lines again; they must not apply
+// twice.
+func TestBackfill_SkipsArchiveOverlap(t *testing.T) {
+	var merged []Tally
+	done := false
+	h := covBackfill(&merged, &done)
+	ts := time.Date(2026, 3, 1, 20, 0, 0, 0, time.UTC)
+	feed := func() {
+		h.HandleEvent(ev(logparser.EventFactionChanged, ts,
+			logparser.FactionChangedData{Faction: "Claws of Veeshan", Direction: "worse", AtCap: true}))
+		at := ts.Add(time.Minute)
+		h.HandleEvent(ev(logparser.EventKill, at, logparser.KillData{Killer: "You", Target: "a Kromzek warrior"}))
+		h.HandleEvent(ev(logparser.EventFactionChanged, at,
+			logparser.FactionChangedData{Faction: "Claws of Veeshan", Direction: "better"}))
+	}
+	feed() // archive
+	feed() // live log, overlapping
+	at := ts.Add(2 * time.Minute)
+	h.HandleEvent(ev(logparser.EventKill, at, logparser.KillData{Killer: "You", Target: "a Kromzek warrior"}))
+	h.HandleEvent(ev(logparser.EventFactionChanged, at,
+		logparser.FactionChangedData{Faction: "Claws of Veeshan", Direction: "better"}))
+	h.Finalize()
+	wantRange(t, merged[0], -1990, -1990)
+}
+
+// An indifferent /con right after a cap line is far more likely an
+// override (invisible, feigned, someone's pet) than real standing, so the
+// replay keeps the exact anchor. A non-override bucket still corrects it.
+func TestBackfill_DistrustsConflictingOverrideCons(t *testing.T) {
+	var merged []Tally
+	done := false
+	h := covBackfill(&merged, &done)
+	ts := time.Date(2026, 3, 1, 20, 0, 0, 0, time.UTC)
+	h.HandleEvent(ev(logparser.EventFactionChanged, ts,
+		logparser.FactionChangedData{Faction: "Claws of Veeshan", Direction: "worse", AtCap: true}))
+	h.HandleEvent(ev(logparser.EventConsidered, ts.Add(time.Minute),
+		logparser.ConsideredData{TargetName: "a Claws of Veeshan sentry", Bucket: logparser.BucketIndifferent}))
+	h.Finalize()
+	wantRange(t, merged[0], -2000, -2000)
+
+	merged = nil
+	h = covBackfill(&merged, &done)
+	h.HandleEvent(ev(logparser.EventFactionChanged, ts,
+		logparser.FactionChangedData{Faction: "Claws of Veeshan", Direction: "worse", AtCap: true}))
+	h.HandleEvent(ev(logparser.EventConsidered, ts.Add(time.Minute),
+		logparser.ConsideredData{TargetName: "a Claws of Veeshan sentry", Bucket: logparser.BucketKindly}))
+	h.Finalize()
+	wantRange(t, merged[0], 1300, 1549)
+}

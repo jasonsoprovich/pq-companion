@@ -1370,7 +1370,7 @@ func main() {
 	// Standing estimate: each faction's caps plus the character's race/class/
 	// deity modifier (see factiontracker.ComputeInfo). Race/class come from
 	// the character row (class stored 0-based), deity from the Zeal export.
-	factionEngine.SetFactionInfoResolver(func(characterID, factionID int) (factiontracker.FactionInfo, bool) {
+	factionInfoResolver := func(characterID, factionID int) (factiontracker.FactionInfo, bool) {
 		fd, err := database.GetFactionStandingData(factionID)
 		if err != nil || fd == nil {
 			return factiontracker.FactionInfo{}, false
@@ -1386,7 +1386,8 @@ func main() {
 			deity, _ = charStore.GetDeity(characterID)
 		}
 		return factiontracker.ComputeInfo(fd.Base, fd.MinCap, fd.MaxCap, fd.Mods, race, class, deity), true
-	})
+	}
+	factionEngine.SetFactionInfoResolver(factionInfoResolver)
 	factionEngine.SetPersistFunc(func(characterID int, tally factiontracker.Tally) {
 		row := api.FactionRowFromTally(characterID, tally)
 		if err := charStore.UpsertFactionTally(row); err != nil {
@@ -1655,9 +1656,10 @@ func main() {
 		// internal character id — resolve it once per backfill run. If the
 		// character has never been seen by charStore (no character row
 		// yet), skip faction backfill for them entirely rather than erroring.
-		// Only scans for /con lines to set an approximate baseline bucket —
-		// never kills or quest turn-ins, which stay exclusively the live
-		// session tracker's better/worse/estimated-net concern.
+		// Replays the log through a scratch faction engine to recover each
+		// faction's latest /con and its standing estimate (cap line or /con
+		// anchor, walked through the changes after it). Better/worse/
+		// estimated-net counts stay live-only.
 		backfillRegistry.Register(backfill.Section{
 			Key:   "factions",
 			Label: "Faction Tracker",
@@ -1667,12 +1669,33 @@ func main() {
 					return noopBackfillHandler{}
 				}
 				characterID := c.ID
-				return factiontracker.NewBackfillHandler(
-					factionPrimaryResolver,
-					func(factionID int, factionName, bucket string, consideredAt time.Time) (bool, error) {
+				return factiontracker.NewBackfillHandler(factiontracker.BackfillConfig{
+					CharacterID:     characterID,
+					ResolveKill:     factionKillResolver,
+					ResolvePrimary:  factionPrimaryResolver,
+					ResolveID:       database.GetFactionIDByName,
+					ResolveDialogue: factionDialogueResolver,
+					ResolveInfo:     factionInfoResolver,
+					MergeConsider: func(factionID int, factionName, bucket string, consideredAt time.Time) (bool, error) {
 						return charStore.MergeBackfillConsiderReading(characterID, factionID, factionName, bucket, consideredAt.Unix())
 					},
-				)
+					MergeRange: func(t factiontracker.Tally) (bool, error) {
+						var at int64
+						if t.RangeAt != nil {
+							at = t.RangeAt.Unix()
+						}
+						return charStore.MergeBackfillRange(characterID, t.FactionID, t.FactionName,
+							t.RangeLo, t.RangeHi, t.RangeSource, at, t.MaxStep)
+					},
+					// The live engine holds its tallies in memory and writes
+					// whole rows back, so reload it or it would overwrite
+					// what backfill just stored (and the page wouldn't show it).
+					OnDone: func() {
+						if strings.EqualFold(activeChar(), charName) {
+							reloadFactionTracking()
+						}
+					},
+				})
 			},
 		})
 	}

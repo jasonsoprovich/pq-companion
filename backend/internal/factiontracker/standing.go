@@ -160,10 +160,24 @@ func (t *Tally) widenRange(better bool, info FactionInfo) {
 	}
 }
 
+// overrideBuckets are the /con answers the server substitutes for the real
+// one: indifferent (invisible, feigned, someone else's pet), threatening
+// (engaged with the NPC), amiable (your own pet) and dubious (the merchant
+// clamp). See Client::GetFactionLevel and the consider handler.
+var overrideBuckets = map[logparser.FactionBucket]bool{
+	logparser.BucketIndifferent: true,
+	logparser.BucketThreatening: true,
+	logparser.BucketAmiable:     true,
+	logparser.BucketDubious:     true,
+}
+
 // applyCon narrows a known estimate with a clean /con reading, or sets it
 // from the reading when there's none yet or the estimate has drifted
-// outside what the server just reported.
-func (t *Tally) applyCon(b logparser.FactionBucket, info FactionInfo, at time.Time) {
+// outside what the server just reported. With distrustOverrides (the
+// backfill replay, which can't tell a clean reading from an override), a
+// reading that contradicts the estimate is ignored when its bucket is one
+// an override produces.
+func (t *Tally) applyCon(b logparser.FactionBucket, info FactionInfo, at time.Time, distrustOverrides bool) {
 	lo, hi, ok := conPersonalRange(b, info)
 	if !ok {
 		return
@@ -172,6 +186,9 @@ func (t *Tally) applyCon(b logparser.FactionBucket, info FactionInfo, at time.Ti
 		nlo, nhi := max(t.RangeLo, lo), min(t.RangeHi, hi)
 		if nlo <= nhi {
 			t.RangeLo, t.RangeHi = nlo, nhi
+			return
+		}
+		if distrustOverrides && overrideBuckets[b] {
 			return
 		}
 	}

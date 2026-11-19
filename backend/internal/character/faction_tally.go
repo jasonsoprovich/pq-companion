@@ -200,6 +200,37 @@ func (s *Store) MergeBackfillConsiderReading(characterID, factionID int, faction
 	return true, s.UpsertFactionTally(existing)
 }
 
+// MergeBackfillRange reconciles a backfill-recovered standing estimate into
+// storage. It replaces the stored estimate only when there is none or the
+// backfilled one was anchored at the same time or later. The replay covers
+// the same log the live tracker read, so it saw at least as much. MaxStep
+// keeps the larger of the two. better/worse/estimated_net/unresolved are
+// never touched. Returns changed=true when the stored estimate moved.
+func (s *Store) MergeBackfillRange(characterID, factionID int, factionName string,
+	lo, hi int, source string, rangeAt int64, maxStep int) (bool, error) {
+	existing, ok, err := s.getFactionTally(characterID, factionID)
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		existing = FactionTallyRow{
+			CharacterID: characterID, FactionID: factionID, FactionName: factionName,
+		}
+	} else if existing.RangeKnown && existing.RangeAt > rangeAt {
+		return false, nil
+	}
+	if ok && existing.RangeKnown && existing.RangeLo == lo && existing.RangeHi == hi &&
+		existing.RangeSource == source && existing.RangeAt == rangeAt {
+		return false, nil
+	}
+	existing.RangeKnown = true
+	existing.RangeLo, existing.RangeHi = lo, hi
+	existing.RangeSource = source
+	existing.RangeAt = rangeAt
+	existing.MaxStep = max(existing.MaxStep, maxStep)
+	return true, s.UpsertFactionTally(existing)
+}
+
 func (s *Store) getFactionTally(characterID, factionID int) (FactionTallyRow, bool, error) {
 	r, err := scanFactionTally(s.db.QueryRow(
 		`SELECT `+factionTallyCols+`

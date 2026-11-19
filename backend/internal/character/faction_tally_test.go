@@ -196,3 +196,50 @@ func TestClearFactionTallies_RemovesAllForCharacter(t *testing.T) {
 		t.Errorf("rows = %+v, want empty after ClearFactionTallies", rows)
 	}
 }
+
+// TestMergeBackfillRange_NewerAnchorWins checks the backfilled estimate
+// fills an empty row, replaces an older anchor, never overrides a newer
+// live anchor, and leaves the live counters alone.
+func TestMergeBackfillRange_NewerAnchorWins(t *testing.T) {
+	s, charID := openTestStore(t)
+	if err := s.UpsertFactionTally(FactionTallyRow{
+		CharacterID: charID, FactionID: 430, FactionName: "Claws of Veeshan",
+		Better: 7, EstimatedNet: 35, MaxStep: 8,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	get := func() FactionTallyRow {
+		r, ok, err := s.getFactionTally(charID, 430)
+		if err != nil || !ok {
+			t.Fatalf("get: %v %v", ok, err)
+		}
+		return r
+	}
+
+	changed, err := s.MergeBackfillRange(charID, 430, "Claws of Veeshan", -1990, -1990, "cap", 1000, 5)
+	if err != nil || !changed {
+		t.Fatalf("first merge: changed %v err %v", changed, err)
+	}
+	r := get()
+	if !r.RangeKnown || r.RangeLo != -1990 || r.RangeSource != "cap" || r.MaxStep != 8 ||
+		r.Better != 7 || r.EstimatedNet != 35 {
+		t.Fatalf("after first merge: %+v", r)
+	}
+
+	// Same merge again: nothing to do.
+	if changed, _ := s.MergeBackfillRange(charID, 430, "Claws of Veeshan", -1990, -1990, "cap", 1000, 5); changed {
+		t.Error("identical merge reported a change")
+	}
+
+	// A live anchor newer than the backfilled one stays.
+	r.RangeLo, r.RangeHi, r.RangeSource, r.RangeAt = 300, 699, "con", 2000
+	if err := s.UpsertFactionTally(r); err != nil {
+		t.Fatal(err)
+	}
+	if changed, _ := s.MergeBackfillRange(charID, 430, "Claws of Veeshan", -1990, -1990, "cap", 1500, 5); changed {
+		t.Error("older backfilled anchor replaced a newer live one")
+	}
+	if got := get(); got.RangeLo != 300 {
+		t.Fatalf("live estimate overwritten: %+v", got)
+	}
+}

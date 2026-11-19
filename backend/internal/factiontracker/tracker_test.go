@@ -166,10 +166,8 @@ func backfillPrimaryResolver(npcName string) (int, string, bool) {
 	}
 }
 
-// TestBackfillHandler_KeepsOnlyLatestConsiderPerFaction checks the backfill
-// handler's core job: scan for /con lines only (never kills or faction-
-// changed lines — those feed the live session tracker exclusively) and keep
-// just the most recent reading per resolved faction.
+// TestBackfillHandler_KeepsOnlyLatestConsiderPerFaction checks backfill
+// merges just the most recent /con reading per resolved faction.
 func TestBackfillHandler_KeepsOnlyLatestConsiderPerFaction(t *testing.T) {
 	var merged []struct {
 		factionID   int
@@ -177,24 +175,22 @@ func TestBackfillHandler_KeepsOnlyLatestConsiderPerFaction(t *testing.T) {
 		bucket      string
 		at          time.Time
 	}
-	h := NewBackfillHandler(backfillPrimaryResolver, func(factionID int, factionName, bucket string, at time.Time) (bool, error) {
-		merged = append(merged, struct {
-			factionID   int
-			factionName string
-			bucket      string
-			at          time.Time
-		}{factionID, factionName, bucket, at})
-		return true, nil
+	h := NewBackfillHandler(BackfillConfig{
+		CharacterID:    testCharID,
+		ResolvePrimary: backfillPrimaryResolver,
+		MergeConsider: func(factionID int, factionName, bucket string, at time.Time) (bool, error) {
+			merged = append(merged, struct {
+				factionID   int
+				factionName string
+				bucket      string
+				at          time.Time
+			}{factionID, factionName, bucket, at})
+			return true, nil
+		},
 	})
 
 	older := time.Date(2025, 10, 19, 18, 0, 0, 0, time.Local)
 	newer := time.Date(2025, 10, 19, 19, 0, 0, 0, time.Local)
-
-	// A kill/faction-changed pair must be ignored entirely by the backfill
-	// handler — it only ever recovers /con baselines.
-	h.HandleEvent(logparser.LogEvent{Type: logparser.EventKill, Timestamp: older, Data: logparser.KillData{Killer: "You", Target: "Herald Telcha"}})
-	h.HandleEvent(logparser.LogEvent{Type: logparser.EventFactionChanged, Timestamp: older, Data: logparser.FactionChangedData{Faction: "Sarnak Collective", Direction: "better"}})
-
 	h.HandleEvent(logparser.LogEvent{
 		Type: logparser.EventConsidered, Timestamp: older,
 		Data: logparser.ConsideredData{TargetName: "Herald Telcha", Bucket: logparser.BucketKindly},
@@ -221,9 +217,13 @@ func TestBackfillHandler_KeepsOnlyLatestConsiderPerFaction(t *testing.T) {
 // resolver can't place produces no merge call at all.
 func TestBackfillHandler_UnresolvableNPC_NoMerge(t *testing.T) {
 	called := false
-	h := NewBackfillHandler(backfillPrimaryResolver, func(int, string, string, time.Time) (bool, error) {
-		called = true
-		return true, nil
+	h := NewBackfillHandler(BackfillConfig{
+		CharacterID:    testCharID,
+		ResolvePrimary: backfillPrimaryResolver,
+		MergeConsider: func(int, string, string, time.Time) (bool, error) {
+			called = true
+			return true, nil
+		},
 	})
 	h.HandleEvent(logparser.LogEvent{
 		Type: logparser.EventConsidered, Timestamp: time.Now(),

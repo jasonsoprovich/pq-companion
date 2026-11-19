@@ -135,6 +135,10 @@ type Engine struct {
 	infoCache map[int]*FactionInfo
 	recent    map[string][]recentHit
 
+	// distrustOverrides is set for the backfill replay: see
+	// Tally.applyCon.
+	distrustOverrides bool
+
 	// pipeSeen is set by the first pipe consider this Zeal session; from then
 	// on the pipe is the primary /con source and a log reading only counts
 	// if no pipe event for that NPC turns up within considerDedupeWindow.
@@ -258,7 +262,7 @@ func (e *Engine) SetFactionInfoResolver(fn FactionInfoResolver) {
 	e.mu.Lock()
 	e.resolveInfo = fn
 	e.infoCache = make(map[int]*FactionInfo)
-	state := e.stateLocked()
+	state := e.broadcastStateLocked()
 	e.mu.Unlock()
 	e.broadcast(state)
 }
@@ -333,7 +337,7 @@ func (e *Engine) SetCharacter(characterID int, tallies []Tally) {
 	e.pending = nil
 	e.infoCache = make(map[int]*FactionInfo)
 	e.recent = make(map[string][]recentHit)
-	state := e.stateLocked()
+	state := e.broadcastStateLocked()
 	e.mu.Unlock()
 	e.broadcast(state)
 }
@@ -354,7 +358,7 @@ func (e *Engine) Reset() {
 	}
 	e.pending = nil
 	e.recent = make(map[string][]recentHit)
-	state := e.stateLocked()
+	state := e.broadcastStateLocked()
 	e.mu.Unlock()
 
 	e.broadcast(state)
@@ -554,7 +558,7 @@ func (e *Engine) handleFactionChanged(factionName, direction string, atCap bool,
 	}
 	snapshot := *tally
 	charID := e.characterID
-	state := e.stateLocked()
+	state := e.broadcastStateLocked()
 	e.mu.Unlock()
 
 	e.broadcast(state)
@@ -696,11 +700,11 @@ func (e *Engine) applyConsidered(c ConsiderContext, suspect bool, ts time.Time) 
 	// Only a clean reading with an exact modifier says where personal
 	// faction is.
 	if info := e.infoLocked(tally.FactionID); !suspect && info != nil && info.ModifierExact {
-		tally.applyCon(c.Bucket, *info, ts)
+		tally.applyCon(c.Bucket, *info, ts, e.distrustOverrides)
 	}
 	snapshot := *tally
 	charID := e.characterID
-	state := e.stateLocked()
+	state := e.broadcastStateLocked()
 	e.mu.Unlock()
 
 	e.broadcast(state)
@@ -737,6 +741,15 @@ func (e *Engine) stateLocked() State {
 		out = append(out, tc)
 	}
 	return State{Tallies: out}
+}
+
+// broadcastStateLocked builds the state to broadcast, skipping the work when
+// there's no hub (tests, the backfill replay). Must be called with mu held.
+func (e *Engine) broadcastStateLocked() State {
+	if e.hub == nil {
+		return State{}
+	}
+	return e.stateLocked()
 }
 
 func (e *Engine) broadcast(state State) {
