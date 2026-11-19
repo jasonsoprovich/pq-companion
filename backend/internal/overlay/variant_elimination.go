@@ -19,9 +19,11 @@ import (
 // says nothing about where it spawned), so the overlay shows both loot
 // tables. But the two are separate encounters that die one at a time: once one
 // is dead, the same-named boss still standing must be the other row. A death
-// is attributed to a row either from the live target's resolved variant, or —
-// when the target was still ambiguous — from the first looted item that
-// exists in exactly one candidate's loot table.
+// is attributed to a row from the live target's resolved variant, from the
+// first looted item after a logged kill that exists in exactly one
+// candidate's loot table, or — since most raid deaths never reach the log as
+// a "has been slain" line — from any looted item that only that one row can
+// drop in the whole zone (a looted corpse means that row is dead).
 
 const (
 	// deadVariantTTL is how long a recorded death keeps its row out of the
@@ -30,8 +32,16 @@ const (
 	// across a respawn.
 	deadVariantTTL = 12 * time.Hour
 	// pendingKillWindow is how long after an unattributed kill a loot line can
-	// still be used to identify the dead variant.
+	// still be used to identify the dead variant, and how long zone-unique loot
+	// evidence for a row is kept.
 	pendingKillWindow = 20 * time.Minute
+	// zoneLootEvidenceItems is how many different zone-unique items must be
+	// looted for one row, with no kill line seen, before it counts as dead. One
+	// isn't enough: re-looting your own corpse logs the same "has looted" line,
+	// and a raider can die wearing last week's drop from that very boss. A boss
+	// corpse usually yields several items unique to it; one player's corpse
+	// rarely holds two from the same boss.
+	zoneLootEvidenceItems = 2
 )
 
 // pendingKill is a same-name raid-boss kill not yet tied to a row. dbName keeps
@@ -125,23 +135,30 @@ func (t *NPCTracker) noteKill(displayName string) {
 	slog.Debug("overlay: variant killed, awaiting loot to identify it", "name", displayName)
 }
 
-// HandleLootLine feeds a raw log line to the elimination logic: an item looted
+// HandleLootLine feeds a raw log line to the elimination logic. An item looted
 // shortly after an unattributed same-name boss kill identifies which row died
-// when only one candidate's loot table can drop it. Cheap for every other line.
+// when only one candidate's loot table can drop it; an item only one same-name
+// raid row in the zone can drop identifies a dead row with no kill line at all.
+// Cheap for every non-loot line.
 func (t *NPCTracker) HandleLootLine(ts time.Time, msg string) {
-	t.mu.RLock()
-	pending := len(t.pendingKills)
-	t.mu.RUnlock()
-	if pending == 0 || t.db == nil {
+	if t.db == nil || !strings.HasPrefix(msg, "--") {
 		return
 	}
-	// Ignore old lines (backfill / log replay) — they say nothing about a kill
-	// we just saw.
+	// Ignore old lines (backfill / log replay) — they say nothing about a
+	// corpse looted now.
 	if time.Since(ts) > pendingKillWindow {
 		return
 	}
 	p, ok := loot.ParseLoot(strings.TrimRight(msg, "\r\n"))
 	if !ok {
+		return
+	}
+	t.eliminateByZoneLoot(p.Item)
+
+	t.mu.RLock()
+	pending := len(t.pendingKills)
+	t.mu.RUnlock()
+	if pending == 0 {
 		return
 	}
 	itemID, ok := t.db.GetItemIDByName(p.Item)
@@ -176,6 +193,70 @@ func (t *NPCTracker) HandleLootLine(ts time.Time, msg string) {
 		t.mu.Unlock()
 		t.markVariantDead(pk.zoneShort, pk.dbName, owners[0])
 	}
+}
+
+// eliminateByZoneLoot marks a same-name raid row dead once enough different
+// looted items that only it can drop in the current zone have been seen (see
+// zoneLootEvidenceItems), or on the first such item after a logged kill of
+// that name.
+func (t *NPCTracker) eliminateByZoneLoot(item string) {
+	t.mu.RLock()
+	zoneShort := t.pipeZoneShort
+	t.mu.RUnlock()
+	if zoneShort == "" {
+		return
+	}
+	droppers, err := t.db.ZoneNPCsDroppingItem(zoneShort, item)
+	if err != nil {
+		slog.Debug("overlay: zone loot lookup failed", "item", item, "err", err)
+		return
+	}
+	if len(droppers) != 1 || droppers[0].RaidTarget != 1 {
+		return
+	}
+	d := droppers[0]
+	isTwin := false
+	for _, v := range t.raidVariants(zoneShort, d.Name) {
+		if v.NPC.ID == d.ID {
+			isTwin = true
+			break
+		}
+	}
+	if !isTwin {
+		return
+	}
+	key := eliminationKey(zoneShort, d.Name)
+	now := time.Now()
+	t.mu.Lock()
+	_, killSeen := t.pendingKills[key]
+	if t.lootEvidence == nil {
+		t.lootEvidence = make(map[int]map[string]time.Time)
+	}
+	items := t.lootEvidence[d.ID]
+	if items == nil {
+		items = make(map[string]time.Time)
+		t.lootEvidence[d.ID] = items
+	}
+	for it, at := range items {
+		if now.Sub(at) > pendingKillWindow {
+			delete(items, it)
+		}
+	}
+	items[strings.ToLower(item)] = now
+	enough := killSeen || len(items) >= zoneLootEvidenceItems
+	if enough {
+		delete(t.pendingKills, key)
+		delete(t.lootEvidence, d.ID)
+	}
+	t.mu.Unlock()
+	if !enough {
+		slog.Debug("overlay: zone-unique loot for a same-name raid row, waiting for more",
+			"name", d.Name, "npc_id", d.ID, "item", item)
+		return
+	}
+	slog.Debug("overlay: variant identified from zone-unique loot",
+		"name", d.Name, "npc_id", d.ID, "item", item, "kill_seen", killSeen)
+	t.markVariantDead(zoneShort, d.Name, d.ID)
 }
 
 // lootTableHasItem reports whether npcID's resolved loot table can drop

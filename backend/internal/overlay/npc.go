@@ -240,8 +240,11 @@ type NPCTracker struct {
 	// zone|name → npc_types id → expiry for same-name raid bosses already
 	// killed; pendingKills holds kills not yet tied to a row, awaiting a loot
 	// line; raidVariantMemo / lootItemMemo cache DB lookups. Held under mu.
-	deadVariants    map[string]map[int]time.Time
-	pendingKills    map[string]pendingKill
+	deadVariants map[string]map[int]time.Time
+	pendingKills map[string]pendingKill
+	// lootEvidence holds zone-unique loot seen for each same-name raid row
+	// with no kill line: row id -> item name -> when it was looted.
+	lootEvidence    map[int]map[string]time.Time
 	raidVariantMemo map[string][]db.NPCVariant
 	lootItemMemo    map[int]map[int]struct{}
 
@@ -1181,7 +1184,7 @@ func (t *NPCTracker) clearTarget() {
 //     raid mobs are routinely dragged far from their spawn2 coordinates
 //     before anyone else in the raid targets them, making "distance to
 //     spawn point" meaningless.
-//  3a. Raid bosses (Kaas Thox Xi Aten Ha Ra, Thall Va Xakra, Cazic Thule,
+//     3a. Raid bosses (Kaas Thox Xi Aten Ha Ra, Thall Va Xakra, Cazic Thule,
 //     the Fear adds) are frequently pulled hundreds of yards from their
 //     spawn2 row to a raid's preferred fight spot before most of the raid
 //     ever targets them. At that point the player's live position is close
