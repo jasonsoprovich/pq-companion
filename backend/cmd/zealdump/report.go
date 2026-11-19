@@ -53,6 +53,7 @@ type reportState struct {
 	considers     int
 	considerLast  map[int]time.Time
 	considerRapid int // same spawn within 3s
+	considerDup   int // same spawn within 250ms: one target sent two considers
 	considerFac   map[string]int
 
 	// Spells.
@@ -180,6 +181,9 @@ func (r *reportState) add(env zealpipe.Envelope, now time.Time) {
 		r.considers++
 		if last, ok := r.considerLast[c.SpawnID]; ok && now.Sub(last) < 3*time.Second {
 			r.considerRapid++
+			if now.Sub(last) < 250*time.Millisecond {
+				r.considerDup++
+			}
 		}
 		r.considerLast[c.SpawnID] = now
 		standing := zealpipe.ConsiderStanding(c.Faction)
@@ -336,6 +340,7 @@ func (r *reportState) render(now time.Time) string {
 	w("CONSIDER (/pipeconsider)")
 	check(r.considers > 0, "consider messages: %d", r.considers)
 	check(r.considerRapid == 0, "same NPC considered again within 3s (spam): %d", r.considerRapid)
+	check(r.considerDup == 0, "  of those, back to back within 250ms (doubled): %d", r.considerDup)
 	if len(r.considerFac) > 0 {
 		fac := make([]string, 0, len(r.considerFac))
 		for k, v := range r.considerFac {
