@@ -24,6 +24,14 @@ const DEFAULT_SPAN = 10
 // Repaint cadence for the interpolated block positions (~30fps is smooth
 // enough for a block crossing a few hundred px in 10s).
 const FRAME_MS = 33
+// After a callout lands the backend drops its timer, but Quarm Tools keeps
+// the block sliding on underneath the name badge until it's gone. Keep a
+// landed block around this long past landing so it can do the same (the
+// track clips it at the badge edge).
+const LAND_OVERRUN_SECS = 1.2
+// Only callouts this close to landing when they leave the feed count as
+// "landed". Anything else (cleared chain, tank swap) just disappears.
+const LANDED_EPSILON_SECS = 0.6
 
 const MISS_TITLE =
   "No confirming cast-begin line seen for this callout's caster in time — may have fizzled, been interrupted, or skipped"
@@ -79,12 +87,13 @@ function useNowMs(active: boolean): number {
   return now
 }
 
-// remainingSecs interpolates a callout's time-to-land from its fixed start
-// time. Falls back to the broadcast value if starts_at can't be parsed.
-function remainingSecs(t: ActiveTimer, now: number): number {
+// rawRemaining interpolates a callout's time-to-land from its fixed start
+// time (negative once it has landed). Falls back to the broadcast value if
+// starts_at can't be parsed.
+function rawRemaining(t: ActiveTimer, now: number): number {
   const start = Date.parse(t.starts_at)
-  if (Number.isNaN(start)) return Math.max(0, t.remaining_seconds)
-  return Math.max(0, t.duration_seconds - (now - start) / 1000)
+  if (Number.isNaN(start)) return t.remaining_seconds
+  return t.duration_seconds - (now - start) / 1000
 }
 
 // blockLabel is the block's text: a zero-padded number on the main chain
@@ -108,41 +117,69 @@ export default function CHChainLanes({
   letters,
   appearance,
   variant,
+  placeholder,
 }: {
   /** The active chain's timers, already filtered and sorted by start. */
   timers: ActiveTimer[]
   letters: boolean
   appearance: TimerAppearance
   variant: Variant
+  /** Shown when there's nothing to draw. Rendered here rather than by the
+   *  caller so this component stays mounted while landed blocks finish
+   *  sliding under the badge after the feed empties. */
+  placeholder?: React.ReactNode
 }): React.ReactElement {
   const palette = PALETTES[variant]
-  const now = useNowMs(timers.length > 0)
+
+  // Landed blocks ("ghosts") that keep sliding under the name badge after
+  // their timer leaves the feed. Bookkept against the wall clock here, in
+  // render, so the animation clock below knows whether it still has work.
+  const prevRef = useRef<Map<string, ActiveTimer>>(new Map())
+  const ghostsRef = useRef<Map<string, ActiveTimer>>(new Map())
+  const wall = Date.now()
+  const liveIds = new Set(timers.map((t) => t.id))
+  for (const [id, t] of prevRef.current) {
+    if (!liveIds.has(id) && rawRemaining(t, wall) <= LANDED_EPSILON_SECS) {
+      ghostsRef.current.set(id, t)
+    }
+  }
+  for (const [id, t] of ghostsRef.current) {
+    if (liveIds.has(id) || rawRemaining(t, wall) < -LAND_OVERRUN_SECS) {
+      ghostsRef.current.delete(id)
+    }
+  }
+  prevRef.current = new Map(timers.map((t) => [t.id, t]))
+  const ghosts = [...ghostsRef.current.values()]
+  const now = useNowMs(timers.length > 0 || ghosts.length > 0)
+  const shown = [...timers, ...ghosts]
 
   // Lane order = order each target first appeared, kept stable while that
   // target has a live callout so lanes never reshuffle mid-fight. A target
   // whose last callout lands drops out; if it returns it goes to the end.
   const laneOrderRef = useRef<string[]>([])
-  const present = new Set(timers.map((t) => t.target_name))
+  const present = new Set(shown.map((t) => t.target_name))
   const order = laneOrderRef.current.filter((n) => present.has(n))
-  for (const t of timers) {
+  for (const t of shown) {
     if (!order.includes(t.target_name)) order.push(t.target_name)
   }
   laneOrderRef.current = order
 
   const span = Math.max(
     DEFAULT_SPAN,
-    ...timers.map((t) => (t.duration_seconds > 0 ? t.duration_seconds : 0)),
+    ...shown.map((t) => (t.duration_seconds > 0 ? t.duration_seconds : 0)),
   )
   const cols = Math.round(span)
-  const laneHeight = Math.max(22, appearance.nameFontSize + 12)
-  // Solid-looking blocks by default (they're the whole point of the view),
-  // still nudged by the user's bar-fill setting.
-  const blockAlpha = Math.min(1, 0.6 + appearance.fillOpacity * 0.7)
+  const laneHeight = Math.max(24, appearance.nameFontSize + 14)
+  // Near-solid blocks like Quarm Tools' (the column numbers shouldn't show
+  // through), still nudged by the user's bar-fill setting.
+  const blockAlpha = Math.min(1, 0.85 + appearance.fillOpacity * 0.3)
+
+  if (shown.length === 0) return <>{placeholder}</>
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 3, padding: 6 }}>
       {order.map((target) => {
-        const laneTimers = timers.filter((t) => t.target_name === target)
+        const laneTimers = shown.filter((t) => t.target_name === target)
         return (
           <div key={target} style={{ display: 'flex', alignItems: 'stretch', height: laneHeight, flexShrink: 0 }}>
             <div
@@ -206,7 +243,13 @@ export default function CHChainLanes({
               {laneTimers.map((t) => {
                 const missed = t.possible_miss ?? false
                 const { position } = parseLabel(t.spell_name)
-                const rem = Math.min(span, remainingSecs(t, now))
+                // Live blocks stop at the badge (a flagged miss lingers there
+                // red); landed ghosts carry on underneath it.
+                const raw = rawRemaining(t, now)
+                const rem = Math.min(
+                  span,
+                  liveIds.has(t.id) ? Math.max(0, raw) : Math.max(-LAND_OVERRUN_SECS, raw),
+                )
                 return (
                   <div
                     key={t.id}
@@ -226,8 +269,8 @@ export default function CHChainLanes({
                         : `rgba(22,163,74,${blockAlpha})`,
                       borderRadius: 2,
                       color: '#fff',
-                      fontSize: appearance.nameFontSize + 1,
-                      fontWeight: 700,
+                      fontSize: appearance.nameFontSize + 4,
+                      fontWeight: 500,
                       fontVariantNumeric: 'tabular-nums',
                       textShadow: '0 1px 2px rgba(0,0,0,0.7)',
                       whiteSpace: 'nowrap',

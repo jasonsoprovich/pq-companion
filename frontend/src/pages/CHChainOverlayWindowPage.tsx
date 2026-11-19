@@ -317,6 +317,29 @@ export default function CHChainOverlayWindowPage(): React.ReactElement {
     allowed: mode !== 'display-only',
   })
 
+  // Idle placeholder, shared by the list and lanes styles.
+  const emptyState = (
+    <div
+      style={{
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
+        padding: 16,
+        // Idle placeholder — fade with the chrome, it isn't live content.
+        opacity: chrome ? 1 : 0,
+        transition: 'opacity 0.4s ease',
+      }}
+    >
+      <HeartPulse size={22} style={{ opacity: 0.15, color: '#3b82f6' }} />
+      <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', margin: 0, textAlign: 'center' }}>
+        {activeView === 'ramp' ? 'Waiting for a secondary chain…' : 'Waiting for a CH chain…'}
+      </p>
+    </div>
+  )
+
   return (
     <div
       {...rootInteractionProps}
@@ -439,28 +462,16 @@ export default function CHChainOverlayWindowPage(): React.ReactElement {
           <p style={{ padding: 12, fontSize: 11, color: 'rgba(255,255,255,0.3)', textAlign: 'center', margin: 0 }}>
             Connecting…
           </p>
-        ) : chainStyle === 'lanes' && chain.length > 0 ? (
-          <CHChainLanes timers={chain} letters={activeView === 'ramp'} appearance={appearance} variant="overlay" />
+        ) : chainStyle === 'lanes' ? (
+          <CHChainLanes
+            timers={chain}
+            letters={activeView === 'ramp'}
+            appearance={appearance}
+            variant="overlay"
+            placeholder={emptyState}
+          />
         ) : displayList.length === 0 ? (
-          <div
-            style={{
-              flex: 1,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 6,
-              padding: 16,
-              // Idle placeholder — fade with the chrome, it isn't live content.
-              opacity: chrome ? 1 : 0,
-              transition: 'opacity 0.4s ease',
-            }}
-          >
-            <HeartPulse size={22} style={{ opacity: 0.15, color: '#3b82f6' }} />
-            <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', margin: 0, textAlign: 'center' }}>
-              {activeView === 'ramp' ? 'Waiting for a secondary chain…' : 'Waiting for a CH chain…'}
-            </p>
-          </div>
+          emptyState
         ) : (
           displayList.map((t) => (
             <ChainRow key={t.id} timer={t} letters={activeView === 'ramp'} exiting={exitingIds.has(t.id)} appearance={appearance} />

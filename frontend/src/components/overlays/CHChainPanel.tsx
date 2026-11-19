@@ -254,6 +254,16 @@ export default function CHChainPanel({
   const cadence = computeCadence(chain)
   const { displayList, exitingIds } = useAnimatedChainList(chain)
 
+  // Idle placeholder, shared by the list and lanes styles.
+  const emptyState = (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: 'var(--color-muted)', padding: 16 }}>
+      <HeartPulse size={28} style={{ opacity: 0.2, color: '#3b82f6' }} />
+      <p style={{ fontSize: 12, margin: 0 }}>
+        {activeView === 'ramp' ? 'Waiting for a secondary chain…' : 'Waiting for a CH chain…'}
+      </p>
+    </div>
+  )
+
   return (
     <OverlayWindow
       title={
@@ -319,15 +329,16 @@ export default function CHChainPanel({
             <HeartPulse size={28} style={{ opacity: 0.2, color: '#3b82f6' }} />
             <p style={{ fontSize: 12, margin: 0 }}>Connecting…</p>
           </div>
-        ) : chainStyle === 'lanes' && chain.length > 0 ? (
-          <CHChainLanes timers={chain} letters={activeView === 'ramp'} appearance={appearance} variant="panel" />
+        ) : chainStyle === 'lanes' ? (
+          <CHChainLanes
+            timers={chain}
+            letters={activeView === 'ramp'}
+            appearance={appearance}
+            variant="panel"
+            placeholder={emptyState}
+          />
         ) : displayList.length === 0 ? (
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: 'var(--color-muted)', padding: 16 }}>
-            <HeartPulse size={28} style={{ opacity: 0.2, color: '#3b82f6' }} />
-            <p style={{ fontSize: 12, margin: 0 }}>
-              {activeView === 'ramp' ? 'Waiting for a secondary chain…' : 'Waiting for a CH chain…'}
-            </p>
-          </div>
+          emptyState
         ) : (
           displayList.map((t) => (
             <ChainRow key={t.id} timer={t} letters={activeView === 'ramp'} exiting={exitingIds.has(t.id)} appearance={appearance} />
