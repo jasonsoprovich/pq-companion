@@ -16,6 +16,7 @@ import { GanttChart, List } from 'lucide-react'
 import type { ActiveTimer } from '../../types/timer'
 import type { TimerAppearance } from '../../hooks/useTimerAppearance'
 import { parseLabel, positionLetter } from '../../lib/chChainLabel'
+import { chainPositionColor } from '../../lib/chChainPositionColor'
 import type { ChainStyle } from '../../lib/chChainStyle'
 
 // Seconds of cast the track spans when no timer says otherwise. Complete
@@ -32,6 +33,13 @@ const LAND_OVERRUN_SECS = 1.2
 // Only callouts this close to landing when they leave the feed count as
 // "landed". Anything else (cleared chain, tank swap) just disappears.
 const LANDED_EPSILON_SECS = 0.6
+// Same "landing soon" cut-off as the list view's bar (last third of the cast).
+const LANDING_FRACTION = 0.34
+// Block colours match the list view's bar states: counting down, landing,
+// possible miss.
+const BLOCK_BLUE = '59,130,246'
+const BLOCK_GREEN = '34,197,94'
+const BLOCK_RED = '239,68,68'
 
 const MISS_TITLE =
   "No confirming cast-begin line seen for this callout's caster in time — may have fizzled, been interrupted, or skipped"
@@ -47,22 +55,24 @@ interface Palette {
   badgeText: string
 }
 
+// Neutral surfaces and muted labels like the rest of the app's overlays; the
+// only colour comes from the blocks themselves.
 const PALETTES: Record<Variant, Palette> = {
   overlay: {
-    track: 'rgba(0,0,0,0.35)',
-    divider: 'rgba(255,255,255,0.22)',
-    colLabel: 'rgba(248,113,113,0.65)',
-    badgeBg: 'rgba(234,88,12,0.85)',
-    badgeBorder: 'rgba(0,0,0,0.6)',
-    badgeText: '#fff',
+    track: 'rgba(0,0,0,0.25)',
+    divider: 'rgba(255,255,255,0.08)',
+    colLabel: 'rgba(255,255,255,0.22)',
+    badgeBg: 'rgba(255,255,255,0.07)',
+    badgeBorder: 'rgba(255,255,255,0.12)',
+    badgeText: 'rgba(255,255,255,0.9)',
   },
   panel: {
-    track: 'var(--color-surface-2)',
+    track: 'var(--color-surface)',
     divider: 'var(--color-border)',
-    colLabel: 'rgba(248,113,113,0.65)',
-    badgeBg: 'rgba(234,88,12,0.85)',
+    colLabel: 'var(--color-muted)',
+    badgeBg: 'var(--color-surface-2)',
     badgeBorder: 'var(--color-border)',
-    badgeText: '#fff',
+    badgeText: 'var(--color-foreground)',
   },
 }
 
@@ -96,13 +106,12 @@ function rawRemaining(t: ActiveTimer, now: number): number {
   return t.duration_seconds - (now - start) / 1000
 }
 
-// blockLabel is the block's text: a zero-padded number on the main chain
-// ("001", matching how chains are usually called), the letter on the
-// secondary (ramp) chain.
+// blockLabel is the block's text: the chain number on the main chain, the
+// letter on the secondary (ramp) chain, as in the list view's badge.
 function blockLabel(position: number, letters: boolean): string {
   if (position === Number.MAX_SAFE_INTEGER) return '?'
   if (letters) return positionLetter(position)
-  return String(position).padStart(3, '0')
+  return String(position)
 }
 
 function blockTitle(t: ActiveTimer, missed: boolean): string {
@@ -169,15 +178,15 @@ export default function CHChainLanes({
     ...shown.map((t) => (t.duration_seconds > 0 ? t.duration_seconds : 0)),
   )
   const cols = Math.round(span)
-  const laneHeight = Math.max(24, appearance.nameFontSize + 14)
-  // Near-solid blocks like Quarm Tools' (the column numbers shouldn't show
-  // through), still nudged by the user's bar-fill setting.
-  const blockAlpha = Math.min(1, 0.85 + appearance.fillOpacity * 0.3)
+  const laneHeight = Math.max(22, appearance.nameFontSize + 12)
+  // Near-solid blocks (the column numbers shouldn't show through), still
+  // nudged by the user's bar-fill setting.
+  const blockAlpha = Math.min(1, 0.8 + appearance.fillOpacity * 0.3)
 
   if (shown.length === 0) return <>{placeholder}</>
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 3, padding: 6 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: 6 }}>
       {order.map((target) => {
         const laneTimers = shown.filter((t) => t.target_name === target)
         return (
@@ -189,18 +198,16 @@ export default function CHChainLanes({
                 flexShrink: 0,
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center',
-                padding: '0 4px',
+                padding: '0 8px',
                 backgroundColor: palette.badgeBg,
                 border: `1px solid ${palette.badgeBorder}`,
-                borderRadius: 4,
+                borderRadius: '4px 0 0 4px',
                 color: palette.badgeText,
                 fontSize: appearance.nameFontSize,
-                fontWeight: 600,
+                fontWeight: 500,
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
-                textShadow: '0 1px 2px rgba(0,0,0,0.8)',
               }}
             >
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{target}</span>
@@ -212,8 +219,9 @@ export default function CHChainLanes({
                 minWidth: 0,
                 overflow: 'hidden',
                 backgroundColor: palette.track,
-                border: `1px solid ${palette.divider}`,
+                border: `1px solid ${palette.badgeBorder}`,
                 borderLeft: 'none',
+                borderRadius: '0 4px 4px 0',
               }}
             >
               {/* Column grid: one cell per second, labelled with the seconds
@@ -250,29 +258,34 @@ export default function CHChainLanes({
                   span,
                   liveIds.has(t.id) ? Math.max(0, raw) : Math.max(-LAND_OVERRUN_SECS, raw),
                 )
+                const landing = !missed && rem / span < LANDING_FRACTION
+                const rgb = missed ? BLOCK_RED : landing ? BLOCK_GREEN : BLOCK_BLUE
                 return (
                   <div
                     key={t.id}
                     title={blockTitle(t, missed)}
                     style={{
                       position: 'absolute',
-                      top: 1,
-                      bottom: 1,
+                      top: 2,
+                      bottom: 2,
                       left: `${(rem / span) * 100}%`,
                       width: `${(1 / span) * 100}%`,
-                      minWidth: 26,
+                      minWidth: 24,
+                      boxSizing: 'border-box',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      backgroundColor: missed
-                        ? `rgba(220,38,38,${blockAlpha})`
-                        : `rgba(22,163,74,${blockAlpha})`,
-                      borderRadius: 2,
+                      padding: '0 3px',
+                      backgroundColor: `rgba(${rgb},${blockAlpha})`,
+                      // The chain position's badge colour, so "the 3 spot"
+                      // reads the same as in the list view.
+                      borderLeft: `3px solid ${chainPositionColor(position)}`,
+                      borderRadius: 3,
                       color: '#fff',
-                      fontSize: appearance.nameFontSize + 4,
-                      fontWeight: 500,
+                      fontSize: appearance.nameFontSize,
+                      fontWeight: 700,
+                      lineHeight: 1,
                       fontVariantNumeric: 'tabular-nums',
-                      textShadow: '0 1px 2px rgba(0,0,0,0.7)',
                       whiteSpace: 'nowrap',
                       overflow: 'hidden',
                       transition: 'background-color 0.2s linear',
