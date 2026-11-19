@@ -105,11 +105,65 @@ func TestVariantElimination_LootIdentifiesDeadVariant(t *testing.T) {
 	}
 }
 
-func TestVariantElimination_LootWithoutKillDoesNothing(t *testing.T) {
+// Most raid deaths never log a "has been slain" line (the 11-15 Vex Thal
+// raid logged none for either Kaas Thox), so two different loots that only
+// one same-name raid row in the zone can drop identify the dead row on their
+// own. One isn't enough: it could be a raider re-looting their own corpse.
+func TestVariantElimination_ZoneUniqueLootWithoutKill(t *testing.T) {
+	cases := []struct {
+		name     string
+		loot     []string
+		wantNPC  int // 0 = still ambiguous
+		wantVars int
+	}{
+		{"two south-only items", []string{
+			"--Tunedup has looted a Mask of Piety.--",
+			"--Bob has looted a Circlet of Disguise.--",
+		}, kaasNorth, 0},
+		{"two north-only items", []string{
+			"--Bob has looted a Wand of Tranquility.--",
+			"--Sue has looted a Mark of Shadows.--",
+		}, kaasSouth, 0},
+		{"one south-only item (could be a player corpse)", []string{
+			"--Tunedup has looted a Mask of Piety.--",
+		}, 0, 2},
+		{"same item twice", []string{
+			"--Tunedup has looted a Mask of Piety.--",
+			"--Tunedup has looted a Mask of Piety.--",
+		}, 0, 2},
+		// Every Vex Thal boss can drop it: no evidence.
+		{"zone-shared items", []string{
+			"--Darkclaw has looted a Ancient: Destruction of Ice.--",
+			"--Darkclaw has looted a Ancient: Legacy of Blades.--",
+		}, 0, 2},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			tr := vexThalTracker(t)
+			for _, l := range c.loot {
+				tr.HandleLootLine(time.Now(), l)
+			}
+			st := targetKaas(tr)
+			if c.wantNPC == 0 {
+				if len(st.Variants) != c.wantVars {
+					t.Fatalf("want %d variants, got %d", c.wantVars, len(st.Variants))
+				}
+				return
+			}
+			if len(st.Variants) != 0 || npcID(st.NPCData) != c.wantNPC {
+				t.Fatalf("want npc %d alone, got npc=%d variants=%d", c.wantNPC, npcID(st.NPCData), len(st.Variants))
+			}
+		})
+	}
+}
+
+// After a logged kill, one zone-unique item is enough.
+func TestVariantElimination_KillThenOneZoneUniqueItem(t *testing.T) {
 	tr := vexThalTracker(t)
-	tr.HandleLootLine(time.Now(), "--Bob has looted a Belt of Mastery.--")
-	if st := targetKaas(tr); len(st.Variants) != 2 {
-		t.Fatalf("loot with no preceding kill must not eliminate, got %d variants", len(st.Variants))
+	tr.Handle(killEvent(kaasName))
+	tr.HandleLootLine(time.Now(), "--Tunedup has looted a Mask of Piety.--")
+	if st := targetKaas(tr); len(st.Variants) != 0 || npcID(st.NPCData) != kaasNorth {
+		t.Fatalf("want north alone, got npc=%d variants=%d", npcID(st.NPCData), len(st.Variants))
 	}
 }
 
