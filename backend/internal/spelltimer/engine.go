@@ -2577,6 +2577,23 @@ func (e *Engine) resolveLandedSpellName(data logparser.SpellLandedData) string {
 		return g.displayName
 	}
 
+	// Someone else's detrimental whose land text is shared by a spell line
+	// (the Tash line's "glances nervously about.", Ro's "outline of cold
+	// flame."): if every player-castable candidate lasts the same, the
+	// countdown is right whichever one landed, so time it as the
+	// highest-level one (the likeliest at raid level) instead of dropping it.
+	// Families whose ranks last differently (Malo, the "yawns." slows) stay
+	// dropped: any pick would show the wrong time.
+	if data.Kind == logparser.SpellLandedKindOther {
+		if name := e.sameDurationFamilyName(data.Candidates); name != "" {
+			slog.Debug("timer-debug: ambiguous spell-landed resolved to same-duration family",
+				"spell", name,
+				"candidates", len(data.Candidates),
+			)
+			return name
+		}
+	}
+
 	slog.Debug("timer-debug: ambiguous spell-landed with no recent cast — skipping",
 		"candidates", len(data.Candidates),
 		"last_cast_age_ms", lastAge.Milliseconds(),
@@ -2715,6 +2732,51 @@ func (e *Engine) candidatesAllIllusion(cands []logparser.SpellLandedCandidate) b
 		}
 	}
 	return true
+}
+
+// sameDurationFamilyName returns the highest-level player-castable candidate
+// of an ambiguous detrimental land when every player-castable candidate has
+// the same duration and duration formula (or only one is player-castable),
+// or "" otherwise. NPC-only rows
+// (no class can cast them) are ignored: they can't be what a raid member
+// landed, and they'd otherwise break ties like the "yawns." line's.
+func (e *Engine) sameDurationFamilyName(cands []logparser.SpellLandedCandidate) string {
+	if e.db == nil || len(cands) < 2 {
+		return ""
+	}
+	best, bestLevel := "", 0
+	var dur, formula int
+	seen := 0
+	for _, c := range cands {
+		sp, err := e.db.GetSpell(c.SpellID)
+		if err != nil || sp == nil {
+			return ""
+		}
+		minLevel := 255
+		for _, lvl := range sp.ClassLevels {
+			if lvl > 0 && lvl < minLevel {
+				minLevel = lvl
+			}
+		}
+		if minLevel == 255 {
+			continue
+		}
+		if sp.GoodEffect != 0 || sp.BuffDuration <= 0 {
+			return ""
+		}
+		if seen > 0 && (sp.BuffDuration != dur || sp.BuffDurationFormula != formula) {
+			return ""
+		}
+		dur, formula = sp.BuffDuration, sp.BuffDurationFormula
+		seen++
+		if minLevel > bestLevel {
+			best, bestLevel = sp.Name, minLevel
+		}
+	}
+	if seen == 0 {
+		return ""
+	}
+	return best
 }
 
 // RemoveByID removes a single timer by its composite key (the ID field
