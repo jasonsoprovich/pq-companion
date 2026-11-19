@@ -258,3 +258,52 @@ func TestEquippedLoreSet_CanonicalizesVariantIDs(t *testing.T) {
 		t.Errorf("equippedLoreSet(%+v) = %v, want the canonical id %d present so a candidate row (always canonical) is recognized as already worn", worn, set, canon)
 	}
 }
+
+// TestStatLineFromBlock_UsesRawTotals guards the over-cap headroom bug: the
+// scorer must see uncapped attribute/FT totals and gear-only ATK, or dropping
+// an item's over-cap stat looks like a loss and AA attack eats worn-ATK room.
+func TestStatLineFromBlock_UsesRawTotals(t *testing.T) {
+	b := statBlock{WIS: 280, WISRaw: 300, STR: 280, STRRaw: 291, FT: 15, FTRaw: 18, Attack: 160}
+	b.Breakdown.Attack = sourceSplit{Item: 100, AA: 60}
+	got := statLineFromBlock(b)
+	if got.WIS != 300 || got.STR != 291 {
+		t.Errorf("attributes = WIS %d STR %d, want raw 300/291", got.WIS, got.STR)
+	}
+	if got.ManaRegen != 18 {
+		t.Errorf("ManaRegen = %d, want raw FT 18", got.ManaRegen)
+	}
+	if got.Attack != 100 {
+		t.Errorf("Attack = %d, want gear-only 100", got.Attack)
+	}
+}
+
+// TestScore_OverCapRawTotals runs the reported case end to end through Score:
+// a lvl-65 character over the WIS cap loses nothing by dropping a +20 WIS item,
+// and a Planar Power cap raise gives real headroom.
+func TestScore_OverCapRawTotals(t *testing.T) {
+	w := upgrade.Weights{WIS: 1}
+	worn := upgrade.StatLine{WIS: 20}
+	ctx := upgrade.Context{Level: 65, Current: statLineFromBlock(statBlock{WISRaw: 300})}
+	if res := upgrade.Score(ctx, w, worn, upgrade.StatLine{}); res.Score != 0 {
+		t.Errorf("over-cap drop scored %v, want 0 (cap 280, raw stays 280)", res.Score)
+	}
+	// At exactly the base cap (raw 280 incl. the worn +20), Planar Power's +10
+	// raises it to 290, so a +30 WIS item is worth 10 more than the worn +20.
+	ctx.Current = statLineFromBlock(statBlock{WISRaw: 280})
+	ctx.StatCapMod = upgrade.StatLine{WIS: 10}
+	if res := upgrade.Score(ctx, w, worn, upgrade.StatLine{WIS: 30}); res.Score != 10 {
+		t.Errorf("+30 vs +20 WIS under a raised 290 cap scored %v, want 10", res.Score)
+	}
+}
+
+// TestScore_AAAttackLeavesWornHeadroom: 200 AA ATK plus 100 worn ATK must still
+// credit a +50 worn ATK upgrade (worn total 150 → 200, under the 250 soft cap).
+func TestScore_AAAttackLeavesWornHeadroom(t *testing.T) {
+	b := statBlock{Attack: 300}
+	b.Breakdown.Attack = sourceSplit{Item: 100, AA: 200}
+	ctx := upgrade.Context{Level: 65, Current: statLineFromBlock(b)}
+	res := upgrade.Score(ctx, upgrade.Weights{ATK: 1}, upgrade.StatLine{Attack: 0}, upgrade.StatLine{Attack: 50})
+	if res.Score != 50 {
+		t.Errorf("worn ATK upgrade scored %v, want 50", res.Score)
+	}
+}
