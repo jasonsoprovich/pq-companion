@@ -558,7 +558,7 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
                 Hide no-drop
               </label>
               <label className="flex items-center gap-1" style={{ color: 'var(--color-muted-foreground)' }}
-                title="Hide tradeskill-made (crafted) items">
+                title="Hide player tradeskill items. Quest and armor combines (e.g. Plane of Time class armor) are always shown.">
                 <input type="checkbox" checked={hideCrafted} onChange={(e) => setHideCrafted(e.target.checked)} />
                 Hide crafted
               </label>
@@ -617,7 +617,7 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
                 Hide no-drop
               </label>
               <label className="flex items-center gap-1" style={{ color: 'var(--color-muted-foreground)' }}
-                title="Hide tradeskill-made (crafted) items">
+                title="Hide player tradeskill items. Quest and armor combines (e.g. Plane of Time class armor) are always shown.">
                 <input type="checkbox" checked={hideCrafted} onChange={(e) => setHideCrafted(e.target.checked)} />
                 Hide crafted
               </label>
