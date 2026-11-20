@@ -1247,3 +1247,42 @@ func TestNPCTracker_DistanceStamp(t *testing.T) {
 		t.Fatal("due distance wasn't sent")
 	}
 }
+
+// spawnDesc is descAt with no live position and a Zeal target_spawn_loc.
+func spawnDesc(name string, level, class, race int, sx, sy float64) *zealpipe.TargetDescriptors {
+	d := descAt(name, level, class, race, false, 0, 0)
+	d.SpawnLocKnown, d.SpawnX, d.SpawnY = true, sx, sy
+	return d
+}
+
+// target_spawn_loc picks the row whose spawn2 point the target started on,
+// however far it has been pulled: the Vex Thal blobs at the zone line, and
+// the Rathe Council ring's alternating mezzable / mez immune rows.
+func TestNPCTracker_TargetSpawnLocResolvesSameNameRows(t *testing.T) {
+	const kaas = "Kaas Thox Xi Aten Ha Ra"
+	const council = "A Rathe Councilman"
+	cases := []struct {
+		name   string
+		zoneID int
+		desc   *zealpipe.TargetDescriptors
+		want   []int
+	}{
+		{"kaas north", 158, spawnDesc(kaas, 66, 9, 145, 141, 318), []int{158437}},
+		{"kaas south", 158, spawnDesc(kaas, 66, 9, 145, 143, -317), []int{158464}},
+		// Already moving when the client got it: matches no spawn point, so
+		// it changes nothing.
+		{"kaas off every spawn", 158, spawnDesc(kaas, 66, 9, 145, 141, 0), []int{158437, 158464}},
+		{"councilman mezzable", 222, spawnDesc(council, 68, 1, 298, 1984, 408), []int{222003}},
+		{"councilman mez immune", 222, spawnDesc(council, 68, 1, 298, 2119, 408), []int{222039}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			tr := newRealDBTracker(t)
+			// Player well away from every spawn (the zone line).
+			tr.SetPipePlayerSnapshot(c.zoneID, 0, 0, 0)
+			if got := variantIDs(targetWithDesc(tr, 77, c.desc)); !sameIDs(got, c.want) {
+				t.Errorf("resolved to %v, want %v", got, c.want)
+			}
+		})
+	}
+}

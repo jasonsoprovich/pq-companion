@@ -66,6 +66,12 @@ type reportState struct {
 	spellIDs     map[int]int
 
 	deaths int
+
+	// Target spawn location (target_spawn_loc), per zone|spawn id NPC target.
+	npcTargets   map[string]bool
+	spawnLocs    map[string]bool
+	spawnLocFar  int // seen 50+ units from where it spawned: the case it's for
+	spawnLocSeen map[string]bool
 }
 
 func newReportState() *reportState {
@@ -150,6 +156,7 @@ func (r *reportState) add(env zealpipe.Envelope, now time.Time) {
 			r.zones[p.Zone] = true
 			r.event(now, "zone id %d", p.Zone)
 		}
+		r.addTargetSpawn(p, now)
 		if p.PetID != nil && *p.PetID > 0 {
 			if !r.petIDs[*p.PetID] {
 				r.petIDs[*p.PetID] = true
@@ -219,6 +226,41 @@ func (r *reportState) add(env zealpipe.Envelope, now time.Time) {
 			}
 			r.event(now, "spell type=%d id=%d %s(%d) -> %s(%d) %s", env.Type, a.SpellID,
 				nameOr(a.SourceName), a.SourceID, nameOr(a.TargetName), a.TargetID, res)
+		}
+	}
+}
+
+// addTargetSpawn tracks which NPC targets came with target_spawn_loc, logging
+// each one's spawn point once so it can be checked against spawn2 afterwards.
+func (r *reportState) addTargetSpawn(p zealpipe.Player, now time.Time) {
+	if p.TargetID == nil || p.TargetType == nil || *p.TargetType != zealpipe.TargetTypeNPC {
+		return
+	}
+	if r.npcTargets == nil {
+		r.npcTargets = map[string]bool{}
+		r.spawnLocs = map[string]bool{}
+		r.spawnLocSeen = map[string]bool{}
+	}
+	key := fmt.Sprintf("%d|%d", p.Zone, *p.TargetID)
+	r.npcTargets[key] = true
+	sl := p.TargetSpawnLoc
+	if sl == nil {
+		return
+	}
+	name := ""
+	if p.TargetName != nil {
+		name = *p.TargetName
+	}
+	if !r.spawnLocs[key] {
+		r.spawnLocs[key] = true
+		r.event(now, "spawn loc: %s (id %d, zone %d) spawned at %.0f, %.0f, %.0f",
+			nameOr(name), *p.TargetID, p.Zone, sl.GameX(), sl.GameY(), sl.Z)
+	}
+	if tl := p.TargetLoc; tl != nil && !r.spawnLocSeen[key] {
+		dx, dy := tl.X-sl.X, tl.Y-sl.Y
+		if dx*dx+dy*dy >= 50*50 {
+			r.spawnLocSeen[key] = true
+			r.spawnLocFar++
 		}
 	}
 }
@@ -350,6 +392,11 @@ func (r *reportState) render(now time.Time) string {
 		w("      standings: %s", strings.Join(fac, ", "))
 	}
 	w("      check the EQ log for the same stretch: no con lines for NPCs you only targeted")
+	w("")
+
+	w("TARGET SPAWN LOCATION (target_spawn_loc)")
+	check(len(r.spawnLocs) > 0, "NPC targets with a spawn location: %d of %d", len(r.spawnLocs), len(r.npcTargets))
+	w("      of those, targeted 50+ units from where they spawned: %d", r.spawnLocFar)
 	w("")
 
 	w("SPELL ACTIONS (/pipespells)")

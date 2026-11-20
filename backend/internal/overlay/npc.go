@@ -290,13 +290,17 @@ type resolveSig struct {
 	hasApp   bool
 	locKnown bool
 	x, y     float64
+	// spawnKnown: target_spawn_loc was reported. It's fixed per spawn, so
+	// only its arrival matters, not its value.
+	spawnKnown bool
 }
 
 func sigFor(d *zealpipe.TargetDescriptors) resolveSig {
 	if d == nil {
 		return resolveSig{}
 	}
-	return resolveSig{hasDesc: true, hasApp: d.HasAppearance, locKnown: d.LocKnown, x: d.GameX, y: d.GameY}
+	return resolveSig{hasDesc: true, hasApp: d.HasAppearance, locKnown: d.LocKnown, x: d.GameX, y: d.GameY,
+		spawnKnown: d.SpawnLocKnown}
 }
 
 // sigMoveThreshold is how far a target must move before an ambiguous
@@ -1258,6 +1262,15 @@ func (t *NPCTracker) lookupNPCVariants(
 	// has no spawn2 coordinates by definition (see fetchVariants), so filterVariantsByPosition would drop the real
 	// encounter in favor of a decoy row purely for having spawn coordinates.
 	scriptSpawned := anyScriptSpawned(candidates)
+	// Where the client first saw the target (Zeal target_spawn_loc) is its
+	// spawn point when it lands on one, however far it has since been pulled —
+	// the only thing that separates rows placed side by side, like the Rathe
+	// Council's alternating mezzable / mez immune ring, or Vex Thal's blob pair
+	// once both are dragged to the zone line. A value off every spawn point
+	// (the mob was already moving when the client got it) is ignored.
+	if desc != nil && desc.SpawnLocKnown && len(candidates) > 1 && zoneShort != "" && !scriptSpawned {
+		candidates = filterVariantsBySpawnLoc(candidates, desc.SpawnX, desc.SpawnY)
+	}
 	switch {
 	case len(candidates) < 2 || zoneShort == "" || scriptSpawned:
 		// Nothing to separate, or no reliable coordinates to separate by.
@@ -1542,6 +1555,26 @@ func filterVariantsByPosition(variants []db.NPCVariant, x, y, tol float64) []db.
 		if dists[i]-minDist <= tol {
 			out = append(out, v)
 		}
+	}
+	return out
+}
+
+// spawnLocMatchYards is how close a reported spawn location must be to a
+// candidate's spawn2 point to count as that point. The Rathe Council ring's
+// neighbouring points are ~31 apart.
+const spawnLocMatchYards = 10.0
+
+// filterVariantsBySpawnLoc keeps the candidates with a spawn point within
+// spawnLocMatchYards of (x, y). Returns variants unchanged when none match.
+func filterVariantsBySpawnLoc(variants []db.NPCVariant, x, y float64) []db.NPCVariant {
+	out := make([]db.NPCVariant, 0, len(variants))
+	for _, v := range variants {
+		if nearestSpawnDistance(v.SpawnPoints, x, y) <= spawnLocMatchYards {
+			out = append(out, v)
+		}
+	}
+	if len(out) == 0 {
+		return variants
 	}
 	return out
 }

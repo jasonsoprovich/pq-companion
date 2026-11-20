@@ -114,6 +114,11 @@ type Player struct {
 	TargetClass *int      `json:"target_class,omitempty"` // EQ class id, same numbering as npc_types.class
 	TargetRace  *int      `json:"target_race,omitempty"`  // EQ race id, same numbering as npc_types.race
 	TargetLoc   *Location `json:"target_loc,omitempty"`
+	// TargetSpawnLoc is where the targeted NPC was when the client first
+	// created it (zone-in or spawn) — its spawn point unless it was already
+	// moving. Fixed, so Zeal sends it at any distance. Proposed Zeal addition;
+	// absent on builds without it and for non-NPC targets.
+	TargetSpawnLoc *Location `json:"target_spawn_loc,omitempty"`
 
 	// Target appearance (a later Zeal addition). Separates same-name,
 	// same-level/class/race rows that differ only in how they render.
@@ -148,6 +153,12 @@ type TargetDescriptors struct {
 	GameX    float64
 	GameY    float64
 	Z        float64
+
+	// SpawnLocKnown is true when Zeal reported target_spawn_loc. SpawnX/SpawnY
+	// follow the spawn2 convention, like GameX/GameY.
+	SpawnLocKnown bool
+	SpawnX        float64
+	SpawnY        float64
 
 	// HasAppearance is true when this Zeal build reported texture, gender and
 	// size (all three or none). Texture/Gender/Size are meaningless otherwise.
@@ -188,6 +199,11 @@ func (p Player) TargetDescriptors() *TargetDescriptors {
 		d.GameX = p.TargetLoc.GameX()
 		d.GameY = p.TargetLoc.GameY()
 		d.Z = p.TargetLoc.Z
+	}
+	if p.TargetSpawnLoc != nil {
+		d.SpawnLocKnown = true
+		d.SpawnX = p.TargetSpawnLoc.GameX()
+		d.SpawnY = p.TargetSpawnLoc.GameY()
 	}
 	return d
 }
