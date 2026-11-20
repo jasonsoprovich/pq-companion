@@ -239,4 +239,8 @@ type ActiveTimer struct {
 type TimerState struct {
 	Timers      []ActiveTimer `json:"timers"`
 	LastUpdated time.Time     `json:"last_updated"`
+	// SelfBuffSpellIDs is the active character's buff window as reported by
+	// the Zeal pipe, as spell ids in slot order. Absent without a pipe
+	// snapshot for the active character; consumers fall back to Timers.
+	SelfBuffSpellIDs []int `json:"self_buff_spell_ids,omitempty"`
 }
