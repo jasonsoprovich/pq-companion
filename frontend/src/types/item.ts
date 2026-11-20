@@ -139,6 +139,39 @@ export interface ItemSources {
   forage_zones: ItemForageZone[]
   ground_spawns: ItemGroundSpawnZone[]
   tradeskills: ItemTradeskillEntry[]
+  // PoP armor molds: the class items this mold combines into, or — for one
+  // of those class items — the mold it is made from.
+  mold_products?: MoldProduct[]
+  made_from_mold?: MoldRef
+}
+
+// MoldItemRef is a named item in a mold recipe (count set for inputs).
+export interface MoldItemRef {
+  item_id: number
+  name: string
+  icon: number
+  count?: number
+}
+
+// MoldProduct is one class item a PoP armor mold/pattern can become.
+export interface MoldProduct {
+  item_id: number
+  name: string
+  icon: number
+  classes: number
+  class_label: string
+  recipe_id: number
+  container: MoldItemRef
+  inputs: MoldItemRef[]
+  tools: MoldItemRef[]
+}
+
+// MoldRef is the mold a class item is combined from (nodrop 0 = NO DROP).
+export interface MoldRef {
+  id: number
+  name: string
+  icon: number
+  nodrop: number
 }
 
 // ItemRef is a lightweight item link (id + name) used in quest entries.

@@ -485,6 +485,10 @@ type ItemSources struct {
 	ForageZones  []ItemForageZone      `json:"forage_zones"`
 	GroundSpawns []ItemGroundSpawnZone `json:"ground_spawns"`
 	Tradeskills  []ItemTradeskillEntry `json:"tradeskills"`
+	// MoldProducts lists the class items a PoP armor mold combines into (only
+	// set for molds); MadeFromMold is the mold a class item is made from.
+	MoldProducts []MoldProduct `json:"mold_products,omitempty"`
+	MadeFromMold *MoldRef      `json:"made_from_mold,omitempty"`
 }
 
 // SpellVendorOption is one place a spell's scroll can be purchased: a vendor

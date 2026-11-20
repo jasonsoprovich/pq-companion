@@ -677,13 +677,18 @@ func (db *DB) GetItemSources(itemID int) (*ItemSources, error) {
 		return nil, err
 	}
 
-	return &ItemSources{
+	out := &ItemSources{
 		Drops:        drops,
 		Merchants:    merchants,
 		ForageZones:  forageZones,
 		GroundSpawns: groundSpawns,
 		Tradeskills:  tradeskills,
-	}, nil
+		MoldProducts: db.MoldProducts(itemID),
+	}
+	if m, ok := db.ProductMold(itemID); ok {
+		out.MadeFromMold = &m
+	}
+	return out, nil
 }
 
 func collectSourceNPCs(rows *sql.Rows, withDropRate bool) ([]ItemSourceNPC, error) {
