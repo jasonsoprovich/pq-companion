@@ -37,6 +37,7 @@ import { ItemIcon } from './Icon'
 import { ItemTradeskillsTab } from './RecipeView'
 import { SourceNPCTable } from './SourceNPCTable'
 import SpellEffectRow from './SpellEffectRow'
+import MoldPanel from './MoldPanel'
 
 // ── Shared primitives ──────────────────────────────────────────────────────────
 
@@ -68,7 +69,13 @@ function EmptyTabMessage({ message }: { message: string }): React.ReactElement {
 
 // ── Tab content ────────────────────────────────────────────────────────────────
 
-function OverviewTab({ item, copied, onCopy }: { item: Item; copied: boolean; onCopy: () => void }): React.ReactElement {
+function OverviewTab({ item, copied, onCopy, sources, onNavigate }: {
+  item: Item
+  copied: boolean
+  onCopy: () => void
+  sources: ItemSources | null
+  onNavigate?: () => void
+}): React.ReactElement {
   const flags: string[] = []
   if (item.magic) flags.push('MAGIC')
   if (isLoreItem(item.lore)) flags.push('LORE')
@@ -120,6 +127,8 @@ function OverviewTab({ item, copied, onCopy }: { item: Item; copied: boolean; on
           </p>
         )}
       </div>
+
+      <MoldPanel sources={sources} onNavigate={onNavigate} />
 
       {hasCombat && (
         <Section title="Combat">
@@ -404,7 +413,10 @@ export default function ItemDetailView({
 
       {/* Tab content */}
       <div className={`flex-1 overflow-y-auto ${padX} ${compact ? 'py-3' : 'py-4'}`}>
-        {activeTab === 'overview' && <OverviewTab item={item} copied={copied} onCopy={copyIngameLink} />}
+        {activeTab === 'overview' && (
+          <OverviewTab item={item} copied={copied} onCopy={copyIngameLink}
+            sources={sources} onNavigate={onNavigate} />
+        )}
         {activeTab === 'drops' && <DropsFromTab drops={sources?.drops ?? []} />}
         {activeTab === 'merchants' && <PurchasedFromTab merchants={sources?.merchants ?? []} />}
         {activeTab === 'forage' && <ForagedFromTab zones={sources?.forage_zones ?? []} />}

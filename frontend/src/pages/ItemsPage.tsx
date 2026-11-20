@@ -4,6 +4,7 @@ import { useCachedState } from '../hooks/useCachedState'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Check, Copy, Filter, Search, X } from 'lucide-react'
 import ItemModelPreview from '../components/models/ItemModelPreview'
+import MoldPanel from '../components/MoldPanel'
 import { searchItems, getItem, getItemSources, getItemQuests, getItemRaw } from '../services/api'
 import type { ItemSearchFilter } from '../services/api'
 import { findItemHoldings, type ItemHolding } from '../services/itemHoldings'
@@ -682,9 +683,10 @@ interface OverviewTabProps {
   item: Item
   copied: boolean
   onCopy: () => void
+  sources: ItemSources | null
 }
 
-function OverviewTab({ item, copied, onCopy }: OverviewTabProps): React.ReactElement {
+function OverviewTab({ item, copied, onCopy, sources }: OverviewTabProps): React.ReactElement {
   const flags: string[] = []
   if (item.magic) flags.push('MAGIC')
   if (isLoreItem(item.lore)) flags.push('LORE')
@@ -747,6 +749,8 @@ function OverviewTab({ item, copied, onCopy }: OverviewTabProps): React.ReactEle
           </p>
         )}
       </div>
+
+      <MoldPanel sources={sources} />
 
       {hasCombat && (
         <Section title="Combat">
@@ -1072,7 +1076,7 @@ function DetailPanel({ item }: DetailPanelProps): React.ReactElement {
           </div>
         )}
         {activeTab === 'overview' && (
-          <OverviewTab item={item} copied={copied} onCopy={copyIngameLink} />
+          <OverviewTab item={item} copied={copied} onCopy={copyIngameLink} sources={sources} />
         )}
         {activeTab === 'drops' && (
           <DropsFromTab drops={sources?.drops ?? []} />
