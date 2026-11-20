@@ -2659,7 +2659,7 @@ func applyMinLevelOverride(zoneIDNumber, raw int) int {
 const zoneColumns = `
   z.id, COALESCE(z.short_name,''), z.long_name, COALESCE(z.file_name,''),
   z.zoneidnumber, z.safe_x, z.safe_y, z.safe_z,
-  z.min_level, COALESCE(z.note,''),
+  z.min_level, COALESCE(z.note,''), COALESCE(z.flag_needed,''),
   z.castoutdoor, z.hotzone, z.canlevitate, z.canbind,
   COALESCE(z.zone_exp_multiplier, 1.0), z.expansion,
   COALESCE((SELECT MIN(n.level) FROM npc_types n JOIN spawnentry se ON se.npcID = n.id JOIN spawn2 s2 ON s2.spawngroupID = se.spawngroupID WHERE s2.zone = z.short_name AND TRIM(n.name, '_#') != '' AND NOT (n.race = 127 AND n.bodytype IN (11, 60, 65, 66, 67))), 0),
@@ -2693,7 +2693,7 @@ func scanZone(row interface {
 	err := row.Scan(
 		&z.ID, &z.ShortName, &z.LongName, &z.FileName,
 		&z.ZoneIDNumber, &z.SafeX, &z.SafeY, &z.SafeZ,
-		&z.MinLevel, &z.Note,
+		&z.MinLevel, &z.Note, &z.FlagNeeded,
 		&z.Outdoor, &z.Hotzone, &z.CanLevitate, &z.CanBind,
 		&z.ExpMod, &z.Expansion,
 		&z.NPCLevelMin, &z.NPCLevelMax,

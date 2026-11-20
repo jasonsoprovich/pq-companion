@@ -67,6 +67,8 @@ export interface PoPResolved {
 
 export interface PoPFlagDatasetResponse {
   flags: PoPFlag[]
+  // Flag-gated zone short_name → dataset flag IDs required to enter (AND).
+  zone_access?: Record<string, string[]>
 }
 
 // ── All-characters overview + export ─────────────────────────────────────────

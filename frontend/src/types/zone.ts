@@ -9,6 +9,9 @@ export interface Zone {
   safe_z: number
   min_level: number
   note: string
+  // Non-empty when the server requires a zone flag to enter (zone.flag_needed;
+  // the value is just the zone's short name, not a description).
+  flag_needed: string
   outdoor: number
   hotzone: number
   can_levitate: number

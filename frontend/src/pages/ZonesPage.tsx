@@ -1,9 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useCachedState } from '../hooks/useCachedState'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowDown, ArrowUp, Search, X } from 'lucide-react'
+import {
+  ArrowDown, ArrowUp, CheckCircle2, Circle, Flag, Search, X,
+} from 'lucide-react'
 import {
   getNPCsByZone,
+  getPopFlagDataset,
+  getPopFlags,
   getZone,
   getZoneByShortName,
   getZoneConnections,
@@ -31,6 +35,7 @@ import type {
   ZoneNPCSpawn,
 } from '../types/zone'
 import type { ZoneLockoutBoss } from '../types/lockouts'
+import type { PoPFlag } from '../types/popflag'
 import { className, npcDisplayName, npcLevelLabel } from '../lib/npcHelpers'
 import { zoneExpansionName } from '../lib/enumsCache'
 import { matchesSearch, WILDCARD_HINT } from '../lib/textSearch'
@@ -439,6 +444,115 @@ function parseLevel(raw: string): number | null {
   return Number.isFinite(n) ? n : null
 }
 
+// ── Flag requirement ──────────────────────────────────────────────────────────
+
+interface AccessStep {
+  flag: PoPFlag
+  done: boolean | null // null = no active character / status unavailable
+}
+
+// FlagRequiredSection lists the PoP Flags tracker steps that unlock a
+// flag-gated zone, with the active character's progress when one is set.
+// zone.flag_needed only says THAT a flag is needed; the steps come from the
+// backend's curated popflag.ZoneAccess table.
+function FlagRequiredSection({ zone }: { zone: Zone }): React.ReactElement {
+  const navigate = useNavigate()
+  const { active } = useActiveCharacter()
+  const [steps, setSteps] = useState<AccessStep[] | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setSteps(null)
+    Promise.all([
+      getPopFlagDataset(),
+      active ? getPopFlags(active).catch(() => null) : Promise.resolve(null),
+    ])
+      .then(([ds, resolved]) => {
+        if (cancelled) return
+        const ids = ds.zone_access?.[zone.short_name] ?? []
+        const byID = new Map(ds.flags.map((f) => [f.id, f]))
+        const doneByID = new Map(
+          (resolved?.flags ?? []).map((f) => [f.id, f.done]),
+        )
+        setSteps(
+          ids.flatMap((id) => {
+            const flag = byID.get(id)
+            if (!flag) return []
+            return [{ flag, done: resolved ? (doneByID.get(id) ?? false) : null }]
+          }),
+        )
+      })
+      .catch(() => {
+        if (!cancelled) setSteps([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [zone.short_name, active])
+
+  const allDone =
+    steps != null && steps.length > 0 && steps.every((s) => s.done === true)
+
+  return (
+    <Section title="Flag Required">
+      <div
+        className="flex items-center gap-2 py-1 text-sm"
+        style={{ color: 'var(--color-foreground)' }}
+      >
+        <Flag
+          size={14}
+          style={{
+            color: allDone ? 'var(--color-success)' : 'var(--color-primary)',
+          }}
+        />
+        <span>
+          {allDone
+            ? `${active} has the flag for this zone.`
+            : 'A zone flag is required to enter.'}
+        </span>
+      </div>
+      {steps != null && steps.length > 0 && (
+        <div className="flex flex-col gap-0.5 pb-1">
+          {steps.map(({ flag, done }) => (
+            <div key={flag.id} className="flex items-start gap-2 text-sm">
+              <span className="mt-0.5 shrink-0">
+                {done ? (
+                  <CheckCircle2
+                    size={13}
+                    style={{ color: 'var(--color-success)' }}
+                  />
+                ) : (
+                  <Circle size={13} style={{ color: 'var(--color-muted)' }} />
+                )}
+              </span>
+              <span style={{ color: 'var(--color-foreground)' }}>
+                {flag.label}
+                <span style={{ color: 'var(--color-muted-foreground)' }}>
+                  {' '}
+                  — {flag.zone}
+                </span>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      {steps != null && (
+        <div className="pb-1">
+          <button
+            onClick={() => navigate('/pop-flags')}
+            className="cursor-pointer text-xs hover:underline"
+            style={{ color: 'var(--color-primary)' }}
+          >
+            {steps.length > 0
+              ? 'Open PoP Flags tracker →'
+              : 'See the PoP Flags tracker →'}
+          </button>
+        </div>
+      )}
+    </Section>
+  )
+}
+
 // ── Tab: Overview ──────────────────────────────────────────────────────────────
 
 function OverviewTab({ zone }: { zone: Zone }): React.ReactElement {
@@ -463,6 +577,7 @@ function OverviewTab({ zone }: { zone: Zone }): React.ReactElement {
         <StatRow label="Levitation" value={zone.can_levitate ? 'Allowed' : 'Restricted'} />
         <StatRow label="Binding" value={bindLabel(zone.can_bind)} />
       </Section>
+      {zone.flag_needed && <FlagRequiredSection zone={zone} />}
       <Section title="Zone Info">
         <StatRow label="Zone ID" value={zone.zone_id_number} />
         <StatRow

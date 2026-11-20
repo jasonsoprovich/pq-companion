@@ -364,26 +364,30 @@ type SpellComponent struct {
 
 // Zone represents a row from the zone table.
 type Zone struct {
-	ID           int            `json:"id"`
-	ShortName    string         `json:"short_name"`
-	LongName     string         `json:"long_name"`
-	FileName     string         `json:"file_name"`
-	ZoneIDNumber int            `json:"zone_id_number"`
-	SafeX        float64        `json:"safe_x"`
-	SafeY        float64        `json:"safe_y"`
-	SafeZ        float64        `json:"safe_z"`
-	MinLevel     int            `json:"min_level"`
-	Note         string         `json:"note"`
-	Outdoor      int            `json:"outdoor"`
-	Hotzone      int            `json:"hotzone"`
-	CanLevitate  int            `json:"can_levitate"`
-	CanBind      int            `json:"can_bind"`
-	ExpMod       float64        `json:"exp_mod"`
-	Expansion    int            `json:"expansion"`
-	NPCLevelMin  int            `json:"npc_level_min"`
-	NPCLevelMax  int            `json:"npc_level_max"`
-	PullLimit    int            `json:"pull_limit"`
-	Graveyard    *ZoneGraveyard `json:"graveyard,omitempty"`
+	ID           int     `json:"id"`
+	ShortName    string  `json:"short_name"`
+	LongName     string  `json:"long_name"`
+	FileName     string  `json:"file_name"`
+	ZoneIDNumber int     `json:"zone_id_number"`
+	SafeX        float64 `json:"safe_x"`
+	SafeY        float64 `json:"safe_y"`
+	SafeZ        float64 `json:"safe_z"`
+	MinLevel     int     `json:"min_level"`
+	Note         string  `json:"note"`
+	// FlagNeeded is zone.flag_needed: non-empty when the server requires a
+	// zone flag to enter (the value is just the zone's own short name, so it
+	// carries no description — see popflag.ZoneAccess for the steps).
+	FlagNeeded  string         `json:"flag_needed"`
+	Outdoor     int            `json:"outdoor"`
+	Hotzone     int            `json:"hotzone"`
+	CanLevitate int            `json:"can_levitate"`
+	CanBind     int            `json:"can_bind"`
+	ExpMod      float64        `json:"exp_mod"`
+	Expansion   int            `json:"expansion"`
+	NPCLevelMin int            `json:"npc_level_min"`
+	NPCLevelMax int            `json:"npc_level_max"`
+	PullLimit   int            `json:"pull_limit"`
+	Graveyard   *ZoneGraveyard `json:"graveyard,omitempty"`
 }
 
 // ZoneGraveyard describes where a player's corpse pops out when the

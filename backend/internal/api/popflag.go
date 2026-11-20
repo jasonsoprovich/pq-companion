@@ -36,7 +36,10 @@ const WSEventPopflagSnapshot = "popflag.snapshot"
 // GET /api/popflags/dataset
 // Returns the embedded curated dataset (the frontend's source of truth).
 func (h *popflagHandler) dataset(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"flags": popflag.Flags()})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"flags":       popflag.Flags(),
+		"zone_access": popflag.ZoneAccess(),
+	})
 }
 
 // resolvedWithPending adds the character's pending ('cl_*') checklist flags
