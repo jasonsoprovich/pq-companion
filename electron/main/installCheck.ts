@@ -134,10 +134,24 @@ export function unmanagedCopyMessage(
   return { message, detail }
 }
 
-export function unmanagedUpdateMessage(version: string): string {
-  return (
-    `v${version} is available, but this copy isn't installed by the PQ ` +
-    'Companion installer, so it can\'t update itself. Download the latest ' +
-    'installer from pq-companion.com.'
-  )
+const RELEASES_URL = 'https://github.com/jasonsoprovich/pq-companion/releases'
+
+export interface ManualUpdateInfo {
+  version: string
+  downloadUrl: string // the portable zip for this release
+  releaseUrl: string // the GitHub release page (notes + installer)
+}
+
+// manualUpdateInfo builds the links shown to an unmanaged copy when an update
+// is out. It can't self-update, so it gets a one-click download of the same
+// portable zip it was most likely unpacked from (electron-builder.yml
+// artifactName: PQ-Companion-Setup-${version}.zip) — the installer isn't an
+// option for the Wine/Linux users the zip exists for.
+export function manualUpdateInfo(version: string): ManualUpdateInfo {
+  const tag = `v${version}`
+  return {
+    version,
+    downloadUrl: `${RELEASES_URL}/download/${tag}/PQ-Companion-Setup-${version}.zip`,
+    releaseUrl: `${RELEASES_URL}/tag/${tag}`,
+  }
 }

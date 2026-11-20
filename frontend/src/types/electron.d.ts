@@ -326,6 +326,9 @@ export interface ElectronAPI {
     onAvailable: (cb: (info: { version: string }) => void) => () => void
     onProgress: (cb: (p: { percent: number; transferred: number; total: number }) => void) => () => void
     onDownloaded: (cb: (info: { version: string }) => void) => () => void
+    onManual: (
+      cb: (info: { version: string; downloadUrl: string; releaseUrl: string }) => void,
+    ) => () => void
     onError: (cb: (message: string) => void) => () => void
   }
 }
