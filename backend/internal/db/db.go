@@ -38,6 +38,11 @@ type DB struct {
 	// live (a few indexed joins) so it needs no precomputed file.
 	gmOnce      sync.Once
 	gmZoneItems map[int]bool
+
+	// PoP armor mold ↔ class item cross-reference, built on first use (see
+	// molds.go).
+	moldsOnce sync.Once
+	molds     *moldIndex
 }
 
 // Open opens the SQLite database at the given path in read-only mode.
