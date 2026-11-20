@@ -131,4 +131,7 @@ export interface ActiveTimer {
 export interface TimerState {
   timers: ActiveTimer[]
   last_updated: string
+  // The active character's buff window from the Zeal pipe, as spell ids in
+  // slot order. Absent without a pipe snapshot; fall back to timers.
+  self_buff_spell_ids?: number[]
 }

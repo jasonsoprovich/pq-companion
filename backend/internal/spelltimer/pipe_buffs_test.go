@@ -125,3 +125,35 @@ func TestPipeBuffFadeResetWhenBuffReturns(t *testing.T) {
 		t.Fatal("a brief absence after the buff came back ended the timer")
 	}
 }
+
+// The pipe's buff window reaches TimerState as spell ids for the active
+// character, including buffs no timer covers (another player's Hand of
+// Virtue, whose land text Virtue shares). Another character's snapshot and a
+// disconnect leave it empty, so consumers fall back to the timers.
+func TestPipeBuffWindowInTimerState(t *testing.T) {
+	e, _ := levelEngine(t, 13, 65)
+	now := time.Now()
+	window := []PipeBuff{
+		{Name: "Hand of Virtue", Ticks: 1400},
+		{Name: "Focus of the Seventh", Ticks: 700},
+		{Name: "Brell's Steadfast Aegis", Ticks: 1400},
+		{Name: "Hand of Virtue", Ticks: 1400}, // duplicate slot: listed once
+		{Name: "Not A Spell", Ticks: 10},
+	}
+	e.setPipeBuffSlotsAt("Tester", window, now)
+	got := e.snapshot(now).SelfBuffSpellIDs
+	want := []int{3479, 3397, 3578}
+	if !sameInts(got, want) {
+		t.Fatalf("SelfBuffSpellIDs = %v, want %v", got, want)
+	}
+
+	e.setPipeBuffSlotsAt("SomeoneElse", window, now)
+	if got := e.snapshot(now).SelfBuffSpellIDs; len(got) != 0 {
+		t.Fatalf("other character's window leaked: %v", got)
+	}
+	e.setPipeBuffSlotsAt("Tester", window, now)
+	e.setPipeBuffSlotsAt("", nil, now)
+	if got := e.snapshot(now).SelfBuffSpellIDs; len(got) != 0 {
+		t.Fatalf("disconnect kept the window: %v", got)
+	}
+}

@@ -647,13 +647,26 @@ function StatsPanel({ stats, hasStats, characterID, characterName }: StatsPanelP
     })
   }, [timerState, viewedIsActive, activePlayerName])
 
+  // With Zeal's pipe, the client's own buff window is the source: it names
+  // every buff, including ones the log can't (another player's Hand of
+  // Virtue shares its land text with Virtue, so no timer starts). Without it,
+  // the self-buff timers above stand in.
+  const pipeBuffIDs = viewedIsActive ? timerState?.self_buff_spell_ids : undefined
+  const liveIDs: number[] = useMemo(() => {
+    if (pipeBuffIDs && pipeBuffIDs.length > 0) return pipeBuffIDs
+    const out: number[] = []
+    for (const b of liveBuffs) {
+      if (b.spell_id > 0 && !out.includes(b.spell_id)) out.push(b.spell_id)
+    }
+    return out
+  }, [pipeBuffIDs, liveBuffs])
+
   // Stable signature of the unique active buff spell IDs so we only refetch
   // deltas when the set actually changes — not on every WS frame.
-  const liveSpellIDsKey = useMemo(() => {
-    const seen = new Set<number>()
-    for (const b of liveBuffs) if (b.spell_id > 0) seen.add(b.spell_id)
-    return Array.from(seen).sort((a, b) => a - b).join(',')
-  }, [liveBuffs])
+  const liveSpellIDsKey = useMemo(
+    () => [...liveIDs].sort((a, b) => a - b).join(','),
+    [liveIDs],
+  )
 
   useEffect(() => {
     const ids = liveSpellIDsKey.length > 0 ? liveSpellIDsKey.split(',').map(Number) : []
@@ -771,20 +784,12 @@ function StatsPanel({ stats, hasStats, characterID, characterName }: StatsPanelP
     if (m) buffEntries.push({ id: presetIds[i], slot: i, meta: m })
   }
 
-  // Resolve active live buffs to their delta metadata, deduped by spell ID
-  // so a buff that reapplied mid-tick doesn't get counted twice. Each entry
-  // also carries the live timer so the sidebar can show remaining time.
-  const liveBuffEntries: Array<{ id: number; timer: ActiveTimer; meta: SpellStatDeltaEntry }> = []
-  {
-    const seen = new Set<number>()
-    for (const t of liveBuffs) {
-      if (seen.has(t.spell_id)) continue
-      const m = liveBuffMeta[String(t.spell_id)]
-      if (m) {
-        liveBuffEntries.push({ id: t.spell_id, timer: t, meta: m })
-        seen.add(t.spell_id)
-      }
-    }
+  // Resolve active live buffs (already deduped by spell ID) to their delta
+  // metadata, in buff-window order when it comes from the pipe.
+  const liveBuffEntries: Array<{ id: number; meta: SpellStatDeltaEntry }> = []
+  for (const id of liveIDs) {
+    const m = liveBuffMeta[String(id)]
+    if (m) liveBuffEntries.push({ id, meta: m })
   }
 
   // The backend derives every layer's vitals (HP/mana/AC/resists) from that
@@ -1335,7 +1340,7 @@ function BuffsPanel({
 // ── Live Buffs side panel ─────────────────────────────────────────────────────
 
 interface LiveBuffsPanelProps {
-  entries: Array<{ id: number; timer: ActiveTimer; meta: SpellStatDeltaEntry }>
+  entries: Array<{ id: number; meta: SpellStatDeltaEntry }>
   viewedIsActive: boolean
   activePlayerName: string
 }
@@ -1365,7 +1370,7 @@ function LiveBuffsPanel({ entries, viewedIsActive, activePlayerName }: LiveBuffs
         </p>
       ) : entries.length === 0 ? (
         <p className="py-4 text-xs italic" style={{ color: 'var(--color-muted-foreground)' }}>
-          No active buffs detected. Buffs land in this list as they&rsquo;re parsed from the EverQuest log — make sure log tailing is on.
+          No active buffs detected. With Zeal connected this list mirrors your buff window; without it, buffs land here as they&rsquo;re parsed from the EverQuest log.
         </p>
       ) : (
         <div className="flex flex-col gap-1">

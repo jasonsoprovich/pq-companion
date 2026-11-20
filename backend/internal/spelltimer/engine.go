@@ -667,6 +667,14 @@ type Engine struct {
 	// name. Used for divergence logging; the timer corrections themselves
 	// key off the ticked slots (see pipe_buffs.go).
 	pipeBuffSlots map[string]bool
+	// pipeSelfBuffIDs is the active character's buff window from the pipe as
+	// spell ids, in slot order (nil without a pipe snapshot for them). Sent in
+	// TimerState so Character Info's Live Buffs shows every buff the client
+	// has, including ones the log can't name (another player's HoV shares
+	// "You are filled with virtue." with Virtue). pipeSpellIDs caches the
+	// name lookups.
+	pipeSelfBuffIDs []int
+	pipeSpellIDs    map[string]int
 
 	// pipeConfirmed marks timers (by key) whose spell the pipe has shown in a
 	// ticked buff slot at least once, proving the timer's name matches what
@@ -3576,8 +3584,9 @@ func (e *Engine) snapshot(now time.Time) TimerState {
 		}
 	}
 	return TimerState{
-		Timers:      timers,
-		LastUpdated: now,
+		Timers:           timers,
+		LastUpdated:      now,
+		SelfBuffSpellIDs: append([]int(nil), e.pipeSelfBuffIDs...),
 	}
 }
 

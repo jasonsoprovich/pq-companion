@@ -76,6 +76,10 @@ func (e *Engine) setPipeBuffSlotsAt(character string, buffs []PipeBuff, now time
 	}
 	active := e.activePlayerName()
 	applies := active != "You" && strings.EqualFold(character, active)
+	var selfIDs []int
+	if applies && buffs != nil {
+		selfIDs = e.pipeBuffSpellIDs(buffs)
+	}
 
 	e.mu.Lock()
 	// A buff arriving in the same snapshot another leaves is an overwrite
@@ -89,10 +93,13 @@ func (e *Engine) setPipeBuffSlotsAt(character string, buffs []PipeBuff, now time
 		}
 	}
 	e.pipeBuffSlots = set
-	changed := false
+	changed := !sameInts(selfIDs, e.pipeSelfBuffIDs) || (selfIDs == nil) != (e.pipeSelfBuffIDs == nil)
+	e.pipeSelfBuffIDs = selfIDs
 	var strips []StripEvent
 	if applies {
-		changed, strips = e.reconcilePipeBuffsLocked(active, set, ticks, arrived, now)
+		var reconciled bool
+		reconciled, strips = e.reconcilePipeBuffsLocked(active, set, ticks, arrived, now)
+		changed = changed || reconciled
 	}
 	missingFromPipe, missingFromTimers := e.pipeDivergenceLocked(active, set)
 	pipeKey := divergenceKey(missingFromPipe)
@@ -119,6 +126,55 @@ func (e *Engine) setPipeBuffSlotsAt(character string, buffs []PipeBuff, now time
 		slog.Info("zealpipe-divergence: pipe has buff slot, timers don't",
 			"spells", missingFromTimers)
 	}
+}
+
+// pipeBuffSpellIDs resolves buff slot names to spell ids, in slot order,
+// skipping names with no spell row. Returns a non-nil slice (empty for an
+// empty window) so "no buffs" stays distinct from "no pipe data".
+func (e *Engine) pipeBuffSpellIDs(buffs []PipeBuff) []int {
+	ids := make([]int, 0, len(buffs))
+	if e.db == nil {
+		return ids
+	}
+	seen := make(map[int]bool, len(buffs))
+	for _, b := range buffs {
+		name := strings.TrimSpace(b.Name)
+		if name == "" {
+			continue
+		}
+		key := strings.ToLower(name)
+		e.mu.Lock()
+		id, cached := e.pipeSpellIDs[key]
+		e.mu.Unlock()
+		if !cached {
+			if sp, err := e.db.GetSpellByExactName(name); err == nil && sp != nil {
+				id = sp.ID
+			}
+			e.mu.Lock()
+			if e.pipeSpellIDs == nil {
+				e.pipeSpellIDs = make(map[string]int)
+			}
+			e.pipeSpellIDs[key] = id
+			e.mu.Unlock()
+		}
+		if id > 0 && !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+func sameInts(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // isSelfBuff reports whether t is a buff timer on the active player,
