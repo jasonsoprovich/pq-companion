@@ -3,6 +3,8 @@ package db_test
 import (
 	"strings"
 	"testing"
+
+	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 )
 
 func TestMoldIndex_Counts(t *testing.T) {
@@ -117,5 +119,39 @@ func TestMoldIndex_ElementalChainSleeve(t *testing.T) {
 	m, ok := d.ProductMold(11447)
 	if !ok || m.ID != pattern || m.NoDrop != 0 {
 		t.Errorf("ProductMold(Askr's) = %+v %v, want NO DROP pattern %d", m, ok, pattern)
+	}
+}
+
+// Mold products are all NO DROP; "Hide NO DROP" judges them by their mold, so
+// the Ornate (tradeable mold) product stays while the Elemental (NO DROP mold)
+// one goes — in the candidate query, ahead of any scoring.
+func TestUpgradeCandidates_NoDropJudgesMoldProductsByMold(t *testing.T) {
+	d := openTestDB(t)
+	const (
+		armsBit    = 128
+		rangerBit  = 8
+		ornateArms = 11446 // Planestriders Vambraces (Ornate Chain Sleeve Pattern)
+		elemArms   = 11447 // Askr's Thunderous Armplates (Elemental Chain Sleeve Pattern)
+	)
+	cands, err := d.UpgradeCandidates(db.CandidateFilter{
+		SlotMask: armsBit, ClassBit: rangerBit, MaxLevel: 65, ExcludeNoDrop: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[int]bool{}
+	for _, c := range cands {
+		seen[c.ID] = true
+		if c.NoDrop == 0 && c.ID != ornateArms {
+			if _, ok := d.ProductMold(c.ID); !ok {
+				t.Errorf("NO DROP non-mold item %q (%d) passed the filter", c.Name, c.ID)
+			}
+		}
+	}
+	if !seen[ornateArms] {
+		t.Error("Ornate mold product filtered out despite tradeable mold")
+	}
+	if seen[elemArms] {
+		t.Error("Elemental mold product kept despite NO DROP mold")
 	}
 }

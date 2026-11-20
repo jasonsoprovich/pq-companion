@@ -6,6 +6,7 @@ import { ItemIcon } from '../components/Icon'
 import { SourceNPCLink, formatNPCName } from '../components/SourceNPCLink'
 import ItemDetailModal from '../components/ItemDetailModal'
 import SpellHoverCard from '../components/SpellHoverCard'
+import ItemHoverCard from '../components/ItemHoverCard'
 import { usePersistentState } from '../hooks/usePersistentState'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
@@ -42,7 +43,7 @@ import {
   type UpgradeCaps,
   type UpgradeCapEntry,
 } from '../services/api'
-import type { Item, ItemSources, ItemQuests } from '../types/item'
+import type { Item, ItemSources, ItemQuests, MoldRef } from '../types/item'
 import type { WishlistEntry } from '../types/wishlist'
 import type { Zone } from '../types/zone'
 import type { RespawnState } from '../types/respawn'
@@ -1096,6 +1097,29 @@ function EffectPills({ cand }: { cand: UpgradeCandidate }): React.ReactElement |
   return <>{pills}</>
 }
 
+// MoldChip marks a PoP armor piece that is combined from a mold: the piece
+// never drops, the mold does — so that's what to bid or roll on. Hover shows
+// the mold; click opens it.
+function MoldChip({ mold, onOpen }: {
+  mold: MoldRef
+  onOpen: (id: number) => void
+}): React.ReactElement {
+  const noDrop = mold.nodrop === 0
+  return (
+    <ItemHoverCard itemId={mold.id} clickHint="Click to open the mold">
+      <button onClick={() => onOpen(mold.id)}
+        className="flex items-center gap-1 rounded px-1 text-[10px]"
+        title={noDrop
+          ? 'Combined from this mold (NO DROP: only the looter can use it)'
+          : 'Combined from this mold — the mold drops and can be traded'}
+        style={{ backgroundColor: 'rgba(168,85,247,0.16)', color: '#c084fc' }}>
+        <ItemIcon id={mold.icon} name={mold.name} size={12} />
+        From: {mold.name}{noDrop ? ' (NO DROP)' : ''}
+      </button>
+    </ItemHoverCard>
+  )
+}
+
 // ── Result row ─────────────────────────────────────────────────────────────────
 
 function ResultRow({
@@ -1154,7 +1178,9 @@ function ResultRow({
                 2H: also replaces offhand
               </span>
             )}
-            {cand.nodrop === 0 && (
+            {cand.from_mold ? (
+              <MoldChip mold={cand.from_mold} onOpen={onOpen} />
+            ) : cand.nodrop === 0 && (
               <span className="rounded px-1 text-[10px]"
                 style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted)' }}>
                 NO DROP
@@ -1596,7 +1622,9 @@ function OverviewRow({
                   2H: also replaces offhand
                 </span>
               )}
-              {best.nodrop === 0 && (
+              {best.from_mold ? (
+                <MoldChip mold={best.from_mold} onOpen={onOpen} />
+              ) : best.nodrop === 0 && (
                 <span className="rounded px-1 text-[10px]"
                   style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted)' }}>
                   NO DROP
@@ -1984,7 +2012,9 @@ function ZoneResultRow({
               2H: also replaces offhand
             </span>
           )}
-          {cand.nodrop === 0 && (
+          {cand.from_mold ? (
+            <MoldChip mold={cand.from_mold} onOpen={onOpen} />
+          ) : cand.nodrop === 0 && (
             <span className="rounded px-1 text-[10px]"
               style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-muted)' }}>
               NO DROP
@@ -2002,6 +2032,11 @@ function ZoneResultRow({
       </td>
       <td className="px-2 py-1.5 text-xs">
         <div className="flex flex-col gap-0.5">
+          {cand.via_mold && cand.from_mold && (
+            <span className="text-[10px]" style={{ color: '#c084fc' }}>
+              drops as {cand.from_mold.name}
+            </span>
+          )}
           {shown.map((src, i) => <ZoneSourceLine key={`${src.npc_id}-${i}`} src={src} />)}
           {sources.length > 2 && (
             <button onClick={() => setShowAllSources((v) => !v)} className="self-start"

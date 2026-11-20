@@ -215,7 +215,17 @@ func (db *DB) UpgradeCandidates(f CandidateFilter) ([]UpgradeCandidate, error) {
 	if f.ExcludeNoDrop {
 		// nodrop = 0 marks a NO DROP (untradeable) item in this dataset, same
 		// inverted convention as norent above; keep only tradeable items.
-		where += " AND i.nodrop <> 0"
+		// PoP mold products are all NO DROP, but what drops (and gets bid on)
+		// is the mold, so a product counts as tradeable when its mold is.
+		// Filtering here keeps it ahead of scoring, limits and overview picks.
+		if ids := db.TradeableMoldProductIDs(); len(ids) > 0 {
+			where += " AND (i.nodrop <> 0 OR i.id IN (?" + strings.Repeat(",?", len(ids)-1) + "))"
+			for _, id := range ids {
+				args = append(args, id)
+			}
+		} else {
+			where += " AND i.nodrop <> 0"
+		}
 	}
 
 	if len(f.ItemIDs) > 0 {

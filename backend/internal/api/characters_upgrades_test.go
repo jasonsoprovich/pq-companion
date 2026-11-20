@@ -459,3 +459,65 @@ func TestLoadEquipped_WornSlotsOnly(t *testing.T) {
 		t.Errorf("expected worn ear/finger entries, got %v", byLoc)
 	}
 }
+
+// TestScoreSlotCands_FromMold: a PoP mold product carries the mold it is
+// combined from (the thing that actually drops); ordinary items don't.
+func TestScoreSlotCands_FromMold(t *testing.T) {
+	h := &charactersHandler{db: openFocusTestDB(t)}
+	slot, ok := upgradeSlotByKey("arms")
+	if !ok {
+		t.Fatal("arms slot not found")
+	}
+	cands := []db.UpgradeCandidate{
+		{ID: 11446, Name: "Planestriders Vambraces", HP: 50, Slots: slot.Mask},
+		{ID: 1, Name: "Plain", HP: 40, Slots: slot.Mask},
+	}
+	_, _, results, _, _ := h.scoreSlotCands(character.Character{}, upgrade.Context{Level: 65},
+		upgrade.Weights{HP: 1}, slot, nil, nil, true, "", 10, nil, nil, h.newWornCache(), nil, cands)
+	if len(results) != 2 {
+		t.Fatalf("results = %d, want 2", len(results))
+	}
+	for _, r := range results {
+		switch r.ID {
+		case 11446:
+			if r.FromMold == nil || r.FromMold.ID != 16292 || r.FromMold.NoDrop == 0 {
+				t.Errorf("from_mold = %+v, want tradeable Ornate Chain Sleeve Pattern (16292)", r.FromMold)
+			}
+		case 1:
+			if r.FromMold != nil {
+				t.Errorf("plain item got from_mold %+v", r.FromMold)
+			}
+		}
+	}
+}
+
+// TestZoneCandidates_ViaMold: a mold product joins a zone's candidates with
+// its mold's drop sources when the mold drops there.
+func TestZoneCandidates_ViaMold(t *testing.T) {
+	h := &charactersHandler{db: openFocusTestDB(t)}
+	moldSrc := []db.ZoneItemSource{{NPCID: 99, NPCName: "a mold dropper", Chance: 10}}
+	sources := map[int][]db.ZoneItemSource{
+		16292: moldSrc,                               // Ornate Chain Sleeve Pattern drops here
+		2:     {{NPCID: 5, NPCName: "x", Chance: 1}}, // ordinary zone drop
+	}
+	all := []db.UpgradeCandidate{
+		{ID: 11446}, // Planestriders Vambraces — product of 16292
+		{ID: 11447}, // Askr's — mold 16364 doesn't drop here
+		{ID: 2},
+		{ID: 3}, // drops nowhere
+	}
+	got, via := h.zoneCandidates(all, sources)
+	ids := map[int]bool{}
+	for _, c := range got {
+		ids[c.ID] = true
+	}
+	if !ids[11446] || !ids[2] || ids[11447] || ids[3] || len(got) != 2 {
+		t.Errorf("zone candidates = %v, want 11446 and 2", ids)
+	}
+	if !via[11446] || via[2] {
+		t.Errorf("viaMold = %v, want only 11446", via)
+	}
+	if len(sources[11446]) != 1 || sources[11446][0].NPCID != 99 {
+		t.Errorf("product sources = %+v, want the mold's", sources[11446])
+	}
+}

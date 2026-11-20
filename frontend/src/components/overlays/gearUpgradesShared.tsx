@@ -350,6 +350,22 @@ export function GearUpgradeList({
                 </span>
               </div>
               <div style={{ fontSize: 10, color: t.npc, lineHeight: 1.35 }}>
+                {/* A PoP mold product never drops: these NPCs drop its mold. */}
+                {c.via_mold && c.from_mold && (
+                  <>
+                    {'as '}
+                    <ItemHoverCard itemId={c.from_mold.id} clickHint="Click to open in PQ Companion">
+                      <button
+                        type="button"
+                        onClick={() => onItem(c.from_mold!.id)}
+                        style={{ ...linkButton, color: '#c084fc' }}
+                      >
+                        {c.from_mold.name}
+                      </button>
+                    </ItemHoverCard>
+                    {': '}
+                  </>
+                )}
                 {c.sources.slice(0, SOURCES_SHOWN).map((s, i) => (
                   <React.Fragment key={`${s.npc_id}-${s.npc_name}`}>
                     {i > 0 && ', '}

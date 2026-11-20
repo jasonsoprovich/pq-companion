@@ -152,6 +152,9 @@ type upgradeResult struct {
 	// SecondaryItemName is the offhand item ReplacesSecondary accounts for,
 	// so the UI can explain the tradeoff ("also replaces: <name>").
 	SecondaryItemName string `json:"secondary_item_name,omitempty"`
+	// FromMold is the PoP armor mold this item is combined from. The item
+	// itself never drops — the mold does, and it's what gets bid or rolled on.
+	FromMold *db.MoldRef `json:"from_mold,omitempty"`
 }
 
 type upgradesResponse struct {
@@ -514,6 +517,9 @@ func (h *charactersHandler) upgradesOverview(w http.ResponseWriter, r *http.Requ
 type zoneUpgradeResult struct {
 	upgradeResult
 	Sources []db.ZoneItemSource `json:"sources"`
+	// ViaMold is true when Sources are the drops of the item's mold (see
+	// FromMold) rather than of the item itself.
+	ViaMold bool `json:"via_mold,omitempty"`
 }
 
 // zoneUpgradeSlot is one slot's upgrades available from a zone.
@@ -537,6 +543,26 @@ type zoneUpgradesResponse struct {
 	Slots          []zoneUpgradeSlot `json:"slots"`
 	ZoneItems      int               `json:"zone_items"`
 	HasCurrentGear bool              `json:"has_current_gear"`
+}
+
+// zoneCandidates keeps the candidates that drop in the zone. A PoP mold
+// product never drops itself; when its mold drops here, the mold's NPCs are
+// written into sources as the product's and the product is flagged in viaMold.
+func (h *charactersHandler) zoneCandidates(all []db.UpgradeCandidate, sources map[int][]db.ZoneItemSource) ([]db.UpgradeCandidate, map[int]bool) {
+	viaMold := map[int]bool{}
+	out := make([]db.UpgradeCandidate, 0)
+	for _, c := range all {
+		if len(sources[c.ID]) == 0 {
+			m, ok := h.db.ProductMold(c.ID)
+			if !ok || len(sources[m.ID]) == 0 {
+				continue
+			}
+			sources[c.ID] = sources[m.ID]
+			viaMold[c.ID] = true
+		}
+		out = append(out, c)
+	}
+	return out, viaMold
 }
 
 // upgradesZone handles GET /api/characters/{id}/upgrades/zone?zone=<short>&limit=
@@ -577,12 +603,7 @@ func (h *charactersHandler) upgradesZone(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusInternalServerError, "failed to load upgrade candidates")
 		return
 	}
-	zoneCands := make([]db.UpgradeCandidate, 0)
-	for _, c := range allCands {
-		if len(sources[c.ID]) > 0 {
-			zoneCands = append(zoneCands, c)
-		}
-	}
+	zoneCands, viaMold := h.zoneCandidates(allCands, sources)
 
 	slots := make([]zoneUpgradeSlot, 0, len(upgradeSlots))
 	for _, s := range upgradeSlots {
@@ -590,7 +611,9 @@ func (h *charactersHandler) upgradesZone(w http.ResponseWriter, r *http.Request)
 		withSources := func(rs []upgradeResult) []zoneUpgradeResult {
 			out := make([]zoneUpgradeResult, 0, len(rs))
 			for _, res := range rs {
-				out = append(out, zoneUpgradeResult{upgradeResult: res, Sources: sources[res.ID]})
+				out = append(out, zoneUpgradeResult{
+					upgradeResult: res, Sources: sources[res.ID], ViaMold: viaMold[res.ID],
+				})
 			}
 			return out
 		}
@@ -874,6 +897,11 @@ func (h *charactersHandler) scoreSlotCands(
 			PriorityFocus:     wanted,
 			ReplacesSecondary: replacesSecondary,
 			SecondaryItemName: secondaryName,
+		}
+		if h.db != nil {
+			if m, ok := h.db.ProductMold(c.ID); ok {
+				r.FromMold = &m
+			}
 		}
 		if wanted {
 			priority = append(priority, r)

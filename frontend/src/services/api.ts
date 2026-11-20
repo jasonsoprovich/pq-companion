@@ -1,6 +1,6 @@
 import type { Config } from '../types/config'
 import type { BlockedBuffEntry, BlockedBuffsView } from '../types/blockbuff'
-import type { Item, ItemSources, ItemQuests, QuestSummary, SearchResult, ItemShoppingRoute, ItemShoppingRouteOptions, ItemDisplayShown } from '../types/item'
+import type { Item, ItemSources, ItemQuests, QuestSummary, SearchResult, ItemShoppingRoute, ItemShoppingRouteOptions, ItemDisplayShown, MoldRef } from '../types/item'
 import type { NPC, NPCSpawns, NPCLootTable, NPCFaction, NPCSpells, NPCMerchant, PatrolRoute } from '../types/npc'
 import type {
   MapStatus, MapZone, MapZoneDetail, MapGeometry, UserAnnotation,
@@ -2949,6 +2949,8 @@ export interface UpgradeCandidate {
   priority_focus: boolean
   replaces_secondary: boolean
   secondary_item_name?: string
+  // PoP armor mold the item is combined from (the item itself never drops).
+  from_mold?: MoldRef
 }
 
 export interface UpgradesResponse {
@@ -3103,6 +3105,8 @@ export interface ZoneItemSource {
 
 export interface ZoneUpgradeCandidate extends UpgradeCandidate {
   sources: ZoneItemSource[]
+  // True when sources are the drops of the item's mold (from_mold).
+  via_mold?: boolean
 }
 
 export interface ZoneUpgradeSlot {
