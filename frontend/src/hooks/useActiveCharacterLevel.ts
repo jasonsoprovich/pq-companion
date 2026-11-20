@@ -13,7 +13,22 @@ import { WSEvent } from '../lib/wsEvents'
  * update, e.g. a fresh quarmy.txt import bumping the stored level).
  */
 export function useActiveCharacterLevel(): number | null {
-  const [level, setLevel] = useState<number | null>(null)
+  return useActiveCharacterSummary()?.level ?? null
+}
+
+/** Active character's level and class (0-14 EQ class index, -1 unset). */
+export interface ActiveCharacterSummary {
+  level: number
+  classIndex: number
+}
+
+/**
+ * Returns the active character's level and class, or null while
+ * unknown/unresolved. Same resolution and refresh rules as
+ * useActiveCharacterLevel.
+ */
+export function useActiveCharacterSummary(): ActiveCharacterSummary | null {
+  const [summary, setSummary] = useState<ActiveCharacterSummary | null>(null)
 
   const refresh = useCallback(() => {
     let cancelled = false
@@ -24,13 +39,13 @@ export function useActiveCharacterLevel(): number | null {
         const char = resp.characters.find(
           (c) => c.name.toLowerCase() === activeName.toLowerCase(),
         )
-        return char?.level ?? null
+        return char ? { level: char.level, classIndex: char.class } : null
       })
       .then((next) => {
-        if (!cancelled) setLevel(next)
+        if (!cancelled) setSummary(next)
       })
       .catch(() => {
-        if (!cancelled) setLevel(null)
+        if (!cancelled) setSummary(null)
       })
     return () => {
       cancelled = true
@@ -49,5 +64,5 @@ export function useActiveCharacterLevel(): number | null {
   )
   useWebSocket(handle)
 
-  return level
+  return summary
 }

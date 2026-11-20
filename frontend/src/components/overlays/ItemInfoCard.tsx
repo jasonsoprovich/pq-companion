@@ -37,6 +37,9 @@ import { ItemIcon } from '../Icon'
 import { ResistChip } from '../ResistChip'
 import SpellHoverCard from '../SpellHoverCard'
 import WishlistStarButton from '../WishlistStarButton'
+import ItemHoverCard from '../ItemHoverCard'
+import { useActiveCharacterSummary } from '../../hooks/useActiveCharacterLevel'
+import { isClassProduct, moldRecipeSummary } from '../../lib/molds'
 import type { Item, ItemQuests, ItemSourceNPC, ItemSources, ItemTradeskillEntry } from '../../types/item'
 
 // ── Theme ──────────────────────────────────────────────────────────────────────
@@ -322,6 +325,9 @@ function CollapsibleList<T>({
 interface SectionProps {
   item: Item
   data: SummaryData
+  // Active character's EQ class index (0-14), for highlighting its mold
+  // product; null when unknown.
+  classIndex: number | null
   settings: ItemInfoSettings
   theme: ItemInfoTheme
   zone: string | null
@@ -496,7 +502,12 @@ function OwnershipSection(p: SectionProps): React.ReactElement | null {
 
 function TradeskillsSection(p: SectionProps): React.ReactElement | null {
   const { data, settings, theme, vis, go } = p
-  const all = data.sources?.tradeskills ?? []
+  // A mold's combines are listed (with class + hover) by the PoP Mold
+  // section; don't repeat them here while it's showing.
+  const moldRecipes = vis(sectionKey('molds')) && vis('molds.creates')
+    ? new Set((data.sources?.mold_products ?? []).map((m) => m.recipe_id))
+    : new Set<number>()
+  const all = (data.sources?.tradeskills ?? []).filter((e) => !moldRecipes.has(e.recipe_id))
   const produced = vis('tradeskills.produced') ? uniqueRecipes(all.filter((e) => e.role === 'product')) : []
   const used = vis('tradeskills.used') ? uniqueRecipes(all.filter((e) => e.role === 'ingredient')) : []
   const limit = settings.limitFor('tradeskills')
@@ -546,6 +557,61 @@ function TradeskillsSection(p: SectionProps): React.ReactElement | null {
       {block('Produced by', produced)}
       {block('Used in', used)}
     </ListedSection>
+  )
+}
+
+// PoP armor molds: the class items a mold combines into (hover for the item),
+// or on one of those items, the mold it comes from.
+function MoldsSection(p: SectionProps): React.ReactElement | null {
+  const { data, theme, vis, go, classIndex } = p
+  const products = vis('molds.creates') ? data.sources?.mold_products ?? [] : []
+  const from = vis('molds.made_from') ? data.sources?.made_from_mold : undefined
+  if (products.length === 0 && !from) return null
+  const itemLink = (id: number, name: string, color?: string) => (
+    <ItemHoverCard itemId={id} clickHint="Click to open in PQ Companion">
+      <button
+        onClick={() => go(`/items?select=${id}`)}
+        style={{
+          background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left',
+          color: color ?? theme.link, font: 'inherit', minWidth: 0,
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}
+      >
+        {name}
+      </button>
+    </ItemHoverCard>
+  )
+  return (
+    <div>
+      <Heading theme={theme}>{products.length > 0 ? 'Creates' : 'Made From'}</Heading>
+      {products.map((m) => {
+        const mine = isClassProduct(m, classIndex)
+        return (
+          <Row
+            key={m.recipe_id}
+            theme={theme}
+            left={itemLink(m.item_id, m.name)}
+            right={
+              <span style={mine ? { color: YES, fontWeight: 600 } : undefined}>
+                {m.class_label}{mine ? ' · you' : ''}
+              </span>
+            }
+          />
+        )
+      })}
+      {products.length > 0 && (
+        <div style={{ fontSize: 10, color: theme.faint, lineHeight: 1.4, marginTop: 2 }}>
+          {moldRecipeSummary(products)}
+        </div>
+      )}
+      {from && (
+        <Row
+          theme={theme}
+          left={itemLink(from.id, from.name)}
+          right={from.nodrop === 0 ? 'NO DROP mold' : 'tradeable mold'}
+        />
+      )}
+    </div>
   )
 }
 
@@ -735,6 +801,7 @@ function SourcesSection(p: SectionProps): React.ReactElement | null {
 
 const SECTION_COMPONENTS: Record<ItemInfoSectionId, (p: SectionProps) => React.ReactElement | null> = {
   facts: FactsSection,
+  molds: MoldsSection,
   effects: EffectsSection,
   ownership: OwnershipSection,
   tradeskills: TradeskillsSection,
@@ -762,12 +829,16 @@ export default function ItemInfoCard({
   const upgrade = upgradeInfo.scores.get(item.id)
   const wanted = upgradeInfo.priority.get(item.id)
   const navigate = useAppNavigate()
+  const activeChar = useActiveCharacterSummary()
   const vis = useMemo(() => (key: string) => !settings.hidden.has(key), [settings.hidden])
   const openItem = () => navigate(`/items?select=${item.id}`)
   const showOpen = vis('header.open')
 
   const total = data.holdings.reduce((n, h) => n + Math.max(1, h.count), 0)
-  const props: SectionProps = { item, data, settings, theme, zone, vis, go: navigate }
+  const props: SectionProps = {
+    item, data, settings, theme, zone, vis, go: navigate,
+    classIndex: activeChar?.classIndex ?? null,
+  }
 
   const sections = settings.order
     .filter((id) => vis(sectionKey(id)))

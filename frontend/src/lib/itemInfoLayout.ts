@@ -7,6 +7,7 @@ import type { ItemInfoOverlaySettings } from '../types/config'
 
 export type ItemInfoSectionId =
   | 'facts'
+  | 'molds'
   | 'effects'
   | 'ownership'
   | 'tradeskills'
@@ -52,6 +53,16 @@ export const ITEM_INFO_SECTIONS: ItemInfoSectionDef[] = [
       { key: 'facts.weight', label: 'Weight' },
       { key: 'facts.size', label: 'Size' },
       { key: 'facts.value', label: 'Value' },
+    ],
+  },
+  {
+    id: 'molds',
+    label: 'PoP Mold',
+    hint: 'Class armor a Planes of Power mold or pattern combines into',
+    listed: false,
+    fields: [
+      { key: 'molds.creates', label: 'Creates', hint: 'Class → item, hover for stats' },
+      { key: 'molds.made_from', label: 'Made from', hint: 'On the armor: the mold it comes from' },
     ],
   },
   {
@@ -143,13 +154,24 @@ export function sectionDef(id: ItemInfoSectionId): ItemInfoSectionDef {
 }
 
 // Saved orders are partial-tolerant, like the NPC overlay's: unknown ids are
-// dropped and missing ones keep their default slot at the end.
+// dropped. A missing id (a section added after the order was saved) goes in
+// right after its nearest default-order predecessor that is present, or first
+// if none is — so a new section lands where it belongs, and the user's own
+// placement of every saved section is kept.
 export function resolveItemInfoOrder(saved: string[] | null | undefined): ItemInfoSectionId[] {
   const known = new Set<string>(DEFAULT_ORDER)
   const out = (saved ?? []).filter(
     (id, i, arr): id is ItemInfoSectionId => known.has(id) && arr.indexOf(id) === i,
   )
-  for (const id of DEFAULT_ORDER) if (!out.includes(id)) out.push(id)
+  DEFAULT_ORDER.forEach((id, i) => {
+    if (out.includes(id)) return
+    let at = 0
+    for (let j = i - 1; j >= 0; j--) {
+      const k = out.indexOf(DEFAULT_ORDER[j])
+      if (k >= 0) { at = k + 1; break }
+    }
+    out.splice(at, 0, id)
+  })
   return out
 }
 
