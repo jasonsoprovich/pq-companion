@@ -77,7 +77,7 @@ import DeveloperTab from './DeveloperTab'
 
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'discarded' | 'error'
-type UpdateState = 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'downloaded' | 'error'
+type UpdateState = 'idle' | 'checking' | 'up-to-date' | 'available' | 'manual' | 'downloading' | 'downloaded' | 'error'
 type Tab = 'general' | 'audio' | 'accessibility' | 'navigation' | 'overlays' | 'npcoverlay' | 'iteminfo' | 'pet' | 'spelltimers' | 'dpscolors' | 'discord' | 'logs' | 'backups' | 'maps' | 'advanced' | 'about' | 'changelog' | 'developer'
 
 interface TabBarProps {
@@ -423,6 +423,11 @@ export default function SettingsPage(): React.ReactElement {
   const [updateState, setUpdateState] = useState<UpdateState>('idle')
   const [updateVersion, setUpdateVersion] = useState<string | null>(null)
   const [updateError, setUpdateError] = useState<string | null>(null)
+  // Portable copies can't self-update; these link the zip + release page.
+  const [manualUpdate, setManualUpdate] = useState<{
+    downloadUrl: string
+    releaseUrl: string
+  } | null>(null)
   // Changelog tab: fetched lazily on first visit rather than at page load,
   // since most Settings visits never touch this tab. History runs into the
   // dozens of versions, so only the most recent CHANGELOG_PAGE_SIZE render by
@@ -615,6 +620,14 @@ export default function SettingsPage(): React.ReactElement {
       setUpdateState('downloaded')
       setUpdateVersion(info.version)
     })
+    const offManual = window.electron.updater.onManual((info) => {
+      setUpdateState('manual')
+      setUpdateVersion(info.version)
+      setManualUpdate({
+        downloadUrl: info.downloadUrl,
+        releaseUrl: info.releaseUrl,
+      })
+    })
     const offError = window.electron.updater.onError((msg) => {
       setUpdateState('error')
       setUpdateError(msg)
@@ -623,6 +636,7 @@ export default function SettingsPage(): React.ReactElement {
       offAvailable()
       offProgress()
       offDownloaded()
+      offManual()
       offError()
     }
   }, [])
@@ -1145,6 +1159,31 @@ export default function SettingsPage(): React.ReactElement {
           {updateState === 'available' && (
             <p className="mt-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
               v{updateVersion} available — downloading…
+            </p>
+          )}
+          {updateState === 'manual' && manualUpdate && (
+            <p className="mt-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+              v{updateVersion} available. This portable copy updates manually —{' '}
+              <a
+                href={manualUpdate.downloadUrl}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="hover:underline"
+                style={{ color: 'var(--color-primary)' }}
+              >
+                download the zip
+              </a>{' '}
+              and extract it over this folder (
+              <a
+                href={manualUpdate.releaseUrl}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="hover:underline"
+                style={{ color: 'var(--color-primary)' }}
+              >
+                release notes
+              </a>
+              ).
             </p>
           )}
           {updateState === 'error' && updateError && (

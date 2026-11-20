@@ -15,7 +15,7 @@ import {
   isWarningSilenced,
   silenceWarning,
   unmanagedCopyMessage,
-  unmanagedUpdateMessage,
+  manualUpdateInfo,
 } from './installCheck'
 
 const isDev = !app.isPackaged
@@ -1309,7 +1309,7 @@ function setupAutoUpdater(): void {
   autoUpdater.on('update-available', (info) => {
     console.log(`[updater] Update available: ${info.version}`)
     if (!canSelfUpdate) {
-      mainWindow?.webContents.send('updater:error', unmanagedUpdateMessage(info.version))
+      mainWindow?.webContents.send('updater:manual', manualUpdateInfo(info.version))
       return
     }
     mainWindow?.webContents.send('updater:available', { version: info.version })

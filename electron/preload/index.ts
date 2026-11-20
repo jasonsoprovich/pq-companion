@@ -281,6 +281,19 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.on('updater:downloaded', listener)
       return () => ipcRenderer.removeListener('updater:downloaded', listener)
     },
+    // Fired instead of onAvailable on a copy the installer doesn't manage
+    // (portable zip / copied folder): it can't self-update, so the UI offers
+    // download links instead of an Update button.
+    onManual: (
+      cb: (info: { version: string; downloadUrl: string; releaseUrl: string }) => void,
+    ): (() => void) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        info: { version: string; downloadUrl: string; releaseUrl: string },
+      ) => cb(info)
+      ipcRenderer.on('updater:manual', listener)
+      return () => ipcRenderer.removeListener('updater:manual', listener)
+    },
     onError: (cb: (message: string) => void): (() => void) => {
       const listener = (_e: Electron.IpcRendererEvent, message: string) => cb(message)
       ipcRenderer.on('updater:error', listener)
