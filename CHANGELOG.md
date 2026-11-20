@@ -9,6 +9,24 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.33.4 — 2026-11-19
+
+Fixes for Live Buffs missing buffs other players cast on you, Enrage Soon warnings that repeated every second on a dead target, discipline cooldowns that vanished as soon as the disc landed, and debuffs from other players that never got a timer. Also fixes several Gear Upgrade Finder scores and same-named raid mobs on the NPC overlay.
+
+### Fixes
+- **Live Buffs missed buffs others cast on you** — Character Info's Live Buffs (and its HP total) only listed buffs the log could name. Buffs that share their message with another spell, like Hand of Virtue, Focus of the Seventh and Brell's, were left out when someone else cast them, so a raid-buffed character showed far less HP than in game. With Zeal connected, the list now mirrors your actual buff window.
+- **Illusion timers stayed after clicking the illusion off** — when the log can't tell which illusion you got, its timer is just called "Illusion". It now ends when the illusion leaves your buff window, and keeps the right time while it's up (Zeal needed).
+- **Enrage Soon repeating on a dead target** — leaving a dead mob targeted fired target-HP triggers like Enrage Soon on every update, hundreds of times a night. Each trigger now warns once as a mob drops below the threshold, doesn't warn again when you re-target the same mob, and never fires at 0%.
+- **Discipline cooldowns vanished on land** — a pack's reuse timer (e.g. "Duelist Discipline CD") disappeared the moment the discipline landed, and the discipline's own timer used the wrong length (Duelist showed 30s instead of 12s). Both now behave.
+- **Other players' Tash and Ro debuffs had no timer** — with timers set to Anyone, debuffs whose message is shared across a spell line (the Tash line, Ro's line) were skipped. When every rank lasts the same, they're now timed. Lines whose ranks last differently, like Malo, still need your own cast.
+- **Charm pet window showed debuffs twice** — a Tash on your charmed pet could show twice when a same-named mob was nearby. The pet window now only shows timers on your actual pet.
+- **Same-named NPCs on the overlay** — where the overlay can't tell two versions of a mob apart, it now labels each by what sets them apart, like mezzable vs mez immune (the Rathe Council in Plane of Earth B). After one of Vex Thal's twin blobs dies and is looted, the other now shows only its own loot.
+- **Debuff timers left running after a death** — fast casts, tabbing to a same-named mob mid-cast, and spells landing just before a kill could leave a detrimental timer running after its mob died. These now clear.
+- **Debuff timers on loose mounts** — a mount that glitches free of its rider no longer gets debuff timers.
+- **Invisible mobs missing from the NPC overlay** — mobs drawn invisible, like "a conjured automoton" in the Tower of Solusek Ro, showed "No NPC database record". They now show, while raid bosses' untargetable decoys stay hidden.
+- **Gear Upgrade Finder fixes** — items in bags or the bank no longer count as worn, so a haste item in your bank stops real haste upgrades scoring 0. For characters over a stat cap, items that shed over-cap stats are no longer buried. Plane of Time class armor no longer shows with Show PoP gear off, and quest-combine gear (like Rosrak's Sleeves of the Primal) no longer hides with Hide crafted on.
+- **Hide All missed Discord Voice** — Hide All now hides the Discord Voice overlay too.
+
 ## v0.33.3 — 2026-11-16
 
 Fixes for mez timers that never appeared, a trigger test that could blank the app, kills and charm pets listed in the wrong zone, and alerts that turned your other sounds down on Windows. Also includes PoP flag detection from hail lines and a few overlay and map tweaks.
