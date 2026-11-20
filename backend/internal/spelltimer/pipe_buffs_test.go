@@ -157,3 +157,55 @@ func TestPipeBuffWindowInTimerState(t *testing.T) {
 		t.Fatalf("disconnect kept the window: %v", got)
 	}
 }
+
+// A combined timer ("Illusion", "Speed of the Shissar/Brood") never matches
+// a slot name, so the pipe matches it by family: confirmed while any member
+// is in the window (an illusion swap keeps it), ended once none is.
+func TestPipeBuffCombinedTimersMatchByFamily(t *testing.T) {
+	cases := []struct {
+		timer   string
+		member  string
+		swapped string // another member replacing it; "" to skip
+	}{
+		{illusionCombinedName, "Illusion: Dark Elf", "Illusion: Gnome"},
+		{"Speed of the Shissar/Brood", "Speed of the Brood", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.timer, func(t *testing.T) {
+			e, _ := levelEngine(t, 13, 65)
+			now := time.Now()
+			tm := &ActiveTimer{
+				ID: timerKey(c.timer, "Tester"), SpellName: c.timer, TargetName: "Tester",
+				Category: CategoryBuff, StartsAt: now.Add(-time.Minute), ExpiresAt: now.Add(20 * time.Minute),
+			}
+			e.timers[tm.ID] = tm
+			wolf := PipeBuff{Name: "Spirit of Wolf", Ticks: 300}
+
+			e.setPipeBuffSlotsAt("Tester", []PipeBuff{{Name: c.member, Ticks: 150}, wolf}, now)
+			if !e.pipeConfirmed[tm.ID] {
+				t.Fatal("combined timer not confirmed by its family member")
+			}
+			if got := tm.ExpiresAt.Sub(now); got != 150*eqTickDuration-eqTickDuration/2 {
+				t.Fatalf("not synced to the member's ticks: %v left", got)
+			}
+			at := now
+			if c.swapped != "" {
+				for i := 1; i <= 3; i++ {
+					at = now.Add(time.Duration(i) * time.Second)
+					e.setPipeBuffSlotsAt("Tester", []PipeBuff{{Name: c.swapped, Ticks: 140}, wolf}, at)
+				}
+				if !tm.ExpiresAt.After(at) {
+					t.Fatal("swapping to another member ended the timer")
+				}
+			}
+			// Clicked off: gone from the window past the confirm window.
+			off := at.Add(time.Second)
+			e.setPipeBuffSlotsAt("Tester", []PipeBuff{wolf}, off)
+			end := off.Add(pipeFadeConfirm)
+			e.setPipeBuffSlotsAt("Tester", []PipeBuff{wolf}, end)
+			if !tm.ExpiresAt.Equal(end) {
+				t.Fatalf("combined timer should end at %v, got %v", end, tm.ExpiresAt)
+			}
+		})
+	}
+}

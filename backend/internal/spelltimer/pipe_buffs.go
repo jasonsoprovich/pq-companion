@@ -79,6 +79,7 @@ func (e *Engine) setPipeBuffSlotsAt(character string, buffs []PipeBuff, now time
 	var selfIDs []int
 	if applies && buffs != nil {
 		selfIDs = e.pipeBuffSpellIDs(buffs)
+		e.addCombinedBuffNames(buffs, set, ticks)
 	}
 
 	e.mu.Lock()
@@ -138,31 +139,70 @@ func (e *Engine) pipeBuffSpellIDs(buffs []PipeBuff) []int {
 	}
 	seen := make(map[int]bool, len(buffs))
 	for _, b := range buffs {
-		name := strings.TrimSpace(b.Name)
-		if name == "" {
-			continue
-		}
-		key := strings.ToLower(name)
-		e.mu.Lock()
-		id, cached := e.pipeSpellIDs[key]
-		e.mu.Unlock()
-		if !cached {
-			if sp, err := e.db.GetSpellByExactName(name); err == nil && sp != nil {
-				id = sp.ID
-			}
-			e.mu.Lock()
-			if e.pipeSpellIDs == nil {
-				e.pipeSpellIDs = make(map[string]int)
-			}
-			e.pipeSpellIDs[key] = id
-			e.mu.Unlock()
-		}
+		id := e.pipeSpellID(b.Name)
 		if id > 0 && !seen[id] {
 			seen[id] = true
 			ids = append(ids, id)
 		}
 	}
 	return ids
+}
+
+// pipeSpellID resolves a buff slot name to a spell id (0 when unknown),
+// caching the lookup. e.mu must not be held.
+func (e *Engine) pipeSpellID(name string) int {
+	name = strings.TrimSpace(name)
+	if name == "" || e.db == nil {
+		return 0
+	}
+	key := strings.ToLower(name)
+	e.mu.Lock()
+	id, cached := e.pipeSpellIDs[key]
+	e.mu.Unlock()
+	if cached {
+		return id
+	}
+	if sp, err := e.db.GetSpellByExactName(name); err == nil && sp != nil {
+		id = sp.ID
+	}
+	e.mu.Lock()
+	if e.pipeSpellIDs == nil {
+		e.pipeSpellIDs = make(map[string]int)
+	}
+	e.pipeSpellIDs[key] = id
+	e.mu.Unlock()
+	return id
+}
+
+// addCombinedBuffNames adds the combined timer names the log falls back to
+// when it can't tell spells apart (the generic "Illusion", and the
+// ambiguousLandGroups names like "Speed of the Shissar/Brood") to a pipe
+// snapshot whenever a buff they stand for is in the window, with that slot's
+// tick count. Without this a combined timer never matches a slot name
+// ("Illusion: Dark Elf"), so the pipe could neither confirm it, correct its
+// time, nor end it when the buff is clicked off. e.mu must not be held.
+func (e *Engine) addCombinedBuffNames(buffs []PipeBuff, set map[string]bool, ticks map[string]int) {
+	illusions := e.illusionIDs()
+	add := func(name string, n int) {
+		set[name] = true
+		if n > ticks[name] {
+			ticks[name] = n
+		}
+	}
+	for _, b := range buffs {
+		id := e.pipeSpellID(b.Name)
+		if id <= 0 {
+			continue
+		}
+		if illusions[id] {
+			add(illusionCombinedName, b.Ticks)
+		}
+		for i := range ambiguousLandGroups {
+			if g := &ambiguousLandGroups[i]; g.memberIDs[id] {
+				add(g.displayName, b.Ticks)
+			}
+		}
+	}
 }
 
 func sameInts(a, b []int) bool {
