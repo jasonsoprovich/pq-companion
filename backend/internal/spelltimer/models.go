@@ -243,4 +243,8 @@ type TimerState struct {
 	// the Zeal pipe, as spell ids in slot order. Absent without a pipe
 	// snapshot for the active character; consumers fall back to Timers.
 	SelfBuffSpellIDs []int `json:"self_buff_spell_ids,omitempty"`
+	// SelfBuffsStale is true when SelfBuffSpellIDs is the last window seen
+	// before the pipe disconnected (camped / logged out), kept until the
+	// next pipe update rather than dropped.
+	SelfBuffsStale bool `json:"self_buffs_stale,omitempty"`
 }

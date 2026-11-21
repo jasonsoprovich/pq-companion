@@ -722,6 +722,10 @@ type Engine struct {
 	// name lookups.
 	pipeSelfBuffIDs []int
 	pipeSpellIDs    map[string]int
+	// pipeSelfBuffChar is whose window pipeSelfBuffIDs is, and
+	// pipeSelfBuffStale marks it as the last one seen before a disconnect.
+	pipeSelfBuffChar  string
+	pipeSelfBuffStale bool
 
 	// pipeConfirmed marks timers (by key) whose spell the pipe has shown in a
 	// ticked buff slot at least once, proving the timer's name matches what
@@ -3797,10 +3801,17 @@ func (e *Engine) snapshot(now time.Time) TimerState {
 			timers[j], timers[j-1] = timers[j-1], timers[j]
 		}
 	}
+	// A window kept from before a disconnect belongs to that character only;
+	// after a switch to another character it no longer applies.
+	var ids []int
+	if e.pipeSelfBuffChar == "" || strings.EqualFold(e.pipeSelfBuffChar, e.activePlayerName()) {
+		ids = append([]int(nil), e.pipeSelfBuffIDs...)
+	}
 	return TimerState{
 		Timers:           timers,
 		LastUpdated:      now,
-		SelfBuffSpellIDs: append([]int(nil), e.pipeSelfBuffIDs...),
+		SelfBuffSpellIDs: ids,
+		SelfBuffsStale:   len(ids) > 0 && e.pipeSelfBuffStale,
 	}
 }
 
