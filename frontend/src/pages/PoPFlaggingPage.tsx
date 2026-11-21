@@ -110,6 +110,12 @@ function ProgressBar({ done, total }: { done: number; total: number }): React.Re
   )
 }
 
+// pendingKeyringFlags lists a tier's key-ring rows the character hasn't done.
+// Superseded any-of members never count.
+function pendingKeyringFlags(flags: PoPFlagStatus[]): PoPFlagStatus[] {
+  return flags.filter((f) => f.role === 'keyring' && !f.done && !f.superseded)
+}
+
 interface TierCardProps {
   tier: number
   flags: PoPFlagStatus[]
@@ -127,8 +133,13 @@ interface TierCardProps {
 function TierCard({
   tier, flags, done, total, canToggle, busyId, onToggle, onConfirm, allFlags, requiredByDone, defaultOpen,
 }: TierCardProps): React.ReactElement {
-  const [open, setOpen] = useState(defaultOpen)
-  const complete = done === total && total > 0
+  // Key-ring rows don't count toward done/total (they're optional), but a
+  // pending one is still a step the player has to take — e.g. Tier 3's jump
+  // into the Tower floor door to Plane of Fire. Until it's done, the tier
+  // isn't shown as complete and stays open so the step can't be missed.
+  const pendingKeyrings = pendingKeyringFlags(flags)
+  const complete = done === total && total > 0 && pendingKeyrings.length === 0
+  const [open, setOpen] = useState(defaultOpen || pendingKeyrings.length > 0)
 
   // Group this tier's flags by zone, preserving dataset order.
   const zones = useMemo(() => {
@@ -161,6 +172,11 @@ function TierCard({
         </span>
         <span className="flex-1 text-sm font-semibold" style={{ color: 'var(--color-foreground)' }}>
           {tierLabel(tier)}
+          {done === total && total > 0 && pendingKeyrings.length > 0 && (
+            <span className="ml-2 text-[11px] font-normal" style={{ color: 'var(--color-warning)' }}>
+              Key-ring left: {pendingKeyrings.map((f) => f.label).join(', ')}
+            </span>
+          )}
         </span>
         <div className="w-32 shrink-0">
           <ProgressBar done={done} total={total} />
