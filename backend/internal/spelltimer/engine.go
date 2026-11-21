@@ -465,6 +465,20 @@ func sameSpellForDedup(existing *ActiveTimer, name string, spellID int) bool {
 	return spellID > 0 && existing.SpellID == spellID
 }
 
+// twinGraceWindow is how old a trigger twin may be and still be absorbed
+// by a land. Most twins fire on the land line itself, so dedupGraceWindow
+// is plenty. A same-spell twin from a trigger keyed on "You begin casting
+// <spell>." (the PoP upgrades sharing an older rank's land text, e.g.
+// Swarming Death, Savage Roots) started at the cast line, a whole cast
+// time before the land, plus any pushback delay. A flat 3s left a
+// second row for every cast longer than that.
+func twinGraceWindow(existing *ActiveTimer, spell *db.Spell, landedAt time.Time, sameSpell bool) time.Duration {
+	if !sameSpell || spell == nil || !existing.CastAt.Before(landedAt) {
+		return dedupGraceWindow
+	}
+	return castSelfSlowWindow + time.Duration(spell.CastTime)*time.Millisecond
+}
+
 // sameLandOrphan reports whether existing is the trigger-pack twin of the
 // spell the pipeline just resolved for target (of category): a non-charm
 // timer created by a trigger that fired on the same land line (identical
@@ -2219,7 +2233,7 @@ func (e *Engine) onSpellLandedSeq(landedAt time.Time, seq uint64, data logparser
 		if !sameSpell && !sameLand {
 			continue
 		}
-		if time.Since(existing.CastAt) >= dedupGraceWindow {
+		if time.Since(existing.CastAt) >= twinGraceWindow(existing, spell, landedAt, sameSpell) {
 			continue
 		}
 		if existing.DisplayThresholdSecs > 0 {
