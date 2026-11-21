@@ -42,12 +42,16 @@ function tierLabel(t: number): string {
 }
 
 // zoneStatus summarises a zone card's border colour: done when every required
-// (non-optional, non-group-member) step is done, locked when none of them are
-// even reachable yet, available otherwise (in progress or ready to start).
+// (non-optional, non-group-member) step is done and no key-ring zone-in is
+// left, locked when none of them are even reachable yet, available otherwise
+// (in progress or ready to start). Key-rings are optional rows but personal:
+// each character must zone in themselves (Sol Ro's floor door to Plane of
+// Fire), unlike a "key" row, where one door key per raid is enough.
 function zoneStatus(flags: PoPFlagStatus[]): ZoneStatus {
   const relevant = flags.filter((f) => !f.optional && !f.group)
   if (relevant.length === 0) return 'available'
-  if (relevant.every((f) => f.done)) return 'done'
+  const keyringLeft = flags.some((f) => f.role === 'keyring' && !f.done && !f.superseded)
+  if (relevant.every((f) => f.done)) return keyringLeft ? 'available' : 'done'
   if (relevant.every((f) => f.locked && !f.done)) return 'locked'
   return 'available'
 }
