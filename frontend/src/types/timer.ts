@@ -134,4 +134,7 @@ export interface TimerState {
   // The active character's buff window from the Zeal pipe, as spell ids in
   // slot order. Absent without a pipe snapshot; fall back to timers.
   self_buff_spell_ids?: number[]
+  // True when self_buff_spell_ids is the last window seen before Zeal
+  // disconnected (camped / logged out), kept until the next pipe update.
+  self_buffs_stale?: boolean
 }

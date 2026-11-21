@@ -128,8 +128,9 @@ func TestPipeBuffFadeResetWhenBuffReturns(t *testing.T) {
 
 // The pipe's buff window reaches TimerState as spell ids for the active
 // character, including buffs no timer covers (another player's Hand of
-// Virtue, whose land text Virtue shares). Another character's snapshot and a
-// disconnect leave it empty, so consumers fall back to the timers.
+// Virtue, whose land text Virtue shares). Another character's snapshot leaves
+// it empty, so consumers fall back to the timers. A disconnect (camping out)
+// keeps the last window, marked stale, until the next pipe update.
 func TestPipeBuffWindowInTimerState(t *testing.T) {
 	e, _ := levelEngine(t, 13, 65)
 	now := time.Now()
@@ -151,10 +152,20 @@ func TestPipeBuffWindowInTimerState(t *testing.T) {
 	if got := e.snapshot(now).SelfBuffSpellIDs; len(got) != 0 {
 		t.Fatalf("other character's window leaked: %v", got)
 	}
+	if e.snapshot(now).SelfBuffsStale {
+		t.Fatal("empty window marked stale")
+	}
 	e.setPipeBuffSlotsAt("Tester", window, now)
 	e.setPipeBuffSlotsAt("", nil, now)
-	if got := e.snapshot(now).SelfBuffSpellIDs; len(got) != 0 {
-		t.Fatalf("disconnect kept the window: %v", got)
+	st := e.snapshot(now)
+	if !sameInts(st.SelfBuffSpellIDs, want) || !st.SelfBuffsStale {
+		t.Fatalf("after disconnect: ids %v stale %v, want %v kept and stale", st.SelfBuffSpellIDs, st.SelfBuffsStale, want)
+	}
+	// The next pipe update replaces it and clears the stale mark.
+	e.setPipeBuffSlotsAt("Tester", window[:1], now)
+	st = e.snapshot(now)
+	if !sameInts(st.SelfBuffSpellIDs, []int{3479}) || st.SelfBuffsStale {
+		t.Fatalf("after reconnect: ids %v stale %v, want [3479] fresh", st.SelfBuffSpellIDs, st.SelfBuffsStale)
 	}
 }
 

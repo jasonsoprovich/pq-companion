@@ -971,6 +971,7 @@ function StatsPanel({ stats, hasStats, characterID, characterName }: StatsPanelP
           entries={liveBuffEntries}
           viewedIsActive={viewedIsActive}
           activePlayerName={activePlayerName}
+          stale={!!(viewedIsActive && pipeBuffIDs && pipeBuffIDs.length > 0 && timerState?.self_buffs_stale)}
         />
       )}
 
@@ -1344,9 +1345,11 @@ interface LiveBuffsPanelProps {
   entries: Array<{ id: number; meta: SpellStatDeltaEntry }>
   viewedIsActive: boolean
   activePlayerName: string
+  // The list is the last buff window Zeal reported before disconnecting.
+  stale?: boolean
 }
 
-function LiveBuffsPanel({ entries, viewedIsActive, activePlayerName }: LiveBuffsPanelProps): React.ReactElement {
+function LiveBuffsPanel({ entries, viewedIsActive, activePlayerName, stale }: LiveBuffsPanelProps): React.ReactElement {
   const total = emptyDelta()
   for (const e of entries) addDelta(total, e.meta.delta)
 
@@ -1362,6 +1365,15 @@ function LiveBuffsPanel({ entries, viewedIsActive, activePlayerName }: LiveBuffs
         <div className="flex-1 min-w-0 text-sm font-medium" style={{ color: 'var(--color-foreground)' }}>
           Live Buffs ({entries.length})
         </div>
+        {stale && viewedIsActive && entries.length > 0 && (
+          <span
+            className="shrink-0 text-[10px]"
+            style={{ color: 'var(--color-muted-foreground)' }}
+            title="Zeal disconnected (camped or logged out). These are the buffs you had then; they update when Zeal reconnects."
+          >
+            last seen in game
+          </span>
+        )}
       </div>
 
       {!viewedIsActive ? (

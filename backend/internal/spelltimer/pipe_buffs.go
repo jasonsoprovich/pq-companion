@@ -56,7 +56,9 @@ const (
 //
 // A snapshot for any other character (the pipe can be connected to a
 // different client than the log being read) is only recorded, never applied.
-// Pass nil to clear the snapshot (pipe disconnected).
+// Pass nil to clear the snapshot (pipe disconnected); the active character's
+// last buff window is kept, marked stale, for Character Info's Live Buffs
+// until the next pipe update — camping out shouldn't blank it.
 func (e *Engine) SetPipeBuffSlots(character string, buffs []PipeBuff) {
 	e.setPipeBuffSlotsAt(character, buffs, time.Now())
 }
@@ -94,8 +96,29 @@ func (e *Engine) setPipeBuffSlotsAt(character string, buffs []PipeBuff, now time
 		}
 	}
 	e.pipeBuffSlots = set
-	changed := !sameInts(selfIDs, e.pipeSelfBuffIDs) || (selfIDs == nil) != (e.pipeSelfBuffIDs == nil)
+	if buffs == nil {
+		// Disconnect: keep the last window (only the timer corrections above
+		// are pipe-only state), just mark it stale.
+		changed := !e.pipeSelfBuffStale && len(e.pipeSelfBuffIDs) > 0
+		e.pipeSelfBuffStale = true
+		var snap TimerState
+		if changed {
+			snap = e.snapshot(now)
+		}
+		e.mu.Unlock()
+		if changed {
+			e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
+		}
+		return
+	}
+	changed := !sameInts(selfIDs, e.pipeSelfBuffIDs) || (selfIDs == nil) != (e.pipeSelfBuffIDs == nil) ||
+		e.pipeSelfBuffStale
 	e.pipeSelfBuffIDs = selfIDs
+	e.pipeSelfBuffStale = false
+	e.pipeSelfBuffChar = ""
+	if selfIDs != nil {
+		e.pipeSelfBuffChar = active
+	}
 	var strips []StripEvent
 	if applies {
 		var reconciled bool
