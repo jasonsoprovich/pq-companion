@@ -35,6 +35,8 @@ import CopyTargetStatsButton from '../CopyTargetStatsButton'
 import ItemDetailModal from '../ItemDetailModal'
 import { ItemIcon } from '../Icon'
 import ItemHoverCard from '../ItemHoverCard'
+import MoldLootProducts, { yourMoldProduct } from './MoldLootProducts'
+import { useActiveCharacterSummary } from '../../hooks/useActiveCharacterLevel'
 import { ResistChip } from '../ResistChip'
 import NPCCasterSummarySection from './NPCCasterSummarySection'
 import NPCDistanceChip from './NPCDistanceChip'
@@ -234,10 +236,13 @@ function LootSection({
 
   // Gear Upgrade Finder scores for the active character, so an upgrade on
   // the table reads at a glance without opening the Gear Upgrades page.
+  // A PoP mold's class items are scored too: the mold row shows your piece's
+  // upgrade.
   const { scores: upgrades, priority: wantedFocus } = useUpgradeInfo(
     [...(loot?.drops ?? []), ...(loot?.zone_wide_drops ?? [])]
-      .flatMap((d) => d.items.map((i) => i.item_id)),
+      .flatMap((d) => d.items.flatMap((i) => [i.item_id, ...(i.mold_products ?? []).map((m) => m.item_id)])),
   )
+  const classIndex = useActiveCharacterSummary()?.classIndex ?? null
 
   if (loading) {
     return <p className="px-1 py-1 text-xs" style={{ color: 'var(--color-muted)' }}>Loading loot…</p>
@@ -280,11 +285,12 @@ function LootSection({
       drop.items.map((item) => {
         const eff = effectiveDropPct(drop, item)
         const wished = wishlistItemIds.has(item.item_id)
-        const upgrade = upgrades.get(item.item_id)
+        const yourPiece = yourMoldProduct(item.mold_products, classIndex)
+        const upgrade = upgrades.get(item.item_id) ?? (yourPiece && upgrades.get(yourPiece.item_id))
         const wanted = wantedFocus.get(item.item_id)
         return (
+          <React.Fragment key={`${drop.id}-${item.item_id}`}>
           <button
-            key={`${drop.id}-${item.item_id}`}
             onClick={() => onItemClick(item.item_id)}
             className="flex w-full items-center gap-2 border-t py-0.5 pr-1 text-left"
             style={{
@@ -325,7 +331,9 @@ function LootSection({
               <span
                 className="shrink-0 text-[11px] font-semibold tabular-nums"
                 style={{ color: '#22c55e' }}
-                title={`Gear upgrade for your active character (${upgrade.slot_label})`}
+                title={yourPiece && !upgrades.get(item.item_id)
+                  ? `Makes ${yourPiece.name}, a gear upgrade for your active character (${upgrade.slot_label})`
+                  : `Gear upgrade for your active character (${upgrade.slot_label})`}
               >
                 +{upgrade.score.toFixed(0)}
               </span>
@@ -335,6 +343,16 @@ function LootSection({
               {item.multiplier > 1 && ` ×${item.multiplier}`}
             </span>
           </button>
+          {item.mold_products && item.mold_products.length > 0 && (
+            <MoldLootProducts
+              products={item.mold_products}
+              classIndex={classIndex}
+              onItemClick={onItemClick}
+              mutedColor="var(--color-muted)"
+              linkColor="var(--color-muted-foreground)"
+            />
+          )}
+          </React.Fragment>
         )
       }),
     )

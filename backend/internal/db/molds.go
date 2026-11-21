@@ -45,6 +45,34 @@ type MoldProduct struct {
 	Tools     []MoldItemRef `json:"tools"`
 }
 
+// MoldProductRef is a lean MoldProduct (no recipe) for list views such as
+// NPC loot tables.
+type MoldProductRef struct {
+	ItemID     int    `json:"item_id"`
+	Name       string `json:"name"`
+	Icon       int    `json:"icon"`
+	Classes    int    `json:"classes"`
+	ClassLabel string `json:"class_label"`
+}
+
+// annotateMoldLoot fills MoldProducts on every mold item in the drops.
+func (db *DB) annotateMoldLoot(drops []LootDrop) {
+	for d := range drops {
+		for i := range drops[d].Items {
+			ps := db.MoldProducts(drops[d].Items[i].ItemID)
+			if len(ps) == 0 {
+				continue
+			}
+			refs := make([]MoldProductRef, len(ps))
+			for k, p := range ps {
+				refs[k] = MoldProductRef{ItemID: p.ItemID, Name: p.Name, Icon: p.Icon,
+					Classes: p.Classes, ClassLabel: p.ClassLabel}
+			}
+			drops[d].Items[i].MoldProducts = refs
+		}
+	}
+}
+
 // MoldRef identifies the mold a product is made from. NoDrop follows the
 // items.nodrop convention (0 = NO DROP).
 type MoldRef struct {

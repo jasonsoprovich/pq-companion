@@ -31,6 +31,8 @@ import TargetPinButton from '../components/TargetPinButton'
 import CopyTargetStatsButton from '../components/CopyTargetStatsButton'
 import { ItemIcon } from '../components/Icon'
 import ItemHoverCard from '../components/ItemHoverCard'
+import MoldLootProducts, { yourMoldProduct } from '../components/overlays/MoldLootProducts'
+import { useActiveCharacterSummary } from '../hooks/useActiveCharacterLevel'
 import { ResistChip } from '../components/ResistChip'
 import NPCCasterSummarySection from '../components/overlays/NPCCasterSummarySection'
 import NPCDistanceChip from '../components/overlays/NPCDistanceChip'
@@ -187,11 +189,13 @@ function LootContent({
   }, [npcId])
 
   // Gear Upgrade Finder scores for the active character, matching the
-  // in-app NPC panel and the Item Info overlay.
+  // in-app NPC panel and the Item Info overlay. A PoP mold's class items are
+  // scored too: the mold row shows your piece's upgrade.
   const { scores: upgrades, priority: wantedFocus } = useUpgradeInfo(
     [...(loot?.drops ?? []), ...(loot?.zone_wide_drops ?? [])]
-      .flatMap((d) => d.items.map((i) => i.item_id)),
+      .flatMap((d) => d.items.flatMap((i) => [i.item_id, ...(i.mold_products ?? []).map((m) => m.item_id)])),
   )
+  const classIndex = useActiveCharacterSummary()?.classIndex ?? null
 
   if (loading) {
     return <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', margin: 0, padding: '4px 2px' }}>Loading loot…</p>
@@ -217,11 +221,12 @@ function LootContent({
       {drop.items.map((item) => {
         const eff = effectiveDropPct(drop, item)
         const wished = wishlistItemIds.has(item.item_id)
-        const upgrade = upgrades.get(item.item_id)
+        const yourPiece = yourMoldProduct(item.mold_products, classIndex)
+        const upgrade = upgrades.get(item.item_id) ?? (yourPiece && upgrades.get(yourPiece.item_id))
         const wanted = wantedFocus.get(item.item_id)
         return (
+          <React.Fragment key={`${drop.id}-${item.item_id}`}>
           <div
-            key={`${drop.id}-${item.item_id}`}
             onClick={onItemClick ? () => onItemClick(item.item_id) : undefined}
             role={onItemClick ? 'button' : undefined}
             style={{
@@ -278,7 +283,9 @@ function LootContent({
             )}
             {upgrade && (
               <span
-                title={`Gear upgrade for your active character (${upgrade.slot_label})`}
+                title={yourPiece && !upgrades.get(item.item_id)
+                  ? `Makes ${yourPiece.name}, a gear upgrade for your active character (${upgrade.slot_label})`
+                  : `Gear upgrade for your active character (${upgrade.slot_label})`}
                 style={{ fontSize: 10, fontWeight: 600, color: '#22c55e', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}
               >
                 +{upgrade.score.toFixed(0)}
@@ -289,6 +296,16 @@ function LootContent({
               {item.multiplier > 1 && ` ×${item.multiplier}`}
             </span>
           </div>
+          {item.mold_products && item.mold_products.length > 0 && (
+            <MoldLootProducts
+              products={item.mold_products}
+              classIndex={classIndex}
+              onItemClick={onItemClick}
+              mutedColor="rgba(255,255,255,0.45)"
+              linkColor="rgba(255,255,255,0.75)"
+            />
+          )}
+          </React.Fragment>
         )
       })}
     </div>

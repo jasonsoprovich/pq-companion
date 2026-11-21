@@ -410,6 +410,9 @@ type LootDropItem struct {
 	ItemIcon   int     `json:"item_icon,omitempty"`
 	Chance     float64 `json:"chance"`
 	Multiplier int     `json:"multiplier"`
+	// MoldProducts is set when the item is a PoP armor mold: the class items
+	// it combines into, so a loot table can show what the mold is for.
+	MoldProducts []MoldProductRef `json:"mold_products,omitempty"`
 }
 
 // LootDrop is one loot drop group within a loottable entry.

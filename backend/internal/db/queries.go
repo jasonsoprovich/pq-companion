@@ -1716,6 +1716,8 @@ func (db *DB) GetNPCLoot(npcID int) (*NPCLootTable, error) {
 		return nil, nil
 	}
 
+	db.annotateMoldLoot(drops)
+	db.annotateMoldLoot(zoneDrops)
 	return &NPCLootTable{
 		ID:            ltID,
 		Name:          ltName,

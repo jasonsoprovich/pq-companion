@@ -155,3 +155,38 @@ func TestUpgradeCandidates_NoDropJudgesMoldProductsByMold(t *testing.T) {
 		t.Error("Elemental mold product kept despite NO DROP mold")
 	}
 }
+
+// NPC loot tables carry the class items a dropped mold combines into.
+func TestGetNPCLoot_AnnotatesMolds(t *testing.T) {
+	d := openTestDB(t)
+	var npcID int
+	err := d.QueryRow(`SELECT n.id FROM npc_types n
+	  JOIN loottable_entries lt ON lt.loottable_id = n.loottable_id
+	  JOIN lootdrop_entries l ON l.lootdrop_id = lt.lootdrop_id
+	  WHERE l.item_id = 16356 LIMIT 1`).Scan(&npcID)
+	if err != nil {
+		t.Fatalf("find an NPC dropping Ornate Silk Sleeve Pattern: %v", err)
+	}
+	loot, err := d.GetNPCLoot(npcID)
+	if err != nil || loot == nil {
+		t.Fatalf("GetNPCLoot(%d): %v", npcID, err)
+	}
+	found := false
+	for _, dr := range append(loot.Drops, loot.ZoneWideDrops...) {
+		for _, it := range dr.Items {
+			if it.ItemID == 16356 {
+				found = true
+				if len(it.MoldProducts) != 4 {
+					t.Errorf("mold products = %+v, want the 4 silk classes", it.MoldProducts)
+				}
+			} else if len(it.MoldProducts) > 0 {
+				if _, ok := d.ProductMold(it.MoldProducts[0].ItemID); !ok {
+					t.Errorf("non-mold %q annotated", it.ItemName)
+				}
+			}
+		}
+	}
+	if !found {
+		t.Fatal("mold not in the NPC's loot")
+	}
+}

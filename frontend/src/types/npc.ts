@@ -82,6 +82,17 @@ export interface LootDropItem {
   item_icon?: number
   chance: number
   multiplier: number
+  // Set for a PoP armor mold: the class items it combines into.
+  mold_products?: MoldProductRef[]
+}
+
+// MoldProductRef is one class item a PoP armor mold combines into.
+export interface MoldProductRef {
+  item_id: number
+  name: string
+  icon: number
+  classes: number
+  class_label: string
 }
 
 export interface LootDrop {
