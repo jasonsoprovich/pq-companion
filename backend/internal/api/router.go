@@ -166,6 +166,7 @@ func NewRouter(database *db.DB, hub *ws.Hub, cfgMgr *config.Manager, zealWatcher
 		r.Get("/search", search.global)
 		r.Get("/enums", enumsH.get)
 		r.Get("/changelog", changelogH.list)
+		r.Get("/debug/memory", debugMemory)
 		r.Route("/items", func(r chi.Router) {
 			r.Get("/", items.search)
 			r.Get("/{id}", items.get)
