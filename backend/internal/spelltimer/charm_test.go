@@ -121,3 +121,55 @@ func TestNativeCharmTimer(t *testing.T) {
 		}
 	})
 }
+
+// The Enchanter pack starts its charm timer on the cast line, so a cast that
+// fails afterwards must take that timer with it (seen 2026-11-21: two
+// interrupted Beckon casts left a 7-minute Beckon timer with no pet).
+func TestFailedCharmDropsPackTimer(t *testing.T) {
+	interrupt := func(e *Engine) {
+		e.Handle(logparser.LogEvent{Type: logparser.EventSpellInterrupt, Timestamp: time.Now(),
+			Data: logparser.SpellInterruptData{}})
+	}
+
+	for _, tc := range []struct {
+		name string
+		fail func(e *Engine)
+	}{
+		{"interrupted", interrupt},
+		{"did not take hold", func(e *Engine) {
+			e.Handle(logparser.LogEvent{Type: logparser.EventSpellDidNotTakeHold, Timestamp: time.Now(),
+				Data: logparser.SpellDidNotTakeHoldData{}})
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := charmEngine(t)
+			castCharm(e, "Beckon")
+			e.StartExternal("Beckon", "debuff", 420, 0, time.Now(), nil, 3347, "", "", false, "", false)
+			tc.fail(e)
+			if n := len(charmTimers(e)); n != 0 {
+				t.Errorf("failed charm left %d timers", n)
+			}
+		})
+	}
+
+	t.Run("a later spell's interrupt keeps the running charm", func(t *testing.T) {
+		e := charmEngine(t)
+		castCharm(e, "Beckon")
+		e.StartExternal("Beckon", "debuff", 420, 0, time.Now(), nil, 3347, "", "", false, "", false)
+		castCharm(e, "Mesmerize")
+		interrupt(e)
+		if n := len(charmTimers(e)); n != 1 {
+			t.Errorf("want the running charm timer kept, got %d", n)
+		}
+	})
+
+	t.Run("a charm that was already running keeps its timer", func(t *testing.T) {
+		e := charmEngine(t)
+		e.StartExternal("Beckon", "debuff", 420, 0, time.Now().Add(-time.Minute), nil, 3347, "", "", false, "", false)
+		castCharm(e, "Allure")
+		interrupt(e)
+		if n := len(charmTimers(e)); n != 1 {
+			t.Errorf("want the earlier charm timer kept, got %d", n)
+		}
+	})
+}

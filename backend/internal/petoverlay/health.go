@@ -39,6 +39,9 @@ type SpellInfo struct {
 	Icon       int
 	Beneficial bool
 	Charm      bool
+	// LandText is the spell's cast_on_other (" yawns."), shared by the
+	// ranks of a line; "" when it has none.
+	LandText string
 }
 
 // HealthSpell is one effect line of a `/pet health` reply.
@@ -55,6 +58,11 @@ type HealthSnapshot struct {
 	At        time.Time     `json:"at"`
 	HPPercent int           `json:"hp_percent"`
 	Spells    []HealthSpell `json:"spells"`
+	// StaleTimers are ids of timers on the pet's name that the reply shows
+	// aren't on the pet, but that carry no spawn id, so they may be on a
+	// same-named enemy and are left running. The pet card hides the ones
+	// that started before the reply.
+	StaleTimers []string `json:"stale_timers,omitempty"`
 }
 
 // healthAssembler collects a `/pet health` block from the raw line stream.

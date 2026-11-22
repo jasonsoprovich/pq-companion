@@ -376,7 +376,11 @@ func diffFields(base, def, row *Trigger) []FieldDiff {
 }
 
 // ComputeUpdateSummaries returns a summary for every installed built-in pack
-// that has pending updates or locally-deleted definitions to offer.
+// with a pending update. A pack whose only difference is triggers the user
+// deleted is left out: that's the user's choice, not an update, and the Packs
+// tab has nothing to offer for it (its Review button needs a real change), so
+// reporting it lit the sidebar and tab dots for good. The update modal still
+// offers those deleted triggers back alongside a real update.
 func ComputeUpdateSummaries(store *Store) ([]PackUpdateSummary, error) {
 	installed, err := store.InstalledPackNames()
 	if err != nil {
@@ -391,18 +395,26 @@ func ComputeUpdateSummaries(store *Store) ([]PackUpdateSummary, error) {
 		if err != nil {
 			return nil, err
 		}
-		if !diff.HasUpdates() && len(diff.DeletedLocally) == 0 {
-			continue
+		if sum, ok := summarizeDiff(diff); ok {
+			out = append(out, sum)
 		}
-		out = append(out, PackUpdateSummary{
-			PackName:       p.PackName,
-			Changed:        len(diff.Changed),
-			Added:          len(diff.Added),
-			Removed:        len(diff.Removed),
-			DeletedLocally: len(diff.DeletedLocally),
-		})
 	}
 	return out, nil
+}
+
+// summarizeDiff returns the Packs-tab summary for diff, and false when it
+// has no update to offer (see ComputeUpdateSummaries).
+func summarizeDiff(diff *PackDiff) (PackUpdateSummary, bool) {
+	if !diff.HasUpdates() {
+		return PackUpdateSummary{}, false
+	}
+	return PackUpdateSummary{
+		PackName:       diff.PackName,
+		Changed:        len(diff.Changed),
+		Added:          len(diff.Added),
+		Removed:        len(diff.Removed),
+		DeletedLocally: len(diff.DeletedLocally),
+	}, true
 }
 
 // PackUpdateResult reports what an ApplyPackUpdate call actually did.

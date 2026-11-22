@@ -4413,9 +4413,14 @@ ipcMain.handle('dialog:save-export-bundle', async (_event, suggestedName?: strin
 })
 
 ipcMain.handle('dialog:save-debug-logs', async () => {
+  // The computer's local date: toISOString() is UTC, which names an evening
+  // export after tomorrow in the Americas.
+  const now = new Date()
+  const pad = (n: number): string => String(n).padStart(2, '0')
+  const day = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
   const result = await dialog.showSaveDialog({
     title: 'Export Debug Logs',
-    defaultPath: `pq-companion-debug-logs-${new Date().toISOString().slice(0, 10)}.zip`,
+    defaultPath: `pq-companion-debug-logs-${day}.zip`,
     filters: [
       { name: 'Zip Archive', extensions: ['zip'] },
     ],

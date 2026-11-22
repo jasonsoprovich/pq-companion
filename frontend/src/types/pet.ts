@@ -63,6 +63,9 @@ export interface PetHealthSnapshot {
   at: string
   hp_percent: number
   spells: PetHealthSpell[]
+  // Ids of timers on the pet's name that the reply contradicts but that may
+  // belong to a same-named enemy, so they keep running (see the pet card).
+  stale_timers?: string[]
 }
 
 export interface PetState {

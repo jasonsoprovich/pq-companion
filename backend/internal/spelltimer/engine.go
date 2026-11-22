@@ -808,6 +808,10 @@ type Engine struct {
 	// (see charm.go); charmSeq numbers casts so a stale confirm is ignored.
 	pendingCharm *pendingCharm
 	charmSeq     uint64
+	// charmCast is the player's latest charm cast-begin, kept in every
+	// tracking mode so a failed cast can drop the timer the Enchanter pack
+	// started on that cast line (see dropFailedCharmTimer).
+	charmCast charmCastRecord
 
 	// petNameFn reports the player's live pet name ("" when none), so a
 	// same-named mob's death doesn't clear the pet's buff timers. nil means
@@ -1049,7 +1053,7 @@ func (e *Engine) Handle(ev logparser.LogEvent) {
 				"log_spell", data.SpellName, "pipe_spell", pipeName, "ts", ev.Timestamp)
 		}
 		slog.Debug("timer-debug: spell-cast recorded (awaiting land)", "spell", data.SpellName, "ts", ev.Timestamp)
-		e.armCharm(ev.Timestamp, data.SpellName, castTarget, castTargetID)
+		e.recordCharmCast(ev.Timestamp, data.SpellName, castTarget, castTargetID)
 
 	case logparser.EventSpellLanded:
 		data, ok := ev.Data.(logparser.SpellLandedData)
@@ -1072,6 +1076,7 @@ func (e *Engine) Handle(ev logparser.LogEvent) {
 		e.lastCastTargetID = 0
 		e.pendingCharm = nil
 		e.mu.Unlock()
+		e.dropFailedCharmTimer(ev.Timestamp)
 
 	case logparser.EventSpellFade:
 		// "Your X spell has worn off." — the caster's notice that one of
@@ -3338,9 +3343,10 @@ func (e *Engine) removeCharmTimers() {
 // ReconcileTargetEffects drops spell timers on target that an authoritative
 // effect list (the player's `/pet health` reply) shows are no longer on it —
 // worn off early, dispelled, or overwritten by a stronger buff, none of which
-// EQ reliably logs for an NPC. keep reports whether a timer's spell is still
-// accounted for (listed in the reply, or not a spell name the list could
-// contain); only timers keep rejects are dropped.
+// EQ reliably logs for an NPC. keep reports whether a timer is still
+// accounted for, given its name and spell id (a trigger timer's name may not
+// be a spell, but its spell id still says which effect it tracks); only
+// timers keep rejects are dropped.
 //
 // Conservative by design:
 //   - only spell categories (buff/debuff/dot/mez/stun) — never charm, custom,
@@ -3350,19 +3356,20 @@ func (e *Engine) removeCharmTimers() {
 //   - targetID (the pet's spawn id, 0 when unknown) must match a timer's
 //     spawn-id tag when it has one; detrimentals additionally require that
 //     tag, since a same-named enemy the player is debuffing would otherwise
-//     lose its timers to the pet's list.
+//     lose its timers to the pet's list. Those untagged ones are returned as
+//     stale (timer ids) instead: the Pet overlay hides them from the pet
+//     card, which shows them only on the strength of the name.
 //
 // Like a worn-off line, it honours keep-expired (the row flips to overdue
 // instead of disappearing). Returns the affected spell names.
-func (e *Engine) ReconcileTargetEffects(target string, targetID int, keep func(spellName string) bool, before time.Time) []string {
+func (e *Engine) ReconcileTargetEffects(target string, targetID int, keep func(spellName string, spellID int) bool, before time.Time) (removed, stale []string) {
 	norm := normalizeNPCName(target)
 	if norm == "" || keep == nil {
-		return nil
+		return nil, nil
 	}
 	now := time.Now()
 	keepExpired := e.keepExpired()
 	e.mu.Lock()
-	var removed []string
 	for k, t := range e.timers {
 		if t.IsCharm || t.Stacked || normalizeNPCName(t.TargetName) != norm {
 			continue
@@ -3371,7 +3378,7 @@ func (e *Engine) ReconcileTargetEffects(target string, targetID int, keep func(s
 		if !detrimental && t.Category != CategoryBuff {
 			continue
 		}
-		if !t.StartsAt.Before(before) || keep(t.SpellName) {
+		if !t.StartsAt.Before(before) || keep(t.SpellName, t.SpellID) {
 			continue
 		}
 		kid := parseKeyTargetID(k)
@@ -3379,7 +3386,9 @@ func (e *Engine) ReconcileTargetEffects(target string, targetID int, keep func(s
 		case kid != 0 && kid != targetID:
 			continue // tagged to a different spawn (or the pet's id is unknown)
 		case detrimental && kid == 0:
-			continue // untagged debuff: can't tell the pet from a same-named enemy
+			// Untagged debuff: can't tell the pet from a same-named enemy.
+			stale = append(stale, k)
+			continue
 		}
 		if keepExpired {
 			if !t.ExpiresAt.After(now) {
@@ -3398,7 +3407,7 @@ func (e *Engine) ReconcileTargetEffects(target string, targetID int, keep func(s
 		slog.Debug("timer-debug: pet health dropped timers missing from the pet", "target", target, "spells", removed)
 		e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
 	}
-	return removed
+	return removed, stale
 }
 
 // isDetrimentalCategory reports whether a timer category represents a
