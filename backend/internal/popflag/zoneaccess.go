@@ -36,3 +36,28 @@ func ZoneAccess() map[string][]string {
 	}
 	return out
 }
+
+// zoneLevelAccess maps the zones the Plane of Tranquility portals open by
+// level alone to that level ("alternate access", restored by Project Quarm's
+// 2026-11-23 patch: SecretsOTheP/quests potranquility/player.lua @ 05a3ec0).
+// Clicking the portal at or above the level sets the zone flag, though not
+// the progression steps. The higher planes, Halls of Honor B, Nightmare B,
+// the elemental planes and Time still need their flags (or raid willing).
+var zoneLevelAccess = map[string]int{
+	"povalor":   55,
+	"postorms":  55,
+	"codecay":   55,
+	"potorment": 55,
+	"potactics": 60,
+	"bothunder": 62,
+	"hohonora":  62,
+}
+
+// ZoneLevelAccess returns a copy of the zone short_name → portal level table.
+func ZoneLevelAccess() map[string]int {
+	out := make(map[string]int, len(zoneLevelAccess))
+	for k, v := range zoneLevelAccess {
+		out[k] = v
+	}
+	return out
+}

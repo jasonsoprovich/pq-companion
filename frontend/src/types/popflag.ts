@@ -69,6 +69,9 @@ export interface PoPFlagDatasetResponse {
   flags: PoPFlag[]
   // Flag-gated zone short_name → dataset flag IDs required to enter (AND).
   zone_access?: Record<string, string[]>
+  // Zone short_name → the level at which the Plane of Tranquility portal
+  // lets a character in without the flags (sets the zone flag only).
+  zone_level_access?: Record<string, number>
 }
 
 // ── All-characters overview + export ─────────────────────────────────────────
