@@ -7,6 +7,8 @@
 import { OVERLAY_DEFS, type OverlayName } from './overlays'
 
 export const TOGGLE_ALL_ACTION = 'toggleAll'
+export const POSITION_MODE_ACTION = 'positionMode'
+export const CHAT_WINDOWS_LOCK_ACTION = 'chatWindows:lock'
 export const overlayAction = (name: OverlayName): string => `overlay:${name}`
 export const layoutAction = (id: string): string => `layout:${id}`
 
@@ -21,6 +23,8 @@ export interface HotkeyActionDef {
 export function hotkeyActions(layouts: Array<{ id: string; name: string }> = []): HotkeyActionDef[] {
   return [
     { id: TOGGLE_ALL_ACTION, label: 'Show / hide all overlays', kind: 'all' },
+    { id: POSITION_MODE_ACTION, label: 'Position overlays (unlock all to move)', kind: 'all' },
+    { id: CHAT_WINDOWS_LOCK_ACTION, label: 'Lock / unlock chat windows', kind: 'all' },
     ...layouts.map((l) => ({ id: layoutAction(l.id), label: l.name, kind: 'layout' as const })),
     ...OVERLAY_DEFS.map((d) => ({
       id: overlayAction(d.name),

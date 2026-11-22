@@ -200,6 +200,9 @@ export interface ElectronAPI {
     openCustomOverlay: (id: string, name: string) => Promise<void>
     closeCustomOverlay: (id: string) => Promise<void>
     toggleCustomOverlay: (id: string, name: string) => Promise<void>
+    openChatWindow: (id: string, name: string) => Promise<void>
+    closeChatWindow: (id: string) => Promise<void>
+    toggleChatWindow: (id: string, name: string) => Promise<void>
     openTrigger: () => Promise<void>
     closeTrigger: () => Promise<void>
     toggleTrigger: () => Promise<void>

@@ -374,7 +374,7 @@ type Bounds = { x: number; y: number; width: number; height: number }
 //
 // A stack (several overlays as tabs in one window) is keyed `stack:<id>`. Its
 // member overlays have no windows of their own while stacked.
-type InstanceKind = 'customTimer' | 'customOverlay'
+type InstanceKind = 'customTimer' | 'customOverlay' | 'chatWindow'
 type InstanceKey = `${InstanceKind}:${string}`
 type WindowKey = OverlayName | InstanceKey | `stack:${string}`
 
@@ -417,6 +417,7 @@ const OVERLAY_DEFAULTS: Record<Exclude<OverlayName, 'trigger'>, Bounds> = {
 const INSTANCE_KINDS: Record<InstanceKind, { route: string; param: string; defaults: Bounds; minWidth: number; minHeight: number }> = {
   customTimer: { route: 'custom-timer-window', param: 'group', defaults: OVERLAY_DEFAULTS.customTimer, minWidth: 200, minHeight: 140 },
   customOverlay: { route: 'custom-overlay-window', param: 'id', defaults: { x: 0, y: 0, width: 300, height: 380 }, minWidth: 180, minHeight: 100 },
+  chatWindow: { route: 'chat-window-window', param: 'id', defaults: { x: 0, y: 0, width: 420, height: 260 }, minWidth: 200, minHeight: 80 },
 }
 
 function instanceKind(key: string): InstanceKind | null {
@@ -2218,6 +2219,44 @@ ipcMain.handle('overlay:customoverlay:toggle', (_event, id: string, name: string
   if (typeof id === 'string' && id) toggleInstanceOverlay(customOverlayWindowKey(id), String(name ?? ''))
 })
 
+// Chat Windows, keyed by the backend window id.
+function chatWindowKey(id: string): InstanceKey {
+  return `chatWindow:${id}`
+}
+
+ipcMain.handle('overlay:chatwindow:open', (_event, id: string, name: string) => {
+  if (typeof id === 'string' && id) createInstanceOverlay(chatWindowKey(id), String(name ?? ''))
+})
+
+ipcMain.handle('overlay:chatwindow:close', (_event, id: string) => {
+  if (typeof id === 'string' && id) closeInstanceOverlay(chatWindowKey(id))
+})
+
+ipcMain.handle('overlay:chatwindow:toggle', (_event, id: string, name: string) => {
+  if (typeof id === 'string' && id) toggleInstanceOverlay(chatWindowKey(id), String(name ?? ''))
+})
+
+// Lock or unlock every open chat window at once (the "Lock / unlock chat
+// windows" hotkey). One target for all: if any is unlocked, lock them all,
+// otherwise unlock them all, so a mixed set never flips both ways. Position
+// mode keeps its own fully interactive input until it ends.
+function toggleChatWindowsLock(): void {
+  const open: Array<[InstanceKey, BrowserWindow]> = []
+  for (const [key, win] of instanceWindows) {
+    if (instanceKind(key) === 'chatWindow' && !win.isDestroyed()) open.push([key, win])
+  }
+  if (open.length === 0) return
+  const locked = open.some(([key]) => !getOverlayLocked(key))
+  for (const [key, win] of open) {
+    setOverlayLocked(key, locked)
+    if (!overlayPositionMode) {
+      win.setIgnoreMouseEvents(locked, { forward: true })
+      win.setResizable(!locked)
+    }
+    win.webContents.send('overlay:lock-changed', locked)
+  }
+}
+
 ipcMain.handle('overlay:trigger:open', () => {
   createTriggerOverlay()
 })
@@ -2665,7 +2704,9 @@ ipcMain.handle('overlay:collapse:set', (event, collapsed: boolean, headerFractio
 // window prefs, since main must register them before any renderer loads.
 
 // 'toggleAll' = the show/hide-all action; 'overlay:<name>' = show/hide one;
-// 'layout:<id>' = switch to a layout (see runLayoutHotkey).
+// 'layout:<id>' = switch to a layout (see runLayoutHotkey); 'positionMode' =
+// toggle Position overlays mode; 'chatWindows:lock' = lock/unlock every open
+// chat window (see toggleChatWindowsLock).
 type HotkeyStore = { bindings: Record<string, string> }
 type HotkeyStatus = 'ok' | 'failed'
 
@@ -2695,7 +2736,7 @@ function saveHotkeyStore(store: HotkeyStore): void {
 }
 
 function isHotkeyAction(action: string): boolean {
-  if (action === 'toggleAll') return true
+  if (action === 'toggleAll' || action === 'positionMode' || action === 'chatWindows:lock') return true
   if (action.startsWith('layout:')) {
     const id = action.slice('layout:'.length)
     return loadLayoutStore().layouts.some((l) => l.id === id)
@@ -2729,6 +2770,8 @@ function toggleOverlayFromHotkey(name: OverlayName): void {
 
 function runHotkeyAction(action: string): void {
   if (action === 'toggleAll') toggleAllPopoutsVisibility()
+  else if (action === 'positionMode') setOverlayPositionMode(!overlayPositionMode)
+  else if (action === 'chatWindows:lock') toggleChatWindowsLock()
   else if (action.startsWith('layout:')) runLayoutHotkey(action.slice('layout:'.length))
   else if (action.startsWith('overlay:')) toggleOverlayFromHotkey(action.slice('overlay:'.length) as OverlayName)
 }
@@ -3190,7 +3233,8 @@ function isStackKey(key: string): key is `stack:${string}` {
 }
 
 function isStackable(key: string): key is WindowKey {
-  return isValidWindowKey(key) && !isStackKey(key) && !UNSTACKABLE.has(key)
+  // Chat windows stay standalone: they size and scroll their own content.
+  return isValidWindowKey(key) && !isStackKey(key) && !UNSTACKABLE.has(key) && instanceKind(key) !== 'chatWindow'
 }
 
 function copyStackSpec(s: StackSpec): StackSpec {
@@ -4333,8 +4377,9 @@ function setOverlayPositionMode(enabled: boolean): void {
   overlayPositionMode = enabled
   // Flip every open overlay's window-level input state: fully interactive while
   // positioning, back to its persisted lock state when done.
-  for (const name of RESETTABLE_OVERLAYS) {
-    const win = overlayWindowByName(name)
+  const wins: Array<[WindowKey, BrowserWindow | null]> = RESETTABLE_OVERLAYS.map((name) => [name, overlayWindowByName(name)])
+  for (const [key, win] of instanceWindows) wins.push([key, win])
+  for (const [name, win] of wins) {
     if (!win || win.isDestroyed()) continue
     if (enabled) {
       win.setIgnoreMouseEvents(false)

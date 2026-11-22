@@ -144,6 +144,13 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.invoke('overlay:customoverlay:close', id),
     toggleCustomOverlay: (id: string, name: string): Promise<void> =>
       ipcRenderer.invoke('overlay:customoverlay:toggle', id, name),
+    // Chat Windows (filtered chat overlays), one per window id.
+    openChatWindow: (id: string, name: string): Promise<void> =>
+      ipcRenderer.invoke('overlay:chatwindow:open', id, name),
+    closeChatWindow: (id: string): Promise<void> =>
+      ipcRenderer.invoke('overlay:chatwindow:close', id),
+    toggleChatWindow: (id: string, name: string): Promise<void> =>
+      ipcRenderer.invoke('overlay:chatwindow:toggle', id, name),
     openTrigger: (): Promise<void> => ipcRenderer.invoke('overlay:trigger:open'),
     closeTrigger: (): Promise<void> => ipcRenderer.invoke('overlay:trigger:close'),
     toggleTrigger: (): Promise<void> => ipcRenderer.invoke('overlay:trigger:toggle'),
