@@ -129,9 +129,6 @@ function OverlayPage({
       }
     }
   }, [])
-  // Apply this window's per-overlay zoom (no-op default of 1.0 when unset).
-  // Called unconditionally with '' for keyless overlays so hook order is stable.
-  useOverlayZoom(overlayKey ?? '')
   // While main has this window hidden, render nothing: a hidden overlay kept
   // rendering live data and holding its WebSocket. Remounting on show reloads
   // the current state from the backend.
@@ -146,11 +143,24 @@ function OverlayPage({
   // overlay has no navigation to recover through, so an uncaught render throw
   // left users with a dead window until they restarted the app.
   return (
-    <ErrorBoundary label={`${overlayKey ?? 'Overlay'} overlay`}>
-      <Suspense fallback={null}>{children}</Suspense>
-      <StackDropHint />
-    </ErrorBoundary>
+    <>
+      {overlayKey && <OverlayZoom overlayKey={overlayKey} />}
+      <ErrorBoundary label={`${overlayKey ?? 'Overlay'} overlay`}>
+        <Suspense fallback={null}>{children}</Suspense>
+        <StackDropHint />
+      </ErrorBoundary>
+    </>
   )
+}
+
+// Applies this window's per-overlay zoom. Its own component, rendered only
+// while the overlay isn't paused, because useOverlayZoom subscribes to the
+// WebSocket for config:updated: mounted above the paused check it kept a
+// hidden window's socket open (and parsing every broadcast) indefinitely.
+// The CSS zoom it set stays on <html> while paused; remounting re-reads it.
+function OverlayZoom({ overlayKey }: { overlayKey: string }): null {
+  useOverlayZoom(overlayKey)
+  return null
 }
 
 // MainWindowLayout mounts the audio/alert hooks and renders the main Layout.
