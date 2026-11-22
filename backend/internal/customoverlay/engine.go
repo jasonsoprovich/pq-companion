@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jasonsoprovich/pq-companion/backend/internal/chat"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/linematch"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/trigger"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/ws"
 )
@@ -105,11 +105,6 @@ func compileRules(def OverlayDef) []compiledRule {
 
 // ── line matching ───────────────────────────────────────────────────────────
 
-var (
-	reSayIn  = regexp.MustCompile(`^([A-Za-z]+) says,\s+'(.*)'$`)
-	reSayOut = regexp.MustCompile(`^You say,\s+'(.*)'$`)
-)
-
 // chatLine is a log line classified as chat, with the speaker resolved.
 type chatLine struct {
 	channel   string
@@ -119,20 +114,11 @@ type chatLine struct {
 }
 
 func parseChat(msg, self string) (chatLine, bool) {
-	if p, ok := chat.ParseChat(msg); ok {
-		cl := chatLine{channel: p.Channel, direction: p.Direction, message: p.Message, speaker: p.Peer}
-		if p.Direction == chat.DirectionOut {
-			cl.speaker = self
-		}
-		return cl, true
+	c, ok := linematch.ClassifyChat(msg, self)
+	if !ok {
+		return chatLine{}, false
 	}
-	if m := reSayIn.FindStringSubmatch(msg); m != nil {
-		return chatLine{channel: ChannelSay, direction: DirectionIn, speaker: chat.CapitalizeName(m[1]), message: m[2]}, true
-	}
-	if m := reSayOut.FindStringSubmatch(msg); m != nil {
-		return chatLine{channel: ChannelSay, direction: DirectionOut, speaker: self, message: m[1]}, true
-	}
-	return chatLine{}, false
+	return chatLine{channel: c.Channel, direction: c.Direction, speaker: c.Speaker, message: c.Message}, true
 }
 
 // lineCtx is one log line as seen by the rules, parsed at most once.

@@ -478,19 +478,19 @@ func TestSimplePattern(t *testing.T) {
 		want    map[string]string // nil = no match
 		wantErr string
 	}{
-		{"starts with trailing text", SimpleMatch{SimpleStarts, "Bids open on {item}"}, "bids open on Robe of the Oracle", map[string]string{"item": "Robe of the Oracle"}, ""},
-		{"starts rejects middle", SimpleMatch{SimpleStarts, "Bids open"}, "Now Bids open", nil, ""},
-		{"contains", SimpleMatch{SimpleContains, "CLOSING"}, "Robe CLOSING in 10", map[string]string{}, ""},
-		{"exact number", SimpleMatch{SimpleExact, "{amount:number}"}, "1,250", map[string]string{"amount": "1,250"}, ""},
-		{"exact rejects extra", SimpleMatch{SimpleExact, "{amount:number}"}, "125 for robe", nil, ""},
-		{"sold", SimpleMatch{SimpleStarts, "SOLD! {item} to {winner} for {amount:number}"}, "SOLD! Shiny Brass Idol to Annalise for 25 dkp", map[string]string{"item": "Shiny Brass Idol", "winner": "Annalise", "amount": "25"}, ""},
-		{"word", SimpleMatch{SimpleStarts, "{who:word} rolls"}, "Bob rolls a 5", map[string]string{"who": "Bob"}, ""},
-		{"regex chars are literal", SimpleMatch{SimpleExact, "x+y (z)? {n:number}"}, "x+y (z)? 3", map[string]string{"n": "3"}, ""},
-		{"spaces stretch", SimpleMatch{SimpleStarts, "Bids open"}, "Bids   open now", map[string]string{}, ""},
-		{"duplicate placeholder", SimpleMatch{SimpleStarts, "{a} and {a}"}, "", nil, "used twice"},
-		{"bad type", SimpleMatch{SimpleStarts, "{a:date}"}, "", nil, "type must be"},
-		{"empty", SimpleMatch{SimpleStarts, "  "}, "", nil, "required"},
-		{"bad kind", SimpleMatch{"regex", "x"}, "", nil, "unknown match kind"},
+		{"starts with trailing text", SimpleMatch{Kind: SimpleStarts, Text: "Bids open on {item}"}, "bids open on Robe of the Oracle", map[string]string{"item": "Robe of the Oracle"}, ""},
+		{"starts rejects middle", SimpleMatch{Kind: SimpleStarts, Text: "Bids open"}, "Now Bids open", nil, ""},
+		{"contains", SimpleMatch{Kind: SimpleContains, Text: "CLOSING"}, "Robe CLOSING in 10", map[string]string{}, ""},
+		{"exact number", SimpleMatch{Kind: SimpleExact, Text: "{amount:number}"}, "1,250", map[string]string{"amount": "1,250"}, ""},
+		{"exact rejects extra", SimpleMatch{Kind: SimpleExact, Text: "{amount:number}"}, "125 for robe", nil, ""},
+		{"sold", SimpleMatch{Kind: SimpleStarts, Text: "SOLD! {item} to {winner} for {amount:number}"}, "SOLD! Shiny Brass Idol to Annalise for 25 dkp", map[string]string{"item": "Shiny Brass Idol", "winner": "Annalise", "amount": "25"}, ""},
+		{"word", SimpleMatch{Kind: SimpleStarts, Text: "{who:word} rolls"}, "Bob rolls a 5", map[string]string{"who": "Bob"}, ""},
+		{"regex chars are literal", SimpleMatch{Kind: SimpleExact, Text: "x+y (z)? {n:number}"}, "x+y (z)? 3", map[string]string{"n": "3"}, ""},
+		{"spaces stretch", SimpleMatch{Kind: SimpleStarts, Text: "Bids open"}, "Bids   open now", map[string]string{}, ""},
+		{"duplicate placeholder", SimpleMatch{Kind: SimpleStarts, Text: "{a} and {a}"}, "", nil, "used twice"},
+		{"bad type", SimpleMatch{Kind: SimpleStarts, Text: "{a:date}"}, "", nil, "type must be"},
+		{"empty", SimpleMatch{Kind: SimpleStarts, Text: "  "}, "", nil, "required"},
+		{"bad kind", SimpleMatch{Kind: "regex", Text: "x"}, "", nil, "unknown match kind"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
