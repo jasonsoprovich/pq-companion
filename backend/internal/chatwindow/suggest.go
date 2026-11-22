@@ -100,6 +100,7 @@ func (e *Engine) Suggest(id string, seq int64, mode string) (Suggestion, error) 
 	}
 	rule.Name = suggestName(mode, *line)
 	rule.Enabled = true
+	rule.ID = newID()
 
 	s := Suggestion{Rule: rule}
 	if cr, err := compileRule(rule, self); err == nil {
