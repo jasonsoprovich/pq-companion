@@ -6,8 +6,10 @@
 import { getSpell } from '../services/api'
 import { loadEnums } from './enumsCache'
 import type { Spell } from '../types/spell'
+import { LruMap } from './lruMap'
 
-const spellCache = new Map<number, Spell>()
+// Capped: a long raid's NPC/item lookups would otherwise grow this forever.
+const spellCache = new LruMap<number, Spell>(500)
 const inFlight = new Map<number, Promise<Spell>>()
 
 /** Synchronous cache read — undefined when the spell hasn't been fetched yet. */
