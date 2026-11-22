@@ -1049,10 +1049,15 @@ func main() {
 	} else {
 		petCfg.LookupSpell = func(name string) (petoverlay.SpellInfo, bool) {
 			m, ok := spells[name]
-			return petoverlay.SpellInfo{ID: m.ID, Icon: m.Icon, Beneficial: m.Beneficial, Charm: m.Charm}, ok
+			return petoverlay.SpellInfo{ID: m.ID, Icon: m.Icon, Beneficial: m.Beneficial, Charm: m.Charm, LandText: m.LandText}, ok
 		}
 		// `/pet health` replies prune timers the pet no longer carries.
 		petCfg.Reconcile = timerEngine.ReconcileTargetEffects
+		if lands, err := database.SpellLandTexts(); err != nil {
+			slog.Warn("load spell land texts (pet health can't judge trigger timers)", "err", err)
+		} else {
+			petCfg.LandTextByID = func(id int) string { return lands[id] }
+		}
 	}
 	// Summoned pets: each summoning spell's pet row, and the rows for
 	// matching a targeted pet's live attributes.

@@ -56,6 +56,11 @@ type harness struct {
 	// reconcile calls the tracker made.
 	petTimers  []string
 	reconciles []reconcileCall
+	// petTimerSpell is a pet timer's spell id (trigger timers carry one
+	// even when their name isn't a spell); petTimerStale is what the fake
+	// engine reports as contradicted but left running.
+	petTimerSpell map[string]int
+	petTimerStale []string
 
 	charmExp time.Time // active charm timer's expiry
 	prefs    config.PetOverlaySettings
@@ -76,7 +81,12 @@ var testSpells = map[string]SpellInfo{
 	"Speed of the Shissar": {ID: 1939, Icon: 134, Beneficial: true},
 	"Primal Essence":       {ID: 1819, Icon: 49, Beneficial: true},
 	"Tashanian":            {ID: 1702, Icon: 72},
+	"Togor's Insects":      {ID: 507, Icon: 12, LandText: " yawns."},
+	"Turgur's Insects":     {ID: 1588, Icon: 12, LandText: " yawns."},
 }
+
+// testLandByID mirrors testSpells' land texts by id.
+var testLandByID = map[int]string{507: " yawns.", 1588: " yawns."}
 
 func newHarness() *harness {
 	h := &harness{
@@ -101,15 +111,16 @@ func newHarness() *harness {
 			m, ok := testSpells[s]
 			return m, ok
 		},
-		Reconcile: func(target string, id int, keep func(string) bool, before time.Time) []string {
+		LandTextByID: func(id int) string { return testLandByID[id] },
+		Reconcile: func(target string, id int, keep func(string, int) bool, before time.Time) ([]string, []string) {
 			var dropped []string
 			for _, sp := range h.petTimers {
-				if !keep(sp) {
+				if !keep(sp, h.petTimerSpell[sp]) {
 					dropped = append(dropped, sp)
 				}
 			}
 			h.reconciles = append(h.reconciles, reconcileCall{target, id, before, dropped})
-			return dropped
+			return dropped, h.petTimerStale
 		},
 	})
 	h.tr.now = func() time.Time { return h.now }
@@ -458,6 +469,46 @@ func TestTracker_PetHealthReconcilesTimers(t *testing.T) {
 	}
 	if len(c.dropped) != 1 || c.dropped[0] != "Primal Essence" {
 		t.Errorf("dropped = %q, want only Primal Essence", c.dropped)
+	}
+}
+
+// A trigger timer whose name isn't a spell is judged by the spell id it
+// carries, and any spell sharing that spell's land text keeps it: the Slows
+// pack's "SHM slow (?/75%)" carries Turgur's Insects, the pet lists Togor's
+// (both " yawns."). Seen 2026-11-21: the slow stayed on the pet card after
+// /pet health no longer listed it.
+func TestTracker_PetHealthJudgesTriggerTimersBySpell(t *testing.T) {
+	setup := func() *harness {
+		h := newHarness()
+		h.tr.SetPipeConnected(true)
+		h.tr.SetPipePetName("a corrupted faun")
+		h.tr.SetPipePetID(ip(45))
+		h.petTimers = []string{"SHM slow (?/75%)", "Pet buff reminder"}
+		h.petTimerSpell = map[string]int{"SHM slow (?/75%)": 1588}
+		return h
+	}
+	reply := func(h *harness, spells ...string) {
+		h.tr.HandleLine(h.now, "I have 100 percent of my hit points left.")
+		for _, sp := range spells {
+			h.tr.HandleLine(h.now, sp)
+		}
+		h.tr.flushHealth()
+	}
+
+	h := setup()
+	reply(h, "Togor's Insects")
+	if d := h.reconciles[0].dropped; len(d) != 0 {
+		t.Errorf("slow still on the pet: dropped %q", d)
+	}
+
+	h = setup()
+	h.petTimerStale = []string{"SHM slow (?/75%)@a corrupted faun"}
+	reply(h, "Speed of the Shissar")
+	if d := h.reconciles[0].dropped; len(d) != 1 || d[0] != "SHM slow (?/75%)" {
+		t.Errorf("slow gone from the pet: dropped %q, want only the slow", d)
+	}
+	if st := h.state(); st.Health == nil || len(st.Health.StaleTimers) != 1 {
+		t.Errorf("stale timers not published on the snapshot: %+v", st.Health)
 	}
 }
 

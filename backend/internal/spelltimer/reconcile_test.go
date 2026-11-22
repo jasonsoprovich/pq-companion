@@ -36,7 +36,8 @@ func TestReconcileTargetEffects(t *testing.T) {
 		// Not listed, debuff on a same-named enemy (other spawn id): kept.
 		{timerKey("Tashani", tagged(999)),
 			ActiveTimer{SpellName: "Tashani", TargetName: pet, Category: CategoryDebuff, StartsAt: old}, true},
-		// Not listed, untagged debuff: can't tell pet from enemy, kept.
+		// Not listed, untagged debuff: can't tell pet from enemy, kept (and
+		// reported stale so the pet card can hide it).
 		{timerKey("Clinging Darkness", pet),
 			ActiveTimer{SpellName: "Clinging Darkness", TargetName: pet, Category: CategoryDot, StartsAt: old}, true},
 		// The charm timer is never judged by the list.
@@ -62,12 +63,15 @@ func TestReconcileTargetEffects(t *testing.T) {
 			e.timers[s.key] = &tm
 		}
 		listed := map[string]bool{"Speed of the Shissar": true}
-		keep := func(name string) bool { return listed[name] }
+		keep := func(name string, _ int) bool { return listed[name] }
 
-		removed := e.ReconcileTargetEffects("A Shissar Revenant", petID, keep, before)
+		removed, stale := e.ReconcileTargetEffects("A Shissar Revenant", petID, keep, before)
 		sort.Strings(removed)
 		if want := []string{"Primal Essence", "Tashanian"}; !equalStrings(removed, want) {
 			t.Fatalf("removed = %q, want %q", removed, want)
+		}
+		if want := []string{timerKey("Clinging Darkness", pet)}; !equalStrings(stale, want) {
+			t.Fatalf("stale = %q, want %q", stale, want)
 		}
 		for _, s := range seeds {
 			tm, present := e.timers[s.key]
@@ -82,7 +86,7 @@ func TestReconcileTargetEffects(t *testing.T) {
 		}
 
 		// A second reply must not re-report already-handled timers.
-		if again := e.ReconcileTargetEffects(pet, petID, keep, before); len(again) != 0 {
+		if again, _ := e.ReconcileTargetEffects(pet, petID, keep, before); len(again) != 0 {
 			t.Errorf("second reconcile removed %q again", again)
 		}
 	}
@@ -97,7 +101,7 @@ func TestReconcileTargetEffects_UnknownPetIDSkipsTagged(t *testing.T) {
 	e.timers[key] = &ActiveTimer{ID: key, SpellName: "Primal Essence", TargetName: "a Shissar Revenant",
 		Category: CategoryBuff, StartsAt: old, ExpiresAt: time.Now().Add(time.Minute)}
 	// No Zeal pet id (0): a spawn-tagged timer can't be matched to the pet.
-	if removed := e.ReconcileTargetEffects("a Shissar Revenant", 0, func(string) bool { return false }, time.Now()); len(removed) != 0 {
+	if removed, _ := e.ReconcileTargetEffects("a Shissar Revenant", 0, func(string, int) bool { return false }, time.Now()); len(removed) != 0 {
 		t.Fatalf("removed %q with no pet id", removed)
 	}
 }

@@ -195,10 +195,14 @@ type Config struct {
 	// LookupSpell resolves an exact spell name (a `/pet health` member line)
 	// to its icon, beneficial and charm flags; ok=false for non-spell text.
 	LookupSpell func(name string) (SpellInfo, bool)
+	// LandTextByID returns a spell id's cast_on_other ("" when unknown), so a
+	// trigger timer named "SHM slow" can be judged by the spell it tracks.
+	LandTextByID func(spellID int) string
 	// Reconcile drops spell timers on the pet that a `/pet health` reply
-	// shows are gone (spelltimer.Engine.ReconcileTargetEffects). targetID is
-	// the pet's spawn id, 0 when unknown.
-	Reconcile func(target string, targetID int, keep func(spellName string) bool, before time.Time) []string
+	// shows are gone (spelltimer.Engine.ReconcileTargetEffects), and returns
+	// the ids of contradicted timers it had to leave running. targetID is the
+	// pet's spawn id, 0 when unknown.
+	Reconcile func(target string, targetID int, keep func(spellName string, spellID int) bool, before time.Time) (removed, stale []string)
 }
 
 // Tracker holds the pet state. Safe for concurrent use.
@@ -606,37 +610,56 @@ func (t *Tracker) applyHealthLocked(snap *HealthSnapshot) {
 
 // reconcileLocked has the timer engine drop timers on the pet that the reply
 // shows are gone. A timer survives when its spell is listed (names compared
-// with backticks folded, as the log and quarm.db disagree for some spells) or
-// isn't a spell name at all — a trigger timer labelled "Haste" can't be judged
-// by the list. Skipped until the pet has a name to match timers against.
+// with backticks folded, as the log and quarm.db disagree for some spells),
+// when a listed spell shares its land text (the log line can't tell the
+// ranks of a line apart, so the timer may name another rank: the Slows
+// pack's "SHM slow" carries Turgur's Insects while the pet lists Togor's), or
+// when it is neither a spell name nor carries a spell id — a trigger timer
+// labelled "Haste" can't be judged by the list. Skipped until the pet has a
+// name to match timers against.
 func (t *Tracker) reconcileLocked(snap *HealthSnapshot) {
 	if t.cfg.Reconcile == nil || t.st.Name == "" {
 		return
 	}
+	lookup := t.cfg.LookupSpell
+	if lookup == nil {
+		return
+	}
 	listed := make(map[string]bool, len(snap.Spells))
+	listedLand := make(map[string]bool, len(snap.Spells))
 	for _, s := range snap.Spells {
 		listed[foldSpellName(s.Name)] = true
+		if info, ok := lookup(s.Name); ok && info.LandText != "" {
+			listedLand[info.LandText] = true
+		}
 	}
-	lookup := t.cfg.LookupSpell
-	keep := func(spellName string) bool {
+	keep := func(spellName string, spellID int) bool {
 		if listed[foldSpellName(spellName)] {
 			return true
 		}
-		if lookup == nil {
-			return true
-		}
-		_, known := lookup(spellName)
+		info, known := lookup(spellName)
 		if !known {
 			// Try the other quote form before giving up on it as a spell.
-			_, known = lookup(strings.ReplaceAll(spellName, "'", "`"))
+			info, known = lookup(strings.ReplaceAll(spellName, "'", "`"))
 		}
-		return !known
+		land := ""
+		if spellID > 0 && t.cfg.LandTextByID != nil {
+			land = t.cfg.LandTextByID(spellID)
+		} else if known {
+			land = info.LandText
+		}
+		if land != "" && listedLand[land] {
+			return true
+		}
+		return !known && spellID <= 0
 	}
 	id := 0
 	if t.st.PetID != nil {
 		id = *t.st.PetID
 	}
-	if removed := t.cfg.Reconcile(t.st.Name, id, keep, snap.At.Add(-reconcileMargin)); len(removed) > 0 {
+	removed, stale := t.cfg.Reconcile(t.st.Name, id, keep, snap.At.Add(-reconcileMargin))
+	snap.StaleTimers = stale
+	if len(removed) > 0 {
 		slog.Info("pet overlay: /pet health cleared timers no longer on the pet",
 			"pet", t.st.Name, "spells", removed)
 	}

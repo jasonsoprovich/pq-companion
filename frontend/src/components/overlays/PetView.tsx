@@ -96,7 +96,8 @@ function PetCard({
   interactive: boolean
   onFinder: () => void
 }): React.ReactElement {
-  const { charm, timers } = usePetTimers(state.name, state.pet_id)
+  const { charm, timers: nameTimers } = usePetTimers(state.name, state.pet_id)
+  const timers = useMemo(() => dropStale(nameTimers, state.health), [nameTimers, state.health])
   const { untimed, age: healthAge } = useUntimedEffects(state, timers, charm)
   const s = state.stats
   const kindColor = state.kind === 'charm' ? CHARM : state.kind === 'summoned' ? SUMMONED : MUTED
@@ -377,6 +378,17 @@ function Badges({ stats }: { stats: PetStats }): React.ReactElement | null {
       ))}
     </div>
   )
+}
+
+// dropStale removes timers the latest `/pet health` reply showed aren't on
+// the pet (they match only by name and may be on a same-named enemy, so the
+// engine keeps them running). One restarted after the reply is kept.
+function dropStale(timers: ActiveTimer[], health: PetState['health']): ActiveTimer[] {
+  const stale = health?.stale_timers
+  if (!health || !stale?.length) return timers
+  const ids = new Set(stale)
+  const at = Date.parse(health.at)
+  return timers.filter((t) => !ids.has(t.id) || Date.parse(t.starts_at) >= at)
 }
 
 // UNTIMED_TTL_SECS is how long a `/pet health` effect with no timer stays on
