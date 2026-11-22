@@ -170,6 +170,33 @@ func TestComputePackDiff_AddedRemovedDeletedLocally(t *testing.T) {
 	}
 }
 
+// Triggers the user deleted aren't an update on their own: reporting them lit
+// the Packs dots with no Review button to clear them.
+func TestSummarizeDiff_DeletedLocallyOnly(t *testing.T) {
+	s := openTestStore(t)
+	installWithBaselines(t, s, testPackV1())
+	beta := rowByKey(t, s, "TestPack", "Beta")
+	if err := s.Delete(beta.ID); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	diff, err := ComputePackDiff(s, testPackV1())
+	if err != nil {
+		t.Fatalf("diff: %v", err)
+	}
+	if len(diff.DeletedLocally) != 1 {
+		t.Fatalf("deleted_locally = %+v, want Beta", diff.DeletedLocally)
+	}
+	if sum, ok := summarizeDiff(diff); ok {
+		t.Errorf("deleted-only diff reported as an update: %+v", sum)
+	}
+
+	diff.Added = []AddedTrigger{{PackKey: "Gamma", Name: "Gamma"}}
+	sum, ok := summarizeDiff(diff)
+	if !ok || sum.Added != 1 || sum.DeletedLocally != 1 {
+		t.Errorf("real update: got %+v ok=%v", sum, ok)
+	}
+}
+
 func TestApplyPackUpdate_PreserveKeepsUserFields(t *testing.T) {
 	s := openTestStore(t)
 	installWithBaselines(t, s, testPackV1())
