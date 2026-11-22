@@ -13,6 +13,7 @@ import {
 import Wizard from './guide/Wizard'
 import {
   detectZeal,
+  getZealSettings,
   getConfig,
   saveConfigChanges,
   validateEQPath,
@@ -26,14 +27,25 @@ import {
 import { useWebSocket } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
 import type { Config } from '../types/config'
-import type { ZealInstallStatus } from '../types/zeal'
+import type { ZealInstallStatus, ZealSettings } from '../types/zeal'
+import ZealChecklist from './ZealChecklist'
 import { charClassLabel, charClassOptions } from '../lib/enumsCache'
 
 const ZEAL_RELEASE_URL = 'https://github.com/CoastalRedwood/Zeal/releases/latest'
 
-type Step = 'welcome' | 'eq-path' | 'character' | 'logging' | 'zeal' | 'confirm'
+type Step =
+  | 'welcome'
+  | 'eq-path'
+  | 'character'
+  | 'logging'
+  | 'zeal'
+  | 'zeal-extras'
+  | 'confirm'
 
-const STEPS: Step[] = ['welcome', 'eq-path', 'character', 'logging', 'zeal', 'confirm']
+const ALL_STEPS: Step[] = [
+  'welcome', 'eq-path', 'character', 'logging', 'zeal', 'zeal-extras',
+  'confirm',
+]
 
 const STEP_TITLES: Record<Step, string> = {
   welcome: 'Welcome',
@@ -41,6 +53,7 @@ const STEP_TITLES: Record<Step, string> = {
   character: 'Character',
   logging: 'Logging',
   zeal: 'Zeal Integration',
+  'zeal-extras': 'Zeal Extras',
   confirm: 'All Set',
 }
 
@@ -113,12 +126,37 @@ export default function OnboardingWizard({
     }
   }
 
+  // Zeal settings checklist for the folder being set up (not saved yet). The
+  // Zeal Extras step only appears when it has recommended entries.
+  const [zealSettings, setZealSettings] = useState<ZealSettings | null>(null)
+  function loadZealSettings(): void {
+    if (!eqPath.trim()) {
+      setZealSettings(null)
+      return
+    }
+    getZealSettings(eqPath.trim())
+      .then(setZealSettings)
+      .catch(() => setZealSettings(null))
+  }
+
   useEffect(() => {
     if (step === 'zeal') {
       void checkZeal(eqPath)
+      loadZealSettings()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step])
+
+  useWebSocket((msg) => {
+    if (msg.type !== WSEvent.ZealSettings) return
+    if (step === 'zeal' || step === 'zeal-extras') loadZealSettings()
+  })
+
+  const hasZealExtras = !!(
+    zealSettings?.installed &&
+    zealSettings.capabilities.some((c) => c.recommended)
+  )
+  const STEPS = ALL_STEPS.filter((s) => s !== 'zeal-extras' || hasZealExtras)
 
   // Logging step: poll the (unsaved) folder + character every 2 s while the
   // step is open. Detected when the log's mtime moves after the step opened,
@@ -264,6 +302,8 @@ export default function OnboardingWizard({
       case 'logging':
         return true
       case 'zeal':
+        return true
+      case 'zeal-extras':
         return true
       case 'confirm':
         return true
@@ -687,6 +727,17 @@ export default function OnboardingWizard({
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {step === 'zeal-extras' && (
+        <div className="space-y-3">
+          <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+            These Zeal settings let PQ Companion do more. They&apos;re all
+            optional: turn on what you like now, or later from Settings ›
+            Zeal. Click Next to skip.
+          </p>
+          <ZealChecklist settings={zealSettings} recommendedOnly />
         </div>
       )}
 

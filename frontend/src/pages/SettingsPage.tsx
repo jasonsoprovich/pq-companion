@@ -58,6 +58,8 @@ import { NewDot, useFeatureDots } from '../hooks/useFeatureDots'
 import GameMapExportPanel from '../components/maps/GameMapExportPanel'
 import MapSettingsPanel from '../components/settings/MapSettingsPanel'
 import DeveloperTab from './DeveloperTab'
+import ZealChecklist from '../components/ZealChecklist'
+import { useZealSettings, zealSupports } from '../hooks/useZealSettings'
 
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'discarded' | 'error'
@@ -505,6 +507,8 @@ export default function SettingsPage(): React.ReactElement {
   const [configFolder, setConfigFolder] = useState<string | null>(null)
 
   const [zealStatus, setZealStatus] = useState<ZealInstallStatus | null>(null)
+  const { settings: zealSettings, refresh: refreshZealSettings } =
+    useZealSettings()
   const [zealChecking, setZealChecking] = useState(false)
   const [zealError, setZealError] = useState<string | null>(null)
   const [pipeStatus, setPipeStatus] = useState<ZealPipeStatus | null>(null)
@@ -546,6 +550,7 @@ export default function SettingsPage(): React.ReactElement {
       ])
       setZealStatus(install)
       setPipeStatus(pipe)
+      refreshZealSettings()
     } catch (err) {
       setZealError((err as Error).message)
       setZealStatus(null)
@@ -1610,7 +1615,8 @@ export default function SettingsPage(): React.ReactElement {
                 </div>
               )}
 
-              {zealStatus.export_on_camp_found && !zealStatus.export_on_camp && (
+              {!zealSupports(zealSettings, 'export_on_camp') &&
+                zealStatus.export_on_camp_found && !zealStatus.export_on_camp && (
                 <div
                   className="flex items-start gap-2 rounded px-3 py-2 text-xs"
                   style={{
@@ -1631,7 +1637,8 @@ export default function SettingsPage(): React.ReactElement {
                 </div>
               )}
 
-              {zealStatus.export_on_camp_found && zealStatus.export_on_camp && (
+              {!zealSupports(zealSettings, 'export_on_camp') &&
+                zealStatus.export_on_camp_found && zealStatus.export_on_camp && (
                 <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
                   <code>ExportOnCamp</code> is enabled — character data refreshes when you /camp.
                 </p>
@@ -1733,6 +1740,19 @@ export default function SettingsPage(): React.ReactElement {
                   {pipeStatus.last_error}
                 </pre>
               )}
+            </div>
+          )}
+
+          {zealStatus?.installed && zealSettings?.installed &&
+            zealSettings.capabilities.length > 0 && (
+            <div className="mt-4">
+              <h3
+                className="mb-1 text-xs font-semibold uppercase tracking-wide"
+                style={{ color: 'var(--color-muted)' }}
+              >
+                Zeal settings for PQ Companion
+              </h3>
+              <ZealChecklist settings={zealSettings} />
             </div>
           )}
         </section>

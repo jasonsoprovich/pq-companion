@@ -35,6 +35,7 @@ import type {
   TextColorsResponse,
   ZealInstallStatus,
   ZealPipeStatus,
+  ZealSettings,
 } from '../types/zeal'
 import type { KeysResponse, KeysProgressResponse } from '../types/keys'
 import type { CharacterRecap, ProgressEvent } from '../types/progress'
@@ -1301,6 +1302,11 @@ export function sapiSynthesize(
 export function detectZeal(path?: string): Promise<ZealInstallStatus> {
   const qs = path ? `?path=${encodeURIComponent(path)}` : ''
   return get<ZealInstallStatus>(`/api/zeal/detect${qs}`)
+}
+
+export function getZealSettings(path?: string): Promise<ZealSettings> {
+  const qs = path ? `?path=${encodeURIComponent(path)}` : ''
+  return get<ZealSettings>(`/api/zeal/settings${qs}`)
 }
 
 export function getZealPipeStatus(): Promise<ZealPipeStatus> {

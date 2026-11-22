@@ -5,6 +5,7 @@ import type { Config } from '../../types/config'
 import type { ExternalMapStatus, MapRenderMode } from '../../types/map'
 import { useLiveMapOverlayPrefs } from '../../hooks/useLiveMapOverlayPrefs'
 import LiveMapOverlayControls from '../maps/LiveMapOverlayControls'
+import { useZealSettings, zealSupports } from '../../hooks/useZealSettings'
 
 // The three drawings a zone can be rendered from, with what each is actually
 // good for — the tradeoffs are not guessable from the names.
@@ -29,6 +30,10 @@ const STYLES: { key: MapRenderMode; label: string; blurb: string }[] = [
 // MapSettingsPanel controls how maps are drawn everywhere in the app, and
 // explains how to add a third-party map pack.
 export default function MapSettingsPanel(): React.ReactElement {
+  // Group/raid appearance is from a Zeal PR; only mention it to users whose
+  // Zeal build has it.
+  const { settings: zealSettings } = useZealSettings()
+  const zealAppearance = zealSupports(zealSettings, 'roster_appearance')
   // The whole config is held, not just the one field: the endpoint takes a
   // complete document, so saving a fragment would blank every other preference.
   const [config, setConfig] = useState<Config | null>(null)
@@ -244,9 +249,15 @@ export default function MapSettingsPanel(): React.ReactElement {
             Draws a faint arrow for each groupmate who is in your zone, from
             Zeal's live group positions. Only members Zeal can see in-zone
             appear — anyone in another zone is left off. Needs Zeal running in
-            game. In 3D they're drawn as character models; with a Zeal build
-            that sends appearance and <code>/pipeverbose</code> on, groupmates
-            and raiders show their real race, gender and gear.
+            game. In 3D they're drawn as character models
+            {zealAppearance ? (
+              <>
+                ; with <code>/pipeverbose</code> on, groupmates and raiders
+                show their real race, gender and gear.
+              </>
+            ) : (
+              '.'
+            )}
           </p>
         </div>
         <div

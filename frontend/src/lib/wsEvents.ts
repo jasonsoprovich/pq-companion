@@ -68,6 +68,10 @@ export const WSEvent = {
   WishlistChanged: 'wishlist:changed',
   ZealConnected: 'zeal:connected',
   ZealDisconnected: 'zeal:disconnected',
+  // The Zeal settings checklist changed (zeal.ini rewritten, a feature first
+  // seen on the pipe, pipe connect/disconnect). No payload: refetch
+  // /api/zeal/settings.
+  ZealSettings: 'zeal:settings',
   // Broadcast by the zeal watcher when a character's quarmy export is
   // (re)parsed on /camp or /outputfile — carries fresh stats/AAs/tradeskills.
   ZealQuarmy: 'zeal:quarmy',

@@ -194,3 +194,29 @@ export interface ZealPipeStatus {
   last_error?: string
   connected_at?: string // RFC3339 timestamp
 }
+
+// Zeal settings checklist (GET /api/zeal/settings). Only features the
+// install's Zeal supports are listed; see backend internal/zeal/caps.go.
+export type ZealCapState = 'working' | 'on' | 'off' | 'unknown' | 'not_seen'
+
+export interface ZealCapRow {
+  id: string
+  label: string
+  benefit: string
+  command?: string
+  state: ZealCapState
+  value?: string
+  hint?: string
+  recommended: boolean
+  pending: boolean
+}
+
+export interface ZealSettings {
+  eq_path: string
+  installed: boolean
+  version?: string
+  ini_readable: boolean
+  pipe_connected: boolean
+  pipe_matches: boolean
+  capabilities: ZealCapRow[]
+}

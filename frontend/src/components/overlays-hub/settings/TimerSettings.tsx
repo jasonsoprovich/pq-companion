@@ -14,6 +14,7 @@ import { withTimerAlertDefaults } from '../../../lib/timerAlerts'
 import { resolveFillOpacity } from '../../../hooks/useTimerAppearance'
 import { useChainStyle } from '../../../lib/chChainStyle'
 import { SettingsSection } from './SettingsSection'
+import { useZealSettings, zealSupports } from '../../../hooks/useZealSettings'
 import {
   CH_CHAIN_DEFAULT_PATTERN,
   CH_CHAIN_NUMERIC_PATTERN,
@@ -575,6 +576,10 @@ export function RespawnAlertSettings({ config, setConfig }: TimerSettingsProps):
 
 // Detrimental Timers: alert before a debuff wears off.
 export function DetrimAlertSettings({ config, setConfig }: TimerSettingsProps): React.ReactElement {
+  // Spell actions are from a Zeal PR; only mention the command to users whose
+  // Zeal build has it.
+  const { settings: zealSettings } = useZealSettings()
+  const zealSpells = zealSupports(zealSettings, 'pipe_spells')
   return (
     <SettingsSection title="Alerts">
       <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
@@ -586,12 +591,14 @@ export function DetrimAlertSettings({ config, setConfig }: TimerSettingsProps): 
         insert the effect's name. Can be muted from the bell icon in the
         Detrimental overlay window's header without changing this setting.
       </p>
-      <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-        Same-named mobs: with a Zeal build that sends spell actions, run{' '}
-        <code className="font-mono">/pipespells detrimental</code> once in game
-        and each timer is tied to the exact mob it landed on, so it clears when
-        that mob dies rather than when a namesake does.
-      </p>
+      {zealSpells && (
+        <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+          Same-named mobs: run{' '}
+          <code className="font-mono">/pipespells detrimental</code> once in
+          game and each timer is tied to the exact mob it landed on, so it
+          clears when that mob dies rather than when a namesake does.
+        </p>
+      )}
       <TimerAlertPrefEditor
         value={withTimerAlertDefaults(config.preferences?.detrim_timer_alert, 'detrim')}
         onChange={(next: TimerAlertPref) =>
