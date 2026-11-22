@@ -1,5 +1,19 @@
 import type { NPCZone } from './npc'
 
+// Mod2Stats are the PoP-style "mod2" item stats (backend db.Mod2Stats). Item
+// carries them as optional flattened fields; character gear totals carry a
+// full set.
+export interface Mod2Stats {
+  accuracy: number
+  avoidance: number
+  strikethrough: number
+  stun_resist: number
+  combat_effects: number
+  spell_shield: number
+  shielding: number
+  damage_shield: number
+}
+
 export interface Item {
   id: number
   name: string
@@ -34,6 +48,17 @@ export interface Item {
   dr: number
   fr: number
   pr: number
+
+  // PoP item stats (Accuracy, Strikethrough, ...). Optional so data from an
+  // older backend still type-checks; see lib/itemMod2.ts.
+  accuracy?: number
+  avoidance?: number
+  strikethrough?: number
+  stun_resist?: number
+  combat_effects?: number
+  spell_shield?: number
+  shielding?: number
+  damage_shield?: number
 
   // Flags
   magic: number

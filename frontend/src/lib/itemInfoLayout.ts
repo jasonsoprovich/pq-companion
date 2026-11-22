@@ -45,6 +45,7 @@ export const ITEM_INFO_SECTIONS: ItemInfoSectionDef[] = [
       { key: 'facts.hpmana', label: 'HP / Mana' },
       { key: 'facts.stats', label: 'Attributes', hint: 'STR, STA, AGI, DEX, WIS, INT, CHA' },
       { key: 'facts.resists', label: 'Resists' },
+      { key: 'facts.pop', label: 'PoP item stats', hint: 'Accuracy, Avoidance, Strikethrough, Shielding, …' },
       { key: 'facts.level', label: 'Required / recommended level' },
       { key: 'facts.classes', label: 'Classes' },
       { key: 'facts.races', label: 'Races' },

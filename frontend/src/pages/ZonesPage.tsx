@@ -18,6 +18,7 @@ import {
   getZoneLockouts,
   getZoneNPCSpawns,
   getZoneRaw,
+  listCharacters,
   searchZones,
 } from '../services/api'
 import type { ZoneDropsOptions, ZoneDropsSort } from '../services/api'
@@ -454,21 +455,35 @@ interface AccessStep {
 // FlagRequiredSection lists the PoP Flags tracker steps that unlock a
 // flag-gated zone, with the active character's progress when one is set.
 // zone.flag_needed only says THAT a flag is needed; the steps come from the
-// backend's curated popflag.ZoneAccess table.
+// backend's curated popflag.ZoneAccess table. Zones the Plane of
+// Tranquility portals also open by level (popflag.ZoneLevelAccess) show
+// that as an alternative, checked against the active character's level.
 function FlagRequiredSection({ zone }: { zone: Zone }): React.ReactElement {
   const navigate = useNavigate()
   const { active } = useActiveCharacter()
   const [steps, setSteps] = useState<AccessStep[] | null>(null)
+  const [levelReq, setLevelReq] = useState<number | null>(null)
+  const [charLevel, setCharLevel] = useState<number | null>(null)
 
   useEffect(() => {
     let cancelled = false
     setSteps(null)
+    setLevelReq(null)
+    setCharLevel(null)
     Promise.all([
       getPopFlagDataset(),
       active ? getPopFlags(active).catch(() => null) : Promise.resolve(null),
+      active
+        ? listCharacters({ includeHidden: true }).catch(() => null)
+        : Promise.resolve(null),
     ])
-      .then(([ds, resolved]) => {
+      .then(([ds, resolved, chars]) => {
         if (cancelled) return
+        setLevelReq(ds.zone_level_access?.[zone.short_name] ?? null)
+        const me = chars?.characters.find(
+          (c) => c.name.toLowerCase() === active.toLowerCase(),
+        )
+        setCharLevel(me && me.level > 0 ? me.level : null)
         const ids = ds.zone_access?.[zone.short_name] ?? []
         const byID = new Map(ds.flags.map((f) => [f.id, f]))
         const doneByID = new Map(
@@ -492,6 +507,8 @@ function FlagRequiredSection({ zone }: { zone: Zone }): React.ReactElement {
 
   const allDone =
     steps != null && steps.length > 0 && steps.every((s) => s.done === true)
+  const levelOK =
+    levelReq != null && charLevel != null && charLevel >= levelReq
 
   return (
     <Section title="Flag Required">
@@ -508,7 +525,10 @@ function FlagRequiredSection({ zone }: { zone: Zone }): React.ReactElement {
         <span>
           {allDone
             ? `${active} has the flag for this zone.`
-            : 'A zone flag is required to enter.'}
+            : levelOK
+              ? `${active} is level ${charLevel}, so the Plane of ` +
+                'Tranquility portal lets them in.'
+              : 'A zone flag is required to enter.'}
         </span>
       </div>
       {steps != null && steps.length > 0 && (
@@ -534,6 +554,36 @@ function FlagRequiredSection({ zone }: { zone: Zone }): React.ReactElement {
               </span>
             </div>
           ))}
+          {levelReq != null && (
+            <div className="flex items-start gap-2 text-sm">
+              <span className="mt-0.5 shrink-0">
+                {levelOK ? (
+                  <CheckCircle2
+                    size={13}
+                    style={{ color: 'var(--color-success)' }}
+                  />
+                ) : (
+                  <Circle size={13} style={{ color: 'var(--color-muted)' }} />
+                )}
+              </span>
+              <span style={{ color: 'var(--color-foreground)' }}>
+                Or reach level {levelReq}
+                <span style={{ color: 'var(--color-muted-foreground)' }}>
+                  {' '}
+                  — the Plane of Tranquility portal lets you in and sets the
+                  zone flag (not the progression steps)
+                </span>
+              </span>
+            </div>
+          )}
+          <p
+            className="mt-1 text-xs"
+            style={{ color: 'var(--color-muted-foreground)' }}
+          >
+            Raid willing: a raid can bring in members without the flag when
+            at least half the raid is flagged. Entering that way doesn&rsquo;t
+            grant the flag.
+          </p>
         </div>
       )}
       {steps != null && (

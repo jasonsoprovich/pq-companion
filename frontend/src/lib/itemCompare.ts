@@ -1,5 +1,6 @@
 import type { Item } from '../types/item'
 import { baneRatioLabel, weaponRatioLabel } from './itemHelpers'
+import { MOD2_STATS } from './itemMod2'
 
 // Canonical ordered stat rows for the compare table — one source of truth for
 // both the multi-item (Phase 1) and vs-equipped (Phase 2) views, so they never
@@ -29,6 +30,10 @@ export const COMPARE_STAT_ROWS: CompareStatRow[] = [
   { key: 'dr', label: 'Disease Resist', get: (i) => i.dr },
   { key: 'fr', label: 'Fire Resist', get: (i) => i.fr },
   { key: 'pr', label: 'Poison Resist', get: (i) => i.pr },
+  // PoP item stats; rows only appear when a compared item has one.
+  ...MOD2_STATS.map((d): CompareStatRow => ({
+    key: d.key, label: d.label, get: (i) => i[d.key] ?? 0,
+  })),
 ]
 
 /** Weapon damage/delay ratio, shown as its own row since it's not a flat stat. */

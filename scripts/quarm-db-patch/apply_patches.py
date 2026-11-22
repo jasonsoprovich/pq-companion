@@ -4,28 +4,34 @@
 quarm.db is built from periodic MySQL dumps, but Project Quarm also ships
 content changes as SQL migration files between dumps. This script replays the
 migrations that landed after the 2026-10-25-22:33 dump, in upstream order, so
-the app's respawn/lockout/loot data matches the live server until the next
-dump.
+the app's item/loot/respawn/lockout data matches the live server until the
+next dump.
 
 Two upstream sources (the quests repo's sql/ is applied manually on the server
 and overrides EQMacEmu's values):
-  - SecretsOTheP/EQMacEmu  utils/sql/git/content/  @ 1206849 (none newer
-                                                     than the dump)
-  - SecretsOTheP/quests    sql/                    @ 572bc06
+  - SecretsOTheP/EQMacEmu  utils/sql/git/{required,content}/  @ fc75fcf
+  - SecretsOTheP/quests    sql/                               @ 05a3ec0
 Then the local LOCAL_FILES run last: live changes from the official patch
 notes that no upstream SQL file carries.
 
 MySQL-only statements are rewritten where mechanical (ON DUPLICATE KEY UPDATE,
-FROM DUAL, LEAST) or hand-translated in a --manual file (blocks headed
-"-- @@ after: <file>"). Statements on live server state (respawn_times,
-character lockouts, data_buckets, launcher tables) are skipped: quarm.db holds
-no live state.
+FROM DUAL, LEAST) or hand-translated in a --manual file. Blocks headed
+"-- @@ before: <file>" run ahead of that file (schema changes its statements
+depend on); "-- @@ after: <file>" blocks run after it and cover the statements
+that failed. Files in MANUAL_ONLY skip their upstream statements entirely and
+run only the hand translation (MySQL session variables and temp-table guards
+don't translate statement by statement). In a manual block a SELECT is an
+assertion: its first column must be true or the whole replay rolls back.
+Statements on live server state (respawn_times, character lockouts,
+data_buckets, launcher tables) are skipped: quarm.db holds no live state.
 
 Usage:
   python3 -I apply_patches.py --db quarm.db \
-      --eqmacemu-dir <EQMacEmu>/utils/sql/git/content --quests-dir <quests>/sql
+      --eqmacemu-dir <EQMacEmu>/utils/sql/git --quests-dir <quests>/sql \
+      --manual manual-2026-11-22.sql
 
-Drop this once a dump taken after 2026-10-27 has been converted.
+Replaying onto an already-patched quarm.db is a no-op (every file is guarded
+or idempotent). Drop this once a dump taken after 2026-11-22 is converted.
 """
 
 import argparse
@@ -34,7 +40,18 @@ import re
 import sqlite3
 import sys
 
-EQMACEMU_FILES = []
+# Paths are relative to EQMacEmu's utils/sql/git. Already in the 10-25 dump:
+# content/2026_10_21_Justice_Fruit_Habanero_Pepper_Ground_Spawns.sql.
+EQMACEMU_FILES = [
+    "required/2026_10_27_Plane_Of_Earth_Traps_See_Improved_Hide.sql",
+    "content/2026_11_15_Elemental_Bard_Instrument_Sources.sql",
+    "content/2026_11_17_Bo_Staff_of_Transcendence_Magic.sql",
+    "required/2026_11_18_items_mod2_stats.sql",
+    "content/2026_11_20_Wakening_Lands_Port_Scrolls_PoP.sql",
+]
+
+# Run only from their hand translation in the --manual file.
+MANUAL_ONLY = {"2026_11_15_Elemental_Bard_Instrument_Sources.sql"}
 
 # 2026_10_24_Torment_Avatar_Placeholder_Blood.sql is already in the dump.
 QUESTS_FILES = [
@@ -50,7 +67,7 @@ LOCAL_FILES = []
 STATE_TABLES = ("respawn_times", "character_loot_lockouts",
                 "character_legacy_items", "data_buckets", "launcher_zones")
 
-MANUAL_MARK = re.compile(r"^-- @@ after: (\S+)\s*$", re.M)
+MANUAL_MARK = re.compile(r"^-- @@ (before|after): (\S+)\s*$", re.M)
 
 
 def strip_comments(src):
@@ -88,30 +105,54 @@ def rewrite(stmt):
 
 
 def load_manual(path):
+    """Return {(when, file): sql} for the --manual file's blocks."""
     if not path:
         return {}
-    src = open(path).read()
-    parts = MANUAL_MARK.split(src)
-    return {parts[i]: parts[i + 1] for i in range(1, len(parts), 2)}
+    parts = MANUAL_MARK.split(open(path).read())
+    return {(parts[i], parts[i + 1]): parts[i + 2]
+            for i in range(1, len(parts), 3)}
+
+
+def run_manual(db, name, sql, failures):
+    """Run a hand-translated block. These must not fail: a SELECT is an
+    assertion, and the only tolerated error is re-adding a column that an
+    earlier replay already added (SQLite has no ADD COLUMN IF NOT EXISTS)."""
+    for stmt in statements(sql):
+        try:
+            cur = db.execute(stmt)
+        except sqlite3.OperationalError as e:
+            if (stmt.upper().startswith("ALTER TABLE")
+                    and "duplicate column name" in str(e)):
+                continue
+            raise
+        if stmt.upper().startswith("SELECT"):
+            row = cur.fetchone()
+            if not row or not row[0]:
+                failures.append(f"{name}: assertion failed: {stmt[:100]!r}")
 
 
 def run_file(db, path, manual, failures):
     name = os.path.basename(path)
+    if ("before", name) in manual:
+        run_manual(db, name, manual.pop(("before", name)), failures)
     failed = 0
-    for stmt in statements(open(path).read()):
-        sql = rewrite(stmt)
-        if sql is None:
-            continue
-        try:
-            db.execute(sql)
-        except sqlite3.Error as e:
-            failed += 1
-            if name not in manual:
-                failures.append(f"{name}: {e}: {stmt[:80]!r}")
-    if name in manual:
-        for stmt in statements(manual.pop(name)):
-            db.execute(stmt)  # hand translations must not fail
-    print(f"applied {name}" + (f" ({failed} via manual)" if failed else ""))
+    if name not in MANUAL_ONLY:
+        for stmt in statements(open(path).read()):
+            sql = rewrite(stmt)
+            if sql is None:
+                continue
+            try:
+                db.execute(sql)
+            except sqlite3.Error as e:
+                failed += 1
+                if ("after", name) not in manual:
+                    failures.append(f"{name}: {e}: {stmt[:80]!r}")
+    elif ("after", name) not in manual:
+        failures.append(f"{name}: MANUAL_ONLY but no '@@ after' block")
+    if ("after", name) in manual:
+        run_manual(db, name, manual.pop(("after", name)), failures)
+    print(f"applied {name}" + (f" ({failed} via manual)" if failed else "")
+          + (" (manual only)" if name in MANUAL_ONLY else ""))
 
 
 def main():
@@ -123,7 +164,10 @@ def main():
     args = ap.parse_args()
 
     manual = load_manual(args.manual)
-    db = sqlite3.connect(args.db)
+    # One explicit transaction, so the manual ALTER TABLEs roll back with
+    # everything else (the default mode only opens one before DML).
+    db = sqlite3.connect(args.db, isolation_level=None)
+    db.execute("BEGIN")
     failures = []
     for f in EQMACEMU_FILES:
         run_file(db, os.path.join(args.eqmacemu_dir, f), manual, failures)

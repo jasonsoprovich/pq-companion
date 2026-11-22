@@ -22,6 +22,7 @@ import {
   isLoreItem,
 } from '../lib/itemHelpers'
 import type { Item } from '../types/item'
+import { mod2List, mod2Value } from '../lib/itemMod2'
 
 const OPEN_DELAY_MS = 300
 const CURSOR_OFFSET = 12
@@ -195,6 +196,7 @@ function CardBody({
   const isWeapon = item.damage > 0 || item.delay > 0
   const stats = statList(item)
   const resists = resistList(item)
+  const mod2 = mod2List(item)
   const effects = [
     item.click_name && `Click: ${item.click_name}`,
     item.proc_name && `Proc: ${item.proc_name}`,
@@ -248,6 +250,18 @@ function CardBody({
             {resists.map((s) => (
               <span key={s.label}>
                 <span style={{ color: 'var(--color-muted-foreground)' }}>{s.label} </span>{fmt(s.value)}
+              </span>
+            ))}
+          </div>
+        </CardSection>
+      )}
+
+      {mod2.length > 0 && (
+        <CardSection title="PoP Stats">
+          <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-xs" style={{ color: 'var(--color-foreground)' }}>
+            {mod2.map((e) => (
+              <span key={e.key} title={e.hint}>
+                <span style={{ color: 'var(--color-muted-foreground)' }}>{e.label} </span>{mod2Value(e)}
               </span>
             ))}
           </div>

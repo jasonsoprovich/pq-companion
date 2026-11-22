@@ -39,6 +39,8 @@ func (h *popflagHandler) dataset(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"flags":       popflag.Flags(),
 		"zone_access": popflag.ZoneAccess(),
+		// Zones the Plane of Tranquility portals open by level alone.
+		"zone_level_access": popflag.ZoneLevelAccess(),
 	})
 }
 
