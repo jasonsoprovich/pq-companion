@@ -27,9 +27,10 @@ var notNames = map[string]bool{
 	"they": true, "he": true, "she": true, "players": true, "there": true,
 }
 
-// SetNameSource gives Suggest the player names it knows (seen players, the
-// raid roster), lowercased. Optional.
-func (e *Engine) SetNameSource(fn func() map[string]bool) {
+// SetNameSource gives Suggest a lookup for known player names (seen
+// players, the raid roster). Optional; called only while building a
+// suggestion, never per log line.
+func (e *Engine) SetNameSource(fn func(name string) bool) {
 	e.mu.Lock()
 	e.names = fn
 	e.mu.Unlock()
@@ -76,18 +77,24 @@ func (e *Engine) Suggest(id string, seq int64, mode string) (Suggestion, error) 
 	}
 
 	names := map[string]bool{}
-	if namesFn != nil {
-		for n := range namesFn() {
-			names[strings.ToLower(n)] = true
-		}
-	}
 	for _, n := range []string{line.Speaker, line.Peer, line.Character, self} {
 		if n != "" {
 			names[strings.ToLower(n)] = true
 		}
 	}
 
-	rule := suggestRule(*line, names, self)
+	known := func(n string) bool {
+		if names[n] {
+			return true
+		}
+		if namesFn == nil {
+			return false
+		}
+		ok := namesFn(n)
+		names[n] = ok
+		return ok
+	}
+	rule := suggestRule(*line, known, self)
 	if mode == SuggestKeep {
 		rule.Color = defaultKeepColor
 	}
@@ -122,7 +129,7 @@ func suggestName(mode string, l Line) string {
 
 // suggestRule builds the rule for one line and checks that it matches the
 // line it came from, falling back to the line's exact text if not.
-func suggestRule(l Line, names map[string]bool, self string) Rule {
+func suggestRule(l Line, known func(string) bool, self string) Rule {
 	target := l.Text
 	r := Rule{Mode: MatchSimple, Kind: linematch.SimpleExact}
 	if l.isChat() {
@@ -131,7 +138,7 @@ func suggestRule(l Line, names map[string]bool, self string) Rule {
 	}
 	// Simple text can't hold a literal * or braces; use a regex instead.
 	regex := strings.ContainsAny(target, "*{}")
-	r.Text = templatize(target, names, !l.isChat(), regex)
+	r.Text = templatize(target, known, !l.isChat(), regex)
 	if regex {
 		r.Mode = MatchRegex
 		r.Kind = ""
@@ -147,7 +154,7 @@ func suggestRule(l Line, names map[string]bool, self string) Rule {
 // expressions (regex): numbers, known player names, and — for a non-chat line
 // — a leading capitalized word followed by a lowercase one ("Soandso begins
 // to cast…"), which is almost always a player or a named mob.
-func templatize(text string, names map[string]bool, leadingName, regex bool) string {
+func templatize(text string, known func(string) bool, leadingName, regex bool) string {
 	var b strings.Builder
 	nums, words := 0, 0
 	last := 0
@@ -170,7 +177,7 @@ func templatize(text string, names map[string]bool, leadingName, regex bool) str
 			} else {
 				repl = fmt.Sprintf("{n%d:number}", nums)
 			}
-		case isName(tok, names) || (leadingName && i == 0 && leadsName(text, tok, locs)):
+		case isName(tok, known) || (leadingName && i == 0 && leadsName(text, tok, locs)):
 			words++
 			if regex {
 				repl = `\S+`
@@ -191,12 +198,14 @@ func templatize(text string, names map[string]bool, leadingName, regex bool) str
 	return b.String()
 }
 
-func isName(tok string, names map[string]bool) bool {
+// isName reports whether a token is a known player name (lowercased lookup;
+// a possessive "Bob's" counts as Bob). known caches its own misses.
+func isName(tok string, known func(string) bool) bool {
 	t := strings.ToLower(strings.TrimRight(tok, "`'"))
 	if strings.HasSuffix(t, "`s") || strings.HasSuffix(t, "'s") {
 		t = t[:len(t)-2]
 	}
-	return len(t) >= 3 && names[t]
+	return len(t) >= 3 && known(t)
 }
 
 // leadsName reports whether the first token of a non-chat line looks like a

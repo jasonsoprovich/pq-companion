@@ -2,7 +2,6 @@ package chatwindow
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -351,7 +350,7 @@ func TestSuggest(t *testing.T) {
 		{Character: "Osui", Channel: "general", Direction: chat.DirectionIn, Peer: "Zed", Message: "WTS Cloak 500pp", TS: t0.Add(-time.Minute).Unix()},
 	}}
 	e, _, _ := newTestEngine(hist)
-	e.SetNameSource(func() map[string]bool { return map[string]bool{"klaital": true} })
+	e.SetNameSource(func(n string) bool { return n == "klaital" })
 	def := mustCreate(t, e, WindowDef{Name: "w", Sources: Sources{AllNamed: true, Other: true, Channels: []string{"raid"}}})
 	e.HandleLine(t0, "Bob tells General:1, 'WTS Cloak 500pp'")
 	e.HandleLine(t0, "Klaital tells the raid,  'Klaital and Osui to 12, 34 and 56'")
@@ -498,8 +497,6 @@ func BenchmarkHandleLine(b *testing.B) {
 		"You have been healed for 400 points.",
 		"Bob tells the guild, 'lol'",
 	}
-	re := regexp.MustCompile(`x`)
-	_ = re
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		e.HandleLine(t0, lines[i%len(lines)])

@@ -32,6 +32,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/chchain"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/combat"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/config"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/chatwindow"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/customoverlay"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/emote"
@@ -1888,6 +1889,35 @@ func main() {
 		defer customOverlayStore.Close()
 	}
 	customOverlays := customoverlay.NewEngine(customOverlayStore, hub, activeChar)
+	// Chat windows: filtered chat/log overlay windows. Definitions live in
+	// user.db; contents are refilled from chat history.
+	var chatWindowStore *chatwindow.Store
+	if st, err := chatwindow.OpenStore(filepath.Join(home, ".pq-companion", "user.db")); err != nil {
+		slog.Warn("open chat windows store (in-memory only)", "err", err)
+	} else {
+		chatWindowStore = st
+		defer chatWindowStore.Close()
+	}
+	var chatHistory chatwindow.History
+	if chatStore != nil {
+		chatHistory = chatStore
+	}
+	chatWindows := chatwindow.NewEngine(chatWindowStore, hub, chatHistory, activeChar)
+	chatWindows.SetNameSource(func(name string) bool {
+		if snap, ok := rosterKeeper.Get(); ok {
+			for _, m := range snap.Members {
+				if strings.EqualFold(m.Name, name) {
+					return true
+				}
+			}
+		}
+		if playerStore == nil {
+			return false
+		}
+		p, err := playerStore.Get(name)
+		return err == nil && p != nil
+	})
+	go chatWindows.Start(context.Background())
 	zoneCopyKills.Store(killCounters)
 	if c := zoneCopyReader.Current(); c.Token != "" {
 		killCounters.SetZoneCopy(zoneCopyLong(c.Zone), c.Token)
@@ -2517,6 +2547,7 @@ func main() {
 		guard.run("rollTracker", func() { rollTracker.HandleLine(ts, msg) })
 		durable("killCounters", func() { killCounters.HandleLine(ts, msg) })
 		guard.run("customOverlays", func() { customOverlays.HandleLine(ts, msg) })
+		guard.run("chatWindows", func() { chatWindows.HandleLine(ts, msg) })
 		if raidRecorder != nil {
 			durable("raidRecorderLines", func() { raidRecorder.HandleLine(ts, msg) })
 		}
@@ -2593,6 +2624,8 @@ func main() {
 		// Recompile trigger patterns: {c}/{char}/{self} tokens expand to the
 		// active character name at compile time.
 		triggerEngine.Reload()
+		// Chat windows pick up the new character's chat history.
+		go chatWindows.CharacterChanged(character)
 		// Faction Tracker follows the active character: reload its wishlist
 		// and load its persisted tallies, so a camp/login cycle switches to
 		// that character's own faction history instead of carrying over the
@@ -2608,6 +2641,9 @@ func main() {
 		timerEngine.EndBatch,
 	)
 	go tailer.Start(context.Background())
+	// Fill chat windows from chat history for the character at startup (in
+	// manual mode the tailer doesn't report its first detection).
+	go chatWindows.CharacterChanged(activeChar())
 
 	// Log replayer: streams a historical log segment through the same
 	// dispatch callbacks at log-timestamp pace, so triggers, timers, and the
@@ -2619,6 +2655,7 @@ func main() {
 		tailer.SetPaused(active)
 		triggerEngine.SetReplaying(active)
 		customOverlays.SetReplaying(active)
+		chatWindows.SetReplaying(active)
 		replaying.Store(active)
 		if !active {
 			timerEngine.ClearAll()
@@ -2741,7 +2778,7 @@ func main() {
 	}
 	defer mapStore.Close()
 
-	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, replayer, npcTracker, combatTracker, historyStore, threatTracker, raidThreatAssembler, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, blockbuffStore, sb, savedQueryStore, skillsStore, traderStore, traderCapturer, popflagStore, wishlistWatcher, changelogEntries, factionEngine, emoteService, mapStore, mapAnnotations, progressStore, mystatsStore, raidStore, rosterKeeper, killStore, killCounters, customOverlays, itemDisplayTracker, petTracker, regenTracker, raidTrackStore, liveZoneFn, actualPort)
+	router := api.NewRouter(database, hub, cfgMgr, zealWatcher, pipeSupervisor, backupMgr, tailer, replayer, npcTracker, combatTracker, historyStore, threatTracker, raidThreatAssembler, timerEngine, respawnEngine, triggerStore, triggerEngine, charStore, rollTracker, appBackupMgr, playerStore, chatStore, lootStore, backfillRegistry, keyringStore, keyringMaster, lockoutStore, blockbuffStore, sb, savedQueryStore, skillsStore, traderStore, traderCapturer, popflagStore, wishlistWatcher, changelogEntries, factionEngine, emoteService, mapStore, mapAnnotations, progressStore, mystatsStore, raidStore, rosterKeeper, killStore, killCounters, customOverlays, chatWindows, itemDisplayTracker, petTracker, regenTracker, raidTrackStore, liveZoneFn, actualPort)
 
 	// Raid disband watcher. Zeal emits MsgRaid only while is_in_raid(); on
 	// disband the envelopes just STOP — there is no "raid over" message on the

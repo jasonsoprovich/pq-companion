@@ -55,7 +55,7 @@ type Engine struct {
 	// (nil otherwise); SetReplaying(false) puts them back.
 	replaySaved map[string]WindowState
 	// names lists known player names for Suggest (see SetNameSource).
-	names func() map[string]bool
+	names func(name string) bool
 }
 
 // NewEngine loads stored windows. store, hub and history may be nil.
