@@ -29,6 +29,10 @@ type Watcher struct {
 	// nil-safe.
 	onQuarmyChanged func(charName string)
 
+	// caps tracks Zeal settings checklist proof (see captracker.go). Set
+	// once at startup via SetCapTracker; nil-safe.
+	caps *CapTracker
+
 	mu               sync.RWMutex
 	inventory        *Inventory
 	spellbook        *Spellbook
@@ -598,4 +602,16 @@ func (w *Watcher) checkQuarmy(path, charName string) {
 	if err := w.charStore.ReplaceTradeskills(char.ID, toTradeskillEntries(data.Tradeskills)); err != nil {
 		slog.Warn("zeal: save character tradeskills", "character", charName, "err", err)
 	}
+}
+
+// SetCapTracker attaches the Zeal settings checklist tracker. Call before
+// serving requests.
+func (w *Watcher) SetCapTracker(t *CapTracker) { w.caps = t }
+
+// CapTracker returns the attached checklist tracker, or nil.
+func (w *Watcher) CapTracker() *CapTracker {
+	if w == nil {
+		return nil
+	}
+	return w.caps
 }

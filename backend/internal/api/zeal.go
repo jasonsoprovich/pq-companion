@@ -1040,6 +1040,51 @@ func (h *zealHandler) pipeStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, h.pipe.Status())
 }
 
+// zealSettingsResponse is the Zeal settings checklist (Settings › Zeal and
+// the setup wizard).
+type zealSettingsResponse struct {
+	EQPath        string        `json:"eq_path"`
+	Installed     bool          `json:"installed"`
+	Version       string        `json:"version,omitempty"`
+	INIReadable   bool          `json:"ini_readable"`
+	PipeConnected bool          `json:"pipe_connected"`
+	// PipeMatches is true when the connected game runs from EQPath, so live
+	// pipe data counts for this install.
+	PipeMatches  bool          `json:"pipe_matches"`
+	Capabilities []zeal.CapRow `json:"capabilities"`
+}
+
+// GET /api/zeal/settings
+// The Zeal features PQ Companion benefits from that this install's Zeal
+// supports, each with whether it's on (zeal.ini) and seen working (pipe).
+// ?path= checks an unsaved folder, like /detect, for the onboarding wizard.
+func (h *zealHandler) settings(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Query().Get("path")
+	if path == "" {
+		path = h.cfgMgr.Get().EQPath
+	}
+	install := zeal.DetectInstall(r.Context(), path, nil)
+	resp := zealSettingsResponse{EQPath: path, Installed: install.Installed, Version: install.Version}
+	if h.pipe != nil {
+		resp.PipeConnected = h.pipe.Status().State == zealpipe.StateConnected
+	}
+	if !install.Installed {
+		resp.Capabilities = []zeal.CapRow{}
+		writeJSON(w, http.StatusOK, resp)
+		return
+	}
+	ev := zeal.CapEvidence{Version: install.Version, INI: zeal.ReadZealINI(path)}
+	if t := h.watcher.CapTracker(); t != nil {
+		ev.Live, ev.Persisted, resp.PipeMatches = t.Evidence(path)
+	}
+	resp.INIReadable = ev.INI.Readable
+	resp.Capabilities = zeal.BuildCapRows(ev)
+	if resp.Capabilities == nil {
+		resp.Capabilities = []zeal.CapRow{}
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
 // GET /api/zeal/detect
 // Probes an EverQuest folder for the Zeal mod (Zeal.asi next to eqgame.exe).
 // Defaults to the configured EQ path; an explicit ?path= override lets the

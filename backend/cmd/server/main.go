@@ -478,6 +478,30 @@ func main() {
 	go zealWatcher.RefreshAllPersonas()
 	go zealWatcher.Start(context.Background())
 
+	// Zeal settings checklist (Settings › Zeal): proof that each Zeal feature
+	// is working, persisted per Zeal build in config.yaml. The saved map is
+	// replaced, never mutated, since Get() hands out the same map to readers.
+	zealCaps := zeal.NewCapTracker(
+		func() map[string]string { return cfgMgr.Get().Preferences.ZealCapsSeen },
+		func(id zeal.CapID, identity string) {
+			if err := cfgMgr.Modify(func(c *config.Config) {
+				next := make(map[string]string, len(c.Preferences.ZealCapsSeen)+1)
+				for k, v := range c.Preferences.ZealCapsSeen {
+					next[k] = v
+				}
+				next[string(id)] = identity
+				c.Preferences.ZealCapsSeen = next
+			}); err != nil {
+				slog.Warn("zeal: persist checklist proof", "err", err)
+				return
+			}
+			hub.Broadcast(ws.Event{Type: "config:updated", Data: cfgMgr.Get()})
+		},
+		func() { hub.Broadcast(ws.Event{Type: "zeal:settings"}) },
+	)
+	zealWatcher.SetCapTracker(zealCaps)
+	go zealCaps.WatchINI(context.Background(), func() string { return cfgMgr.Get().EQPath }, 2*time.Second)
+
 	// Seed each stored character's last-seen zone from the tail of their log
 	// file so the Recap tab shows "Camped in …" straight away, without waiting
 	// for a live zone-in. Only fills a gap or a newer sighting — a value the
@@ -1937,6 +1961,7 @@ func main() {
 			case p.Consider != nil:
 				// The server's /con answer for one NPC: the overlay's live
 				// KOS border, and a faction tracker reading.
+				zealCaps.Saw(zeal.CapPipeConsider)
 				c := p.Consider
 				npcTracker.SetPipeConsider(c.SpawnID, c.Name, c.Faction)
 				factionEngine.HandlePipeConsider(c.SpawnID, c.Name, c.Faction, time.Now())
@@ -1946,6 +1971,7 @@ func main() {
 				// One spell action packet, with the caster's and target's
 				// spawn ids: ties log spell lands to spawns (spell_actions.go).
 				a := p.Spell
+				zealCaps.Saw(zeal.CapPipeSpells)
 				timerEngine.HandlePipeSpellAction(a.SpellID, a.SourceID, a.TargetID, a.TargetName, a.Success)
 			}
 			return
@@ -1973,6 +1999,9 @@ func main() {
 			if err != nil {
 				slog.Debug("zealpipe: decode player failed", "err", err)
 				return
+			}
+			if p.TargetSpawnLoc != nil {
+				zealCaps.Saw(zeal.CapTargetSpawnLoc)
 			}
 			// GameX/GameY, not the raw fields: Zeal's location is (y, x, z).
 			// This one feeds spawn-point proximity, which compares against
@@ -2087,6 +2116,10 @@ func main() {
 			for _, m := range members {
 				if m.Name != "" && m.Appearance != nil {
 					looks[m.Name] = m.Appearance
+					zealCaps.Saw(zeal.CapRosterAppearance)
+				}
+				if m.HPCur != nil {
+					zealCaps.Saw(zeal.CapPipeVerbose)
 				}
 				if m.Name == "" || m.Loc == nil || m.Name == env.Character {
 					continue
@@ -2123,6 +2156,10 @@ func main() {
 			for _, m := range members {
 				if m.Name != "" && m.Appearance != nil {
 					looks[m.Name] = m.Appearance
+					zealCaps.Saw(zeal.CapRosterAppearance)
+				}
+				if m.HPCur != nil {
+					zealCaps.Saw(zeal.CapPipeVerbose)
 				}
 				code, _ := raidcomp.CodeForZealID(int(m.Class))
 				raidMembers = append(raidMembers, raidcomp.Member{
@@ -2304,6 +2341,7 @@ func main() {
 		triggerEngine.HandlePipeBuffSlots(buffSlots, env.Character, time.Now())
 	})
 	pipeSupervisor.OnConnect(func(pipeName string, pid uint32) {
+		zealCaps.Connected(pid)
 		// Frontend listens for this and shows a one-shot "Zeal connected"
 		// notification. Re-fires on every reconnect — the toast component
 		// dedupes if it's been shown recently.
@@ -2315,6 +2353,7 @@ func main() {
 		}})
 	})
 	pipeSupervisor.OnDisconnect(func() {
+		zealCaps.Disconnected()
 		// Drop pipe-only state from all consumers so stale values don't
 		// linger after Zeal goes away. Log-driven paths continue to work via
 		// the normal Handle() flow.

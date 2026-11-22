@@ -1005,6 +1005,12 @@ type Preferences struct {
 	// so users on a Zeal without the message never see a dead feature.
 	ZealItemDisplaySeen bool `yaml:"zeal_item_display_seen,omitempty" json:"zeal_item_display_seen"`
 
+	// ZealCapsSeen records, per Zeal settings checklist entry (see
+	// zeal/caps.go), the Zeal build it was last seen working on, so features
+	// from Zeal test builds stay listed across restarts but drop off when
+	// Zeal is updated, replaced or the EQ folder changes.
+	ZealCapsSeen map[string]string `yaml:"zeal_caps_seen,omitempty" json:"zeal_caps_seen,omitempty"`
+
 	// ItemInfoOverlay is the Item Info overlay's display setup: which
 	// sections and fields show on each surface, their order, and how long a
 	// list gets before it collapses to a count. Frontend-only; the backend
