@@ -44,6 +44,10 @@ type Consumer struct {
 	// Hail-grant pairing (see hailgrant.go): the NPC half of a pair, waiting
 	// for the character-flag line that must immediately follow it.
 	pending *pendingGrant
+	// lastFlagLine is when the last character-flag line was seen and for
+	// whom: the Time machine prints its own line AFTER it (quintessence.go).
+	lastFlagLine     time.Time
+	lastFlagLineChar string
 	// zone is the long name from the last zone-in event, "" until one is
 	// seen. Gates grant pairs to the NPC's own zone when known.
 	zone string
@@ -81,7 +85,9 @@ func (c *Consumer) HandleLine(ts time.Time, msg string) {
 	if msg == "" {
 		return
 	}
+	c.checkTimeGrant(ts, msg)
 	c.checkGrant(ts, msg)
+	c.checkQuintessence(ts, msg)
 	if MatchSeerLine(msg) {
 		c.appendSeerMatch(msg, ts)
 		return
@@ -202,6 +208,62 @@ func (c *Consumer) checkGrant(ts time.Time, msg string) {
 	slog.Info("popflag: hail grant detected", "character", p.character, "flag", p.flagID, "changed", changed)
 	if changed {
 		c.notify(p.character)
+	}
+}
+
+// checkTimeGrant pairs the Time machine's line with the character-flag line
+// just before it and records Plane of Time access. Every character-flag line
+// is remembered (with the character active then) for the next line to claim.
+func (c *Consumer) checkTimeGrant(ts time.Time, msg string) {
+	c.mu.Lock()
+	if IsFlagGrantLine(msg) {
+		c.lastFlagLine = ts
+		c.lastFlagLineChar = ""
+		if c.activeChar != nil {
+			c.lastFlagLineChar = c.activeChar()
+		}
+		c.mu.Unlock()
+		return
+	}
+	at, character := c.lastFlagLine, c.lastFlagLineChar
+	c.lastFlagLine, c.lastFlagLineChar = time.Time{}, ""
+	c.mu.Unlock()
+
+	if at.IsZero() || character == "" || c.store == nil || !IsTimeGrantLine(msg) {
+		return
+	}
+	if d := ts.Sub(at); d > grantPairWindow || d < -grantPairWindow {
+		return
+	}
+	changed, err := c.store.ApplyHailGrant(character, "potime", ts)
+	if err != nil {
+		slog.Warn("popflag: Time grant failed", "character", character, "err", err)
+		return
+	}
+	slog.Info("popflag: Time grant detected", "character", character, "changed", changed)
+	if changed {
+		c.notify(character)
+	}
+}
+
+// checkQuintessence records the Quintessence completing the active
+// character's earlier planar progression (quintessence.go).
+func (c *Consumer) checkQuintessence(ts time.Time, msg string) {
+	if c.store == nil || c.activeChar == nil || !IsQuintessenceLine(msg) {
+		return
+	}
+	character := c.activeChar()
+	if character == "" {
+		return
+	}
+	changed, err := c.store.ApplyQuintessence(character, ts)
+	if err != nil {
+		slog.Warn("popflag: Quintessence grant failed", "character", character, "err", err)
+		return
+	}
+	slog.Info("popflag: Quintessence progression detected", "character", character, "changed", changed)
+	if changed {
+		c.notify(character)
 	}
 }
 
