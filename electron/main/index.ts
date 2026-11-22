@@ -1053,7 +1053,9 @@ function createStandardOverlay(name: StandardOverlay): void {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      // Overlays have only tiny fields (names, filters); no spellchecker per window.
+      spellcheck: false
     },
   })
   standardWindows.set(name, win)
@@ -1667,7 +1669,9 @@ function createInstanceOverlay(key: InstanceKey, name: string): void {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      // Overlays have only tiny fields (names, filters); no spellchecker per window.
+      spellcheck: false
     },
   })
   instanceWindows.set(key, win)
@@ -1762,7 +1766,9 @@ function createTriggerOverlay(): void {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      // Overlays have only tiny fields (names, filters); no spellchecker per window.
+      spellcheck: false
     },
   })
 
@@ -1838,7 +1844,7 @@ function setDiscordVoiceContent(win: BrowserWindow, url: string): void {
   if (!isValidStreamKitVoiceUrl(url)) return
   if (!discordVoiceChildView) {
     discordVoiceChildView = new WebContentsView({
-      webPreferences: { contextIsolation: true, nodeIntegration: false },
+      webPreferences: { contextIsolation: true, nodeIntegration: false, spellcheck: false },
     })
     // A WebContentsView has its own background color, independent of the
     // parent BrowserWindow's `transparent: true` — it defaults to opaque
@@ -1895,7 +1901,9 @@ function createDiscordVoiceOverlay(): void {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      // Overlays have only tiny fields (names, filters); no spellchecker per window.
+      spellcheck: false
     },
   })
 
@@ -3343,7 +3351,9 @@ function createStackWindow(id: string, tab?: WindowKey): void {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      // Overlays have only tiny fields (names, filters); no spellchecker per window.
+      spellcheck: false
     },
   })
   stackWindows.set(id, win)
