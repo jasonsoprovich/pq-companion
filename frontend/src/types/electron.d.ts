@@ -57,6 +57,14 @@ export interface LayoutDashboardState {
 
 // One app process with its memory (MB) and CPU (% since the last call). role
 // says what it renders; keys are the overlay window keys for 'overlay'.
+// Performance recorder state (Settings → Advanced → Diagnostics).
+export interface PerfStatus {
+  recording: boolean
+  // The recording's file (kept after stopping, until the next start).
+  file: string | null
+  startedAt: number | null
+}
+
 export interface ProcessMetricRow {
   pid: number
   role: 'overlay' | 'main' | 'trigger' | 'streamkit' | 'helper'
@@ -321,6 +329,11 @@ export interface ElectronAPI {
     openLogsFolder: () => Promise<string>
     openBackupsFolder: () => Promise<string>
     getConfigFolderPath: () => Promise<string>
+  }
+  perf: {
+    status: () => Promise<PerfStatus>
+    start: () => Promise<PerfStatus>
+    stop: () => Promise<PerfStatus>
   }
   updater: {
     check: () => Promise<void>

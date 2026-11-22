@@ -8,6 +8,7 @@ import { homedir } from 'os'
 import { autoUpdater } from 'electron-updater'
 import { appendLine, closeLogger, initLogger } from './logger'
 import { findOtherRunningCopies, otherCopyMessage } from './otherCopy'
+import { PerfRecorder, type SidecarMemory } from './perfRecorder'
 import {
   SKIP_ENV,
   findManagedInstall,
@@ -3689,6 +3690,7 @@ function switchLayout(id: string, flush = true): void {
   const store = loadLayoutStore()
   const target = store.layouts.find((l) => l.id === id)
   if (!target) return
+  perfRecorder.event(`switched layout to "${target.name}"`)
   // Save pending moves into the outgoing layout before it stops being active.
   for (const win of userPopoutWindows()) {
     const key = windowToOverlayName.get(win)
@@ -4022,7 +4024,9 @@ type ProcessRow = {
   cpu: number
 }
 
-ipcMain.handle('overlay:process-metrics', (): ProcessRow[] => {
+ipcMain.handle('overlay:process-metrics', (): ProcessRow[] => collectProcessMetrics())
+
+function collectProcessMetrics(): ProcessRow[] {
   const byPid = new Map<number, { role: ProcessRow['role']; keys: string[]; state?: 'open' | 'hidden' }>()
   const claim = (pid: number, role: ProcessRow['role'], key?: string, state?: 'open' | 'hidden'): void => {
     if (!pid) return
@@ -4057,6 +4061,45 @@ ipcMain.handle('overlay:process-metrics', (): ProcessRow[] => {
       cpu: Math.round(m.cpu.percentCPUUsage * 10) / 10,
     }
   })
+}
+
+// ── Performance recorder (Settings → Advanced → Diagnostics) ─────────────────
+// Writes a memory/CPU timeline to ~/.pq-companion/logs/perf-*.log while on.
+// See perfRecorder.ts. Not persisted: a restart starts with it off.
+
+async function fetchSidecarMemory(): Promise<SidecarMemory | null> {
+  if (backendPort === null) return null
+  const controller = new AbortController()
+  const t = setTimeout(() => controller.abort(), 2000)
+  try {
+    const res = await fetch(`http://127.0.0.1:${backendPort}/api/debug/memory`, { signal: controller.signal })
+    return res.ok ? ((await res.json()) as SidecarMemory) : null
+  } catch {
+    return null
+  } finally {
+    clearTimeout(t)
+  }
+}
+
+function perfOverlayLabel(key: string): string {
+  const name = instanceNames.get(key as InstanceKey)
+  return name ? `${key.slice(0, key.indexOf(':'))}:"${name}"` : key
+}
+
+const perfRecorder = new PerfRecorder({
+  collect: collectProcessMetrics,
+  sidecar: fetchSidecarMemory,
+  label: perfOverlayLabel,
+  appVersion: app.getVersion(),
+  processMode: () => 'Separate (one process per overlay window)',
+})
+
+ipcMain.handle('perf:status', () => perfRecorder.status())
+ipcMain.handle('perf:start', () => perfRecorder.start())
+ipcMain.handle('perf:stop', () => perfRecorder.stop())
+
+app.on('before-quit', () => {
+  perfRecorder.stop('stopped (app quit)')
 })
 
 // ── IPC handlers — restore overlays on launch ────────────────────────────────

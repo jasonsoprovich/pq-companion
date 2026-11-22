@@ -16,6 +16,7 @@ type LayoutDashboard = { panels: Record<string, DashboardPanel>; groups: Record<
 type LayoutDashboardState = { id: string; dashboard: LayoutDashboard | null; migrated: boolean }
 type StackInfo = { id: string; key: string; tabs: string[]; active: string; groupNames: Record<string, string> }
 type StackDropHint = { role: 'source' | 'target'; key: string; name?: string } | null
+type PerfStatus = { recording: boolean; file: string | null; startedAt: number | null }
 type ProcessRow = {
   pid: number
   role: 'overlay' | 'main' | 'trigger' | 'streamkit' | 'helper'
@@ -394,6 +395,12 @@ contextBridge.exposeInMainWorld('electron', {
     openLogsFolder: (): Promise<string> => ipcRenderer.invoke('shell:open-logs-folder'),
     openBackupsFolder: (): Promise<string> => ipcRenderer.invoke('shell:open-backups-folder'),
     getConfigFolderPath: (): Promise<string> => ipcRenderer.invoke('config:folder-path'),
+  },
+  // Performance recorder: memory/CPU timeline to logs/perf-*.log.
+  perf: {
+    status: (): Promise<PerfStatus> => ipcRenderer.invoke('perf:status'),
+    start: (): Promise<PerfStatus> => ipcRenderer.invoke('perf:start'),
+    stop: (): Promise<PerfStatus> => ipcRenderer.invoke('perf:stop'),
   },
   updater: {
     check: (): Promise<void> => ipcRenderer.invoke('updater:check'),

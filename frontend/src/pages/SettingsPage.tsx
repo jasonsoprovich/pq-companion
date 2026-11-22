@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useAutoTour } from '../components/guide/GuideProvider'
 import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
-import { Settings, Search, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, FileText, Code2, PanelLeft, Info, Globe, MessageCircle, Coffee, Heart, Eye, Gauge, Download, Headphones, Map as MapIcon, Keyboard as KeyboardIcon } from 'lucide-react'
+import { Settings, Search, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, FileText, Code2, PanelLeft, Info, Globe, MessageCircle, Coffee, Heart, Eye, Gauge, Download, Headphones, Map as MapIcon, Keyboard as KeyboardIcon, Activity } from 'lucide-react'
+import type { PerfStatus } from '../types/electron'
 import BackfillPanel from '../components/settings/BackfillPanel'
 import SidebarNavSettings from '../components/settings/SidebarNavSettings'
 import EqLogStatusCard from '../components/settings/EqLogStatusCard'
@@ -2817,6 +2818,22 @@ function DiagnosticsSection({
     await window.electron.app.relaunch()
   }
 
+  // Performance recorder: lives in the main process, so its state survives
+  // leaving this page; read it back on mount.
+  const hasPerf = typeof window !== 'undefined' && !!window.electron?.perf
+  const [perf, setPerf] = useState<PerfStatus | null>(null)
+  useEffect(() => {
+    window.electron?.perf?.status().then(setPerf).catch(() => null)
+  }, [])
+  async function handleTogglePerf() {
+    if (!window.electron?.perf) return
+    const next = perf?.recording
+      ? await window.electron.perf.stop()
+      : await window.electron.perf.start()
+    setPerf(next)
+  }
+  const perfFile = perf?.file ? perf.file.split(/[\\/]/).pop() : null
+
   return (
     <section data-setting="diagnostics"
       className="mt-4 rounded-lg p-4"
@@ -2867,7 +2884,34 @@ function DiagnosticsSection({
           {exportState === 'running' ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
           Export debug logs (.zip)
         </button>
+        <button
+          type="button"
+          onClick={() => void handleTogglePerf()}
+          disabled={!hasPerf || perf === null}
+          className="inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
+          style={{
+            backgroundColor: perf?.recording ? 'var(--color-primary)' : 'var(--color-surface-2)',
+            border: '1px solid var(--color-border)',
+            color: perf?.recording ? 'var(--color-primary-foreground)' : 'var(--color-foreground)',
+          }}
+          title="Log memory and CPU for every process every 5 seconds, plus overlay open/close events, to a perf-*.log file in the logs folder"
+        >
+          <Activity size={13} />
+          {perf?.recording ? 'Stop performance recording' : 'Record performance'}
+        </button>
       </div>
+      {perf?.recording && perfFile && (
+        <p className="mt-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+          Recording to <code>{perfFile}</code>. Open and close overlays as
+          usual; stop (or quit) to write the summary.
+        </p>
+      )}
+      {perf && !perf.recording && perfFile && (
+        <p className="mt-2 flex items-center gap-1.5 text-xs" style={{ color: '#22c55e' }}>
+          <CheckCircle2 size={12} />
+          Saved <code>{perfFile}</code> in the logs folder.
+        </p>
+      )}
 
       {exportState === 'done' && exportResult && (
         <p className="mt-2 flex items-center gap-1.5 text-xs" style={{ color: '#22c55e' }}>
