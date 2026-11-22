@@ -33,6 +33,7 @@ import {
   weaponRatioLabel,
   weightLabel,
 } from '../lib/itemHelpers'
+import { mod2List, mod2Value } from '../lib/itemMod2'
 import { ItemIcon } from './Icon'
 import { ItemTradeskillsTab } from './RecipeView'
 import { SourceNPCTable } from './SourceNPCTable'
@@ -40,9 +41,9 @@ import SpellEffectRow from './SpellEffectRow'
 
 // ── Shared primitives ──────────────────────────────────────────────────────────
 
-function StatRow({ label, value }: { label: string; value: string | number }): React.ReactElement {
+function StatRow({ label, value, title }: { label: string; value: string | number; title?: string }): React.ReactElement {
   return (
-    <div className="flex justify-between gap-3 py-0.5 text-sm">
+    <div className="flex justify-between gap-3 py-0.5 text-sm" title={title}>
       <span className="shrink-0" style={{ color: 'var(--color-muted-foreground)' }}>{label}</span>
       <span className="min-w-0 break-words text-right" style={{ color: 'var(--color-foreground)' }}>{value}</span>
     </div>
@@ -79,6 +80,7 @@ function OverviewTab({ item, copied, onCopy }: { item: Item; copied: boolean; on
   const hasBane = item.bane_amt > 0 || item.bane_body > 0 || item.bane_race > 0
   const hasStats = item.hp > 0 || item.mana > 0 || item.str > 0 || item.sta > 0 || item.agi > 0 || item.dex > 0 || item.wis > 0 || item.int > 0 || item.cha > 0
   const hasResists = item.mr > 0 || item.cr > 0 || item.dr > 0 || item.fr > 0 || item.pr > 0
+  const mod2 = mod2List(item)
   const hasEffects =
     (item.click_effect > 0 && !!item.click_name) ||
     (item.proc_effect > 0 && !!item.proc_name) ||
@@ -155,6 +157,13 @@ function OverviewTab({ item, copied, onCopy }: { item: Item; copied: boolean; on
           {item.dr > 0 && <StatRow label="Disease" value={`+${item.dr}`} />}
           {item.fr > 0 && <StatRow label="Fire" value={`+${item.fr}`} />}
           {item.pr > 0 && <StatRow label="Poison" value={`+${item.pr}`} />}
+        </Section>
+      )}
+      {mod2.length > 0 && (
+        <Section title="PoP Stats">
+          {mod2.map((e) => (
+            <StatRow key={e.key} label={e.label} value={mod2Value(e)} title={e.hint} />
+          ))}
         </Section>
       )}
       {hasEffects && (
