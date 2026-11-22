@@ -80,15 +80,72 @@ func (e *Engine) lookupCharmSpell(name string) *db.Spell {
 	return nil
 }
 
-// armCharm records a charm cast and schedules its confirmation. Non-charm
-// casts are ignored: a charm that landed must not be cancelled by the next
-// spell the player starts.
-func (e *Engine) armCharm(castAt time.Time, spellName, target string, targetID int) {
-	if e.trackingMode() == modeTriggersOnly {
+// charmCastRecord is the latest charm cast-begin (log time), cleared when
+// any other spell starts casting.
+type charmCastRecord struct {
+	at       time.Time
+	castTime time.Duration
+}
+
+// failedCharmWindow is how long after a charm's cast time a resist,
+// interrupt or did-not-take-hold line still counts as that cast failing.
+// It covers pushback and "You regain your concentration" stretching a cast.
+const failedCharmWindow = 10 * time.Second
+
+// recordCharmCast notes a cast-begin: it remembers a charm cast for
+// dropFailedCharmTimer and arms the native charm timer.
+func (e *Engine) recordCharmCast(castAt time.Time, spellName, target string, targetID int) {
+	spell := e.lookupCharmSpell(spellName)
+	e.mu.Lock()
+	e.charmCast = charmCastRecord{}
+	if spell != nil {
+		e.charmCast = charmCastRecord{
+			at:       castAt,
+			castTime: time.Duration(spell.CastTime) * time.Millisecond,
+		}
+	}
+	e.mu.Unlock()
+	if spell != nil {
+		e.armCharm(castAt, spell, target, targetID)
+	}
+}
+
+// dropFailedCharmTimer handles a resist, interrupt or did-not-take-hold line
+// that follows a charm cast with no other cast in between. The Enchanter
+// pack starts its charm timer on "You begin casting <charm>." (charms log no
+// land line), so a cast that never landed left a full-length timer behind on
+// the pet overlay and the detrimental timers. Only charm timers started by
+// this cast go: a charm already running before it keeps its timer.
+func (e *Engine) dropFailedCharmTimer(at time.Time) {
+	e.mu.Lock()
+	c := e.charmCast
+	e.charmCast = charmCastRecord{}
+	if c.at.IsZero() || (!at.IsZero() && at.Sub(c.at) > c.castTime+failedCharmWindow) {
+		e.mu.Unlock()
 		return
 	}
-	spell := e.lookupCharmSpell(spellName)
-	if spell == nil {
+	removed := 0
+	for k, t := range e.timers {
+		if t.IsCharm && !t.CastAt.Before(c.at.Add(-dedupGraceWindow)) {
+			delete(e.timers, k)
+			removed++
+		}
+	}
+	if removed == 0 {
+		e.mu.Unlock()
+		return
+	}
+	snap := e.snapshot(time.Now())
+	e.mu.Unlock()
+	slog.Debug("timer-debug: charm cast failed; dropped its timer", "removed", removed)
+	e.hub.Broadcast(ws.Event{Type: WSEventTimers, Data: snap})
+}
+
+// armCharm records a charm cast and schedules its confirmation. Non-charm
+// casts never get here: a charm that landed must not be cancelled by the
+// next spell the player starts.
+func (e *Engine) armCharm(castAt time.Time, spell *db.Spell, target string, targetID int) {
+	if e.trackingMode() == modeTriggersOnly {
 		return
 	}
 	e.mu.Lock()

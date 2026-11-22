@@ -797,6 +797,10 @@ type Engine struct {
 	// (see charm.go); charmSeq numbers casts so a stale confirm is ignored.
 	pendingCharm *pendingCharm
 	charmSeq     uint64
+	// charmCast is the player's latest charm cast-begin, kept in every
+	// tracking mode so a failed cast can drop the timer the Enchanter pack
+	// started on that cast line (see dropFailedCharmTimer).
+	charmCast charmCastRecord
 
 	// petNameFn reports the player's live pet name ("" when none), so a
 	// same-named mob's death doesn't clear the pet's buff timers. nil means
@@ -1038,7 +1042,7 @@ func (e *Engine) Handle(ev logparser.LogEvent) {
 				"log_spell", data.SpellName, "pipe_spell", pipeName, "ts", ev.Timestamp)
 		}
 		slog.Debug("timer-debug: spell-cast recorded (awaiting land)", "spell", data.SpellName, "ts", ev.Timestamp)
-		e.armCharm(ev.Timestamp, data.SpellName, castTarget, castTargetID)
+		e.recordCharmCast(ev.Timestamp, data.SpellName, castTarget, castTargetID)
 
 	case logparser.EventSpellLanded:
 		data, ok := ev.Data.(logparser.SpellLandedData)
@@ -1061,6 +1065,7 @@ func (e *Engine) Handle(ev logparser.LogEvent) {
 		e.lastCastTargetID = 0
 		e.pendingCharm = nil
 		e.mu.Unlock()
+		e.dropFailedCharmTimer(ev.Timestamp)
 
 	case logparser.EventSpellFade:
 		// "Your X spell has worn off." — the caster's notice that one of
