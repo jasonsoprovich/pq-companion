@@ -2,6 +2,7 @@ import type { Config } from '../types/config'
 import type { BlockedBuffEntry, BlockedBuffsView } from '../types/blockbuff'
 import type { Item, ItemSources, ItemQuests, QuestSummary, SearchResult, ItemShoppingRoute, ItemShoppingRouteOptions, ItemDisplayShown } from '../types/item'
 import type { NPC, NPCSpawns, NPCLootTable, NPCFaction, NPCSpells, NPCMerchant, PatrolRoute } from '../types/npc'
+import type { Mod2Stats } from '../types/item'
 import type {
   MapStatus, MapZone, MapZoneDetail, MapGeometry, UserAnnotation,
   GameMapExportStatus, GameMapExportResult, ZoneNPCLocation, ZoneSpawnPoint, ExternalMapStatus,
@@ -3166,6 +3167,10 @@ export interface StatBlock {
   mana_regen: number; ft: number; dmg_shield: number
   // ft_raw is the uncapped worn Flowing Thought total (ft is capped at 15).
   ft_raw?: number
+  // mod2 is the worn gear's PoP item stat totals after the per-stat caps;
+  // mod2_raw is the uncapped sum. Optional for older backends.
+  mod2?: Mod2Stats
+  mod2_raw?: Mod2Stats
   // atk_rating is the EQ inventory-window Attack rating (offense + to-hit),
   // distinct from `attack` (the raw worn/AA/buff +ATK bonus that feeds it).
   atk_rating: number

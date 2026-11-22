@@ -1118,6 +1118,12 @@ type statBlock struct {
 	// itemFTCap), so the UI can show how far over the cap gear pushes it.
 	FTRaw     int `json:"ft_raw"`
 	DmgShield int `json:"dmg_shield"`
+	// Mod2 is the worn gear's PoP item stat totals (Accuracy, Strikethrough,
+	// ...) after the server's per-stat caps; Mod2Raw is the uncapped sum, so
+	// the UI can show how far past a cap the gear goes. Equipment block only;
+	// the derived layers carry the equipment value through.
+	Mod2    db.Mod2Stats `json:"mod2"`
+	Mod2Raw db.Mod2Stats `json:"mod2_raw"`
 	// ATKRating is the EQ inventory-window Attack rating (offense + to-hit),
 	// distinct from Attack above (the raw worn/AA/buff SE_ATK bonus that feeds
 	// into it). Zero on the base layer until skills are known.
@@ -1447,6 +1453,7 @@ func (h *charactersHandler) sumEquipment(eqPath, charName string) (block statBlo
 			continue
 		}
 		addItemBaseStats(item, &block)
+		block.Mod2Raw.Add(item.Mod2Stats)
 		// A worn shield (item type 8, Secondary slot) raises the mitigation
 		// softcap by its AC — captured separately for the Tanking view.
 		if entry.Location == "Secondary" && item.ItemType == 8 {
@@ -1472,6 +1479,7 @@ func (h *charactersHandler) sumEquipment(eqPath, charName string) (block statBlo
 	if block.FT > itemFTCap {
 		block.FT = itemFTCap
 	}
+	block.Mod2 = block.Mod2Raw.Capped()
 	return block, bestHaste
 }
 
@@ -1843,8 +1851,11 @@ func (h *charactersHandler) deriveBlock(
 	// (the classic "vs level 60 NPC" reference), matching the Quarmy tanking tab.
 	const tankingRefNPCLevel = 60
 	tank := eqstat.Tanking(class, level, race, itemAC, spellAC, totAGI, skills.defense, 0,
-		item.ShieldAC, aa.AvoidMeleePct, aa.CombatStabilityPct, tankingRefNPCLevel)
+		item.ShieldAC, aa.AvoidMeleePct, item.Mod2.Avoidance, aa.CombatStabilityPct,
+		tankingRefNPCLevel)
 	return statBlock{
+		Mod2:         item.Mod2,
+		Mod2Raw:      item.Mod2Raw,
 		HP:           eqstat.MaxHP(class, level, totSTA, itemHP, buffHP, 0, aa.HPPct),
 		Mana:         eqstat.MaxMana(class, level, totWIS, totINT, flatMana),
 		AC:           tank.DisplayedAC,
