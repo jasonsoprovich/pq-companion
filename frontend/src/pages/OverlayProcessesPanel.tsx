@@ -17,7 +17,7 @@ import { listTimerGroups } from '../services/api'
 const POLL_MS = 2000
 
 const ROLE_ORDER: Record<ProcessMetricRow['role'], number> = {
-  main: 0, overlay: 1, streamkit: 2, trigger: 3, helper: 4,
+  main: 0, overlay: 1, streamkit: 2, trigger: 3, host: 4, helper: 5,
 }
 
 function rowLabel(r: ProcessMetricRow, groups: TimerGroup[]): string {
@@ -25,7 +25,14 @@ function rowLabel(r: ProcessMetricRow, groups: TimerGroup[]): string {
     case 'main': return 'Main window'
     case 'trigger': return 'Trigger alerts (always on)'
     case 'streamkit': return 'Discord Voice (StreamKit page)'
-    case 'overlay': return r.keys.map((k) => overlayWindowLabel(k, groups)).join(', ')
+    case 'host': return 'Shared overlay process (idle)'
+    case 'overlay': {
+      const hidden = new Set(r.hiddenKeys ?? [])
+      const names = r.keys.map((k) => overlayWindowLabel(k, groups) + (hidden.has(k) ? ' (hidden)' : ''))
+      if (r.trigger) names.push('Trigger alerts')
+      const shared = r.keys.length > 1 || r.trigger || r.host
+      return shared ? `Shared: ${names.join(', ')}` : names.join(', ')
+    }
     default: return r.type
   }
 }
@@ -90,7 +97,8 @@ export default function OverlayProcessesPanel(): React.ReactElement {
         </h2>
       </div>
       <p className="mb-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-        Each overlay window runs in its own process. Memory is RAM in use
+        Overlay windows share one process unless Overlay process mode is set to
+        Separate (Live Map always runs on its own). Memory is RAM in use
         {hasPrivate ? '; private is memory only that process holds' : ''}. CPU
         is the average over the last {POLL_MS / 1000} seconds. Hidden overlays
         are ones put away with the show/hide-all hotkey; closed ones don&rsquo;t appear.

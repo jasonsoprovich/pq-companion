@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { useAutoTour } from '../components/guide/GuideProvider'
 import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { Settings, Search, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader2, X, RefreshCw, Trash2, HardDrive, Sparkles, Volume2, VolumeX, Wifi, FileText, Code2, PanelLeft, Info, Globe, MessageCircle, Coffee, Heart, Eye, Gauge, Download, Headphones, Map as MapIcon, Keyboard as KeyboardIcon, Activity } from 'lucide-react'
-import type { PerfStatus } from '../types/electron'
+import type { OverlayProcessMode, PerfStatus } from '../types/electron'
 import BackfillPanel from '../components/settings/BackfillPanel'
 import SidebarNavSettings from '../components/settings/SidebarNavSettings'
 import EqLogStatusCard from '../components/settings/EqLogStatusCard'
@@ -2780,6 +2780,16 @@ function DiagnosticsSection({
   const [exportState, setExportState] = useState<'idle' | 'running' | 'done' | 'error'>('idle')
   const [exportResult, setExportResult] = useState<string | null>(null)
   const [hwAccelDisabled, setHwAccelDisabled] = useState(false)
+  const hasProcessMode = typeof window !== 'undefined' && !!window.electron?.overlayProcess
+  const [procMode, setProcMode] = useState<OverlayProcessMode | null>(null)
+  useEffect(() => {
+    window.electron?.overlayProcess?.getMode().then(setProcMode).catch(() => {})
+  }, [])
+  async function handleToggleProcMode() {
+    if (!procMode) return
+    const next = procMode.mode === 'shared' ? 'separate' : 'shared'
+    setProcMode(await window.electron.overlayProcess.setMode(next))
+  }
   const [hwAccelPendingRestart, setHwAccelPendingRestart] = useState(false)
 
   async function handleExportDebugLogs() {
@@ -2946,6 +2956,34 @@ function DiagnosticsSection({
           </span>
         </span>
       </label>
+
+      {hasProcessMode && (
+        <label className="mt-3 flex cursor-pointer items-start gap-2">
+          <input
+            type="checkbox"
+            checked={procMode?.mode !== 'separate'}
+            disabled={!procMode}
+            onChange={() => void handleToggleProcMode()}
+            className="mt-0.5"
+          />
+          <span className="text-xs" style={{ color: 'var(--color-foreground)' }}>
+            Share one process between overlays
+            <span className="block" style={{ color: 'var(--color-muted-foreground)' }}>
+              Saves a lot of memory with several overlays open. Live Map always
+              runs on its own. Turn off to give every overlay its own process
+              (uses more memory, but one overlay stalling or crashing can&rsquo;t
+              affect the others). Open overlays reopen in place when changed.
+            </span>
+            {procMode?.forcedSeparate && (
+              <span className="mt-1 flex items-center gap-1.5" style={{ color: '#f59e0b' }}>
+                <AlertTriangle size={12} />
+                The shared process crashed repeatedly, so overlays use separate
+                processes until the app restarts.
+              </span>
+            )}
+          </span>
+        </label>
+      )}
 
       {/* Workaround for a known Windows Electron/Chromium bug where hardware-
           accelerated transparent overlay windows can render solid black

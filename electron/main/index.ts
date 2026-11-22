@@ -1,14 +1,16 @@
-import { app, BrowserWindow, shell, ipcMain, nativeTheme, dialog, screen, protocol, globalShortcut, Tray, Menu, nativeImage, WebContentsView, session, powerMonitor } from 'electron'
+import { app, BrowserWindow, type BrowserWindowConstructorOptions, shell, ipcMain, nativeTheme, dialog, screen, protocol, globalShortcut, Tray, Menu, nativeImage, WebContentsView, session, powerMonitor } from 'electron'
 import { join, extname, dirname } from 'path'
 import { spawn, ChildProcess } from 'child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync, statSync, unlinkSync } from 'fs'
 import { readFile, access, open as fsOpen } from 'fs/promises'
 import { constants as fsConstants } from 'fs'
 import { homedir } from 'os'
+import { pathToFileURL } from 'url'
 import { autoUpdater } from 'electron-updater'
 import { appendLine, closeLogger, initLogger } from './logger'
 import { findOtherRunningCopies, otherCopyMessage } from './otherCopy'
 import { PerfRecorder, type SidecarMemory } from './perfRecorder'
+import { OverlayHost } from './overlayHost'
 import {
   SKIP_ENV,
   findManagedInstall,
@@ -1021,6 +1023,191 @@ function loadOverlayRoute(win: BrowserWindow, route: string): void {
   }
 }
 
+// ── Shared overlay process (see overlayHost.ts) ──────────────────────────────
+// In Shared mode (the default) overlay windows are opened by one hidden host
+// window and run in its renderer process instead of one process each. Live
+// Map (heavy WebGL) and any stack holding it stay in their own process, so a
+// stall there can't freeze the rest. So does the always-on trigger alert
+// overlay: alerts stay isolated from overlay crashes, and with no overlays
+// open the host has no windows left and is closed, returning its memory. Separate mode is exactly the old
+// one-process-per-window behaviour, kept as a fallback setting.
+
+type ProcessMode = 'shared' | 'separate'
+let processMode: ProcessMode | null = null
+// Set for the rest of the session after repeated shared-process crashes.
+let sessionForcedSeparate = false
+
+function processModeFile(): string {
+  return join(app.getPath('userData'), 'overlay-process-mode.json')
+}
+
+function savedProcessMode(): ProcessMode {
+  if (processMode === null) {
+    try {
+      const v = JSON.parse(readFileSync(processModeFile(), 'utf8')) as { mode?: unknown }
+      processMode = v.mode === 'separate' ? 'separate' : 'shared'
+    } catch {
+      processMode = 'shared'
+    }
+  }
+  return processMode
+}
+
+function currentProcessMode(): ProcessMode {
+  return sessionForcedSeparate ? 'separate' : savedProcessMode()
+}
+
+function processModeLabel(): string {
+  if (sessionForcedSeparate) return 'Separate (forced after repeated shared-process crashes)'
+  return savedProcessMode() === 'shared'
+    ? 'Shared (overlays share one process; Live Map and trigger alerts separate)'
+    : 'Separate (one process per overlay window)'
+}
+
+function rendererFileUrl(file: string): string {
+  if (isDev) return `${process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'}/${file}`
+  return pathToFileURL(join(__dirname, '../renderer', file)).href
+}
+
+function overlayRouteUrl(route: string): string {
+  if (isDev) return `${process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'}/#/${route}`
+  return `${pathToFileURL(join(__dirname, '../renderer/index.html')).href}#/${route}`
+}
+
+// Windows living in the host's process, and Shared-mode stacks kept separate
+// only because they hold Live Map (recreated shared once it leaves).
+const sharedWindows = new WeakSet<BrowserWindow>()
+const liveMapSeparateStacks = new WeakSet<BrowserWindow>()
+// Keys to reopen hidden (crash recovery / mode switch restoring hidden ones).
+const reopenHidden = new Set<WindowKey>()
+
+const overlayHost = new OverlayHost({
+  hostUrl: rendererFileUrl('overlay-host.html'),
+  routeUrl: overlayRouteUrl,
+  onCrash: (reason) => rebuildSharedOverlays(`shared overlay process gone (${reason})`, true, (w) => sharedWindows.has(w)),
+  log: (msg) => console.warn(msg),
+})
+
+function useSharedFor(key: WindowKey): boolean {
+  if (currentProcessMode() === 'separate') return false
+  if (key === 'liveMap' || key === 'trigger') return false
+  if (isStackKey(key)) return !stackSpec(key.slice(STACK_PREFIX.length))?.tabs.includes('liveMap')
+  return true
+}
+
+// openOverlayWindow creates an overlay window in the right process. setup
+// registers it (maps, listeners, z-order) and runs once the BrowserWindow
+// exists: immediately in Separate mode, a moment later in Shared mode (the
+// host creates it). Show it from ready-to-show only if it isn't user-hidden.
+function openOverlayWindow(
+  key: WindowKey,
+  route: string,
+  options: BrowserWindowConstructorOptions,
+  setup: (win: BrowserWindow) => void,
+): void {
+  if (!useSharedFor(key)) {
+    const win = new BrowserWindow(options)
+    if (currentProcessMode() === 'shared' && isStackKey(key)) liveMapSeparateStacks.add(win)
+    setup(win)
+    if (reopenHidden.delete(key)) hideOverlayWindow(win)
+    loadOverlayRoute(win, route)
+    return
+  }
+  overlayHost.open(key, route, options, (win, startHidden) => {
+    sharedWindows.add(win)
+    setup(win)
+    if (reopenHidden.delete(key) || startHidden) hideOverlayWindow(win)
+  })
+}
+
+// rebuildSharedOverlays closes every shared overlay (and the host) and
+// reopens the same set in place: after a host crash, or when the process mode
+// changes. Bounds are flushed first and the closes are marked bulk so layout
+// membership is untouched; hidden windows come back hidden (and paused).
+let rebuildingShared = false
+const sharedCrashTimes: number[] = []
+
+function rebuildSharedOverlays(why: string, crashed: boolean, pick: (w: BrowserWindow) => boolean): void {
+  if (rebuildingShared || isQuittingApp) return
+  rebuildingShared = true
+  if (crashed) {
+    const now = Date.now()
+    sharedCrashTimes.push(now)
+    while (sharedCrashTimes.length && now - sharedCrashTimes[0] > 60_000) sharedCrashTimes.shift()
+    if (sharedCrashTimes.length > 3 && !sessionForcedSeparate) {
+      sessionForcedSeparate = true
+      console.warn('[main] shared overlay process crashed 4 times in 60s; using separate processes for this session')
+    }
+  }
+  const all = [...userPopoutWindows(), ...(triggerOverlayWindow && !triggerOverlayWindow.isDestroyed() ? [triggerOverlayWindow] : [])]
+  const wins = all.filter((w) => !w.isDestroyed() && pick(w))
+  const snap: Array<{ key: WindowKey; hidden: boolean; groupName?: string }> = []
+  for (const w of wins) {
+    const key = windowToOverlayName.get(w)
+    if (!key) continue
+    snap.push({ key, hidden: userHiddenOverlays.has(w) && !w.isVisible(), groupName: groupNameFor(key) })
+    if (key !== 'trigger') writeBoundsNow(key, w)
+    bulkClosingWindows.add(w)
+  }
+  // Opens still in flight die with the host; reopen those too.
+  for (const key of overlayHost.pendingKeys()) {
+    if (!snap.some((s) => s.key === key)) snap.push({ key: key as WindowKey, hidden: false, groupName: groupNameFor(key as WindowKey) })
+  }
+  console.warn(`[main] ${why}; reopening ${snap.map((s) => s.key).join(', ') || 'nothing'}`)
+  perfRecorder.event(`${why}; reopening ${snap.length} window(s)`)
+  overlayHost.destroy()
+  for (const w of wins) if (!w.isDestroyed()) w.destroy()
+  setTimeout(() => {
+    rebuildingShared = false
+    if (isQuittingApp) return
+    for (const s of snap) {
+      if (s.hidden) reopenHidden.add(s.key)
+      reopenWindowKey(s.key, s.groupName)
+    }
+  }, 300)
+}
+
+// Settings → Overlay process mode. Switching reopens, in place, just the
+// windows whose process changes (Live Map stays where it is).
+ipcMain.handle('overlay:process-mode:get', () => ({
+  mode: savedProcessMode(),
+  forcedSeparate: sessionForcedSeparate,
+}))
+
+ipcMain.handle('overlay:process-mode:set', (_e, mode: unknown) => {
+  const next: ProcessMode = mode === 'separate' ? 'separate' : 'shared'
+  try {
+    writeFileSync(processModeFile(), JSON.stringify({ mode: next }))
+  } catch (err) {
+    console.warn('[main] could not save overlay process mode:', err)
+  }
+  processMode = next
+  sessionForcedSeparate = false
+  sharedCrashTimes.length = 0
+  perfRecorder.event(`overlay process mode set to ${next}`)
+  rebuildSharedOverlays(`overlay process mode changed to ${next}`, false, (w) => {
+    const key = windowToOverlayName.get(w)
+    return !!key && sharedWindows.has(w) !== useSharedFor(key)
+  })
+  return { mode: next, forcedSeparate: false }
+})
+
+// Dev only: crash the shared overlay process to exercise recovery.
+ipcMain.handle('overlay:debug:crash-shared', () => {
+  if (!isDev) return false
+  const h = overlayHost.window()
+  if (!h) return false
+  h.webContents.forcefullyCrashRenderer()
+  return true
+})
+
+function reopenWindowKey(key: WindowKey, groupName?: string): void {
+  if (key === 'trigger') createTriggerOverlay()
+  else if (isStackKey(key)) createStackWindow(key.slice(STACK_PREFIX.length))
+  else if (isInstanceKey(key)) createInstanceOverlay(key, groupName ?? instanceNames.get(key) ?? '')
+  else createOverlayByName(key as OverlayName)
+}
+
 // Opens a standard overlay, or brings an open one forward. Never takes focus:
 // these open from hotkeys and in-game events while EQ is the active window,
 // and stealing focus mid-fight is worse than any blank-frame flash.
@@ -1035,7 +1222,7 @@ function createStandardOverlay(name: StandardOverlay): void {
 
   const spec = STANDARD_OVERLAYS[name]
   const { x, y, width, height } = getRestoredBounds(name, OVERLAY_DEFAULTS[name])
-  const win = new BrowserWindow({
+  openOverlayWindow(name, spec.route, {
     x,
     y,
     width,
@@ -1057,24 +1244,24 @@ function createStandardOverlay(name: StandardOverlay): void {
       // Overlays have only tiny fields (names, filters); no spellchecker per window.
       spellcheck: false
     },
-  })
-  standardWindows.set(name, win)
+  }, (win) => {
+    standardWindows.set(name, win)
 
-  win.once('ready-to-show', () => {
-    if (!win.isDestroyed()) win.showInactive()
-  })
+    win.once('ready-to-show', () => {
+      if (!win.isDestroyed() && !userHiddenOverlays.has(win)) win.showInactive()
+    })
 
-  // Keep it above fullscreen apps on macOS/Windows.
-  win.setAlwaysOnTop(true, 'screen-saver')
-  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  windowToOverlayName.set(win, name)
-  applyInitialOverlayInput(win, name)
-  trackOverlayBounds(name, win)
-  restoreCollapsedState(win, name)
-  loadOverlayRoute(win, spec.route)
+    // Keep it above fullscreen apps on macOS/Windows.
+    win.setAlwaysOnTop(true, 'screen-saver')
+    win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+    windowToOverlayName.set(win, name)
+    applyInitialOverlayInput(win, name)
+    trackOverlayBounds(name, win)
+    restoreCollapsedState(win, name)
 
-  win.on('closed', () => {
-    if (standardWindows.get(name) === win) standardWindows.delete(name)
+    win.on('closed', () => {
+      if (standardWindows.get(name) === win) standardWindows.delete(name)
+    })
   })
 }
 
@@ -1511,6 +1698,11 @@ function closeAllOverlays(): void {
   for (const win of instanceWindows.values()) {
     if (win && !win.isDestroyed()) win.destroy()
   }
+  for (const win of stackWindows.values()) {
+    if (win && !win.isDestroyed()) win.destroy()
+  }
+  // The hidden host would otherwise keep window-all-closed from firing.
+  overlayHost.destroy()
 }
 
 // Linux users run the Windows build under Wine/Proton. There the custom title
@@ -1651,7 +1843,8 @@ function createInstanceOverlay(key: InstanceKey, name: string): void {
   }
 
   const { x, y, width, height } = getRestoredBounds(key, spec.defaults)
-  const win = new BrowserWindow({
+  const query = `${spec.param}=${encodeURIComponent(instanceId(key))}&name=${encodeURIComponent(name)}`
+  openOverlayWindow(key, `${spec.route}?${query}`, {
     x,
     y,
     width,
@@ -1673,36 +1866,27 @@ function createInstanceOverlay(key: InstanceKey, name: string): void {
       // Overlays have only tiny fields (names, filters); no spellchecker per window.
       spellcheck: false
     },
-  })
-  instanceWindows.set(key, win)
+  }, (win) => {
+    instanceWindows.set(key, win)
 
-  win.once('ready-to-show', () => {
-    if (!win.isDestroyed()) win.showInactive()
-  })
-
-  win.setAlwaysOnTop(true, 'screen-saver')
-  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  windowToOverlayName.set(win, key)
-  applyInitialOverlayInput(win, key)
-  trackOverlayBounds(key, win)
-  restoreCollapsedState(win, key)
-
-  const query = `${spec.param}=${encodeURIComponent(instanceId(key))}&name=${encodeURIComponent(name)}`
-  if (isDev) {
-    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
-    win.loadURL(`${rendererUrl}/#/${spec.route}?${query}`)
-  } else {
-    win.loadFile(join(__dirname, '../renderer/index.html'), {
-      hash: `/${spec.route}?${query}`,
+    win.once('ready-to-show', () => {
+      if (!win.isDestroyed() && !userHiddenOverlays.has(win)) win.showInactive()
     })
-  }
 
-  win.on('closed', () => {
-    instanceWindows.delete(key)
-    // Name is kept even after close — resetOverlayPosition/move-to-display
-    // work on closed overlays too (matching every other overlay type), and
-    // a closed-but-still-in-the-auto-open-snapshot instance needs its name
-    // to survive until the next explicit open/snapshot overwrites it.
+    win.setAlwaysOnTop(true, 'screen-saver')
+    win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+    windowToOverlayName.set(win, key)
+    applyInitialOverlayInput(win, key)
+    trackOverlayBounds(key, win)
+    restoreCollapsedState(win, key)
+
+    win.on('closed', () => {
+      if (instanceWindows.get(key) === win) instanceWindows.delete(key)
+      // Name is kept even after close — resetOverlayPosition/move-to-display
+      // work on closed overlays too (matching every other overlay type), and
+      // a closed-but-still-in-the-auto-open-snapshot instance needs its name
+      // to survive until the next explicit open/snapshot overwrites it.
+    })
   })
 }
 
@@ -1719,7 +1903,7 @@ function closeInstanceOverlay(key: InstanceKey): void {
 function toggleInstanceOverlay(key: InstanceKey, name: string): void {
   instanceNames.set(key, name)
   if (toggleStacked(key)) return
-  toggleOverlayWindow(instanceWindows.get(key) ?? null, () => createInstanceOverlay(key, name))
+  toggleOverlayWindow(instanceWindows.get(key) ?? null, () => createInstanceOverlay(key, name), key)
 }
 
 // ── Trigger Overlay window ────────────────────────────────────────────────────
@@ -1748,7 +1932,7 @@ function createTriggerOverlay(): void {
     saveBoundsStore(store)
   }
   const { x, y, width, height } = overlayDisplayBounds()
-  triggerOverlayWindow = new BrowserWindow({
+  openOverlayWindow('trigger', 'trigger-overlay-window', {
     x,
     y,
     width,
@@ -1770,43 +1954,36 @@ function createTriggerOverlay(): void {
       // Overlays have only tiny fields (names, filters); no spellchecker per window.
       spellcheck: false
     },
-  })
+  }, (win) => {
+    triggerOverlayWindow = win
 
-  // Do NOT auto-show on ready-to-show. The trigger overlay is hidden whenever
-  // it's idle (no positioning session, no live alert) and only shown on demand
-  // by the renderer via overlay:trigger:set-mode. A hidden window cannot
-  // capture mouse input, which is the only fully reliable way to guarantee the
-  // desktop-spanning overlay never locks the app out — setIgnoreMouseEvents
-  // alone proved unreliable on some multi-monitor Windows setups.
+    // Do NOT auto-show on ready-to-show. The trigger overlay is hidden whenever
+    // it's idle (no positioning session, no live alert) and only shown on demand
+    // by the renderer via overlay:trigger:set-mode. A hidden window cannot
+    // capture mouse input, which is the only fully reliable way to guarantee the
+    // desktop-spanning overlay never locks the app out — setIgnoreMouseEvents
+    // alone proved unreliable on some multi-monitor Windows setups.
 
-  triggerOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
-  triggerOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  windowToOverlayName.set(triggerOverlayWindow, 'trigger')
-  // Default the trigger overlay to click-through so the chrome-less canvas
-  // doesn't intercept clicks intended for the game underneath. The header
-  // (only shown while positioning) re-enables interaction on hover.
-  if (!getOverlayLocked('trigger')) {
-    setOverlayLocked('trigger', true)
-  }
-  triggerOverlayWindow.setIgnoreMouseEvents(true, { forward: true })
-  // Note: no trackOverlayBounds here — the trigger overlay always spans the
-  // full virtual desktop and is resized on display changes instead.
+    win.setAlwaysOnTop(true, 'screen-saver')
+    win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+    windowToOverlayName.set(win, 'trigger')
+    // Default the trigger overlay to click-through so the chrome-less canvas
+    // doesn't intercept clicks intended for the game underneath. The header
+    // (only shown while positioning) re-enables interaction on hover.
+    if (!getOverlayLocked('trigger')) {
+      setOverlayLocked('trigger', true)
+    }
+    win.setIgnoreMouseEvents(true, { forward: true })
+    // Note: no trackOverlayBounds here — the trigger overlay always spans the
+    // full virtual desktop and is resized on display changes instead.
 
-  if (isDev) {
-    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
-    triggerOverlayWindow.loadURL(`${rendererUrl}/#/trigger-overlay-window`)
-  } else {
-    triggerOverlayWindow.loadFile(join(__dirname, '../renderer/index.html'), {
-      hash: '/trigger-overlay-window',
+    win.on('closed', () => {
+      if (triggerOverlayWindow === win) triggerOverlayWindow = null
+      // Don't leave a global Escape capture dangling if the window goes away
+      // mid-session — it would silently swallow Escape app-wide.
+      setTriggerEscapeShortcut(false)
+      stopTriggerOverlayTopInterval()
     })
-  }
-
-  triggerOverlayWindow.on('closed', () => {
-    triggerOverlayWindow = null
-    // Don't leave a global Escape capture dangling if the window goes away
-    // mid-session — it would silently swallow Escape app-wide.
-    setTriggerEscapeShortcut(false)
-    stopTriggerOverlayTopInterval()
   })
 }
 
@@ -1883,7 +2060,7 @@ function createDiscordVoiceOverlay(): void {
   }
 
   const { x, y, width, height } = getRestoredBounds('discordVoice', OVERLAY_DEFAULTS.discordVoice)
-  discordVoiceOverlayWindow = new BrowserWindow({
+  openOverlayWindow('discordVoice', 'discord-voice-overlay-window', {
     x,
     y,
     width,
@@ -1905,48 +2082,43 @@ function createDiscordVoiceOverlay(): void {
       // Overlays have only tiny fields (names, filters); no spellchecker per window.
       spellcheck: false
     },
-  })
+  }, (win) => {
+    discordVoiceOverlayWindow = win
 
-  discordVoiceOverlayWindow.once('ready-to-show', () => {
-    discordVoiceOverlayWindow?.showInactive()
-    discordVoiceOverlayWindow?.moveTop()
-  })
-
-  discordVoiceOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
-  if (discordVoiceTopInterval) clearInterval(discordVoiceTopInterval)
-  // Skips a hidden window: on macOS moveTop() orders a hidden window back on
-  // screen, which undid Hide All for this overlay alone.
-  discordVoiceTopInterval = setInterval(() => {
-    const win = discordVoiceOverlayWindow
-    if (win && !win.isDestroyed() && win.isVisible()) win.moveTop()
-  }, 2000)
-  discordVoiceOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  windowToOverlayName.set(discordVoiceOverlayWindow, 'discordVoice')
-  applyInitialOverlayInput(discordVoiceOverlayWindow, 'discordVoice')
-  trackOverlayBounds('discordVoice', discordVoiceOverlayWindow)
-  discordVoiceOverlayWindow.on('resize', repositionDiscordVoiceChildView)
-
-  if (isDev) {
-    const rendererUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
-    discordVoiceOverlayWindow.loadURL(`${rendererUrl}/#/discord-voice-overlay-window`)
-  } else {
-    discordVoiceOverlayWindow.loadFile(join(__dirname, '../renderer/index.html'), {
-      hash: '/discord-voice-overlay-window',
+    win.once('ready-to-show', () => {
+      if (win.isDestroyed() || userHiddenOverlays.has(win)) return
+      win.showInactive()
+      win.moveTop()
     })
-  }
 
-  discordVoiceOverlayWindow.on('closed', () => {
-    // Destroying the parent window doesn't tear down an attached child
-    // WebContentsView's own renderer — without this its webContents (and the
-    // Discord page loaded into it) leaks as an orphaned target.
-    discordVoiceChildView?.webContents.close()
-    if (discordVoiceTopInterval) {
-      clearInterval(discordVoiceTopInterval)
-      discordVoiceTopInterval = null
-    }
-    discordVoiceOverlayWindow = null
-    discordVoiceChildView = null
-    lastDiscordVoiceUrl = null
+    win.setAlwaysOnTop(true, 'screen-saver')
+    if (discordVoiceTopInterval) clearInterval(discordVoiceTopInterval)
+    // Skips a hidden window: on macOS moveTop() orders a hidden window back on
+    // screen, which undid Hide All for this overlay alone.
+    discordVoiceTopInterval = setInterval(() => {
+      const w = discordVoiceOverlayWindow
+      if (w && !w.isDestroyed() && w.isVisible()) w.moveTop()
+    }, 2000)
+    win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+    windowToOverlayName.set(win, 'discordVoice')
+    applyInitialOverlayInput(win, 'discordVoice')
+    trackOverlayBounds('discordVoice', win)
+    win.on('resize', repositionDiscordVoiceChildView)
+
+    win.on('closed', () => {
+      if (discordVoiceOverlayWindow !== win) return
+      // Destroying the parent window doesn't tear down an attached child
+      // WebContentsView's own renderer — without this its webContents (and the
+      // Discord page loaded into it) leaks as an orphaned target.
+      discordVoiceChildView?.webContents.close()
+      if (discordVoiceTopInterval) {
+        clearInterval(discordVoiceTopInterval)
+        discordVoiceTopInterval = null
+      }
+      discordVoiceOverlayWindow = null
+      discordVoiceChildView = null
+      lastDiscordVoiceUrl = null
+    })
   })
 }
 
@@ -2185,7 +2357,7 @@ for (const [name, spec] of Object.entries(STANDARD_OVERLAYS) as Array<[StandardO
   })
   ipcMain.handle(`overlay:${spec.ipc}:toggle`, () => {
     if (toggleStacked(name)) return
-    toggleOverlayWindow(stdWin(name), () => createStandardOverlay(name))
+    toggleOverlayWindow(stdWin(name), () => createStandardOverlay(name), name)
   })
 }
 
@@ -2391,7 +2563,7 @@ ipcMain.handle('overlay:discordvoice:close', () => {
 })
 
 ipcMain.handle('overlay:discordvoice:toggle', () => {
-  toggleOverlayWindow(discordVoiceOverlayWindow, createDiscordVoiceOverlay)
+  toggleOverlayWindow(discordVoiceOverlayWindow, createDiscordVoiceOverlay, 'discordVoice')
 })
 
 // Called by DiscordVoiceOverlayWindowPage once it has read the saved
@@ -2498,6 +2670,11 @@ function setOverlayPaused(win: BrowserWindow, paused: boolean): void {
   if (!win.isDestroyed()) win.webContents.send('overlay:paused', paused)
 }
 
+ipcMain.handle('overlay:paused:get', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  return !!win && userHiddenOverlays.has(win) && !win.isVisible()
+})
+
 function hideOverlayWindow(win: BrowserWindow): void {
   userHiddenOverlays.add(win)
   win.hide()
@@ -2526,6 +2703,7 @@ function showOverlayWindow(win: BrowserWindow): void {
 }
 
 function hideAllPopouts(): void {
+  overlayHost.setPendingVisible(false)
   for (const win of userPopoutWindows()) {
     if (!win.isVisible()) continue
     hideOverlayWindow(win)
@@ -2533,6 +2711,7 @@ function hideAllPopouts(): void {
 }
 
 function showAllPopouts(): void {
+  overlayHost.setPendingVisible(true)
   for (const win of userPopoutWindows()) {
     if (userHiddenOverlays.has(win)) showOverlayWindow(win)
   }
@@ -2571,13 +2750,17 @@ function toggleAllPopoutsOpen(): void {
 // Close All: the windows stay in the active layout, so it reopens them.
 function closeAllPopouts(): void {
   closedWhileHidden.clear()
+  overlayHost.cancelWhere((k) => k !== 'trigger')
   closePopoutsInBulk(userPopoutWindows())
 }
 
 // Per-overlay toggle: an overlay hidden by "hide all" comes back rather than
 // closing, so toggling one overlay never closes something you can't see.
-function toggleOverlayWindow(win: BrowserWindow | null, create: () => void): void {
-  if (!win || win.isDestroyed()) create()
+function toggleOverlayWindow(win: BrowserWindow | null, create: () => void, key?: WindowKey): void {
+  // A second press while a Shared-mode window is still being created is a
+  // close: cancel it (it's destroyed if it still arrives).
+  if ((!win || win.isDestroyed()) && key && overlayHost.isPending(key)) overlayHost.cancel(key)
+  else if (!win || win.isDestroyed()) create()
   else if (userHiddenOverlays.has(win) && !win.isVisible()) showOverlayWindow(win)
   else win.close()
 }
@@ -3315,6 +3498,7 @@ function notifyStackChanged(id: string): void {
   const min = stackMinSize(info.tabs)
   if (!collapsedEntry(info.key)) win.setMinimumSize(min.minWidth, min.minHeight)
   win.webContents.send('overlay:stack:changed', info)
+  ensureStackProcessMode(id)
 }
 
 function createStackWindow(id: string, tab?: WindowKey): void {
@@ -3333,7 +3517,7 @@ function createStackWindow(id: string, tab?: WindowKey): void {
   const key: WindowKey = `${STACK_PREFIX}${id}`
   const { x, y, width, height } = getRestoredBounds(key, defaultBoundsFor(key))
   const min = stackMinSize(spec.tabs)
-  const win = new BrowserWindow({
+  openOverlayWindow(key, `stack-window?id=${encodeURIComponent(id)}`, {
     x,
     y,
     width,
@@ -3355,21 +3539,42 @@ function createStackWindow(id: string, tab?: WindowKey): void {
       // Overlays have only tiny fields (names, filters); no spellchecker per window.
       spellcheck: false
     },
+  }, (win) => {
+    stackWindows.set(id, win)
+    win.once('ready-to-show', () => {
+      if (!win.isDestroyed() && !userHiddenOverlays.has(win)) win.showInactive()
+    })
+    win.setAlwaysOnTop(true, 'screen-saver')
+    win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+    windowToOverlayName.set(win, key)
+    applyInitialOverlayInput(win, key)
+    trackOverlayBounds(key, win)
+    restoreCollapsedState(win, key)
+    win.on('closed', () => {
+      if (stackWindows.get(id) === win) stackWindows.delete(id)
+    })
   })
-  stackWindows.set(id, win)
-  win.once('ready-to-show', () => {
-    if (!win.isDestroyed()) win.showInactive()
+}
+
+// A stack's process follows its tabs: one holding Live Map runs separately
+// (like Live Map itself), and goes back to the shared process once Live Map
+// leaves. Recreated through a bulk close so layout membership is untouched.
+function ensureStackProcessMode(id: string): void {
+  const win = stackWindows.get(id)
+  if (!win || win.isDestroyed()) return
+  const key: WindowKey = `${STACK_PREFIX}${id}`
+  const wantShared = useSharedFor(key)
+  const toSeparate = sharedWindows.has(win) && !wantShared
+  const toShared = liveMapSeparateStacks.has(win) && wantShared
+  if (!toSeparate && !toShared) return
+  const hidden = userHiddenOverlays.has(win) && !win.isVisible()
+  writeBoundsNow(key, win)
+  bulkClosingWindows.add(win)
+  win.once('closed', () => {
+    if (hidden) reopenHidden.add(key)
+    createStackWindow(id)
   })
-  win.setAlwaysOnTop(true, 'screen-saver')
-  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  windowToOverlayName.set(win, key)
-  applyInitialOverlayInput(win, key)
-  trackOverlayBounds(key, win)
-  restoreCollapsedState(win, key)
-  loadOverlayRoute(win, `stack-window?id=${encodeURIComponent(id)}`)
-  win.on('closed', () => {
-    if (stackWindows.get(id) === win) stackWindows.delete(id)
-  })
+  win.close()
 }
 
 // Opening a stacked overlay shows its stack on that tab. False when the
@@ -3412,6 +3617,9 @@ function openWindowFor(key: WindowKey, groupName?: string): void {
 function mergeIntoStack(target: WindowKey, source: WindowKey): boolean {
   if (target === source) return false
   if (!(isStackKey(target) || isStackable(target)) || !(isStackKey(source) || isStackable(source))) return false
+  // Windows still on their way would land outside the new stack.
+  overlayHost.cancel(target)
+  overlayHost.cancel(source)
   const layout = activeLayout()
   const targetId = isStackKey(target) ? target.slice(STACK_PREFIX.length) : stackIdOf(target)
   if (isStackKey(target) && !stackSpec(targetId as string)) return false
@@ -3499,6 +3707,7 @@ function mergeIntoStack(target: WindowKey, source: WindowKey): boolean {
 function dissolveStack(id: string): void {
   const layout = activeLayout()
   const key: WindowKey = `${STACK_PREFIX}${id}`
+  overlayHost.cancel(key)
   const entry = stackEntry(id)
   if (!entry?.stack) return
   const bounds = liveBounds(key)
@@ -3529,6 +3738,8 @@ function dissolveStack(id: string): void {
 function removeFromStack(key: WindowKey, popOut = false, at?: { x: number; y: number }): boolean {
   const id = stackIdOf(key)
   if (!id) return false
+  overlayHost.cancel(key)
+  overlayHost.cancel(`${STACK_PREFIX}${id}`)
   const layout = activeLayout()
   const s = stackSpec(id) as StackSpec
   const groupName = s.groupNames?.[key]
@@ -3672,7 +3883,7 @@ ipcMain.handle('overlay:stack:toggle', (_event, key: string) => {
   if (!isStackKey(key)) return
   const id = key.slice(STACK_PREFIX.length)
   if (!stackSpec(id)) return
-  toggleOverlayWindow(stackWindows.get(id) ?? null, () => createStackWindow(id))
+  toggleOverlayWindow(stackWindows.get(id) ?? null, () => createStackWindow(id), `${STACK_PREFIX}${id}`)
 })
 
 ipcMain.handle('overlay:stack:merge', (_event, target: string, source: string) => {
@@ -3701,6 +3912,7 @@ function switchLayout(id: string, flush = true): void {
   const target = store.layouts.find((l) => l.id === id)
   if (!target) return
   perfRecorder.event(`switched layout to "${target.name}"`)
+  overlayHost.cancelWhere((k) => k !== 'trigger')
   // Save pending moves into the outgoing layout before it stops being active.
   for (const win of userPopoutWindows()) {
     const key = windowToOverlayName.get(win)
@@ -4024,10 +4236,15 @@ ipcMain.handle('overlay:popouts:window-states', () => {
 // averaged since the previous call, so the table polls at a steady rate.
 type ProcessRow = {
   pid: number
-  role: 'overlay' | 'main' | 'trigger' | 'streamkit' | 'helper'
+  role: 'overlay' | 'main' | 'trigger' | 'streamkit' | 'helper' | 'host'
   // Window keys this process renders (usually one).
   keys: string[]
   state?: 'open' | 'hidden'
+  // Shared overlay process: the keys among `keys` that are hidden, and
+  // whether the trigger overlay / the hidden host window also live here.
+  hiddenKeys?: string[]
+  trigger?: boolean
+  host?: boolean
   type: string
   memoryMB: number
   privateMB: number | null
@@ -4037,20 +4254,28 @@ type ProcessRow = {
 ipcMain.handle('overlay:process-metrics', (): ProcessRow[] => collectProcessMetrics())
 
 function collectProcessMetrics(): ProcessRow[] {
-  const byPid = new Map<number, { role: ProcessRow['role']; keys: string[]; state?: 'open' | 'hidden' }>()
-  const claim = (pid: number, role: ProcessRow['role'], key?: string, state?: 'open' | 'hidden'): void => {
-    if (!pid) return
-    const cur = byPid.get(pid) ?? { role, keys: [] }
+  type Owner = { role: ProcessRow['role']; keys: string[]; hiddenKeys: string[]; state?: 'open' | 'hidden'; trigger?: boolean; host?: boolean }
+  const byPid = new Map<number, Owner>()
+  // In Shared mode one process renders many windows (and the trigger overlay
+  // and the host), so a process takes the most specific role among them.
+  const rank: Record<ProcessRow['role'], number> = { helper: 0, host: 1, trigger: 2, streamkit: 3, overlay: 4, main: 5 }
+  const claim = (pid: number, role: ProcessRow['role'], key?: string, state?: 'open' | 'hidden'): Owner | null => {
+    if (!pid) return null
+    const cur = byPid.get(pid) ?? { role, keys: [], hiddenKeys: [] }
+    if (rank[role] > rank[cur.role]) cur.role = role
     if (key) cur.keys.push(key)
+    if (key && state === 'hidden') cur.hiddenKeys.push(key)
     if (state) cur.state = cur.state === 'open' ? 'open' : state
     byPid.set(pid, cur)
+    return cur
   }
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue
     const pid = win.webContents.getOSProcessId()
     const key = windowToOverlayName.get(win)
     if (win === mainWindow) claim(pid, 'main')
-    else if (win === triggerOverlayWindow) claim(pid, 'trigger')
+    else if (win === triggerOverlayWindow) { const o = claim(pid, 'trigger'); if (o) o.trigger = true }
+    else if (overlayHost.isHost(win)) { const o = claim(pid, 'host'); if (o) o.host = true }
     else if (key) claim(pid, 'overlay', key, userHiddenOverlays.has(win) && !win.isVisible() ? 'hidden' : 'open')
     else claim(pid, 'helper', 'window')
   }
@@ -4065,6 +4290,9 @@ function collectProcessMetrics(): ProcessRow[] {
       role: owner?.role ?? 'helper',
       keys: owner?.keys ?? [],
       ...(owner?.state ? { state: owner.state } : {}),
+      ...(owner?.hiddenKeys.length ? { hiddenKeys: owner.hiddenKeys } : {}),
+      ...(owner?.trigger && owner.role !== 'trigger' ? { trigger: true } : {}),
+      ...(owner?.host && owner.role !== 'host' ? { host: true } : {}),
       type: m.name ? `${m.type} (${m.name})` : m.type,
       memoryMB: toMB(m.memory.workingSetSize),
       privateMB: m.memory.privateBytes !== undefined ? toMB(m.memory.privateBytes) : null,
@@ -4101,7 +4329,7 @@ const perfRecorder = new PerfRecorder({
   sidecar: fetchSidecarMemory,
   label: perfOverlayLabel,
   appVersion: app.getVersion(),
-  processMode: () => 'Separate (one process per overlay window)',
+  processMode: () => processModeLabel(),
 })
 
 ipcMain.handle('perf:status', () => perfRecorder.status())
@@ -4920,7 +5148,7 @@ app.whenReady().then(async () => {
 
   // macOS: re-create window when dock icon is clicked and no windows are open
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    if (BrowserWindow.getAllWindows().filter((w) => !overlayHost.isHost(w)).length === 0) {
       createMainWindow()
     }
   })

@@ -240,9 +240,16 @@ contextBridge.exposeInMainWorld('electron', {
       return () => ipcRenderer.removeListener('overlay:stack:drop-hint', listener)
     },
     onPausedChanged: (cb: (paused: boolean) => void): (() => void) => {
-      const listener = (_e: unknown, v: boolean): void => cb(v)
+      let live = true
+      let pushed = false
+      const listener = (_e: unknown, v: boolean): void => { pushed = true; cb(v) }
       ipcRenderer.on('overlay:paused', listener)
-      return () => ipcRenderer.removeListener('overlay:paused', listener)
+      // A window opened hidden was paused before this page could listen;
+      // ask once, unless a push already arrived.
+      ipcRenderer.invoke('overlay:paused:get').then((v: boolean) => {
+        if (live && !pushed && v) cb(true)
+      }).catch(() => {})
+      return () => { live = false; ipcRenderer.removeListener('overlay:paused', listener) }
     },
     // Overlay layouts: named sets of popouts with their positions. The
     // active one saves itself as windows open, close, move or collapse.
@@ -395,6 +402,14 @@ contextBridge.exposeInMainWorld('electron', {
     openLogsFolder: (): Promise<string> => ipcRenderer.invoke('shell:open-logs-folder'),
     openBackupsFolder: (): Promise<string> => ipcRenderer.invoke('shell:open-backups-folder'),
     getConfigFolderPath: (): Promise<string> => ipcRenderer.invoke('config:folder-path'),
+  },
+  // Overlay process mode: overlays in one shared process, or one each.
+  overlayProcess: {
+    getMode: (): Promise<{ mode: 'shared' | 'separate'; forcedSeparate: boolean }> =>
+      ipcRenderer.invoke('overlay:process-mode:get'),
+    setMode: (mode: 'shared' | 'separate'): Promise<{ mode: 'shared' | 'separate'; forcedSeparate: boolean }> =>
+      ipcRenderer.invoke('overlay:process-mode:set', mode),
+    debugCrashShared: (): Promise<boolean> => ipcRenderer.invoke('overlay:debug:crash-shared'),
   },
   // Performance recorder: memory/CPU timeline to logs/perf-*.log.
   perf: {
