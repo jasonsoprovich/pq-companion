@@ -205,6 +205,10 @@ type dlgToken struct {
 // reQuoted matches a Lua double-quoted string literal (with \" escapes).
 var reQuoted = regexp.MustCompile(`"((?:[^"\\]|\\.)*)"`)
 
+// reSayLink matches eq.say_link("keyword"[, silent[, "label"]]).
+var reSayLink = regexp.MustCompile(
+	`eq\.say_link\(\s*"((?:[^"\\]|\\.)*)"\s*(?:,\s*[^,)]*?\s*(?:,\s*"((?:[^"\\]|\\.)*)"\s*)?)?\)`)
+
 // parseScript extracts an NPC's quest walkthrough from one script: the ordered
 // dialogue branches (say keyword / turn-in → NPC text + granted items), plus
 // the aggregate reward and turn-in item sets derived from them. Uses balanced-
@@ -408,8 +412,19 @@ func firstString(args string) string {
 
 // joinStrings concatenates every double-quoted literal in args (Lua `..`
 // concatenation with variables like player names is dropped), so a Say built
-// from several pieces still yields readable text.
+// from several pieces still yields readable text. An inline
+// eq.say_link("keyword", silent, "label") shows in game as its label (or the
+// keyword when there is none), so it becomes one "[label]" literal, the
+// bracket style the rest of the dialogue uses.
 func joinStrings(args string) string {
+	args = reSayLink.ReplaceAllStringFunc(args, func(call string) string {
+		m := reSayLink.FindStringSubmatch(call)
+		text := m[1]
+		if m[2] != "" {
+			text = m[2]
+		}
+		return `"[` + text + `]"`
+	})
 	var parts []string
 	for _, m := range reQuoted.FindAllStringSubmatch(args, -1) {
 		if s := strings.TrimSpace(unescape(m[1])); s != "" {
