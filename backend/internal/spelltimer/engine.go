@@ -556,6 +556,10 @@ type Engine struct {
 	// hiddenDetrimFn reports whether a detrimental spell should never get a
 	// timer (user's per-spell "hide" override). nil = nothing hidden.
 	hiddenDetrimFn func(spellName string) bool
+	// onlyMyCastsFn reports the "Only show spells I cast" setting: under
+	// self/cast_by_me scope, drop buffs that land on the player but came
+	// from someone else. nil (the default) keeps them.
+	onlyMyCastsFn func() bool
 	// expiredKeepFn returns how long a kept-expired timer lingers before
 	// pruneExpired drops it. nil = keepExpiredMaxOverdue for every timer.
 	expiredKeepFn ExpiredKeepProvider
@@ -832,6 +836,21 @@ func (e *Engine) SetHiddenDetrimProvider(fn func(spellName string) bool) {
 	e.mu.Lock()
 	e.hiddenDetrimFn = fn
 	e.mu.Unlock()
+}
+
+// SetOnlyMyCastsProvider wires the "Only show spells I cast" setting (config
+// SpellTimer.OnlyMyCasts). See onlyMyCastsFn.
+func (e *Engine) SetOnlyMyCastsProvider(fn func() bool) {
+	e.mu.Lock()
+	e.onlyMyCastsFn = fn
+	e.mu.Unlock()
+}
+
+func (e *Engine) onlyMyCasts() bool {
+	e.mu.Lock()
+	fn := e.onlyMyCastsFn
+	e.mu.Unlock()
+	return fn != nil && fn()
 }
 
 // SetPetNameProvider wires the player's live pet name ("" when there is no
@@ -2068,6 +2087,11 @@ func (e *Engine) onSpellLandedSeq(landedAt time.Time, seq uint64, data logparser
 	// class's debuffs — this is what lets a raid enchanter with
 	// scope=anyone + class filter watch every enchanter's mez/tash landing
 	// on any mob, not just their own.
+	//
+	// Both self and cast_by_me keep every buff landing on the player, whoever
+	// cast it. "Only show spells I cast" (onlyMyCasts) narrows that to the
+	// player's own casts; see selfLandIsMine.
+	selfMine := isSelfTarget && e.selfLandIsMine(corr, spellName, spell)
 	switch cat {
 	case CategoryBuff:
 		switch e.trackingScope() {
@@ -2085,6 +2109,11 @@ func (e *Engine) onSpellLandedSeq(landedAt time.Time, seq uint64, data logparser
 					return
 				}
 			}
+		}
+		if isSelfTarget && !selfMine && e.trackingScope() != scopeAnyone && e.onlyMyCasts() {
+			slog.Debug("timer-debug: spell-landed skipped (only my casts, cast by someone else)",
+				"spell", spellName, "target", target)
+			return
 		}
 
 	default:
@@ -2109,10 +2138,14 @@ func (e *Engine) onSpellLandedSeq(landedAt time.Time, seq uint64, data logparser
 	// self-buffs/recourses out of the overlay under scope=anyone — see
 	// classFilterAllowsSpell. A clicky the player aimed at someone else
 	// (Staff of the Serpent's Speed of the Shissar on a pet) counts as theirs
-	// via castByMe.
+	// via castByMe. A recourse landing on the player is the exception to
+	// "landed on me means mine": a shadow knight's Aura of Darkness Recourse
+	// hits their whole group, so it counts only when the player cast the
+	// parent spell.
 	castByMe := e.castByMeFor(corr, spellName, target, spell)
+	othersRecourse := isSelfTarget && !selfMine && e.db.RecourseParent(spell.ID) != ""
 	if e.classFilterFn != nil {
-		if enabled, classIdx := e.classFilterFn(); !classFilterAllowsSpell(spell, isSelfTarget || castByMe, enabled, classIdx) {
+		if enabled, classIdx := e.classFilterFn(); !classFilterAllowsSpell(spell, castByMe || (isSelfTarget && !othersRecourse), enabled, classIdx) {
 			slog.Debug("timer-debug: spell-landed skipped (class filter)",
 				"spell", spellName, "target", target, "category", cat, "class_idx", classIdx)
 			return

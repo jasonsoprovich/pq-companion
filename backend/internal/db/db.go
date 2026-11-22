@@ -43,6 +43,11 @@ type DB struct {
 	// molds.go).
 	moldsOnce sync.Once
 	molds     *moldIndex
+
+	// Recourse spell id → parent spell name, built on first use (see
+	// recourse.go).
+	recourseOnce    sync.Once
+	recourseParents map[int]string
 }
 
 // Open opens the SQLite database at the given path in read-only mode.

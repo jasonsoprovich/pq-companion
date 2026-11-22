@@ -75,7 +75,7 @@ export function SharedTimerSettings({ config, setConfig }: TimerSettingsProps): 
           Tracking scope
         </p>
         <p className="mb-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-          <b>Self only</b> tracks just buffs landing on you. <b>Cast by me</b> (default) also includes anything you cast on others — without the noise of other players buffing each other. <b>Anyone</b> tracks every recognised land, useful when you want to see e.g. another enchanter's debuff on a raid mob. (Ignored in <b>Triggers only</b> mode.)
+          <b>Self only</b> tracks buffs landing on you, including ones other players cast on you. <b>Cast by me</b> (default) also includes anything you cast on others — without the noise of other players buffing each other. <b>Anyone</b> tracks every recognised land, useful when you want to see e.g. another enchanter's debuff on a raid mob. To hide buffs others cast on you, turn on <b>Only show spells I cast</b> below. (Ignored in <b>Triggers only</b> mode.)
         </p>
         <div className="flex gap-2">
           {([
@@ -129,6 +129,30 @@ export function SharedTimerSettings({ config, setConfig }: TimerSettingsProps): 
             </span>
             <span className="block text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
               Drops buffs and detrimentals your class can't cast (e.g. paladin Spiritual Purity, shaman Talisman, bard songs) so an enchanter's overlay isn't cluttered with other classes' casts. Your own detrimentals are always tracked regardless of scope. Combine with <b>Anyone</b> scope to see other same-class casters' buffs and detrimentals (e.g. another enchanter's mez or Tashan) across the raid.
+            </span>
+          </span>
+        </label>
+      </div>
+
+      <div className="mt-4">
+        <label className="flex items-start gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={config.spell_timer?.only_my_casts ?? false}
+            onChange={(e) =>
+              setConfig({
+                ...config,
+                spell_timer: { ...config.spell_timer, only_my_casts: e.target.checked },
+              })
+            }
+            style={{ marginTop: 3 }}
+          />
+          <span>
+            <span className="text-sm" style={{ color: 'var(--color-foreground)' }}>
+              Only show spells I cast
+            </span>
+            <span className="block text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+              Hides buffs other players cast on you (another cleric's Symbol, a shadow knight's group recourse) so only your own casts show. Item procs that never show a &ldquo;You begin casting&rdquo; line are hidden too unless Zeal reports them as yours. Applies to <b>Self only</b> and <b>Cast by me</b>; ignored with <b>Anyone</b>.
             </span>
           </span>
         </label>

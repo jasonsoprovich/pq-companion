@@ -863,6 +863,9 @@ func main() {
 		playerInfoMu.Unlock()
 		return entry.class, entry.level, entry.ok
 	})
+	timerEngine.SetOnlyMyCastsProvider(func() bool {
+		return cfgMgr.Get().SpellTimer.OnlyMyCasts
+	})
 	timerEngine.SetHiddenDetrimProvider(func(spellName string) bool {
 		return cfgMgr.Get().Preferences.DetrimSpellOverride(spellName) == config.DetrimOverrideHide
 	})

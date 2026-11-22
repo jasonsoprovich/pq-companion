@@ -220,6 +220,11 @@ type SpellTimerSettings struct {
 	// Defaults to false to preserve existing behaviour.
 	ClassFilter bool `yaml:"class_filter,omitempty" json:"class_filter,omitempty"`
 
+	// OnlyMyCasts, when true, drops buffs that land on the player but were
+	// cast by someone else (under self/cast_by_me scope; ignored under
+	// anyone). Off by default: those scopes keep every buff on the player.
+	OnlyMyCasts bool `yaml:"only_my_casts,omitempty" json:"only_my_casts,omitempty"`
+
 	// TrackingMode controls whether the spell-landed pipeline creates timer
 	// rows automatically or only triggers/packs do.
 	//

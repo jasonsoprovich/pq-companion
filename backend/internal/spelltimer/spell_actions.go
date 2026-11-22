@@ -272,6 +272,32 @@ func (e *Engine) castByMeFor(c landCorrelation, spellName, target string, spell 
 	return e.recentSelfCastMatches(spellName, target, isSingleTargetSpellType(spell.TargetType))
 }
 
+// selfLandIsMine reports whether a spell that landed on the player came from
+// the player's own cast. The log line never names the caster, so this uses,
+// in order: the Zeal pipe's spell action source; for a recourse, a recent
+// local cast of its parent spell (Aura of Darkness for Aura of Darkness
+// Recourse); otherwise a recent local cast of the spell itself. The target
+// isn't compared: a self-land is on the player by definition, and the target
+// recorded at cast time may be whoever the player had selected. Buffs with no
+// "You begin casting" line (item procs) count as someone else's without the
+// pipe.
+func (e *Engine) selfLandIsMine(c landCorrelation, spellName string, spell *db.Spell) bool {
+	if c.sourceID != 0 {
+		e.mu.Lock()
+		self := e.selfSpawnID
+		e.mu.Unlock()
+		if self != 0 {
+			return c.sourceID == self
+		}
+	}
+	if e.db != nil {
+		if parent := e.db.RecourseParent(spell.ID); parent != "" {
+			return e.recentSelfCastMatches(parent, "", false)
+		}
+	}
+	return e.recentSelfCastMatches(spellName, "", false)
+}
+
 // correlatedToken returns targetName tagged with the spawn id the actions
 // identified, or "" when they didn't. Beneficial spells are never tagged (see
 // keyTargetTokenLocked).

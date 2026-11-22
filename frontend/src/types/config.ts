@@ -532,6 +532,12 @@ export interface SpellTimerSettings {
   class_filter: boolean
 
   /**
+   * When true, buffs landing on you that someone else cast are dropped
+   * (Self only / Cast by me scope; ignored under Anyone).
+   */
+  only_my_casts?: boolean
+
+  /**
    * When true, hide buff/detrimental overlay rows whose caster_character
    * doesn't match the currently active character. Rows with no recorded
    * caster are always shown. Switching characters never clears the
