@@ -13,7 +13,7 @@
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Bell, ExternalLink, Eye, Hourglass, Keyboard, Layers, LayoutDashboard, LayoutTemplate, Move, Pencil, Plus, RotateCcw, Settings2, SquareArrowOutUpRight, Trash2, X } from 'lucide-react'
+import { Bell, Eraser, ExternalLink, Eye, Hourglass, Keyboard, Layers, LayoutDashboard, LayoutTemplate, MessagesSquare, Move, Pause, Pencil, Play, Plus, RotateCcw, Settings2, SquareArrowOutUpRight, Trash2, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import {
   CUSTOM_GROUP_INFO,
@@ -63,6 +63,13 @@ import {
   ShareButtons,
 } from './CustomOverlayHub'
 import CustomOverlayEditor from './customOverlayEditor/CustomOverlayEditor'
+import ChatWindowEditor from './chatWindowEditor/ChatWindowEditor'
+import { CHAT_WINDOW_INFO, ChatShareButtons, ImportChatWindowsModal, NewChatWindowModal } from './ChatWindowHub'
+import { useChatWindows } from '../../hooks/useChatWindows'
+import { CHAT_WINDOW_COLOR, chatWindowBlurb, chatWindowKey } from '../../lib/chatWindow'
+import { deleteChatWindow } from '../../services/api'
+import { CHAT_WINDOWS_LOCK_ACTION } from '../../lib/hotkeys'
+import type { ChatWindow } from '../../types/chatWindow'
 
 type WindowState = 'open' | 'hidden' | undefined
 type Selection = HubSelection
@@ -440,7 +447,21 @@ export default function OverlayLibrary({
     () => customOverlays.overlays.map((o) => ({ id: o.def.id, name: o.def.name })),
     [customOverlays.overlays],
   )
+  const chatWindows = useChatWindows()
+  const [showNewChat, setShowNewChat] = useState(false)
+  const [showChatImport, setShowChatImport] = useState(false)
+  const [confirmDeleteChat, setConfirmDeleteChat] = useState<ChatWindow | null>(null)
+  const [chatEditing, setChatEditing] = useState<{ id: string; suggest?: { seq: number; mode: 'hide' | 'keep' } } | null>(null)
+  const chatEditingWindow = chatWindows.windows.find((w) => w.def.id === chatEditing?.id)
   const setSelected = onSelect
+
+  // A deep link from a chat window popout (pencil, or "lines like this")
+  // opens its editor once, then leaves the plain selection behind.
+  useEffect(() => {
+    if (selected?.kind !== 'chat' || !selected.edit) return
+    setChatEditing({ id: selected.id, suggest: selected.suggest })
+    onSelect({ kind: 'chat', id: selected.id })
+  }, [selected, onSelect])
   const { config, setConfig, saveState } = useConfigDraft()
   const { state: layoutState } = useOverlayLayouts()
   const stacks: OverlayStackSummary[] = useMemo(
@@ -574,6 +595,24 @@ export default function OverlayLibrary({
   }
 
   const openHotkeys = useCallback(() => navigate('/settings?tab=hotkeys'), [navigate])
+
+  const toggleChatPopout = useCallback(
+    (w: ChatWindow) => {
+      window.electron?.overlay?.toggleChatWindow(w.def.id, w.def.name)
+      afterToggle()
+    },
+    [afterToggle],
+  )
+
+  const doDeleteChat = (w: ChatWindow): void => {
+    window.electron?.overlay?.closeChatWindow(w.def.id)
+    deleteChatWindow(w.def.id)
+      .then(() => {
+        if (selected?.kind === 'chat' && selected.id === w.def.id) setSelected(null)
+      })
+      .catch(() => {})
+    setConfirmDeleteChat(null)
+  }
 
   const byCategory = useMemo(
     () => OVERLAY_CATEGORIES.map((c) => ({ ...c, entries: OVERLAY_CATALOG.filter((e) => e.category === c.id) })),
@@ -788,6 +827,84 @@ export default function OverlayLibrary({
     }
   }
 
+  if (selected?.kind === 'chat') {
+    const w = chatWindows.windows.find((x) => x.def.id === selected.id)
+    if (w) {
+      const key = chatWindowKey(w.def.id)
+      const state = windowStates[key]
+      details = (
+        <Drawer
+          icon={MessagesSquare}
+          color={CHAT_WINDOW_COLOR}
+          title={w.def.name}
+          details={CHAT_WINDOW_INFO.details}
+          status={<StatusText state={state} />}
+          saveState={saveState}
+          onClose={close}
+          actions={
+            <>
+              <PopButton state={state} onClick={() => toggleChatPopout(w)} />
+              {moveButton(key, w.def.name, () => toggleChatPopout(w))}
+              {resetButton(key, w.def.name)}
+              <SecondaryButton icon={Pencil} label="Edit window" onClick={() => setChatEditing({ id: w.def.id })} />
+              <SecondaryButton
+                icon={w.def.enabled ? Pause : Play}
+                label={w.def.enabled ? 'Pause' : 'Resume'}
+                onClick={() => chatWindows.act(w.def.id, { action: 'enable', enabled: !w.def.enabled })}
+                title={w.def.enabled ? 'Stop adding new lines to this window' : 'Start adding new lines again'}
+              />
+              <SecondaryButton
+                icon={Eraser}
+                label="Clear"
+                onClick={() => chatWindows.act(w.def.id, { action: 'clear' })}
+                title="Empty this window’s lines and pins"
+              />
+              <SecondaryButton
+                icon={Keyboard}
+                label={bindings[CHAT_WINDOWS_LOCK_ACTION] ? 'Change lock hotkey' : 'Set a lock hotkey'}
+                onClick={openHotkeys}
+                title="One hotkey locks or unlocks every chat window"
+              />
+              <SecondaryButton icon={Trash2} label="Delete" onClick={() => setConfirmDeleteChat(w)} />
+            </>
+          }
+        >
+          <SettingsSection title="Share">
+            <p className="pb-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+              Share this window’s channels, rules and looks, or move them to another PC. Its lines and
+              character filter stay here.
+            </p>
+            <ChatShareButtons ids={[w.def.id]} name={w.def.name} />
+            {chatWindows.windows.length > 1 && (
+              <div className="pt-2">
+                <p className="pb-1 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                  All {chatWindows.windows.length} chat windows as one file:
+                </p>
+                <ChatShareButtons ids={[]} name="all" />
+              </div>
+            )}
+          </SettingsSection>
+          {config && (
+            <SettingsSection title="Window">
+              <p className="pb-1 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                Lock and fade are shared by every chat window. Font size and background are on each
+                window (Edit window → Appearance, or Ctrl+scroll over it).
+              </p>
+              <OverlayWindowControls
+                name="chatWindow"
+                windowKey={key}
+                label={w.def.name}
+                config={config}
+                setConfig={setConfig}
+                hideOpacity
+              />
+            </SettingsSection>
+          )}
+        </Drawer>
+      )
+    }
+  }
+
   if (selected?.kind === 'stack') {
     const s = stacks.find((x) => x.key === selected.key)
     if (s) {
@@ -971,6 +1088,29 @@ export default function OverlayLibrary({
                   />
                 )
               })}
+              {chatWindows.windows.map((w) => {
+                const key = chatWindowKey(w.def.id)
+                const state = windowStates[key]
+                const sel: Selection = { kind: 'chat', id: w.def.id }
+                return (
+                  <Card
+                    key={key}
+                    icon={MessagesSquare}
+                    color={CHAT_WINDOW_COLOR}
+                    title={w.def.name}
+                    blurb={chatWindowBlurb(w)}
+                    selected={isSel(sel)}
+                    onSelect={() => setSelected(sel)}
+                    footer={
+                      <>
+                        <PopButton state={state} onClick={() => toggleChatPopout(w)} />
+                        <span className="flex-1" />
+                        <StatusText state={state} />
+                      </>
+                    }
+                  />
+                )
+              })}
               {stacks.map((s) => {
                 const state = windowStates[s.key]
                 const sel: Selection = { kind: 'stack', key: s.key }
@@ -1017,6 +1157,18 @@ export default function OverlayLibrary({
                 <Plus size={16} />
                 New custom overlay
               </button>
+              <button
+                onClick={() => setShowNewChat(true)}
+                className="flex min-h-[112px] flex-col items-center justify-center gap-1.5 rounded-lg p-3 text-xs"
+                style={{
+                  border: '1px dashed var(--color-border)',
+                  color: 'var(--color-muted-foreground)',
+                }}
+                title={CHAT_WINDOW_INFO.blurb}
+              >
+                <Plus size={16} />
+                New chat window
+              </button>
             </div>
           </section>
         </div>
@@ -1053,6 +1205,46 @@ export default function OverlayLibrary({
           overlay={editing}
           skewMs={customOverlays.skewMs}
           onClose={() => setEditingId(null)}
+        />
+      )}
+      {showNewChat && (
+        <NewChatWindowModal
+          onClose={() => setShowNewChat(false)}
+          onImport={() => { setShowNewChat(false); setShowChatImport(true) }}
+          onCreated={(def) => {
+            setShowNewChat(false)
+            setSelected({ kind: 'chat', id: def.id })
+            window.electron?.overlay?.openChatWindow(def.id, def.name)
+            afterToggle()
+          }}
+        />
+      )}
+      {showChatImport && (
+        <ImportChatWindowsModal
+          onClose={() => setShowChatImport(false)}
+          onImported={(defs) => {
+            setShowChatImport(false)
+            if (defs[0]?.id) setSelected({ kind: 'chat', id: defs[0].id })
+          }}
+        />
+      )}
+      {chatEditing && chatEditingWindow && (
+        <ChatWindowEditor
+          key={chatEditing.id}
+          window={chatEditingWindow}
+          nowMs={Date.now() + chatWindows.skewMs}
+          suggest={chatEditing.suggest}
+          onClose={() => setChatEditing(null)}
+        />
+      )}
+      {confirmDeleteChat && (
+        <ConfirmModal
+          title="Delete chat window?"
+          message={`“${confirmDeleteChat.def.name}” will be deleted. This can’t be undone.`}
+          confirmLabel="Delete"
+          tone="danger"
+          onConfirm={() => doDeleteChat(confirmDeleteChat)}
+          onCancel={() => setConfirmDeleteChat(null)}
         />
       )}
       {confirmDelete && (

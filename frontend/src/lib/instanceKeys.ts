@@ -2,11 +2,12 @@
  * Instance windows: overlay types that can have many popouts, one per
  * user-created item, keyed `<kind>:<id>` (mirrors INSTANCE_KINDS in
  * electron/main). Named Custom Timers windows are `customTimer:<groupId>`;
- * Custom Overlays are `customOverlay:<overlayId>`.
+ * Custom Overlays are `customOverlay:<overlayId>`; Chat Windows are
+ * `chatWindow:<windowId>`.
  */
-export type InstanceKind = 'customTimer' | 'customOverlay'
+export type InstanceKind = 'customTimer' | 'customOverlay' | 'chatWindow'
 
-const KINDS: readonly InstanceKind[] = ['customTimer', 'customOverlay']
+const KINDS: readonly InstanceKind[] = ['customTimer', 'customOverlay', 'chatWindow']
 
 export function instanceKind(key: string): InstanceKind | null {
   const i = key.indexOf(':')
@@ -27,10 +28,12 @@ export function instanceId(key: string): string {
 export const INSTANCE_FALLBACK_LABEL: Record<InstanceKind, string> = {
   customTimer: 'Timer window',
   customOverlay: 'Custom overlay',
+  chatWindow: 'Chat window',
 }
 
 // Card / box accent per kind (Arrange view).
 export const INSTANCE_COLOR: Record<InstanceKind, string> = {
   customTimer: '#38bdf8',
   customOverlay: '#a78bfa',
+  chatWindow: '#34d399',
 }

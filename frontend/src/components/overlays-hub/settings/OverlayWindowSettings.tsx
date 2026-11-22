@@ -65,6 +65,7 @@ const OVERLAY_POPOUT_TOGGLE: Record<OverlayName, () => void> = {
   // Not listed in OVERLAY_DEFS, so never offered here: each custom overlay
   // pops out from its own hub card.
   customOverlay: () => {},
+  chatWindow: () => {},
 }
 
 const VISIBLE_OVERLAY_DEFS = OVERLAY_DEFS
@@ -531,8 +532,11 @@ export function OverlayWindowControls({
   label,
   config,
   setConfig,
+  hideOpacity,
 }: {
   name: OverlayName
+  // Chat windows keep their own opacity on each window's definition.
+  hideOpacity?: boolean
   // The window's own key when it differs from the settings key: every
   // custom overlay shares 'customOverlay' lock/opacity/fade settings, but
   // collapse-when-idle and the monitor are per window (customOverlay:<id>).
@@ -582,7 +586,7 @@ export function OverlayWindowControls({
         />,
         LOCK_MODE_OPTIONS.find((o) => o.value === mode)?.hint,
       )}
-      {row(
+      {!hideOpacity && row(
         'Opacity',
         <OverlayOpacitySelect
           label={label}

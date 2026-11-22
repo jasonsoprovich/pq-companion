@@ -2066,6 +2066,67 @@ export function getCustomOverlayTemplates(): Promise<{
   return get('/api/custom-overlays/templates')
 }
 
+// ── Chat Windows ──────────────────────────────────────────────────────────
+type ChatWindowDef = import('../types/chatWindow').ChatWindowDef
+
+export function getChatWindows(): Promise<import('../types/chatWindow').ChatWindowsState> {
+  return get('/api/chat-windows')
+}
+
+export function createChatWindow(def: ChatWindowDef): Promise<ChatWindowDef> {
+  return post('/api/chat-windows', def)
+}
+
+export function updateChatWindow(def: ChatWindowDef & { id: string }): Promise<ChatWindowDef> {
+  return put(`/api/chat-windows/${encodeURIComponent(def.id)}`, def)
+}
+
+export function deleteChatWindow(id: string): Promise<void> {
+  return del(`/api/chat-windows/${encodeURIComponent(id)}`)
+}
+
+export function chatWindowAction(
+  id: string,
+  body: import('../types/chatWindow').ChatWindowAction,
+): Promise<void> {
+  return post(`/api/chat-windows/${encodeURIComponent(id)}/action`, body)
+}
+
+export function dismissChatPin(id: string, seq: number): Promise<void> {
+  return post(`/api/chat-windows/${encodeURIComponent(id)}/pins/${seq}/dismiss`)
+}
+
+export function suggestChatRule(
+  id: string,
+  seq: number,
+  mode: 'hide' | 'keep',
+): Promise<import('../types/chatWindow').ChatSuggestion> {
+  return post(`/api/chat-windows/${encodeURIComponent(id)}/suggest`, { seq, mode })
+}
+
+export function testChatWindowLines(
+  def: ChatWindowDef,
+  lines: string[],
+  character?: string,
+): Promise<import('../types/chatWindow').ChatTestResult> {
+  return post('/api/chat-windows/test', { def, lines, character })
+}
+
+// Share file for the given windows, or all of them when ids is empty.
+export function exportChatWindows(
+  ids: string[] = [],
+): Promise<import('../types/chatWindow').ChatWindowShare> {
+  const q = ids.map((id) => `id=${encodeURIComponent(id)}`).join('&')
+  return get(`/api/chat-windows/export${q ? `?${q}` : ''}`)
+}
+
+export function importChatWindows(
+  text: string,
+  preview = false,
+): Promise<{ windows: ChatWindowDef[] }> {
+  return post('/api/chat-windows/import', { text, preview })
+}
+
 type KillCountersState = import('../types/kills').KillCountersState
 type KillCounterDef = import('../types/kills').KillCounterDef
 

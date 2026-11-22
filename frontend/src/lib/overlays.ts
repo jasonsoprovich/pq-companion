@@ -36,6 +36,9 @@ export type OverlayName =
   // and zoom. Deliberately not in OVERLAY_DEFS: it has no single window to
   // pop out and no single hotkey (each overlay is `customOverlay:<id>`).
   | 'customOverlay'
+  // Every Chat Window shares this key for lock mode and fade (opacity and
+  // font size live on each window's definition). Not in OVERLAY_DEFS either.
+  | 'chatWindow'
 
 /**
  * How an overlay behaves while locked.

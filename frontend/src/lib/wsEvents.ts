@@ -34,6 +34,11 @@ export const WSEvent = {
   KillCounters: 'killcounters:state',
   // Full snapshot of every custom overlay (customoverlay.State).
   CustomOverlays: 'customoverlays:state',
+  // Chat Windows (chatwindow package): the full state, one window replaced
+  // in full, and batched line appends.
+  ChatWindowsState: 'chatwindows:state',
+  ChatWindowsWindow: 'chatwindows:window',
+  ChatWindowsLines: 'chatwindows:lines',
   // Pet overlay: the active character's pet (petoverlay.State) on every
   // meaningful change — appear/break, HP, resolved stats, /pet health.
   PetState: 'pet:state',

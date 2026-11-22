@@ -52,6 +52,7 @@ export const FEATURES: readonly FeatureEntry[] = [
   { id: 'overlay-hub', since: '0.34.0', nav: '/overlays' },
   { id: 'overlay-hotkeys', since: '0.34.0', nav: '/settings', settingsTab: 'hotkeys' },
   { id: 'gear-upgrades-overlay', since: '0.34.0', nav: '/overlays', overlay: 'gearUpgrades' },
+  { id: 'chat-windows', since: '0.34.0', nav: '/overlays' },
 ]
 
 // ── Version helpers ─────────────────────────────────────────────────────────

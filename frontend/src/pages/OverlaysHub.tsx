@@ -92,7 +92,7 @@ export default function OverlaysHub(): React.ReactElement {
 
   useEffect(() => {
     if (!panelParam) return
-    const sel = selectionFromParam(panelParam)
+    const sel = selectionFromParam(panelParam, searchParams)
     if (sel) {
       setTab('library')
       setSelected(sel)
@@ -103,11 +103,13 @@ export default function OverlaysHub(): React.ReactElement {
       (prev) => {
         const next = new URLSearchParams(prev)
         next.delete('panel')
+        next.delete('suggest')
+        next.delete('mode')
         return next
       },
       { replace: true },
     )
-  }, [panelParam, setTab, setSearchParams])
+  }, [panelParam, setTab, setSearchParams]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const openGlobal = (): void => {
     setTab('library')

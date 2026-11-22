@@ -79,6 +79,7 @@ const CHMetronomeOverlayWindowPage = lazy(() => import('./pages/CHMetronomeOverl
 const DetrimTimerWindowPage = lazy(() => import('./pages/DetrimTimerWindowPage'))
 const CustomTimerWindowPage = lazy(() => import('./pages/CustomTimerWindowPage'))
 const CustomOverlayWindowPage = lazy(() => import('./pages/CustomOverlayWindowPage'))
+const ChatWindowPage = lazy(() => import('./pages/ChatWindowPage'))
 const OverlaysHub = lazy(() => import('./pages/OverlaysHub'))
 const CombatLogPage = lazy(() => import('./pages/CombatLogPage'))
 const CombatHistoryPage = lazy(() => import('./pages/CombatHistoryPage'))
@@ -370,6 +371,8 @@ export default function App(): React.ReactElement {
         <Route path="detrim-timer-window" element={<OverlayPage overlayKey="detrimTimer"><DetrimTimerWindowPage /></OverlayPage>} />
         <Route path="custom-timer-window" element={<OverlayPage overlayKey="customTimer"><CustomTimerWindowPage /></OverlayPage>} />
         <Route path="custom-overlay-window" element={<OverlayPage overlayKey="customOverlay"><CustomOverlayWindowPage /></OverlayPage>} />
+        {/* No overlayKey: each chat window sizes its own text (font scale). */}
+        <Route path="chat-window-window" element={<OverlayPage><ChatWindowPage /></OverlayPage>} />
         <Route path="trigger-overlay-window" element={<OverlayPage><TriggerOverlayWindowPage /></OverlayPage>} />
         <Route path="npc-overlay-window" element={<OverlayPage overlayKey="npc"><NPCOverlayWindowPage /></OverlayPage>} />
         <Route path="discord-voice-overlay-window" element={<OverlayPage overlayKey="discordVoice"><DiscordVoiceOverlayWindowPage /></OverlayPage>} />

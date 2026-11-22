@@ -4,7 +4,7 @@
  * keyed by window key; missing/0 = off). See hooks/useIdleCollapse.
  */
 import type { Config } from '../types/config'
-import { isInstanceKey } from './instanceKeys'
+import { instanceKind, isInstanceKey } from './instanceKeys'
 
 // Overlays with a clear "nothing to show" state. Instance windows — named
 // custom timer windows (customTimer:<groupId>) and custom overlays
@@ -37,6 +37,8 @@ export const IDLE_DELAY_OPTIONS: ReadonlyArray<{ secs: number; label: string }> 
 ]
 
 export function supportsIdleCollapse(key: string): boolean {
+  // Chat windows keep their scrollback, so they're never "empty".
+  if (instanceKind(key) === 'chatWindow') return false
   return isInstanceKey(key) || IDLE_COLLAPSE_OVERLAYS.includes(key)
 }
 

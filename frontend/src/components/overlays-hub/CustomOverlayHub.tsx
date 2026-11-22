@@ -268,7 +268,7 @@ export function ResetContentsButton({ onReset }: { onReset: () => void }): React
   )
 }
 
-function ModalShell({
+export function ModalShell({
   title,
   icon,
   width,
