@@ -742,14 +742,17 @@ type TankingStats struct {
 // none), which adds to the mitigation softcap; combatStabilityPct is the
 // SE_CombatStability AA bonus (multiplies the softcap); avoidMeleePct is the
 // SE_AvoidMeleeChance AA bonus (Combat Agility / Lightning Reflexes — scales the
-// avoidance used in the hit roll, not the displayed AC); npcLevel is the
+// avoidance used in the hit roll, not the displayed AC); itemAvoidance is the
+// capped worn-item mod2 Avoidance total, a flat addition to that same hit-roll
+// avoidance (Client::GetAvoidance, EQMacEmu PR #500); npcLevel is the
 // reference attacker level for the hit-chance benchmark (e.g. 60). See
 // mitigationSoftcap / npcToHit for sources.
-func Tanking(class, level, race, itemAC, spellAC, agi, defenseSkill, weight, shieldAC, avoidMeleePct, combatStabilityPct, npcLevel int) TankingStats {
+func Tanking(class, level, race, itemAC, spellAC, agi, defenseSkill, weight, shieldAC, avoidMeleePct, itemAvoidance, combatStabilityPct, npcLevel int) TankingStats {
 	av := avoidance(defenseSkill, agi, level)
 	// Combat Agility raises the avoidance used in the melee hit roll (server-side
-	// AvoidanceCheck); the client's displayed AC leaves it out.
-	avCombat := av * (100 + avoidMeleePct) / 100
+	// AvoidanceCheck), and item Avoidance adds flat on top of that; the
+	// client's displayed AC leaves both out.
+	avCombat := av*(100+avoidMeleePct)/100 + itemAvoidance
 	raw := mitigation(class, level, race, itemAC, spellAC, agi, defenseSkill, weight)
 	// Combat Stability multiplies the class softcap; a worn shield's AC adds on top.
 	softcap := mitigationSoftcap(class)*(100+combatStabilityPct)/100 + shieldAC

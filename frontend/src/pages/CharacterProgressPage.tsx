@@ -24,6 +24,7 @@ import type {
 import type { Spell } from '../types/spell'
 import FocusUpgradesCard, { fmtPct } from '../components/FocusUpgradesCard'
 import type { Item } from '../types/item'
+import { MOD2_STATS, mod2TotalLabel } from '../lib/itemMod2'
 import type { SkillView, TradeskillView } from '../types/skill'
 import { DEV_SKILLS } from '../lib/devFlags'
 import { useActiveCharacter } from '../contexts/ActiveCharacterContext'
@@ -903,8 +904,8 @@ function StatsPanel({ stats, hasStats, characterID, characterName }: StatsPanelP
 
             <p className="mt-1.5 text-[10px] leading-tight" style={{ color: 'var(--color-muted)' }}>
               Softcaps &amp; NPC to-hit per TAKP (Al&rsquo;Kabor). Shield AC and the
-              Combat Stability AA raise the cap; Combat Agility raises hit-roll
-              avoidance.
+              Combat Stability AA raise the cap; Combat Agility and item Avoidance
+              raise hit-roll avoidance.
             </p>
           </div>
         )}
@@ -943,6 +944,7 @@ function StatsPanel({ stats, hasStats, characterID, characterName }: StatsPanelP
               <BreakdownRow label="Mana Regen"      value={`+${block.mana_regen}/tick`} split={block.breakdown.mana_regen} />
               <BreakdownRow label="Damage Shield"   value={`${block.dmg_shield}`}     split={block.breakdown.dmg_shield} includeAA={false} />
             </div>
+            <Mod2Totals block={block} />
             <MeasuredRegenLine regen={measuredRegen} />
           </div>
         )}
@@ -1154,6 +1156,44 @@ function BreakdownRow({
         {value}
       </span>
     </>
+  )
+}
+
+// Mod2Totals lists the worn gear's PoP item stats against the server caps
+// (only the stats the gear actually has). Over-cap gear shows its wasted
+// excess the way Flowing Thought does.
+function Mod2Totals({ block }: { block: StatBlock }): React.ReactElement | null {
+  const raw = block.mod2_raw
+  const capped = block.mod2
+  if (!raw || !capped) return null
+  const rows = MOD2_STATS.filter((d) => raw[d.key] > 0)
+  if (rows.length === 0) return null
+  return (
+    <div className="mt-2 border-t pt-2" style={{ borderColor: 'var(--color-border)' }}>
+      <div
+        className="mb-1 text-[10px] font-semibold uppercase tracking-widest"
+        style={{ color: 'var(--color-muted)' }}
+      >
+        PoP Item Stats
+      </div>
+      <div className="grid grid-cols-2 gap-y-1">
+        {rows.map((d) => (
+          <React.Fragment key={d.key}>
+            <span className="w-fit cursor-help" title={d.hint}>{d.label}</span>
+            <span
+              className="text-right font-mono"
+              style={{
+                color: raw[d.key] > d.cap
+                  ? 'var(--color-warning, #f59e0b)'
+                  : 'var(--color-foreground)',
+              }}
+            >
+              {mod2TotalLabel(d, capped[d.key], raw[d.key])}
+            </span>
+          </React.Fragment>
+        ))}
+      </div>
+    </div>
   )
 }
 

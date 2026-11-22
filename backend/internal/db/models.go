@@ -37,6 +37,10 @@ type Item struct {
 	FireResist    int `json:"fr"`
 	PoisonResist  int `json:"pr"`
 
+	// PoP-style "mod2" stats (Accuracy, Strikethrough, ...), flattened into
+	// the item JSON.
+	Mod2Stats
+
 	// Flags
 	Magic  int `json:"magic"`
 	NoDrop int `json:"nodrop"`
@@ -101,6 +105,70 @@ type Item struct {
 	// when this item is itself a variant; 0 when this is the canonical row.
 	VariantIDs  []int `json:"variant_ids,omitempty"`
 	CanonicalID int   `json:"canonical_id,omitempty"`
+}
+
+// Mod2Stats are the PoP-style "mod2" item stats Project Quarm added on
+// 2026-11-23 (EQMacEmu PR #500, items.strikethrough ... damageshield). The
+// server sums them across worn gear, caps each total (Mod2Caps), and applies
+// them on top of any AA or spell bonus of the same kind:
+//   - Strikethrough, StunResist, SpellShield, Shielding: percent chances or
+//     reductions (Spell Shield: direct-damage spells only; Shielding: the
+//     attacker's melee damage bonus only).
+//   - Accuracy, Avoidance: flat to-hit / avoidance (Avoidance counts in the
+//     melee hit roll but not in the displayed AC).
+//   - CombatEffects: weapon proc chance bonus, tenths of a percent.
+//   - DamageShield: adds to a damage shield spell already on you; it never
+//     creates one by itself.
+type Mod2Stats struct {
+	Accuracy      int `json:"accuracy"`
+	Avoidance     int `json:"avoidance"`
+	Strikethrough int `json:"strikethrough"`
+	StunResist    int `json:"stun_resist"`
+	CombatEffects int `json:"combat_effects"`
+	SpellShield   int `json:"spell_shield"`
+	Shielding     int `json:"shielding"`
+	DamageShield  int `json:"damage_shield"`
+}
+
+// Mod2Caps are the server's per-character totals caps for item mod2 stats
+// (RuleI Character:Item*Cap defaults in EQMacEmu common/ruletypes.h).
+var Mod2Caps = Mod2Stats{
+	Accuracy: 150, Avoidance: 100, Strikethrough: 35, StunResist: 35,
+	CombatEffects: 100, SpellShield: 35, Shielding: 35, DamageShield: 30,
+}
+
+// Add sums o into m.
+func (m *Mod2Stats) Add(o Mod2Stats) {
+	m.Accuracy += o.Accuracy
+	m.Avoidance += o.Avoidance
+	m.Strikethrough += o.Strikethrough
+	m.StunResist += o.StunResist
+	m.CombatEffects += o.CombatEffects
+	m.SpellShield += o.SpellShield
+	m.Shielding += o.Shielding
+	m.DamageShield += o.DamageShield
+}
+
+// Capped returns m with each total clamped to Mod2Caps, as
+// Client::CalcItemBonuses does once after summing every worn item.
+func (m Mod2Stats) Capped() Mod2Stats {
+	c := func(v, limit int) int {
+		if v > limit {
+			return limit
+		}
+		return v
+	}
+	k := Mod2Caps
+	return Mod2Stats{
+		Accuracy:      c(m.Accuracy, k.Accuracy),
+		Avoidance:     c(m.Avoidance, k.Avoidance),
+		Strikethrough: c(m.Strikethrough, k.Strikethrough),
+		StunResist:    c(m.StunResist, k.StunResist),
+		CombatEffects: c(m.CombatEffects, k.CombatEffects),
+		SpellShield:   c(m.SpellShield, k.SpellShield),
+		Shielding:     c(m.Shielding, k.Shielding),
+		DamageShield:  c(m.DamageShield, k.DamageShield),
+	}
 }
 
 // ItemFilter holds filter parameters for SearchItems.

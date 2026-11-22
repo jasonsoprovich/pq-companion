@@ -35,6 +35,7 @@ import { sectionKey } from '../../lib/npcItemFilters'
 import { sectionDef, type ItemInfoSectionId } from '../../lib/itemInfoLayout'
 import { ItemIcon } from '../Icon'
 import { ResistChip } from '../ResistChip'
+import { mod2List, mod2Value } from '../../lib/itemMod2'
 import SpellHoverCard from '../SpellHoverCard'
 import WishlistStarButton from '../WishlistStarButton'
 import ItemHoverCard from '../ItemHoverCard'
@@ -361,6 +362,9 @@ function FactsSection({ item, theme, vis }: SectionProps): React.ReactElement | 
     if (item.fr) add('fr', <ResistChip type="fire" value={item.fr} />)
     if (item.dr) add('dr', <ResistChip type="disease" value={item.dr} />)
     if (item.pr) add('pr', <ResistChip type="poison" value={item.pr} />)
+  }
+  if (vis('facts.pop')) {
+    for (const e of mod2List(item)) add(e.key, <Chip label={e.short} value={mod2Value(e)} theme={theme} />)
   }
   if (vis('facts.level') && item.req_level > 0) add('req', <Chip label="Req Lv" value={item.req_level} theme={theme} />)
   if (vis('facts.level') && item.rec_level > 0) add('rec', <Chip label="Rec Lv" value={item.rec_level} theme={theme} />)
