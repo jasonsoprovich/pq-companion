@@ -67,11 +67,11 @@ function TimerRow({
           left: 0,
           top: 0,
           bottom: 0,
-          width: `${pct * 100}%`,
+          width: '100%', transform: `scaleX(${Math.max(0, pct)})`, transformOrigin: 'left',
           backgroundColor: fill,
           opacity: 0.3,
           pointerEvents: 'none',
-          transition: 'width 1s linear',
+          transition: 'transform 1s linear',
         }}
       />
       {/* category accent line */}

@@ -295,10 +295,10 @@ function CharmBar({ timer, spell }: { timer: ActiveTimer | null; spell?: string 
       <div
         style={{
           position: 'absolute', left: 0, top: 0, bottom: 0,
-          width: `${pct * 100}%`,
+          width: '100%', transform: `scaleX(${Math.max(0, pct)})`, transformOrigin: 'left',
           backgroundColor: urgent ? BROKE : CHARM,
           opacity: 0.35,
-          transition: 'width 1s linear',
+          transition: 'transform 1s linear',
         }}
       />
       <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 5 }}>

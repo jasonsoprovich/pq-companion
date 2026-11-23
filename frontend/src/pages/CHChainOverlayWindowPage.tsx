@@ -164,11 +164,11 @@ function ChainRow({
           left: 0,
           top: 0,
           bottom: 0,
-          width: `${pct * 100}%`,
+          width: '100%', transform: `scaleX(${Math.max(0, pct)})`, transformOrigin: 'left',
           backgroundColor: missed ? '#ef4444' : landing ? '#22c55e' : '#3b82f6',
           opacity: fillOpacity,
           pointerEvents: 'none',
-          transition: 'width 1s linear, background-color 0.2s linear',
+          transition: 'transform 1s linear, background-color 0.2s linear',
         }}
       />
       <div

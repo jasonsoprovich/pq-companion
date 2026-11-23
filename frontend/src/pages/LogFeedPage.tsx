@@ -364,9 +364,11 @@ function ReplayPanel({
             <div
               style={{
                 height: '100%',
-                width: `${progress * 100}%`,
+                width: '100%',
+                transform: `scaleX(${Math.max(0, progress)})`,
+                transformOrigin: 'left',
                 backgroundColor: 'var(--color-primary)',
-                transition: 'width 1s linear',
+                transition: 'transform 1s linear',
               }}
             />
           </div>

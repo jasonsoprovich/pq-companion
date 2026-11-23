@@ -335,8 +335,8 @@ function TimerRow({
       <div
         style={{
           position: 'absolute', left: 0, top: 0, bottom: 0,
-          width: `${pct * 100}%`, backgroundColor: color, opacity: appearance.fillOpacity,
-          pointerEvents: 'none', transition: 'width 1s linear',
+          width: '100%', transform: `scaleX(${Math.max(0, pct)})`, transformOrigin: 'left', backgroundColor: color, opacity: appearance.fillOpacity,
+          pointerEvents: 'none', transition: 'transform 1s linear',
         }}
       />
       <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
