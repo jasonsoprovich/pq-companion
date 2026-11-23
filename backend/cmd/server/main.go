@@ -956,6 +956,9 @@ func main() {
 	if err := triggerStore.MigrateMezBrokeTTSPronunciation(); err != nil {
 		slog.Warn("trigger mez-broke tts migration failed", "err", err)
 	}
+	if err := triggerStore.MigrateMezBrokeDropNonMezzes(); err != nil {
+		slog.Warn("trigger mez-broke pattern migration failed", "err", err)
+	}
 	if err := triggerStore.MigrateRemoveDuplicateClassPackTriggers(); err != nil {
 		slog.Warn("trigger class-pack dupe removal failed", "err", err)
 	}
