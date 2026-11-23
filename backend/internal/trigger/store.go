@@ -820,6 +820,89 @@ func (s *Store) MigrateMezBrokeTTSPronunciation() error {
 	return s.MarkDefaultUpdateApplied(key)
 }
 
+// oldEnchanterMezPattern is the Enchanter "Mez Broke" pattern shipped before
+// 2026-06-11. It listed Instill (a root) and Wake of Tranquility (a lull),
+// so an Instill break said MEZ BROKE next to ROOT BROKE.
+const oldEnchanterMezPattern = `Your (?:Mesmerize|Mesmerization|Enthrall|Entrance|Dazzle|Wake of Tranquility|Glamour of Kintaz|Instill|Rapture|Ancient: Eternal Rapture) spell has worn off\.`
+
+// notMezzes are spells old mez-break patterns listed that aren't mezzes.
+var notMezzes = map[string]bool{"Instill": true, "Wake of Tranquility": true}
+
+// MigrateMezBrokeDropNonMezzes fixes Enchanter "Mez Broke" triggers
+// installed before the pattern was corrected. The pack-update system can't
+// offer this: its first run took those installs as the baseline, so the old
+// pattern reads as the user's own edit. An untouched old pattern becomes the
+// current one; an edited one only loses Instill and Wake of Tranquility.
+// Idempotent via pack_default_updates.
+func (s *Store) MigrateMezBrokeDropNonMezzes() error {
+	const key = "MezBroke:DropNonMezzes:v1"
+	applied, err := s.IsDefaultUpdateApplied(key)
+	if err != nil {
+		return err
+	}
+	if applied {
+		return nil
+	}
+	t, err := s.FindByPackAndName("Enchanter", "Mez Broke")
+	if err != nil {
+		return err
+	}
+	if t != nil {
+		next := t.Pattern
+		if t.Pattern == oldEnchanterMezPattern {
+			if def := enchanterMezBrokeDef(); def != "" {
+				next = def
+			}
+		}
+		if next == t.Pattern {
+			next = dropAlternatives(t.Pattern, notMezzes)
+		}
+		if next != t.Pattern {
+			t.Pattern = next
+			if err := s.Update(t); err != nil {
+				return fmt.Errorf("update enchanter mez broke: %w", err)
+			}
+		}
+	}
+	return s.MarkDefaultUpdateApplied(key)
+}
+
+// enchanterMezBrokeDef is the shipped Enchanter "Mez Broke" pattern.
+func enchanterMezBrokeDef() string {
+	for _, t := range EnchanterPack().Triggers {
+		if t.Name == "Mez Broke" {
+			return t.Pattern
+		}
+	}
+	return ""
+}
+
+// dropAlternatives removes the named alternatives from the first
+// "(?:a|b|c)" group in pattern. Returns pattern unchanged when there's no
+// group, nothing matches, or every alternative would go.
+func dropAlternatives(pattern string, drop map[string]bool) string {
+	start := strings.Index(pattern, "(?:")
+	if start < 0 {
+		return pattern
+	}
+	end := strings.Index(pattern[start:], ")")
+	if end < 0 {
+		return pattern
+	}
+	end += start
+	alts := strings.Split(pattern[start+3:end], "|")
+	kept := alts[:0:0]
+	for _, a := range alts {
+		if !drop[a] {
+			kept = append(kept, a)
+		}
+	}
+	if len(kept) == len(alts) || len(kept) == 0 {
+		return pattern
+	}
+	return pattern[:start+3] + strings.Join(kept, "|") + pattern[end:]
+}
+
 // MigrateRemoveDuplicateClassPackTriggers deletes triggers that used to ship
 // in class packs but were duplicates of triggers in the General Triggers
 // pack — installing both packs produced two overlays per event. As of this

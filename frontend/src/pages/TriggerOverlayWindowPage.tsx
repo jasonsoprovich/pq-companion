@@ -522,7 +522,11 @@ export default function TriggerOverlayWindowPage(): React.ReactElement {
         })
         return
       }
-      const key = `${event.trigger_id}|${event.matched_line}`
+      // Keyed on what's shown, not which trigger fired it, like the audio
+      // dedup: two installed triggers with the same text (an old pack copy
+      // next to the shared "Root Broke") show one card, not two.
+      const shown = overlayAction.text || event.trigger_name
+      const key = `${shown}|${event.matched_line}`
       const prev = lastFired.current.get(key)
       if (prev !== undefined && now - prev < DEDUP_WINDOW_MS) return
       lastFired.current.set(key, now)
