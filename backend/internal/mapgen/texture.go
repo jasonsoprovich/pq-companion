@@ -121,20 +121,24 @@ func isTexture(name string) bool {
 // With masked, the colour key is kept as transparency: palette index 0 in a
 // bitmap, or DXT1's transparent texel. Otherwise the result is opaque.
 func DecodeTexture(raw []byte, maxSize int, masked bool) (*image.NRGBA, error) {
+	var img *image.NRGBA
+	var err error
 	switch {
 	case len(raw) >= 4 && string(raw[:4]) == "DDS ":
-		return decodeDDS(raw, maxSize, masked)
+		img, err = decodeDDS(raw, maxSize, masked)
 	case len(raw) >= 2 && string(raw[:2]) == "BM":
-		img, err := decodeBMP(raw, masked)
-		if err != nil {
-			return nil, err
-		}
-		for img.Rect.Dx() > maxSize || img.Rect.Dy() > maxSize {
-			img = halve(img)
-		}
-		return img, nil
+		img, err = decodeBMP(raw, masked)
+	default:
+		return nil, fmt.Errorf("unknown texture format")
 	}
-	return nil, fmt.Errorf("unknown texture format")
+	if err != nil {
+		return nil, err
+	}
+	// A DDS with too few mip levels comes out larger than asked.
+	for img.Rect.Dx() > maxSize || img.Rect.Dy() > maxSize {
+		img = halve(img)
+	}
+	return img, nil
 }
 
 func decodeDDS(raw []byte, maxSize int, masked bool) (*image.NRGBA, error) {

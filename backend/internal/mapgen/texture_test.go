@@ -41,6 +41,22 @@ func TestDecodeDDSPicksMip(t *testing.T) {
 	}
 }
 
+func TestDecodeDDSFewMipsHalved(t *testing.T) {
+	// One level only: a 64 px texture asked for at 16 is halved down.
+	raw := dds(64, [8]byte{0x00, 0xF8, 0x1F, 0x00})
+	binary.LittleEndian.PutUint32(raw[28:], 1)
+	img, err := DecodeTexture(raw, 16, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if img.Rect.Dx() != 16 || img.Rect.Dy() != 16 {
+		t.Fatalf("size %v, want 16x16", img.Rect.Size())
+	}
+	if c := img.NRGBAAt(3, 3); c.R != 255 || c.B != 0 || c.A != 255 {
+		t.Fatalf("texel = %v", c)
+	}
+}
+
 func TestDecodeDXT1Mask(t *testing.T) {
 	// c0 <= c1: index 3 is the transparent texel; every texel uses it.
 	raw := dds(4, [8]byte{0, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0xFF})

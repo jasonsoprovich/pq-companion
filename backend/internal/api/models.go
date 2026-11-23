@@ -785,8 +785,9 @@ func (h *modelsHandler) archive(eqPath, name string) (*mapgen.LazyArchive, error
 	return a, nil
 }
 
-// texture handles GET /api/models/texture/{archive}/{name}[?mask=1]: one of
-// a character archive's textures as a PNG, at the 3D view's texture size.
+// texture handles GET /api/models/texture/{archive}/{name}[?mask=1&size=N]:
+// one of a character archive's textures as a PNG, at most N pixels a side
+// (32, 64, 128 or the 3D view's texture size, the default).
 func (h *modelsHandler) texture(w http.ResponseWriter, r *http.Request) {
 	archive := strings.ToLower(chi.URLParam(r, "archive"))
 	name, err := url.PathUnescape(chi.URLParam(r, "name"))
@@ -799,12 +800,21 @@ func (h *modelsHandler) texture(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid texture")
 		return
 	}
+	size := textureSize
+	if raw := r.URL.Query().Get("size"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || (n != 32 && n != 64 && n != 128 && n != textureSize) {
+			writeError(w, http.StatusBadRequest, "invalid size")
+			return
+		}
+		size = n
+	}
 	eqPath, ok := h.eqPath(w)
 	if !ok {
 		return
 	}
 	masked := r.URL.Query().Get("mask") == "1"
-	key := eqPath + "|" + archive + "|" + name
+	key := eqPath + "|" + archive + "|" + name + "|" + strconv.Itoa(size)
 	if masked {
 		key += "|mask"
 	}
@@ -828,7 +838,7 @@ func (h *modelsHandler) texture(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	img, err := mapgen.DecodeTexture(raw, textureSize, masked)
+	img, err := mapgen.DecodeTexture(raw, size, masked)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
 		return

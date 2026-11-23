@@ -919,10 +919,16 @@ export function setCharacterAppearance(a: CharacterAppearance): Promise<Characte
 }
 
 // getCharacterTextureUrl is where one of a character archive's textures is
-// served as a PNG. masked keeps the colour key as transparency.
-export async function getCharacterTextureUrl(archive: string, name: string, masked: boolean): Promise<string> {
+// served as a PNG. masked keeps the colour key as transparency; size is
+// the largest side wanted (the backend serves 256 at most).
+export async function getCharacterTextureUrl(
+  archive: string, name: string, masked: boolean, size = 256,
+): Promise<string> {
   const baseUrl = await getBackendBaseUrl()
-  const q = masked ? '?mask=1' : ''
+  const params = new URLSearchParams()
+  if (masked) params.set('mask', '1')
+  if (size < 256) params.set('size', String(size))
+  const q = params.size ? `?${params}` : ''
   return `${baseUrl}/api/models/texture/${encodeURIComponent(archive)}/${encodeURIComponent(name)}${q}`
 }
 

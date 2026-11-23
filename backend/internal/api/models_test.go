@@ -35,6 +35,9 @@ func TestModelsRejectBadInput(t *testing.T) {
 		"/texture/global_chr.s3d/..%2Fx.bmp",
 		"/texture/global_chr.s3d/humch0001.png",
 		"/texture/lgequip_obj.s3d/it1.bmp", // not a model archive
+		"/texture/global_chr.s3d/humch0001.bmp?size=100",
+		"/texture/global_chr.s3d/humch0001.bmp?size=512",
+		"/texture/global_chr.s3d/humch0001.bmp?size=x",
 		"/outfit/global_chr.s3d/HUM?mats=1,2,3",
 		"/outfit/global_chr.s3d/HUM?mats=1,2,3,4,5,6,x",
 		"/attach/global_chr.s3d/HUM/NECK_POINT/gequip.s3d/IT1",

@@ -11,6 +11,12 @@ import { npcDress } from '../../lib/characterDress'
 import type { Map3DPeople } from '../../hooks/useMap3DPrefs'
 import type { MarkerModel, RaiderMarker, SpawnDot } from './ZoneMap'
 
+// MAP_TEXTURES is the texture size models are drawn with on the map. A
+// busy zone shows a couple of thousand distinct textures; at map distance
+// a model is a few dozen pixels tall, and full-size textures would take
+// hundreds of MB of GPU memory.
+const MAP_TEXTURES = 64
+
 interface Person {
   // spec is what the model was asked for; a change reloads it.
   spec: string
@@ -62,6 +68,7 @@ export class PeopleLayer {
     buildCharacter(
       { race: model.race, gender: model.gender, luclin, looks: model.looks, zone: model.zone },
       model.dress ?? null,
+      MAP_TEXTURES,
     )
       .then((char) => {
         if (this.disposed || this.people.get(key) !== p) {

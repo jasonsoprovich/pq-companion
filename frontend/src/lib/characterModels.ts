@@ -110,6 +110,10 @@ class Pool<T> {
   }
 }
 
+// FULL_TEXTURES is the texture size close-up views draw models with (the
+// backend's largest).
+export const FULL_TEXTURES = 256
+
 // How many unused models and textures are kept for reuse. Character
 // textures are small (most 256×256), so this holds tens of MB at most.
 const assetPool = new Pool<Promise<CharacterModelAsset | null>>(24)
@@ -129,7 +133,12 @@ class Holds {
   assets: string[] = []
   textures: string[] = []
 
-  asset(key: string, load: () => Promise<CharacterModelAsset | null>): Promise<CharacterModelAsset | null> {
+  /** size is the largest texture side these models are drawn with. */
+  constructor(readonly size: number = FULL_TEXTURES) {}
+
+  asset(name: string, load: () => Promise<CharacterModelAsset | null>): Promise<CharacterModelAsset | null> {
+    // An asset's materials hold its textures, so each size is its own.
+    const key = `${this.size}|${name}`
     this.assets.push(key)
     return assetPool.acquire(key, () => {
       const value = load()
@@ -139,9 +148,9 @@ class Holds {
   }
 
   texture(archive: string, name: string, masked: boolean): THREE.Texture {
-    const key = `${archive}|${name}|${masked ? 1 : 0}`
+    const key = `${archive}|${name}|${masked ? 1 : 0}|${this.size}`
     this.textures.push(key)
-    return acquireTexture(key, archive, name, masked)
+    return acquireTexture(key, archive, name, masked, this.size)
   }
 
   release(): void {
@@ -191,7 +200,7 @@ function loadModelVariant(
     : `variant|${ref.archive}|${ref.code}|${opts.helm ?? 0}|${opts.robe ? 1 : 0}`
   return holds.asset(key, () =>
     getCharacterMesh3D(ref, opts.helm || opts.robe ? opts : undefined)
-      .then((data) => (data ? buildAsset(ref, data) : null)))
+      .then((data) => (data ? buildAsset(ref, data, holds.size) : null)))
 }
 
 // Where item models are, by idfile ("IT63"), kept for the session.
@@ -233,7 +242,7 @@ function loadWornModel(
   const key = `attach|${body.ref.archive}|${body.ref.code}|${point}|${item.archive}|${item.code}`
   return holds.asset(key, () =>
     getAttachedMesh3D(body.ref, point, item)
-      .then((data) => (data ? buildAsset(item, data, body.offset) : null)))
+      .then((data) => (data ? buildAsset(item, data, holds.size, body.offset) : null)))
 }
 
 // freeAsset frees a model's geometry and materials, and lets go of its
@@ -324,6 +333,7 @@ function createCharacterMesh(asset: CharacterModelAsset): THREE.Mesh {
 function buildAsset(
   ref: CharacterModelRef,
   data: ZoneMesh3D,
+  size: number,
   fixedOffset?: [number, number, number],
 ): CharacterModelAsset {
   const pos = new Float32Array(data.positions)
@@ -357,9 +367,9 @@ function buildAsset(
   const materials = data.materials.map((m): THREE.Material => {
     let map: THREE.Texture | null = null
     if (m.texture) {
-      const key = `${ref.archive}|${m.texture}|${m.kind === 1 ? 1 : 0}`
+      const key = `${ref.archive}|${m.texture}|${m.kind === 1 ? 1 : 0}|${size}`
       textureKeys.push(key)
-      map = acquireTexture(key, ref.archive, m.texture, m.kind === 1)
+      map = acquireTexture(key, ref.archive, m.texture, m.kind === 1, size)
     }
     if (m.kind === 3) {
       return new THREE.MeshBasicMaterial({
@@ -433,7 +443,9 @@ function drawnLoads(mesh: THREE.Mesh): THREE.Mesh {
 
 // acquireTexture returns a character texture and counts a user of it (see
 // texturePool). Its load starts when a mesh using it is first drawn.
-function acquireTexture(key: string, archive: string, name: string, masked: boolean): THREE.Texture {
+function acquireTexture(
+  key: string, archive: string, name: string, masked: boolean, size: number,
+): THREE.Texture {
   return texturePool.acquire(key, () => {
     const tex = new THREE.Texture()
     let freed = false
@@ -453,7 +465,7 @@ function acquireTexture(key: string, archive: string, name: string, masked: bool
       queued(async () => {
         // Let go of while waiting its turn: nothing to fetch.
         if (freed) return null
-        const res = await fetch(await getCharacterTextureUrl(archive, name, masked))
+        const res = await fetch(await getCharacterTextureUrl(archive, name, masked, size))
         if (!res.ok) throw new HTTPError(res.statusText)
         return res.blob()
       })
@@ -534,8 +546,9 @@ export interface DressedCharacter {
 export async function buildCharacter(
   req: CharacterModelRequest,
   given?: ModelDress | null,
+  textureSize: number = FULL_TEXTURES,
 ): Promise<DressedCharacter | null> {
-  const holds = new Holds()
+  const holds = new Holds(textureSize)
   try {
     const c = await dressCharacter(holds, req, given ?? null)
     if (!c) holds.release()
