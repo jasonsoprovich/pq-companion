@@ -9,6 +9,28 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v0.33.5 — 2026-11-22
+
+Support for the November 23 server patch: the new PoP item stats show on items and in Character Info, and the PoP flag tracker follows the patch's new rules for Plane of Fire, Bertoxxulous and the Quintessence of Elements. Also fixes key-ring steps that let tiers look finished, a duplicate ROOT BROKE alert, and Instill breaks that also said MEZ BROKE.
+
+### Highlights
+- **New PoP item stats** — the patch added Accuracy, Avoidance, Strikethrough, Stun Resist, Combat Effects, Spell Shield, Shielding and Damage Shield to 63 PoP raid and Plane of Time items. They show on item pages, hover cards, the compare table and the Item Info overlay (with a new "PoP item stats" toggle), each with a short note on what it does.
+- **PoP item stat totals in Character Info** — your worn gear's PoP stats are added up against their caps, with any over-cap amount shown, like Flowing Thought. Item Avoidance also counts toward how often mobs hit you.
+- **Patch updates to the game data** — elemental drum and lute drops on Plane of Earth and Water NPCs, Bo Staff of Transcendence now magic, Shroud of Eternity's Regeneration worn effect, and Plane of Earth traps that see through improved hide.
+
+### Fixes
+- **PoP flags under the new rules** — Plane of Fire credit no longer needs the five Sol Ro minis, and Bertoxxulous credit no longer needs Carpryn's Lower Crypt key, matching the server. Carrying the Quintessence of Elements to Maelin, Muon or the Time machine now marks all your earlier planar progression done.
+- **Tiers looked finished before the key-ring step** — Tier 3 and the Tower of Solusek Ro card showed complete before the floor-door jump into Plane of Fire. They now stay in progress and name the step left.
+- **ROOT BROKE showing twice** — with two Root Broke triggers installed, the alert appeared twice on screen. Identical alerts for the same line now show once.
+- **Instill breaks said MEZ BROKE** — Enchanter packs installed before June still counted Instill (a root) as a mez. Existing installs are corrected automatically.
+- **Duplicate slow timers on the Detrimental overlay** — triggers that start at the cast line, like Swarming Death, no longer leave a second timer next to the one from the land.
+- **Charm timer after a failed cast** — a charm that fails no longer leaves a timer behind.
+- **Slow stuck on the pet card** — a pack slow timer, like the Slows pack's shaman slow, now clears from the pet card once /pet health stops listing it.
+- **Live Buffs after logging out** — Character Info keeps your last Zeal buff window, marked "last seen in game", instead of switching to a different list.
+- **Pack update dot that wouldn't clear** — a pack no longer shows as updated when its only difference is triggers you deleted.
+- **Portable copies and updates** — the portable zip now shows "update available" with a Download zip link, instead of "Update failed".
+- **Quest text links** — inline quest links, like Grimror's new hail, now show as [stuffs] instead of running words together.
+
 ## v0.33.4 — 2026-11-19
 
 Fixes for Live Buffs missing buffs other players cast on you, Enrage Soon warnings that repeated every second on a dead target, discipline cooldowns that vanished as soon as the disc landed, and debuffs from other players that never got a timer. Also fixes several Gear Upgrade Finder scores and same-named raid mobs on the NPC overlay.
