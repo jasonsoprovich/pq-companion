@@ -759,9 +759,13 @@ func (h *modelsHandler) setAppearance(w http.ResponseWriter, r *http.Request) {
 }
 
 // archive returns the open archive, reading its directory on first use.
-// Caller holds texMu.
+// Caller holds texMu, and only uses the archive while holding it: an
+// archive is closed when it's evicted or the EQ folder changes.
 func (h *modelsHandler) archive(eqPath, name string) (*mapgen.LazyArchive, error) {
 	if h.texFor != eqPath {
+		for _, a := range h.archives {
+			a.Close() //nolint:errcheck
+		}
 		h.texFor, h.archives, h.archOrd = eqPath, map[string]*mapgen.LazyArchive{}, nil
 	}
 	if a, ok := h.archives[name]; ok {
@@ -774,6 +778,7 @@ func (h *modelsHandler) archive(eqPath, name string) (*mapgen.LazyArchive, error
 	h.archives[name] = a
 	h.archOrd = append(h.archOrd, name)
 	for len(h.archOrd) > modelTextureArchives {
+		h.archives[h.archOrd[0]].Close() //nolint:errcheck
 		delete(h.archives, h.archOrd[0])
 		h.archOrd = h.archOrd[1:]
 	}

@@ -115,6 +115,7 @@ func TestLazyArchive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer a.Close()
 	if !a.Has("HUMCH0001.BMP") || !a.Has("hum.wld") || a.Has("nope.bmp") {
 		t.Errorf("Has: names = %v", a.Names())
 	}
@@ -173,8 +174,11 @@ func TestLoadModelPosed(t *testing.T) {
 			if mat.Texture == "" {
 				continue
 			}
-			if arc, err := OpenArchiveLazy(filepath.Join(modelClientDir, c.archive)); err == nil && !arc.Has(mat.Texture) {
-				t.Errorf("%s/%s: texture %s not in the archive", c.archive, c.code, mat.Texture)
+			if arc, err := OpenArchiveLazy(filepath.Join(modelClientDir, c.archive)); err == nil {
+				if !arc.Has(mat.Texture) {
+					t.Errorf("%s/%s: texture %s not in the archive", c.archive, c.code, mat.Texture)
+				}
+				arc.Close()
 			}
 			break
 		}

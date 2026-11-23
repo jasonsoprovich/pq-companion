@@ -71,6 +71,11 @@ func TestAvailableLooksClient(t *testing.T) {
 		textures = append(textures, mat.Texture)
 	}
 	archives := map[string]*LazyArchive{}
+	defer func() {
+		for _, arc := range archives {
+			arc.Close()
+		}
+	}()
 	has := func(a, n string) bool {
 		arc, ok := archives[a]
 		if !ok {

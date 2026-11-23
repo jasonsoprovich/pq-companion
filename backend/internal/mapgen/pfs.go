@@ -191,18 +191,36 @@ func decodeNameTable(raw []byte, wantCount int) ([]string, bool) {
 // (deflatedLen, inflatedLen) header followed by the compressed bytes; blocks
 // repeat until the entry's declared inflated size is reached.
 func inflateEntry(data []byte, e pfsEntry) ([]byte, error) {
+	return inflateEntryAt(bytes.NewReader(data), int64(len(data)), e)
+}
+
+// inflateEntryAt is inflateEntry over an archive of fileSize bytes read
+// through r, so an open file can be read one entry at a time.
+func inflateEntryAt(r io.ReaderAt, fileSize int64, e pfsEntry) ([]byte, error) {
 	out := make([]byte, 0, e.size)
-	p := int(e.offset)
+	p := int64(e.offset)
+	var hdr [8]byte
+	var block []byte
 	for uint32(len(out)) < e.size {
-		if p+8 > len(data) {
+		if p+8 > fileSize {
 			return nil, fmt.Errorf("block header past end of file")
 		}
-		deflated := int(binary.LittleEndian.Uint32(data[p:]))
+		if _, err := r.ReadAt(hdr[:], p); err != nil {
+			return nil, fmt.Errorf("read block header: %w", err)
+		}
+		deflated := int64(binary.LittleEndian.Uint32(hdr[:]))
 		p += 8 // skip the inflated-length field; the zlib stream carries it
-		if deflated <= 0 || p+deflated > len(data) {
+		if deflated <= 0 || p+deflated > fileSize {
 			return nil, fmt.Errorf("block length %d past end of file", deflated)
 		}
-		zr, err := zlib.NewReader(bytes.NewReader(data[p : p+deflated]))
+		if int64(cap(block)) < deflated {
+			block = make([]byte, deflated)
+		}
+		block = block[:deflated]
+		if _, err := r.ReadAt(block, p); err != nil {
+			return nil, fmt.Errorf("read block: %w", err)
+		}
+		zr, err := zlib.NewReader(bytes.NewReader(block))
 		if err != nil {
 			return nil, fmt.Errorf("open zlib block: %w", err)
 		}
@@ -220,23 +238,46 @@ func inflateEntry(data []byte, e pfsEntry) ([]byte, error) {
 // LazyArchive is an archive whose entries are inflated one at a time, on
 // request. Character archives hold over a thousand textures, of which a
 // model uses a handful.
+//
+// It keeps the file open and only its directory in memory, reading an
+// entry's blocks when asked: a zone's or gequip's archive is tens of
+// megabytes that would otherwise sit in memory for a few textures. Call
+// Close when done with it. Get is safe for concurrent use.
 type LazyArchive struct {
-	data    []byte
+	data    []byte // set only while parsing the directory
 	entries map[string]pfsEntry
+	file    *os.File
+	size    int64
 }
 
-// OpenArchiveLazy reads a .s3d file and its directory without inflating any
-// entry.
+// OpenArchiveLazy opens a .s3d file and reads its directory without
+// inflating any entry. The caller must Close it.
 func OpenArchiveLazy(path string) (*LazyArchive, error) {
-	data, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	data, err := io.ReadAll(f)
+	if err != nil {
+		f.Close()
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
 	a := &LazyArchive{}
 	if _, err := parsePFSInto(data, nil, a); err != nil {
+		f.Close()
 		return nil, err
 	}
+	// Drop the file's bytes: entries are read back through the open file.
+	a.data, a.file, a.size = nil, f, int64(len(data))
 	return a, nil
+}
+
+// Close closes the archive's file. Get fails afterwards.
+func (a *LazyArchive) Close() error {
+	if a == nil || a.file == nil {
+		return nil
+	}
+	return a.file.Close()
 }
 
 // Has reports whether the archive holds name (any case).
@@ -252,7 +293,11 @@ func (a *LazyArchive) Get(name string) (b []byte, ok bool, err error) {
 	if !ok {
 		return nil, false, nil
 	}
-	b, err = inflateEntry(a.data, e)
+	if a.file == nil {
+		b, err = inflateEntry(a.data, e)
+		return b, true, err
+	}
+	b, err = inflateEntryAt(a.file, a.size, e)
 	return b, true, err
 }
 
