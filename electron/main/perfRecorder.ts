@@ -34,9 +34,14 @@ function pruneOld(dir: string): void {
 
 export type PerfProcessRow = {
   pid: number
-  role: 'overlay' | 'main' | 'trigger' | 'streamkit' | 'helper'
+  role: 'overlay' | 'main' | 'trigger' | 'streamkit' | 'helper' | 'host'
   keys: string[]
   state?: 'open' | 'hidden'
+  // Shared overlay process: the keys among `keys` that are hidden, and
+  // whether the trigger overlay / the hidden host window also live here.
+  hiddenKeys?: string[]
+  trigger?: boolean
+  host?: boolean
   type: string
   memoryMB: number
   privateMB: number | null
@@ -71,7 +76,7 @@ type Sample = {
   sidecarHeap: number | null
   gpu: number
   cpu: number
-  // Open overlay windows (processes) and their keys.
+  // Open (not hidden) overlay windows and their keys.
   windows: number
   keys: string[]
   setId: string
@@ -186,7 +191,14 @@ export class PerfRecorder {
       case 'main': return 'main'
       case 'trigger': return 'trigger'
       case 'streamkit': return 'streamkit'
-      case 'overlay': return r.keys.map((k) => this.deps.label(k)).join('+') + (r.state === 'hidden' ? '(hidden)' : '')
+      case 'host': return 'overlay-host'
+      case 'overlay': {
+        const hidden = new Set(r.hiddenKeys ?? [])
+        const names = r.keys.map((k) => this.deps.label(k) + (hidden.has(k) ? '(hidden)' : ''))
+        if (r.trigger) names.push('trigger')
+        // A process holding several windows is the shared overlay process.
+        return (r.keys.length > 1 || r.trigger || r.host ? 'shared[' + names.join('+') + ']' : names.join('+'))
+      }
       default: return r.type.toLowerCase().replace(/\s+/g, '-')
     }
   }
@@ -202,7 +214,11 @@ export class PerfRecorder {
 
       // Overlay open/close/hide/show since the last sample.
       const states = new Map<string, 'open' | 'hidden'>()
-      for (const r of rows) if (r.role === 'overlay') for (const k of r.keys) states.set(k, r.state ?? 'open')
+      for (const r of rows) {
+        if (r.role !== 'overlay') continue
+        const hidden = new Set(r.hiddenKeys ?? [])
+        for (const k of r.keys) states.set(k, hidden.has(k) ? 'hidden' : 'open')
+      }
       const changes: string[] = []
       for (const [k, s] of states) {
         const prev = this.lastStates.get(k)
@@ -219,16 +235,20 @@ export class PerfRecorder {
       const total = electron + (scMem ?? 0)
       const cpu = rows.reduce((a, r) => a + r.cpu, 0)
       const gpu = rows.filter((r) => r.role === 'helper' && /gpu/i.test(r.type)).reduce((a, r) => a + this.mem(r), 0)
-      const open = rows.filter((r) => r.role === 'overlay' && r.state !== 'hidden')
-      const keys = open.flatMap((r) => r.keys).sort()
+      const keys = [...states].filter(([, s]) => s === 'open').map(([k]) => k).sort()
+      // Own-process size only means something for a process with one window.
       const perKey = new Map<string, number>()
-      for (const r of open) if (r.keys.length === 1) perKey.set(r.keys[0], this.mem(r))
+      for (const r of rows) {
+        if (r.role === 'overlay' && r.keys.length === 1 && !r.trigger && !r.host && !r.hiddenKeys?.length) {
+          perKey.set(r.keys[0], this.mem(r))
+        }
+      }
       this.samples.push({
         t, total, electron, sidecar: scMem, sidecarHeap: sc?.heap_inuse_mb ?? null, gpu, cpu,
-        windows: open.length, keys, setId: keys.join(','), perKey,
+        windows: keys.length, keys, setId: keys.join(','), perKey,
       })
 
-      const order: Record<PerfProcessRow['role'], number> = { main: 0, overlay: 1, trigger: 2, streamkit: 3, helper: 4 }
+      const order: Record<PerfProcessRow['role'], number> = { main: 0, overlay: 1, trigger: 2, host: 3, streamkit: 4, helper: 5 }
       const procs = [...rows]
         .sort((a, b) => order[a.role] - order[b.role] || this.mem(b) - this.mem(a))
         .map((r) => `${this.name(r)}=${r1(this.mem(r))}/${r1(r.cpu)}`)
@@ -236,7 +256,7 @@ export class PerfRecorder {
         ? `sidecar=${r1(scMem ?? 0)} (heap ${r1(sc.heap_inuse_mb)}, ${sc.num_goroutine} goroutines)`
         : 'sidecar=unavailable'
       this.write([
-        `[${clock(t)}] total=${r1(total)} electron=${r1(electron)} ${scPart} cpu=${r1(cpu)}% overlays=${open.length} | ${procs.join(' ')}`,
+        `[${clock(t)}] total=${r1(total)} electron=${r1(electron)} ${scPart} cpu=${r1(cpu)}% overlays=${keys.length} | ${procs.join(' ')}`,
       ])
     } finally {
       this.sampling = false

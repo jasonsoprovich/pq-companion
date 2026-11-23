@@ -6,8 +6,10 @@
  */
 import { getItem } from '../services/api'
 import type { Item } from '../types/item'
+import { LruMap } from './lruMap'
 
-const itemCache = new Map<number, Item>()
+// Capped: a long raid's NPC/item lookups would otherwise grow this forever.
+const itemCache = new LruMap<number, Item>(500)
 const inFlight = new Map<number, Promise<Item>>()
 
 /** Synchronous cache read — undefined when the item hasn't been fetched yet. */

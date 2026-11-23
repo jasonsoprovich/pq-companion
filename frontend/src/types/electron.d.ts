@@ -65,11 +65,22 @@ export interface PerfStatus {
   startedAt: number | null
 }
 
+export interface OverlayProcessMode {
+  mode: 'shared' | 'separate'
+  // Repeated shared-process crashes switched this session to Separate.
+  forcedSeparate: boolean
+}
+
 export interface ProcessMetricRow {
   pid: number
-  role: 'overlay' | 'main' | 'trigger' | 'streamkit' | 'helper'
+  role: 'overlay' | 'main' | 'trigger' | 'streamkit' | 'helper' | 'host'
   keys: string[]
   state?: 'open' | 'hidden'
+  // Shared overlay process: the keys among `keys` that are hidden, and
+  // whether the trigger overlay / the hidden host window also live here.
+  hiddenKeys?: string[]
+  trigger?: boolean
+  host?: boolean
   type: string
   memoryMB: number
   // Windows only.
@@ -329,6 +340,11 @@ export interface ElectronAPI {
     openLogsFolder: () => Promise<string>
     openBackupsFolder: () => Promise<string>
     getConfigFolderPath: () => Promise<string>
+  }
+  overlayProcess: {
+    getMode: () => Promise<OverlayProcessMode>
+    setMode: (mode: 'shared' | 'separate') => Promise<OverlayProcessMode>
+    debugCrashShared: () => Promise<boolean>
   }
   perf: {
     status: () => Promise<PerfStatus>
