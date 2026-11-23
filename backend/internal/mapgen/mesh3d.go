@@ -9,8 +9,8 @@ import (
 	"strings"
 )
 
-// mesh3DMagic opens an encoded 3D mesh ("PQM2").
-var mesh3DMagic = [4]byte{'P', 'Q', 'M', '2'}
+// mesh3DMagic opens an encoded 3D mesh ("PQM3").
+var mesh3DMagic = [4]byte{'P', 'Q', 'M', '3'}
 
 const (
 	fragBitmapName = 0x03 // texture file names
@@ -55,6 +55,31 @@ type Mesh3D struct {
 	Idx       []uint32
 	Groups    []Group3D
 	Materials []Material3D
+	// Models are placed objects drawn once per placement rather than
+	// copied into the mesh: a zone's trees and grass are thousands of
+	// placements of a handful of models.
+	Models []Model3D
+}
+
+// Model3D is one placed object's geometry in its own (unplaced, map-space)
+// coordinates, with a 3x4 row-major map-space matrix per placement.
+// Groups index the mesh's Materials.
+type Model3D struct {
+	Pos       []float32
+	UV        []float32
+	Idx       []uint32
+	Groups    []Group3D
+	Instances [][12]float32
+}
+
+// Triangles counts the mesh's triangles as drawn, every placement of each
+// model included.
+func (m *Mesh3D) Triangles() int {
+	n := len(m.Idx) / 3
+	for _, md := range m.Models {
+		n += len(md.Idx) / 3 * len(md.Instances)
+	}
+	return n
 }
 
 // LoadMesh3D reads <clientDir>/<shortName>.s3d and returns its 3D mesh,
@@ -102,6 +127,24 @@ type meshBuilder struct {
 	// matID maps a material to its place in out.Materials, or -1 when it's
 	// invisible.
 	matID map[matKey]int
+	// parent, when set, owns the materials: a model's builder registers
+	// them in the zone's table so its groups can index it.
+	parent *meshBuilder
+	// models are the instanced objects, each with its own builder.
+	models []*modelBuild
+}
+
+type modelBuild struct {
+	b    *meshBuilder
+	inst [][12]float32
+}
+
+// model starts an instanced model's geometry, sharing this builder's
+// materials.
+func (b *meshBuilder) model() *modelBuild {
+	mb := &modelBuild{b: &meshBuilder{out: &Mesh3D{}, parent: b}}
+	b.models = append(b.models, mb)
+	return mb
 }
 
 func newMeshBuilder() *meshBuilder {
@@ -109,6 +152,9 @@ func newMeshBuilder() *meshBuilder {
 }
 
 func (b *meshBuilder) material(w *WLD, frag int, object bool) int {
+	if b.parent != nil {
+		return b.parent.material(w, frag, object)
+	}
 	k := matKey{w, frag}
 	if id, ok := b.matID[k]; ok {
 		return id
@@ -160,6 +206,9 @@ func (b *meshBuilder) add(w *WLD, m Mesh, xform func(Vec3) Vec3, object bool) {
 		if id < 0 {
 			continue
 		}
+		for len(b.byMat) <= id {
+			b.byMat = append(b.byMat, nil)
+		}
 		// Reversed: after the map-space swap and the 3D view's y flip,
 		// the client's front faces wind clockwise (floors face down
 		// otherwise), and three.js takes counter-clockwise as the front.
@@ -177,6 +226,15 @@ func (b *meshBuilder) build() *Mesh3D {
 			Start: uint32(len(out.Idx)), Count: uint32(len(idx)), Material: uint32(id),
 		})
 		out.Idx = append(out.Idx, idx...)
+	}
+	for _, mb := range b.models {
+		g := mb.b.build()
+		if len(g.Idx) == 0 {
+			continue // every face invisible
+		}
+		out.Models = append(out.Models, Model3D{
+			Pos: g.Pos, UV: g.UV, Idx: g.Idx, Groups: g.Groups, Instances: mb.inst,
+		})
 	}
 	return out
 }
@@ -332,16 +390,24 @@ func loadZoneWLD(clientDir, shortName string) (*WLD, error) {
 	return w, nil
 }
 
-// Encode packs the mesh little-endian: the magic; vertex, index, group and
-// material counts as uint32; float32 positions, float32 texture coords,
-// uint32 indices, then each group's start, count and material as uint32.
-// Materials follow as a kind byte, an opacity byte (0-255), a flags byte
-// (1: object), a zero byte, and a uint16 length and texture name. Every block before the materials is 4-byte
-// aligned, so the reader can view them without copying.
+// Encode packs the mesh little-endian: the magic; vertex, index, group,
+// material and model counts as uint32; float32 positions, float32 texture
+// coords, uint32 indices, then each group's start, count and material as
+// uint32. Materials follow as a kind byte, an opacity byte (0-255), a
+// flags byte (1: object), a zero byte, and a uint16 length and texture
+// name, then zero bytes to a 4-byte boundary. Each model follows: its
+// vertex, index, group and instance counts as uint32, then its positions,
+// texture coords, indices and groups as above, and 12 float32 per
+// instance. Every block but the materials is a multiple of 4 bytes, so
+// the reader can view them all without copying.
 func (m *Mesh3D) Encode() []byte {
-	size := 20 + 4*len(m.Pos) + 4*len(m.UV) + 4*len(m.Idx) + 12*len(m.Groups)
+	size := 24 + 4*len(m.Pos) + 4*len(m.UV) + 4*len(m.Idx) + 12*len(m.Groups)
 	for _, mat := range m.Materials {
 		size += 6 + len(mat.Texture)
+	}
+	size = (size + 3) &^ 3
+	for _, md := range m.Models {
+		size += 16 + 4*len(md.Pos) + 4*len(md.UV) + 4*len(md.Idx) + 12*len(md.Groups) + 48*len(md.Instances)
 	}
 	out := make([]byte, size)
 	copy(out, mesh3DMagic[:])
@@ -350,25 +416,29 @@ func (m *Mesh3D) Encode() []byte {
 	le.PutUint32(out[8:], uint32(len(m.Idx)))
 	le.PutUint32(out[12:], uint32(len(m.Groups)))
 	le.PutUint32(out[16:], uint32(len(m.Materials)))
-	p := 20
-	for _, f := range m.Pos {
-		le.PutUint32(out[p:], math.Float32bits(f))
-		p += 4
+	le.PutUint32(out[20:], uint32(len(m.Models)))
+	p := 24
+	putF := func(fs []float32) {
+		for _, f := range fs {
+			le.PutUint32(out[p:], math.Float32bits(f))
+			p += 4
+		}
 	}
-	for _, f := range m.UV {
-		le.PutUint32(out[p:], math.Float32bits(f))
-		p += 4
+	putGeom := func(idx []uint32, groups []Group3D) {
+		for _, i := range idx {
+			le.PutUint32(out[p:], i)
+			p += 4
+		}
+		for _, g := range groups {
+			le.PutUint32(out[p:], g.Start)
+			le.PutUint32(out[p+4:], g.Count)
+			le.PutUint32(out[p+8:], g.Material)
+			p += 12
+		}
 	}
-	for _, i := range m.Idx {
-		le.PutUint32(out[p:], i)
-		p += 4
-	}
-	for _, g := range m.Groups {
-		le.PutUint32(out[p:], g.Start)
-		le.PutUint32(out[p+4:], g.Count)
-		le.PutUint32(out[p+8:], g.Material)
-		p += 12
-	}
+	putF(m.Pos)
+	putF(m.UV)
+	putGeom(m.Idx, m.Groups)
 	for _, mat := range m.Materials {
 		out[p] = mat.Kind
 		out[p+1] = uint8(math.Round(float64(mat.Opacity) * 255))
@@ -378,6 +448,20 @@ func (m *Mesh3D) Encode() []byte {
 		le.PutUint16(out[p+4:], uint16(len(mat.Texture)))
 		copy(out[p+6:], mat.Texture)
 		p += 6 + len(mat.Texture)
+	}
+	p = (p + 3) &^ 3
+	for _, md := range m.Models {
+		le.PutUint32(out[p:], uint32(len(md.Pos)/3))
+		le.PutUint32(out[p+4:], uint32(len(md.Idx)))
+		le.PutUint32(out[p+8:], uint32(len(md.Groups)))
+		le.PutUint32(out[p+12:], uint32(len(md.Instances)))
+		p += 16
+		putF(md.Pos)
+		putF(md.UV)
+		putGeom(md.Idx, md.Groups)
+		for _, inst := range md.Instances {
+			putF(inst[:])
+		}
 	}
 	return out
 }

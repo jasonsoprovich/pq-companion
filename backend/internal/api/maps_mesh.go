@@ -182,14 +182,14 @@ func (h *mapsHandler) buildMesh(eqPath, short, key string) ([]byte, error) {
 	}
 	buf := m.Encode()
 	h.meshes.put(key, buf)
-	tris, mats := len(m.Idx)/3, len(m.Materials)
+	tris, mats, nModels := m.Triangles(), len(m.Materials), len(m.Models)
 	m = nil
 	took := time.Since(start)
 	// The build's intermediates are now garbage. A big zone's build peaks
 	// at a few hundred megabytes, which Go would otherwise keep from the
 	// OS for minutes.
 	freeOSMemory()
-	slog.Info("maps: 3D mesh loaded", "zone", short, "triangles", tris,
+	slog.Info("maps: 3D mesh loaded", "zone", short, "triangles", tris, "models", nModels,
 		"materials", mats, "bytes", len(buf), "took", took)
 	return buf, nil
 }

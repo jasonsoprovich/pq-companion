@@ -541,6 +541,20 @@ export interface ZoneMesh3D {
   indices: Uint32Array
   groups: { start: number; count: number; material: number }[]
   materials: ZoneMaterial3D[]
+  // models are placed objects drawn once per placement (mapgen.Model3D);
+  // character and item meshes have none.
+  models: ZoneModel3D[]
+}
+
+// ZoneModel3D is one placed object's unplaced geometry and a 3x4 row-major
+// map-space matrix per placement (12 floats each in instances). groups
+// index the mesh's materials.
+export interface ZoneModel3D {
+  positions: Float32Array
+  uvs: Float32Array
+  indices: Uint32Array
+  groups: { start: number; count: number; material: number }[]
+  instances: Float32Array
 }
 
 // ZoneMaterial3D mirrors mapgen.Material3D. kind: 0 solid, 1 masked
@@ -554,11 +568,12 @@ export interface ZoneMaterial3D {
   object: boolean
 }
 
-// getZoneMesh3D fetches the 3D mesh (mapgen.Mesh3D.Encode: "PQM2"; vertex,
-// index, group and material counts; float32 positions and uvs, uint32
-// indices and groups; then the materials, each kind, opacity, flags, a
-// spare byte, and a uint16-length texture name). Resolves null when the client has
-// no s3d for the zone.
+// getZoneMesh3D fetches the 3D mesh (mapgen.Mesh3D.Encode: "PQM3"; vertex,
+// index, group, material and model counts; float32 positions and uvs,
+// uint32 indices and groups; the materials, each kind, opacity, flags, a
+// spare byte, and a uint16-length texture name, padded to 4 bytes; then
+// each model's counts, geometry and instance matrices). Resolves null when
+// the client has no s3d for the zone.
 export async function getZoneMesh3D(zone: string): Promise<ZoneMesh3D | null> {
   const baseUrl = await getBackendBaseUrl()
   const res = await fetch(`${baseUrl}/api/maps/zone/${encodeURIComponent(zone)}/mesh`)
@@ -575,24 +590,31 @@ export async function getZoneMesh3D(zone: string): Promise<ZoneMesh3D | null> {
 function parseMesh3D(buf: ArrayBuffer, label: string): ZoneMesh3D {
   const view = new DataView(buf)
   const magic = String.fromCharCode(...new Uint8Array(buf, 0, 4))
-  if (magic !== 'PQM2') throw new Error(`${label}: bad format`)
+  if (magic !== 'PQM3') throw new Error(`${label}: bad format`)
   const verts = view.getUint32(4, true)
   const count = view.getUint32(8, true)
   const groupCount = view.getUint32(12, true)
   const matCount = view.getUint32(16, true)
-  let p = 20
-  const positions = new Float32Array(buf, p, verts * 3)
-  p += verts * 12
-  const uvs = new Float32Array(buf, p, verts * 2)
-  p += verts * 8
-  const indices = new Uint32Array(buf, p, count)
-  p += count * 4
-  const g = new Uint32Array(buf, p, groupCount * 3)
-  p += groupCount * 12
-  const groups = []
-  for (let i = 0; i < groupCount; i++) {
-    groups.push({ start: g[i * 3], count: g[i * 3 + 1], material: g[i * 3 + 2] })
+  const modelCount = view.getUint32(20, true)
+  let p = 24
+  // Every block but the materials is a multiple of 4 bytes and the
+  // materials are padded, so these views are always aligned.
+  const geometry = (v: number, n: number, ng: number) => {
+    const positions = new Float32Array(buf, p, v * 3)
+    p += v * 12
+    const uvs = new Float32Array(buf, p, v * 2)
+    p += v * 8
+    const indices = new Uint32Array(buf, p, n)
+    p += n * 4
+    const g = new Uint32Array(buf, p, ng * 3)
+    p += ng * 12
+    const groups = []
+    for (let i = 0; i < ng; i++) {
+      groups.push({ start: g[i * 3], count: g[i * 3 + 1], material: g[i * 3 + 2] })
+    }
+    return { positions, uvs, indices, groups }
   }
+  const { positions, uvs, indices, groups } = geometry(verts, count, groupCount)
   const bytes = new Uint8Array(buf)
   const materials: ZoneMaterial3D[] = []
   for (let i = 0; i < matCount; i++) {
@@ -605,7 +627,19 @@ function parseMesh3D(buf: ArrayBuffer, label: string): ZoneMesh3D {
     })
     p += 6 + len
   }
-  return { positions, uvs, indices, groups, materials }
+  p = (p + 3) & ~3
+  const models: ZoneModel3D[] = []
+  for (let i = 0; i < modelCount; i++) {
+    const mv = view.getUint32(p, true)
+    const mi = view.getUint32(p + 4, true)
+    const mg = view.getUint32(p + 8, true)
+    const inst = view.getUint32(p + 12, true)
+    p += 16
+    const geo = geometry(mv, mi, mg)
+    models.push({ ...geo, instances: new Float32Array(buf, p, inst * 12) })
+    p += inst * 48
+  }
+  return { positions, uvs, indices, groups, materials, models }
 }
 
 // getZoneTextureUrl is where one of a zone's client textures is served as a

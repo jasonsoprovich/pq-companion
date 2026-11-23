@@ -81,6 +81,11 @@ var sharedArchives = []string{"global_obj.s3d", "gequip.s3d"}
 // stretch the 3D view's framing to nothing.
 const objMargin = 500
 
+// minInstances is how many untilted placements a model needs to be drawn
+// instanced rather than copied into the mesh per placement. A model
+// placed once or twice (most doors) isn't worth its own draw calls.
+var minInstances = 4 // a var so tests can turn instancing off
+
 // addObjects places every object from objects.wld, and the given doors,
 // using models from the zone's _obj archives. Call it after the zone's own
 // geometry is added: its bounds decide which placements are kept. A zone
@@ -142,9 +147,32 @@ func (b *meshBuilder) addObjects(clientDir, shortName string, doors []Door) erro
 			v.Y >= lo.Y-objMargin && v.Y <= hi.Y+objMargin &&
 			v.Z >= lo.Z-objMargin && v.Z <= hi.Z+objMargin
 	}
+	// Tilted placements stay copied: tilt changes which of a model's faces
+	// are floors, and the 3D view splits an instanced model by facing once.
+	untilted := map[string]int{}
 	for _, p := range places {
-		m, ok := models[strings.ToUpper(p.Actor)]
+		a := strings.ToUpper(p.Actor)
+		if _, ok := models[a]; ok && p.Tilt == 0 && inside(p.Pos) {
+			untilted[a]++
+		}
+	}
+	instanced := map[string]*modelBuild{}
+	for _, p := range places {
+		a := strings.ToUpper(p.Actor)
+		m, ok := models[a]
 		if !ok || !inside(p.Pos) {
+			continue
+		}
+		if p.Tilt == 0 && untilted[a] >= minInstances {
+			mb := instanced[a]
+			if mb == nil {
+				mb = b.model()
+				for _, mesh := range m.meshes {
+					mb.b.add(m.w, mesh, nil, true)
+				}
+				instanced[a] = mb
+			}
+			mb.inst = append(mb.inst, placementMatrix(p))
 			continue
 		}
 		x := placeTransform(p)
@@ -188,6 +216,23 @@ func placeTransform(p Placement) func(Vec3) Vec3 {
 		x, y = x*cy-y*sy, x*sy+y*cy
 		return ToMapSpace(p.Raw.X+x, p.Raw.Y+y, p.Raw.Z+z)
 	}
+}
+
+// placementMatrix returns placeTransform(p) as a 3x4 map-space matrix,
+// row-major: v' = M·[v 1]. placeTransform is affine, so its columns are
+// where it sends the unit vectors less where it sends the origin.
+func placementMatrix(p Placement) [12]float32 {
+	f := placeTransform(p)
+	o := f(Vec3{})
+	cols := [3]Vec3{f(Vec3{X: 1}), f(Vec3{Y: 1}), f(Vec3{Z: 1})}
+	var m [12]float32
+	for c, v := range cols {
+		m[c] = float32(v.X - o.X)
+		m[4+c] = float32(v.Y - o.Y)
+		m[8+c] = float32(v.Z - o.Z)
+	}
+	m[3], m[7], m[11] = float32(o.X), float32(o.Y), float32(o.Z)
+	return m
 }
 
 // actorMeshes maps each actor's name ("TREE1_ACTORDEF", uppercased) to its

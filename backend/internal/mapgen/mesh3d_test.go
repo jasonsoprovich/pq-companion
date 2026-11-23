@@ -15,14 +15,14 @@ func TestMesh3DEncode(t *testing.T) {
 		Materials: []Material3D{{Kind: MatSolid, Opacity: 1}, {Texture: "water.bmp", Kind: MatBlend, Opacity: 0.5, Object: true}},
 	}
 	b := m.Encode()
-	if string(b[:4]) != "PQM2" {
+	if string(b[:4]) != "PQM3" {
 		t.Fatalf("magic = %q", b[:4])
 	}
 	le := binary.LittleEndian
-	if v, i, g, n := le.Uint32(b[4:]), le.Uint32(b[8:]), le.Uint32(b[12:]), le.Uint32(b[16:]); v != 3 || i != 3 || g != 1 || n != 2 {
-		t.Fatalf("counts = %d %d %d %d", v, i, g, n)
+	if v, i, g, n, md := le.Uint32(b[4:]), le.Uint32(b[8:]), le.Uint32(b[12:]), le.Uint32(b[16:]), le.Uint32(b[20:]); v != 3 || i != 3 || g != 1 || n != 2 || md != 0 {
+		t.Fatalf("counts = %d %d %d %d %d", v, i, g, n, md)
 	}
-	uv := 20 + 9*4
+	uv := 24 + 9*4
 	if got := math.Float32frombits(le.Uint32(b[uv+2*4:])); got != 1 {
 		t.Fatalf("second vertex u = %v", got)
 	}
@@ -43,8 +43,9 @@ func TestMesh3DEncode(t *testing.T) {
 		string(b[mat+6:mat+6+int(le.Uint16(b[mat+4:]))]) != "water.bmp" {
 		t.Fatalf("water object material = % x", b[mat:])
 	}
-	if mat+6+9 != len(b) {
-		t.Fatalf("length %d, want %d", len(b), mat+15)
+	// The materials end padded to a 4-byte boundary.
+	if want := (mat + 6 + 9 + 3) &^ 3; want != len(b) {
+		t.Fatalf("length %d, want %d", len(b), want)
 	}
 }
 
