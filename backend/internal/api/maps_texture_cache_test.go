@@ -246,3 +246,20 @@ func TestTextureCacheRequestsDuringExpiry(t *testing.T) {
 		t.Errorf("%s failed during expiry", n)
 	}
 }
+
+// An idle release hands the freed memory back to the OS once.
+func TestTextureCacheReleaseFreesOSMemory(t *testing.T) {
+	calls := make(chan struct{}, 4)
+	old := freeOSMemory
+	freeOSMemory = func() { calls <- struct{}{} }
+	defer func() { freeOSMemory = old }()
+	dir := testClient(t, false)
+	c := &textureCache{idle: time.Hour}
+	c.get(dir, "tz", "zone.bmp", false) //nolint:errcheck
+	releaseCache(c)
+	select {
+	case <-calls:
+	case <-time.After(2 * time.Second):
+		t.Fatal("release didn't free OS memory")
+	}
+}

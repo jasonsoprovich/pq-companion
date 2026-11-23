@@ -15,11 +15,14 @@ type memoryResponse struct {
 	PrivateMB    *float64 `json:"private_mb"` // null where the OS can't report it
 	PeakRSS      bool     `json:"peak_rss"`   // true when WorkingSetMB is a peak, not current
 	// Go runtime view, for telling heap growth from other memory.
-	HeapInuseMB  float64 `json:"heap_inuse_mb"`
-	HeapSysMB    float64 `json:"heap_sys_mb"`
-	SysMB        float64 `json:"sys_mb"`
-	NumGoroutine int     `json:"num_goroutine"`
-	NumGC        uint32  `json:"num_gc"`
+	HeapInuseMB float64 `json:"heap_inuse_mb"`
+	HeapSysMB   float64 `json:"heap_sys_mb"`
+	// HeapReleasedMB is heap returned to the OS: HeapSysMB minus it is
+	// what the heap holds.
+	HeapReleasedMB float64 `json:"heap_released_mb"`
+	SysMB          float64 `json:"sys_mb"`
+	NumGoroutine   int     `json:"num_goroutine"`
+	NumGC          uint32  `json:"num_gc"`
 }
 
 func toMB(b uint64) float64 {
@@ -31,12 +34,13 @@ func debugMemory(w http.ResponseWriter, _ *http.Request) {
 	var ms runtime.MemStats
 	runtime.ReadMemStats(&ms)
 	resp := memoryResponse{
-		HeapInuseMB:  toMB(ms.HeapInuse),
-		HeapSysMB:    toMB(ms.HeapSys),
-		SysMB:        toMB(ms.Sys),
-		NumGoroutine: runtime.NumGoroutine(),
-		NumGC:        ms.NumGC,
-		PeakRSS:      runtime.GOOS != "windows",
+		HeapInuseMB:    toMB(ms.HeapInuse),
+		HeapSysMB:      toMB(ms.HeapSys),
+		HeapReleasedMB: toMB(ms.HeapReleased),
+		SysMB:          toMB(ms.Sys),
+		NumGoroutine:   runtime.NumGoroutine(),
+		NumGC:          ms.NumGC,
+		PeakRSS:        runtime.GOOS != "windows",
 	}
 	if st, err := procmem.Read(); err == nil {
 		resp.WorkingSetMB = toMB(st.WorkingSet)

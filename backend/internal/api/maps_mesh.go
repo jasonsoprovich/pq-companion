@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -181,8 +182,15 @@ func (h *mapsHandler) buildMesh(eqPath, short, key string) ([]byte, error) {
 	}
 	buf := m.Encode()
 	h.meshes.put(key, buf)
-	slog.Info("maps: 3D mesh loaded", "zone", short, "triangles", len(m.Idx)/3,
-		"materials", len(m.Materials), "bytes", len(buf), "took", time.Since(start))
+	tris, mats := len(m.Idx)/3, len(m.Materials)
+	m = nil
+	took := time.Since(start)
+	// The build's intermediates are now garbage. A big zone's build peaks
+	// at a few hundred megabytes, which Go would otherwise keep from the
+	// OS for minutes.
+	freeOSMemory()
+	slog.Info("maps: 3D mesh loaded", "zone", short, "triangles", tris,
+		"materials", mats, "bytes", len(buf), "took", took)
 	return buf, nil
 }
 
@@ -345,7 +353,13 @@ func (c *textureCache) releaseLocked() {
 		c.timer = nil
 	}
 	slog.Debug("maps: 3D textures released")
+	go freeOSMemory()
 }
+
+// freeOSMemory returns freed heap to the OS. It runs a full collection, so
+// it's for once-per-event moments like a finished zone build, never per
+// request. A var so tests can count calls.
+var freeOSMemory = debug.FreeOSMemory
 
 // texture3D handles GET /api/maps/zone/{zone}/texture/{name}: one of the
 // zone's client textures as a PNG, for the 3D view. ?mask=1 keeps the colour
