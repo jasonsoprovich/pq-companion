@@ -316,7 +316,7 @@ function dressMaterials(
 
 // createCharacterMesh makes a mesh of a loaded model, sharing its data.
 function createCharacterMesh(asset: CharacterModelAsset): THREE.Mesh {
-  const mesh = new THREE.Mesh(asset.geometry, asset.materials)
+  const mesh = drawnLoads(new THREE.Mesh(asset.geometry, asset.materials))
   mesh.userData.characterModel = asset.ref
   return mesh
 }
@@ -385,8 +385,54 @@ function buildAsset(
   return { ref, geometry, materials, textures, height: maxZ - minZ, offset, textureKeys }
 }
 
-// acquireTexture returns a character texture, starting its load the first
-// time, and counts a user of it (see texturePool).
+// HTTPError is a texture the backend answered for but couldn't give.
+class HTTPError extends Error {}
+
+// TEXTURE_FETCHES is how many character textures load at once. A zone's
+// NPCs drawn as models can want a couple of thousand; fetched all at once,
+// the browser refuses most of them (ERR_INSUFFICIENT_RESOURCES).
+const TEXTURE_FETCHES = 8
+let fetching = 0
+const fetchQueue: (() => void)[] = []
+
+// queued runs job once fewer than TEXTURE_FETCHES others are running.
+function queued<T>(job: () => Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const run = (): void => {
+      fetching++
+      job().then(resolve, reject).finally(() => {
+        fetching--
+        fetchQueue.shift()?.()
+      })
+    }
+    if (fetching < TEXTURE_FETCHES) run()
+    else fetchQueue.push(run)
+  })
+}
+
+// Textures whose load hasn't started, and how to start it. A texture
+// loads the first time a mesh using it is drawn (see drawnLoads), so a
+// model's textures that an outfit replaces, and models off screen, are
+// never fetched.
+const unstarted = new WeakMap<THREE.Texture, () => void>()
+
+// startMaps is a mesh's onBeforeRender: three.js calls it per material
+// group drawn, and not for meshes culled or hidden.
+function startMaps(
+  _r: THREE.WebGLRenderer, _s: THREE.Scene, _c: THREE.Camera, _g: THREE.BufferGeometry, material: THREE.Material,
+): void {
+  const map = (material as THREE.MeshLambertMaterial).map
+  if (map) unstarted.get(map)?.()
+}
+
+// drawnLoads makes mesh start its textures' loads when it's drawn.
+function drawnLoads(mesh: THREE.Mesh): THREE.Mesh {
+  mesh.onBeforeRender = startMaps
+  return mesh
+}
+
+// acquireTexture returns a character texture and counts a user of it (see
+// texturePool). Its load starts when a mesh using it is first drawn.
 function acquireTexture(key: string, archive: string, name: string, masked: boolean): THREE.Texture {
   return texturePool.acquire(key, () => {
     const tex = new THREE.Texture()
@@ -396,26 +442,40 @@ function acquireTexture(key: string, archive: string, name: string, masked: bool
     tex.wrapS = THREE.RepeatWrapping
     tex.wrapT = THREE.RepeatWrapping
     tex.colorSpace = THREE.SRGBColorSpace
-    // Fetched rather than loaded as an <img>: the page's CSP allows the
-    // backend for connections but not for images.
-    getCharacterTextureUrl(archive, name, masked)
-      .then((url) => fetch(url))
-      .then((res) => (res.ok ? res.blob() : Promise.reject(new Error(res.statusText))))
-      .then((blob) => createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' }))
-      .then((bitmap) => {
-        if (freed) {
-          bitmap.close()
-          return
-        }
-        tex.image = bitmap
-        tex.needsUpdate = true
+    const grey = (): void => {
+      tex.image = new ImageData(new Uint8ClampedArray([138, 143, 152, 255]), 1, 1)
+      tex.needsUpdate = true
+    }
+    unstarted.set(tex, () => {
+      unstarted.delete(tex)
+      // Fetched rather than loaded as an <img>: the page's CSP allows the
+      // backend for connections but not for images.
+      queued(async () => {
+        // Let go of while waiting its turn: nothing to fetch.
+        if (freed) return null
+        const res = await fetch(await getCharacterTextureUrl(archive, name, masked))
+        if (!res.ok) throw new HTTPError(res.statusText)
+        return res.blob()
       })
-      .catch(() => {
-        if (freed) return
-        tex.image = new ImageData(new Uint8ClampedArray([138, 143, 152, 255]), 1, 1)
-        tex.needsUpdate = true
-      })
-      .finally(() => listeners.forEach((fn) => fn()))
+        .then((blob) => (blob ? createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' }) : null))
+        .then((bitmap) => {
+          if (!bitmap) return
+          if (freed) {
+            bitmap.close()
+            return
+          }
+          tex.image = bitmap
+          tex.needsUpdate = true
+        })
+        .catch((err) => {
+          if (freed) return
+          grey()
+          // A texture the client lacks stays grey; one that failed to
+          // arrive is fetched again by whoever asks for it next.
+          if (!(err instanceof HTTPError)) texturePool.forget(key, tex)
+        })
+        .finally(() => listeners.forEach((fn) => fn()))
+    })
     return {
       value: tex,
       free: () => {
@@ -531,12 +591,12 @@ async function dressCharacter(
     const tint = w.tint ?? (w.slot >= 0 ? dress?.tints[w.slot] ?? 0 : 0)
     const mats = tinted(item.materials, tint)
     owned.push(...mats)
-    object.add(new THREE.Mesh(item.geometry, mats))
+    object.add(drawnLoads(new THREE.Mesh(item.geometry, mats)))
   })
   if (dress) {
     const mats = dressMaterials(holds, asset, outfit, dress.tints)
     owned.push(...mats)
-    object.add(new THREE.Mesh(asset.geometry, mats))
+    object.add(drawnLoads(new THREE.Mesh(asset.geometry, mats)))
   } else {
     object.add(createCharacterMesh(asset))
   }
