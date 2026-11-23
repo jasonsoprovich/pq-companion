@@ -1512,6 +1512,9 @@ function matFor(color: string, opacity = 1): THREE.MeshBasicMaterial {
 // so it doesn't flicker into the floor it lies on.
 const footMats = new Map<string, THREE.MeshBasicMaterial>()
 
+// FOOT_GHOST_OPACITY is how strongly a hidden footprint shows through.
+const FOOT_GHOST_OPACITY = 0.4
+
 function footMat(color: string, opacity = 1): THREE.MeshBasicMaterial {
   const key = `${color}|${opacity}`
   let m = footMats.get(key)
@@ -1581,8 +1584,9 @@ function markerShapes(): NonNullable<typeof shapes> {
   return shapes
 }
 
-// A marker is a group of four meshes: casing, shape, and the focus ring's
-// casing and ring. userData holds where it stands and its size, for
+// A marker is a group of six meshes: casing, shape, the focus ring's
+// casing and ring, and faint copies of the footprint and focus ring drawn
+// over the scenery. userData holds where it stands and its size, for
 // scaleToScreen.
 function updateMarkers(s: Scene3D, markers: RaiderMarker[]): void {
   const g = s.markers
@@ -1592,16 +1596,17 @@ function updateMarkers(s: Scene3D, markers: RaiderMarker[]): void {
     let m = g.children[i] as THREE.Group | undefined
     if (!m) {
       m = new THREE.Group()
-      for (let k = 0; k < 4; k++) {
+      for (let k = 0; k < 6; k++) {
         const mesh = new THREE.Mesh()
-        // Casings under shapes, focus rings over everything.
-        mesh.renderOrder = [10, 11, 12, 13][k]
+        // Casings under shapes, focus rings over everything; the faint
+        // copies first, so the solid footprint covers them where it shows.
+        mesh.renderOrder = [10, 11, 12, 13, 9, 9][k]
         m.add(mesh)
       }
       m.userData = { base: new THREE.Vector3(), px: 1, lift: 0, min: 0 }
       g.add(m)
     }
-    const [casing, shape, ringCase, ring] = m.children as THREE.Mesh[]
+    const [casing, shape, ringCase, ring, ghost, ghostRing] = m.children as THREE.Mesh[]
     // Someone drawn as their model gets a ring at the feet, with a tick
     // for the heading, in place of the arrow that would sit in the model.
     const foot = r.dead ? null : s.people.footprint(r.label)
@@ -1625,6 +1630,16 @@ function updateMarkers(s: Scene3D, markers: RaiderMarker[]): void {
     ring.scale.setScalar(foot ? 1.6 : 1)
     ringCase.visible = !!r.focus
     ring.visible = !!r.focus
+    // A footprint is depth-tested, so trees and bushes can hide it (the
+    // foliage in Wakening Land). A faint copy drawn over everything keeps
+    // it findable.
+    ghost.geometry = sh.foot
+    ghost.material = matFor(r.color, FOOT_GHOST_OPACITY)
+    ghost.visible = !!foot
+    ghostRing.geometry = sh.ring
+    ghostRing.material = matFor(HIGHLIGHT, FOOT_GHOST_OPACITY)
+    ghostRing.scale.setScalar(1.6)
+    ghostRing.visible = !!foot && !!r.focus
     // Lying flat at the feet, pointing along the heading: EQ's heading
     // turns counter-clockwise from north, as rotation about +z does here.
     // The ring is a child too, so it turns with it, which a circle hides.
