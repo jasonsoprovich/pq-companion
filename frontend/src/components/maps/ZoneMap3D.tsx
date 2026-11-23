@@ -159,7 +159,8 @@ interface Layers {
 // materials can be swapped without rebuilding them.
 interface ZoneLayers {
   zone: string
-  data: ZoneMesh3D
+  // data keeps only the materials: the rest is in the meshes.
+  data: Pick<ZoneMesh3D, 'materials'>
   own: Layers
   objects: Layers
   // group holds all six meshes.
@@ -1014,22 +1015,36 @@ function ViewOptions({ prefs, onChange, zRange, slice, onSlice }: {
 // buildLayers turns the zone mesh into floor, wall and ceiling meshes, for
 // the zone's own geometry and for its objects. World y is map y negated
 // (see the header comment).
+//
+// A big zone has millions of vertices, so the six meshes share every vertex
+// attribute, normals included, and nothing keeps the fetched buffer alive:
+// data's arrays are views into it.
 function buildLayers(zone: string, data: ZoneMesh3D): ZoneLayers {
   const pos = new Float32Array(data.positions)
   for (let i = 1; i < pos.length; i += 3) pos[i] = -pos[i]
   const position = new THREE.BufferAttribute(pos, 3)
-  const uv = new THREE.BufferAttribute(data.uvs, 2)
+  const uv = new THREE.BufferAttribute(new Float32Array(data.uvs), 2)
   const color = new THREE.BufferAttribute(heightColors(pos), 3)
+
+  // Normals once, over every triangle. A vertex shared by a floor and a
+  // wall triangle gets their average, which a map can't tell apart.
+  const whole = new THREE.BufferGeometry()
+  whole.setAttribute('position', position)
+  whole.setIndex(new THREE.BufferAttribute(data.indices, 1))
+  whole.computeVertexNormals()
+  const normal = whole.getAttribute('normal') as THREE.BufferAttribute
+  whole.deleteAttribute('position')
+  whole.setIndex(null)
 
   // Split each material's triangles three ways by facing, keeping a draw
   // group per material in each layer: parts 0-2 are the zone's floors,
-  // walls and ceilings, 3-5 its objects'.
-  type Part = { idx: number[]; groups: { start: number; count: number; material: number }[] }
-  const parts: Part[] = [0, 1, 2, 3, 4, 5].map(() => ({ idx: [], groups: [] }))
+  // walls and ceilings, 3-5 its objects'. The first pass picks each
+  // triangle's part and counts them, so the second fills sized arrays.
   const ix = data.indices
+  const partOf = new Uint8Array(ix.length / 3)
+  const counts = [0, 0, 0, 0, 0, 0]
   for (const g of data.groups) {
     const base = data.materials[g.material].object ? 3 : 0
-    const starts = parts.map((p) => p.idx.length)
     for (let i = g.start; i < g.start + g.count; i += 3) {
       const a = ix[i] * 3
       const b = ix[i + 1] * 3
@@ -1041,29 +1056,42 @@ function buildLayers(zone: string, data: ZoneMesh3D): ZoneLayers {
       const nz = ux * vy - uy * vx
       const len = Math.hypot(nx, ny, nz) || 1
       const up = nz / len
-      const part = parts[base + (up >= FLAT ? 0 : up <= -FLAT ? 2 : 1)]
-      part.idx.push(ix[i], ix[i + 1], ix[i + 2])
+      const k = base + (up >= FLAT ? 0 : up <= -FLAT ? 2 : 1)
+      partOf[i / 3] = k
+      counts[k] += 3
+    }
+  }
+  type Part = { idx: Uint32Array; n: number; groups: { start: number; count: number; material: number }[] }
+  const parts: Part[] = counts.map((c) => ({ idx: new Uint32Array(c), n: 0, groups: [] }))
+  for (const g of data.groups) {
+    const starts = parts.map((p) => p.n)
+    for (let i = g.start; i < g.start + g.count; i += 3) {
+      const p = parts[partOf[i / 3]]
+      p.idx[p.n] = ix[i]
+      p.idx[p.n + 1] = ix[i + 1]
+      p.idx[p.n + 2] = ix[i + 2]
+      p.n += 3
     }
     parts.forEach((p, k) => {
-      const n = p.idx.length - starts[k]
+      const n = p.n - starts[k]
       if (n > 0) p.groups.push({ start: starts[k], count: n, material: g.material })
     })
   }
   const meshes = parts.map((p) => {
     const geo = new THREE.BufferGeometry()
     geo.setAttribute('position', position)
+    geo.setAttribute('normal', normal)
     geo.setAttribute('uv', uv)
     geo.setAttribute('color', color)
-    geo.setIndex(new THREE.BufferAttribute(new Uint32Array(p.idx), 1))
+    geo.setIndex(new THREE.BufferAttribute(p.idx, 1))
     for (const g of p.groups) geo.addGroup(g.start, g.count, g.material)
-    geo.computeVertexNormals()
     return new THREE.Mesh(geo, [])
   })
   const group = new THREE.Group()
   group.add(...meshes)
   return {
     zone,
-    data,
+    data: { materials: data.materials },
     own: { floor: meshes[0], wall: meshes[1], ceiling: meshes[2] },
     objects: { floor: meshes[3], wall: meshes[4], ceiling: meshes[5] },
     group,
@@ -1091,7 +1119,11 @@ function floorGrid(L: ZoneLayers): FaceGrid {
   if (!L.floors) {
     // Both floor meshes share the zone's vertices.
     const own = L.own.floor.geometry
-    const idx = [...(own.getIndex()?.array ?? []), ...(L.objects.floor.geometry.getIndex()?.array ?? [])]
+    const a = own.getIndex()?.array ?? new Uint32Array(0)
+    const b = L.objects.floor.geometry.getIndex()?.array ?? new Uint32Array(0)
+    const idx = new Uint32Array(a.length + b.length)
+    idx.set(a)
+    idx.set(b, a.length)
     L.floors = faceGrid(own.getAttribute('position').array, idx)
   }
   return L.floors
