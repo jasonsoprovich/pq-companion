@@ -2443,6 +2443,24 @@ name-based path when a field is nil, so older Zeal is unaffected.
   without setting the flag. Ships dark in v0.31.0 so nothing appears until
   a Zeal release carries the event.
 
+## v0.33.5 — PoP item stats (Nov 23 patch)
+
+- **PoP item stats** — the patch added Accuracy, Avoidance, Strikethrough,
+  Stun Resist, Combat Effects, Spell Shield, Shielding and Damage Shield to
+  63 PoP raid and Plane of Time items. `db.Item` reads the eight columns
+  (embedded `Mod2Stats`, with the server's per-character caps), shown on
+  the item page, hover card, compare table and Item Info overlay (new "PoP
+  item stats" layout toggle, on by default), each with a short hint.
+- **Character Info totals** — the equipment block sums worn gear's PoP stats,
+  capped per stat like the server (Accuracy 150, Avoidance 100, Combat
+  Effects 100, Damage Shield 30, percent stats 35), and shows over-cap
+  waste like Flowing Thought. Item Avoidance feeds the tanking hit-chance
+  calculation; displayed AC is unchanged, as in game.
+- **PoP flag rules** — Plane of Fire credit no longer needs the Sol Ro minis
+  and Bertoxxulous credit no longer needs the Lower Crypt key. Carrying the
+  Quintessence of Elements to Maelin, Muon or the Time machine marks all
+  earlier planar progression done.
+
 ## Phase 11 — Project Website
 _Planned_
 
