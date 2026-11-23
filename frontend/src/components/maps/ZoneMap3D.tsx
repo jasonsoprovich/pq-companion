@@ -4,7 +4,10 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { RotateCcw, SlidersHorizontal, Tag } from 'lucide-react'
 import { getZoneMesh3D, getZoneTextureUrl } from '../../services/api'
-import type { ZoneMesh3D } from '../../services/api'
+import type { ZoneMesh3D, ZoneModel3D } from '../../services/api'
+import {
+  buildInstanceFloorGrid, instanceFloorsAt, type InstanceFloorGrid, type InstancedFloorModel,
+} from '../../lib/instanceFloors'
 import { useMap3DPrefs } from '../../hooks/useMap3DPrefs'
 import type { Map3DLabels, Map3DPrefs, Map3DStyle } from '../../hooks/useMap3DPrefs'
 import { PeopleLayer, npcMarkers } from './people3D'
@@ -124,21 +127,31 @@ interface Hover {
   color: string
 }
 
-function heightColors(pos: Float32Array): Float32Array {
+// heightRange is the lowest and highest z in pos.
+function heightRange(pos: Float32Array): [number, number] {
   let lo = Infinity
   let hi = -Infinity
   for (let i = 2; i < pos.length; i += 3) {
     lo = Math.min(lo, pos[i])
     hi = Math.max(hi, pos[i])
   }
+  return [lo, hi]
+}
+
+// rampColor sets c to the height style's colour for z within range.
+function rampColor(z: number, [lo, hi]: [number, number], c: THREE.Color): THREE.Color {
   const span = hi > lo ? hi - lo : 1
+  const last = HEIGHT_RAMP.length - 1
+  const t = Math.min(last, Math.max(0, ((z - lo) / span) * last))
+  const k = Math.min(last - 1, Math.floor(t))
+  return c.lerpColors(HEIGHT_RAMP[k], HEIGHT_RAMP[k + 1], t - k)
+}
+
+function heightColors(pos: Float32Array, range: [number, number]): Float32Array {
   const out = new Float32Array(pos.length)
   const c = new THREE.Color()
-  const last = HEIGHT_RAMP.length - 1
   for (let i = 0; i < pos.length; i += 3) {
-    const t = ((pos[i + 2] - lo) / span) * last
-    const k = Math.min(last - 1, Math.floor(t))
-    c.lerpColors(HEIGHT_RAMP[k], HEIGHT_RAMP[k + 1], t - k)
+    rampColor(pos[i + 2], range, c)
     out[i] = c.r
     out[i + 1] = c.g
     out[i + 2] = c.b
@@ -153,16 +166,32 @@ interface Layers {
   ceiling: THREE.Mesh
 }
 
+// InstancedLayers is the instanced objects' parts by facing: one
+// InstancedMesh per model per layer. Each mesh's userData.z holds its
+// instances' heights, for the height style's colours.
+interface InstancedLayers {
+  floor: THREE.InstancedMesh[]
+  wall: THREE.InstancedMesh[]
+  ceiling: THREE.InstancedMesh[]
+}
+
 // ZoneLayers is the zone's own geometry and its placed objects (trees,
 // buildings, furniture), each split into layers. All six meshes share one
 // set of vertex attributes; each has a draw group per zone material, so
-// materials can be swapped without rebuilding them.
+// materials can be swapped without rebuilding them. Objects placed many
+// times are drawn instanced (instanced), with the same groups.
 interface ZoneLayers {
   zone: string
   // data keeps only the materials: the rest is in the meshes.
   data: Pick<ZoneMesh3D, 'materials'>
   own: Layers
   objects: Layers
+  instanced: InstancedLayers
+  // heights is the zone's z range, for the height style's ramp.
+  heights: [number, number]
+  // floorModels are the instanced models' floor faces, for instFloors.
+  floorModels: InstancedFloorModel[]
+  instFloors: InstanceFloorGrid | null
   // group holds all six meshes.
   group: THREE.Group
   // textures by file name (and whether masked), loaded the first time the
@@ -174,8 +203,8 @@ interface ZoneLayers {
   faded: THREE.Material[]
   // ceilings indexes the zone's own ceiling faces by where they sit on the
   // ground, to find what's over the followed marker; floors indexes every
-  // floor face, the objects' too, to stand models on. Built when first
-  // needed.
+  // floor face, the baked objects' too, to stand models on (instFloors
+  // does the instanced ones). Built when first needed.
   ceilings: FaceGrid | null
   floors: FaceGrid | null
 }
@@ -403,6 +432,8 @@ export default function ZoneMap3D({
           s.layers.materials.forEach((m) => m.dispose())
           s.layers.textures.forEach((t) => t.dispose())
           for (const m of layerMeshes(s.layers)) m.geometry.dispose()
+          // Instance matrix and colour buffers aren't the geometry's.
+          for (const m of instancedMeshes(s.layers)) m.dispose()
           sc.remove(s.layers.group)
           s.layers = null
         }
@@ -1012,39 +1043,21 @@ function ViewOptions({ prefs, onChange, zRange, slice, onSlice }: {
   )
 }
 
-// buildLayers turns the zone mesh into floor, wall and ceiling meshes, for
-// the zone's own geometry and for its objects. World y is map y negated
-// (see the header comment).
-//
-// A big zone has millions of vertices, so the six meshes share every vertex
-// attribute, normals included, and nothing keeps the fetched buffer alive:
-// data's arrays are views into it.
-function buildLayers(zone: string, data: ZoneMesh3D): ZoneLayers {
-  const pos = new Float32Array(data.positions)
-  for (let i = 1; i < pos.length; i += 3) pos[i] = -pos[i]
-  const position = new THREE.BufferAttribute(pos, 3)
-  const uv = new THREE.BufferAttribute(new Float32Array(data.uvs), 2)
-  const color = new THREE.BufferAttribute(heightColors(pos), 3)
+type Part = { idx: Uint32Array; n: number; groups: { start: number; count: number; material: number }[] }
 
-  // Normals once, over every triangle. A vertex shared by a floor and a
-  // wall triangle gets their average, which a map can't tell apart.
-  const whole = new THREE.BufferGeometry()
-  whole.setAttribute('position', position)
-  whole.setIndex(new THREE.BufferAttribute(data.indices, 1))
-  whole.computeVertexNormals()
-  const normal = whole.getAttribute('normal') as THREE.BufferAttribute
-  whole.deleteAttribute('position')
-  whole.setIndex(null)
-
-  // Split each material's triangles three ways by facing, keeping a draw
-  // group per material in each layer: parts 0-2 are the zone's floors,
-  // walls and ceilings, 3-5 its objects'. The first pass picks each
-  // triangle's part and counts them, so the second fills sized arrays.
-  const ix = data.indices
+// splitByFacing splits each group's triangles three ways by facing,
+// keeping a draw group per material in each part: floors, walls and
+// ceilings, offset by base(material) (the zone uses 3 for objects). The
+// first pass picks each triangle's part and counts them, so the second
+// fills sized arrays. pos is in world space.
+function splitByFacing(
+  pos: Float32Array, ix: Uint32Array, groups: ZoneMesh3D['groups'], parts: number,
+  base: (material: number) => number,
+): Part[] {
   const partOf = new Uint8Array(ix.length / 3)
-  const counts = [0, 0, 0, 0, 0, 0]
-  for (const g of data.groups) {
-    const base = data.materials[g.material].object ? 3 : 0
+  const counts = new Array<number>(parts).fill(0)
+  for (const g of groups) {
+    const b0 = base(g.material)
     for (let i = g.start; i < g.start + g.count; i += 3) {
       const a = ix[i] * 3
       const b = ix[i + 1] * 3
@@ -1056,44 +1069,101 @@ function buildLayers(zone: string, data: ZoneMesh3D): ZoneLayers {
       const nz = ux * vy - uy * vx
       const len = Math.hypot(nx, ny, nz) || 1
       const up = nz / len
-      const k = base + (up >= FLAT ? 0 : up <= -FLAT ? 2 : 1)
+      const k = b0 + (up >= FLAT ? 0 : up <= -FLAT ? 2 : 1)
       partOf[i / 3] = k
       counts[k] += 3
     }
   }
-  type Part = { idx: Uint32Array; n: number; groups: { start: number; count: number; material: number }[] }
-  const parts: Part[] = counts.map((c) => ({ idx: new Uint32Array(c), n: 0, groups: [] }))
-  for (const g of data.groups) {
-    const starts = parts.map((p) => p.n)
+  const out: Part[] = counts.map((c) => ({ idx: new Uint32Array(c), n: 0, groups: [] }))
+  for (const g of groups) {
+    const starts = out.map((p) => p.n)
     for (let i = g.start; i < g.start + g.count; i += 3) {
-      const p = parts[partOf[i / 3]]
+      const p = out[partOf[i / 3]]
       p.idx[p.n] = ix[i]
       p.idx[p.n + 1] = ix[i + 1]
       p.idx[p.n + 2] = ix[i + 2]
       p.n += 3
     }
-    parts.forEach((p, k) => {
+    out.forEach((p, k) => {
       const n = p.n - starts[k]
       if (n > 0) p.groups.push({ start: starts[k], count: n, material: g.material })
     })
   }
-  const meshes = parts.map((p) => {
-    const geo = new THREE.BufferGeometry()
-    geo.setAttribute('position', position)
-    geo.setAttribute('normal', normal)
-    geo.setAttribute('uv', uv)
-    geo.setAttribute('color', color)
-    geo.setIndex(new THREE.BufferAttribute(p.idx, 1))
-    for (const g of p.groups) geo.addGroup(g.start, g.count, g.material)
-    return new THREE.Mesh(geo, [])
-  })
+  return out
+}
+
+// sharedNormals computes vertex normals once over every triangle, for
+// geometries that split one vertex set. A vertex shared by a floor and a
+// wall triangle gets their average, which a map can't tell apart.
+function sharedNormals(position: THREE.BufferAttribute, ix: Uint32Array): THREE.BufferAttribute {
+  const whole = new THREE.BufferGeometry()
+  whole.setAttribute('position', position)
+  whole.setIndex(new THREE.BufferAttribute(ix, 1))
+  whole.computeVertexNormals()
+  const normal = whole.getAttribute('normal') as THREE.BufferAttribute
+  whole.deleteAttribute('position')
+  whole.setIndex(null)
+  return normal
+}
+
+function partGeometry(
+  p: Part, attrs: { position: THREE.BufferAttribute; normal: THREE.BufferAttribute; uv: THREE.BufferAttribute; color: THREE.BufferAttribute },
+): THREE.BufferGeometry {
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', attrs.position)
+  geo.setAttribute('normal', attrs.normal)
+  geo.setAttribute('uv', attrs.uv)
+  geo.setAttribute('color', attrs.color)
+  geo.setIndex(new THREE.BufferAttribute(p.idx, 1))
+  for (const g of p.groups) geo.addGroup(g.start, g.count, g.material)
+  return geo
+}
+
+// buildLayers turns the zone mesh into floor, wall and ceiling meshes, for
+// the zone's own geometry and for its objects. World y is map y negated
+// (see the header comment).
+//
+// A big zone has millions of vertices, so the six meshes share every vertex
+// attribute, normals included, and nothing keeps the fetched buffer alive:
+// data's arrays are views into it.
+function buildLayers(zone: string, data: ZoneMesh3D): ZoneLayers {
+  const pos = new Float32Array(data.positions)
+  for (let i = 1; i < pos.length; i += 3) pos[i] = -pos[i]
+  const heights = heightRange(pos)
+  const position = new THREE.BufferAttribute(pos, 3)
+  const attrs = {
+    position,
+    normal: sharedNormals(position, data.indices),
+    uv: new THREE.BufferAttribute(new Float32Array(data.uvs), 2),
+    color: new THREE.BufferAttribute(heightColors(pos, heights), 3),
+  }
+  // Parts 0-2 are the zone's floors, walls and ceilings, 3-5 its baked
+  // objects'.
+  const parts = splitByFacing(pos, data.indices, data.groups, 6, (m) => (data.materials[m].object ? 3 : 0))
+  const meshes = parts.map((p) => new THREE.Mesh(partGeometry(p, attrs), []))
   const group = new THREE.Group()
   group.add(...meshes)
+
+  const instanced: InstancedLayers = { floor: [], wall: [], ceiling: [] }
+  const floorModels: InstancedFloorModel[] = []
+  for (const md of data.models) {
+    const built = buildInstanced(md)
+    built.meshes.forEach((m, k) => {
+      if (!m) return
+      instanced[(['floor', 'wall', 'ceiling'] as const)[k]].push(m)
+      group.add(m)
+    })
+    floorModels.push(built.floor)
+  }
   return {
     zone,
     data: { materials: data.materials },
     own: { floor: meshes[0], wall: meshes[1], ceiling: meshes[2] },
     objects: { floor: meshes[3], wall: meshes[4], ceiling: meshes[5] },
+    instanced,
+    heights,
+    floorModels,
+    instFloors: null,
     group,
     textures: new Map(),
     materials: [],
@@ -1101,6 +1171,56 @@ function buildLayers(zone: string, data: ZoneMesh3D): ZoneLayers {
     ceilings: null,
     floors: null,
   }
+}
+
+// buildInstanced makes one placed model's floor, wall and ceiling
+// InstancedMeshes (null for a part it has none of), and its floor faces
+// for standing models on. Instances are untilted, so a face's facing is
+// the same in every placement and the split is done once.
+function buildInstanced(md: ZoneModel3D): {
+  meshes: (THREE.InstancedMesh | null)[]
+  floor: InstancedFloorModel
+} {
+  const pos = new Float32Array(md.positions)
+  for (let i = 1; i < pos.length; i += 3) pos[i] = -pos[i]
+  const position = new THREE.BufferAttribute(pos, 3)
+  const attrs = {
+    position,
+    normal: sharedNormals(position, md.indices),
+    uv: new THREE.BufferAttribute(new Float32Array(md.uvs), 2),
+    // White, so instanceColor alone gives the height style its colour.
+    color: new THREE.BufferAttribute(new Float32Array(pos.length).fill(1), 3),
+  }
+  const parts = splitByFacing(pos, md.indices, md.groups, 3, () => 0)
+  // Placements in world space: flip y on both sides of the map-space
+  // matrix, as the model's vertices are flipped.
+  const n = md.instances.length / 12
+  const mats = new Float32Array(n * 12)
+  const zs = new Float32Array(n)
+  const [lo, hi] = heightRange(pos)
+  const mid = (lo + hi) / 2
+  const m4 = new THREE.Matrix4()
+  for (let j = 0; j < n; j++) {
+    const t = md.instances.subarray(j * 12, j * 12 + 12)
+    const w = [t[0], -t[1], t[2], t[3], -t[4], t[5], -t[6], -t[7], t[8], -t[9], t[10], t[11]]
+    mats.set(w, j * 12)
+    // The model's middle height, placed: what its one colour is taken at.
+    zs[j] = w[10] * mid + w[11]
+  }
+  const meshes = parts.map((p) => {
+    if (p.n === 0) return null
+    const im = new THREE.InstancedMesh(partGeometry(p, attrs), [], n)
+    for (let j = 0; j < n; j++) {
+      const w = mats.subarray(j * 12, j * 12 + 12)
+      m4.set(w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7], w[8], w[9], w[10], w[11], 0, 0, 0, 1)
+      im.setMatrixAt(j, m4)
+    }
+    im.instanceMatrix.needsUpdate = true
+    im.computeBoundingSphere()
+    im.userData.z = zs
+    return im
+  })
+  return { meshes, floor: { pos, tris: parts[0].idx, mats } }
 }
 
 function cellKey(cx: number, cy: number): number {
@@ -1172,9 +1292,14 @@ const FLOOR_BELOW = 12
 // point (x, y) near height z, or null when there's none close.
 function floorUnder(L: ZoneLayers, x: number, y: number, z: number): number | null {
   let best = -Infinity
-  facesAt(floorGrid(L), x, y, (hz) => {
+  const visit = (hz: number): void => {
     if (hz <= z + FLOOR_ABOVE && hz >= z - FLOOR_BELOW && hz > best) best = hz
-  })
+  }
+  facesAt(floorGrid(L), x, y, visit)
+  if (L.floorModels.length) {
+    L.instFloors ??= buildInstanceFloorGrid(L.floorModels, CEIL_CELL)
+    instanceFloorsAt(L.instFloors, x, y, visit)
+  }
   return best === -Infinity ? null : best
 }
 
@@ -1202,7 +1327,30 @@ function facesAt(grid: FaceGrid, x: number, y: number, visit: (z: number) => voi
 }
 
 function layerMeshes(L: ZoneLayers): THREE.Mesh[] {
-  return [L.own.floor, L.own.wall, L.own.ceiling, L.objects.floor, L.objects.wall, L.objects.ceiling]
+  return [
+    L.own.floor, L.own.wall, L.own.ceiling, L.objects.floor, L.objects.wall, L.objects.ceiling,
+    ...instancedMeshes(L),
+  ]
+}
+
+function instancedMeshes(L: ZoneLayers): THREE.InstancedMesh[] {
+  return [...L.instanced.floor, ...L.instanced.wall, ...L.instanced.ceiling]
+}
+
+// colorInstances gives each instance its height colour in the height
+// style, and white otherwise: instanceColor multiplies the material's
+// colour and texture in every style, not just with vertex colours on.
+function colorInstances(L: ZoneLayers, height: boolean): void {
+  const c = new THREE.Color()
+  for (const im of instancedMeshes(L)) {
+    const zs = im.userData.z as Float32Array
+    for (let j = 0; j < im.count; j++) {
+      if (height) rampColor(zs[j], L.heights, c)
+      else c.setRGB(1, 1, 1)
+      im.setColorAt(j, c)
+    }
+    if (im.instanceColor) im.instanceColor.needsUpdate = true
+  }
 }
 
 // texture returns a zone material's texture, starting its load the first
@@ -1324,6 +1472,12 @@ function buildMaterials(s: Scene3D, prefs: Map3DPrefs): void {
     layers.wall.renderOrder = 1
     layers.ceiling.renderOrder = 1
   }
+  for (const m of L.instanced.floor) m.material = solid
+  for (const m of [...L.instanced.wall, ...L.instanced.ceiling]) {
+    m.material = faded
+    m.renderOrder = 1
+  }
+  colorInstances(L, prefs.style === 'height')
 }
 
 // adjustLook applies wall opacity and what's shown to the materials and
@@ -1345,6 +1499,8 @@ function adjustLook(L: ZoneLayers, prefs: Map3DPrefs): void {
   L.objects.floor.visible = prefs.showObjects
   L.objects.wall.visible = prefs.showObjects
   L.objects.ceiling.visible = prefs.showObjects && !prefs.hideCeilings
+  for (const m of [...L.instanced.floor, ...L.instanced.wall]) m.visible = prefs.showObjects
+  for (const m of L.instanced.ceiling) m.visible = prefs.showObjects && !prefs.hideCeilings
 }
 
 // lookDown puts the camera straight above what it orbits, as far away as
