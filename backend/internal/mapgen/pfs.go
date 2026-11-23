@@ -253,7 +253,7 @@ type LazyArchive struct {
 // OpenArchiveLazy opens a .s3d file and reads its directory without
 // inflating any entry. The caller must Close it.
 func OpenArchiveLazy(path string) (*LazyArchive, error) {
-	f, err := os.Open(path)
+	f, err := openShared(path)
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}

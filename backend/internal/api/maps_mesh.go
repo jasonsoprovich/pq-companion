@@ -153,55 +153,81 @@ const textureSize = 256
 // include spaces, apostrophes and ampersands ("stained glass.bmp").
 var textureNameRe = regexp.MustCompile(`^[a-z0-9_&' \-]{1,64}\.(bmp|dds)$`)
 
-// textureCache holds one zone's raw client textures and the PNGs made from
-// them so far. The 3D view asks for a zone's textures together, so only the
-// latest zone is kept; the mutex also makes those parallel requests share
-// one read of the archive. shared holds the shared model archives'
-// textures (mapgen.LoadSharedTextures), read the first time a zone asks
-// for one its own archives lack, and kept while the EQ folder stays the
-// same.
+// textureCache serves one zone's client textures as PNGs. The 3D view asks
+// for a zone's textures together, so only the latest zone's archives are
+// kept open; textures are read from them one at a time, not held in
+// memory. shared holds the shared model archives, opened the first time a
+// zone asks for a texture its own archives lack. Everything is closed and
+// dropped after textureIdle with no request.
+//
+// The archives are only read while holding mu, which is what makes closing
+// them from the idle timer safe.
 type textureCache struct {
 	mu        sync.Mutex
 	key       string
-	raw       map[string][]byte
-	png       map[string][]byte
+	zone      []*mapgen.LazyArchive
 	sharedKey string
-	shared    map[string][]byte
+	shared    []*mapgen.LazyArchive
+	pngs      *meshCache
+	last      time.Time
+	timer     *time.Timer
+	// idle overrides textureIdle (tests).
+	idle time.Duration
 }
 
-// get returns the PNG for one texture, reading the zone archive if it isn't
-// the cached zone. ok is false when the archive has no such texture.
+// textureIdle is how long the texture cache waits after its last request
+// before closing the archives and dropping the PNGs.
+const textureIdle = 2 * time.Minute
+
+// texturePNGBytes bounds the PNGs kept per zone. A big zone's textures at
+// textureSize come to around 20-40 MB.
+const texturePNGBytes = 48 << 20
+
+// get returns the PNG for one texture, opening the zone's archives if it
+// isn't the cached zone. ok is false when no archive has the texture.
 func (c *textureCache) get(eqPath, zone, name string, masked bool) (buf []byte, ok bool, err error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	key := eqPath + "|" + zone
-	if c.key != key {
-		raw, err := mapgen.LoadTextures(eqPath, zone)
-		if err != nil {
-			return nil, false, err
-		}
-		c.key, c.raw, c.png = key, raw, map[string][]byte{}
-	}
 	pk := name
 	if masked {
 		pk += "|mask"
 	}
-	if b, ok := c.png[pk]; ok {
+	c.mu.Lock()
+	c.touchLocked()
+	key := eqPath + "|" + zone
+	if c.key != key {
+		mapgen.CloseArchives(c.zone)
+		c.key, c.zone = "", nil
+		as, err := mapgen.OpenTextureArchives(eqPath, zone)
+		if err != nil {
+			c.mu.Unlock()
+			return nil, false, err
+		}
+		c.key, c.zone = key, as
+		c.pngs = &meshCache{size: 1 << 20, maxBytes: texturePNGBytes}
+	}
+	pngs := c.pngs
+	if b, ok := pngs.get(pk); ok {
+		c.mu.Unlock()
 		return b, true, nil
 	}
-	raw, ok := c.raw[name]
-	if !ok {
+	raw, ok, err := mapgen.FindTexture(c.zone, name)
+	if err == nil && !ok {
 		if c.sharedKey != eqPath {
-			shared, err := mapgen.LoadSharedTextures(eqPath)
-			if err != nil {
-				return nil, false, err
+			mapgen.CloseArchives(c.shared)
+			c.sharedKey, c.shared = "", nil
+			as, serr := mapgen.OpenSharedTextureArchives(eqPath)
+			if serr != nil {
+				c.mu.Unlock()
+				return nil, false, serr
 			}
-			c.sharedKey, c.shared = eqPath, shared
+			c.sharedKey, c.shared = eqPath, as
 		}
-		if raw, ok = c.shared[name]; !ok {
-			return nil, false, nil
-		}
+		raw, ok, err = mapgen.FindTexture(c.shared, name)
 	}
+	c.mu.Unlock()
+	if err != nil || !ok {
+		return nil, ok, err
+	}
+	// Decoding needs no archive, so parallel requests decode in parallel.
 	img, err := mapgen.DecodeTexture(raw, textureSize, masked)
 	if err != nil {
 		return nil, true, err
@@ -210,8 +236,51 @@ func (c *textureCache) get(eqPath, zone, name string, masked bool) (buf []byte, 
 	if err := png.Encode(&out, img); err != nil {
 		return nil, true, err
 	}
-	c.png[pk] = out.Bytes()
+	pngs.put(pk, out.Bytes())
 	return out.Bytes(), true, nil
+}
+
+func (c *textureCache) idleFor() time.Duration {
+	if c.idle > 0 {
+		return c.idle
+	}
+	return textureIdle
+}
+
+// touchLocked records a request and (re)arms the idle timer. Caller holds
+// mu.
+func (c *textureCache) touchLocked() {
+	c.last = time.Now()
+	if c.timer == nil {
+		c.timer = time.AfterFunc(c.idleFor(), c.expire)
+	} else {
+		c.timer.Reset(c.idleFor())
+	}
+}
+
+// expire is the idle timer's callback. A callback that was already waiting
+// on mu when a request re-armed the timer finds the request recent and
+// does nothing; the re-armed timer fires again later.
+func (c *textureCache) expire() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.timer == nil || time.Since(c.last) < c.idleFor() {
+		return
+	}
+	c.releaseLocked()
+}
+
+// releaseLocked closes the archives and drops everything, so the next
+// request reopens. Caller holds mu.
+func (c *textureCache) releaseLocked() {
+	mapgen.CloseArchives(c.zone)
+	mapgen.CloseArchives(c.shared)
+	c.key, c.zone, c.sharedKey, c.shared, c.pngs = "", nil, "", nil, nil
+	if c.timer != nil {
+		c.timer.Stop()
+		c.timer = nil
+	}
+	slog.Debug("maps: 3D textures released")
 }
 
 // texture3D handles GET /api/maps/zone/{zone}/texture/{name}: one of the

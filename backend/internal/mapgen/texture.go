@@ -61,6 +61,56 @@ func LoadSharedTextures(clientDir string) (map[string][]byte, error) {
 	return out, nil
 }
 
+// OpenTextureArchives opens the zone's own archive and its _obj archives
+// for reading textures one at a time (see LoadTextures for the order a
+// name is looked up in). Only the zone's own archive is required. The
+// caller closes them.
+func OpenTextureArchives(clientDir, shortName string) ([]*LazyArchive, error) {
+	return openLazyArchives(clientDir, append([]string{shortName + ".s3d"}, objArchives(shortName)...), true)
+}
+
+// OpenSharedTextureArchives opens the shared model archives (see
+// sharedArchives) the client has. The caller closes them.
+func OpenSharedTextureArchives(clientDir string) ([]*LazyArchive, error) {
+	return openLazyArchives(clientDir, sharedArchives, false)
+}
+
+// openLazyArchives opens names in order, skipping missing ones except the
+// first when firstRequired. On an error it closes those already opened.
+func openLazyArchives(clientDir string, names []string, firstRequired bool) ([]*LazyArchive, error) {
+	out := make([]*LazyArchive, 0, len(names))
+	for i, name := range names {
+		a, err := OpenArchiveLazy(filepath.Join(clientDir, name))
+		if errors.Is(err, fs.ErrNotExist) && !(firstRequired && i == 0) {
+			continue
+		}
+		if err != nil {
+			CloseArchives(out)
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, nil
+}
+
+// CloseArchives closes each archive.
+func CloseArchives(as []*LazyArchive) {
+	for _, a := range as {
+		a.Close() //nolint:errcheck
+	}
+}
+
+// FindTexture returns the named texture from the first archive that has
+// it. ok is false when none does.
+func FindTexture(as []*LazyArchive, name string) (b []byte, ok bool, err error) {
+	for _, a := range as {
+		if b, ok, err = a.Get(name); ok || err != nil {
+			return b, ok, err
+		}
+	}
+	return nil, false, nil
+}
+
 func isTexture(name string) bool {
 	l := strings.ToLower(name)
 	return strings.HasSuffix(l, ".bmp") || strings.HasSuffix(l, ".dds")
