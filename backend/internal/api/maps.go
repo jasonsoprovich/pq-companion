@@ -29,6 +29,11 @@ type mapsHandler struct {
 	quarm *db.DB
 	// meshes caches 3D zone meshes read from the client (see mesh3D).
 	meshes meshCache
+	// meshBuilds makes concurrent requests for one uncached zone share a
+	// build.
+	meshBuilds flight
+	// loadMesh replaces the mesh build (tests).
+	loadMesh func(eqPath, zone string) ([]byte, error)
 	// textures holds the last 3D zone's client textures (see texture3D).
 	textures textureCache
 }

@@ -28,6 +28,10 @@ var zoneShortRe = regexp.MustCompile(`^[a-z0-9_]{1,32}$`)
 // parses its whole s3d, so flipping between 2D and 3D shouldn't redo it.
 const meshCacheSize = 3
 
+// meshCacheBytes bounds a zero-value meshCache's total size: a big zone's
+// mesh is 40-50 MB, so this keeps it plus a small one, not three big ones.
+const meshCacheBytes = 64 << 20
+
 type meshCache struct {
 	mu    sync.Mutex
 	order []string // least recently used first
@@ -35,7 +39,7 @@ type meshCache struct {
 	bytes int
 	// size is how many entries are kept; 0 means meshCacheSize. maxBytes,
 	// when set, also bounds their total size (the newest entry is always
-	// kept).
+	// kept); with both 0 it's meshCacheBytes.
 	size     int
 	maxBytes int
 }
@@ -74,15 +78,56 @@ func (c *meshCache) put(key string, b []byte) {
 	}
 	c.data[key] = b
 	c.bytes += len(b)
-	size := c.size
+	size, maxBytes := c.size, c.maxBytes
 	if size <= 0 {
 		size = meshCacheSize
+		if maxBytes <= 0 {
+			maxBytes = meshCacheBytes
+		}
 	}
-	for len(c.order) > 1 && (len(c.order) > size || (c.maxBytes > 0 && c.bytes > c.maxBytes)) {
+	for len(c.order) > 1 && (len(c.order) > size || (maxBytes > 0 && c.bytes > maxBytes)) {
 		c.bytes -= len(c.data[c.order[0]])
 		delete(c.data, c.order[0])
 		c.order = c.order[1:]
 	}
+}
+
+// flight runs one call per key at a time: callers asking for a key that's
+// already being built wait for that build and share its result. The main
+// map and its popout open the same zone together, and two builds of a big
+// zone would each allocate hundreds of megabytes.
+type flight struct {
+	mu    sync.Mutex
+	calls map[string]*flightCall
+}
+
+type flightCall struct {
+	done chan struct{}
+	buf  []byte
+	err  error
+}
+
+func (f *flight) do(key string, fn func() ([]byte, error)) ([]byte, error) {
+	f.mu.Lock()
+	if c, ok := f.calls[key]; ok {
+		f.mu.Unlock()
+		<-c.done
+		return c.buf, c.err
+	}
+	if f.calls == nil {
+		f.calls = map[string]*flightCall{}
+	}
+	c := &flightCall{done: make(chan struct{})}
+	f.calls[key] = c
+	f.mu.Unlock()
+	defer func() {
+		f.mu.Lock()
+		delete(f.calls, key)
+		f.mu.Unlock()
+		close(c.done)
+	}()
+	c.buf, c.err = fn()
+	return c.buf, c.err
 }
 
 // mesh3D handles GET /api/maps/zone/{zone}/mesh: the zone's visible geometry
@@ -102,8 +147,14 @@ func (h *mapsHandler) mesh3D(w http.ResponseWriter, r *http.Request) {
 	key := eqPath + "|" + short
 	buf, ok := h.meshes.get(key)
 	if !ok {
-		start := time.Now()
-		m, err := mapgen.LoadMesh3D(eqPath, short, h.zoneDoors(short))
+		var err error
+		buf, err = h.meshBuilds.do(key, func() ([]byte, error) {
+			// A build that finished while this one waited for the lock.
+			if b, ok := h.meshes.get(key); ok {
+				return b, nil
+			}
+			return h.buildMesh(eqPath, short, key)
+		})
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
 				writeError(w, http.StatusNotFound, "no "+short+".s3d in the EverQuest folder")
@@ -112,14 +163,27 @@ func (h *mapsHandler) mesh3D(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		buf = m.Encode()
-		h.meshes.put(key, buf)
-		slog.Info("maps: 3D mesh loaded", "zone", short, "triangles", len(m.Idx)/3,
-			"materials", len(m.Materials), "bytes", len(buf), "took", time.Since(start))
 	}
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Write(buf) //nolint:errcheck
+}
+
+// buildMesh loads, encodes and caches one zone's mesh.
+func (h *mapsHandler) buildMesh(eqPath, short, key string) ([]byte, error) {
+	if h.loadMesh != nil {
+		return h.loadMesh(eqPath, short)
+	}
+	start := time.Now()
+	m, err := mapgen.LoadMesh3D(eqPath, short, h.zoneDoors(short))
+	if err != nil {
+		return nil, err
+	}
+	buf := m.Encode()
+	h.meshes.put(key, buf)
+	slog.Info("maps: 3D mesh loaded", "zone", short, "triangles", len(m.Idx)/3,
+		"materials", len(m.Materials), "bytes", len(buf), "took", time.Since(start))
+	return buf, nil
 }
 
 // zoneDoors returns the zone's doors for the 3D view. Doors are extra
