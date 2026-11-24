@@ -16,7 +16,6 @@ import { GanttChart, List } from 'lucide-react'
 import type { ActiveTimer } from '../../types/timer'
 import type { TimerAppearance } from '../../hooks/useTimerAppearance'
 import { parseLabel, positionLetter } from '../../lib/chChainLabel'
-import { chainPositionColor } from '../../lib/chChainPositionColor'
 import type { ChainStyle } from '../../lib/chChainStyle'
 
 // Seconds of cast the track spans when no timer says otherwise. Complete
@@ -277,9 +276,6 @@ export default function CHChainLanes({
                       justifyContent: 'center',
                       padding: '0 3px',
                       backgroundColor: `rgba(${rgb},${blockAlpha})`,
-                      // The chain position's badge colour, so "the 3 spot"
-                      // reads the same as in the list view.
-                      borderLeft: `3px solid ${chainPositionColor(position)}`,
                       borderRadius: 3,
                       color: '#fff',
                       fontSize: appearance.nameFontSize,
