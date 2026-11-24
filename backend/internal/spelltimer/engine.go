@@ -751,6 +751,9 @@ type Engine struct {
 	// name lookups.
 	pipeSelfBuffIDs []int
 	pipeSpellIDs    map[string]int
+	// landInfo caches each spell's self land text and icon for renaming
+	// misnamed self buffs from the window (see pipe_rename.go).
+	landInfo map[int]spellLandInfo
 	// pipeSelfBuffChar is whose window pipeSelfBuffIDs is, and
 	// pipeSelfBuffStale marks it as the last one seen before a disconnect.
 	pipeSelfBuffChar  string

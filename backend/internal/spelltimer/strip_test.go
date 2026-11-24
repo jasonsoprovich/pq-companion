@@ -161,3 +161,18 @@ func TestDebuffStripped(t *testing.T) {
 		}
 	})
 }
+
+// A rune is used up by damage, not stripped.
+func TestRuneUsedUpIsNotAStrip(t *testing.T) {
+	e, _ := levelEngine(t, 13, 65)
+	got := captureStrips(e)
+	now := time.Now()
+	seedBuffRow(e, "Arcane Rune", 3199, "Tester", now.Add(-time.Minute), 30*time.Minute)
+	clarity := PipeBuff{Name: "Clarity", Ticks: 50}
+	e.setPipeBuffSlotsAt("Tester", []PipeBuff{{Name: "Arcane Rune", Ticks: 290}, clarity}, now)
+	e.setPipeBuffSlotsAt("Tester", []PipeBuff{clarity}, now.Add(100*time.Millisecond))
+	e.setPipeBuffSlotsAt("Tester", []PipeBuff{clarity}, now.Add(pipeFadeConfirm+200*time.Millisecond))
+	if len(*got) != 0 {
+		t.Fatalf("rune reported as stripped: %+v", *got)
+	}
+}

@@ -79,9 +79,11 @@ func (e *Engine) setPipeBuffSlotsAt(character string, buffs []PipeBuff, now time
 	active := e.activePlayerName()
 	applies := active != "You" && strings.EqualFold(character, active)
 	var selfIDs []int
+	var lookup pipeRenameLookup
 	if applies && buffs != nil {
 		selfIDs = e.pipeBuffSpellIDs(buffs)
 		e.addCombinedBuffNames(buffs, set, ticks)
+		lookup = e.pipeRenameLookupFor(active, buffs)
 	}
 
 	e.mu.Lock()
@@ -121,9 +123,11 @@ func (e *Engine) setPipeBuffSlotsAt(character string, buffs []PipeBuff, now time
 	}
 	var strips []StripEvent
 	if applies {
+		renames := e.renameFromPipeLocked(active, lookup)
 		var reconciled bool
 		reconciled, strips = e.reconcilePipeBuffsLocked(active, set, ticks, arrived, now)
-		changed = changed || reconciled
+		changed = changed || reconciled || len(renames) > 0
+		e.syncRenamedSiblingsLocked(renames)
 	}
 	missingFromPipe, missingFromTimers := e.pipeDivergenceLocked(active, set)
 	pipeKey := divergenceKey(missingFromPipe)
@@ -175,14 +179,14 @@ func (e *Engine) pipeBuffSpellIDs(buffs []PipeBuff) []int {
 // caching the lookup. e.mu must not be held.
 func (e *Engine) pipeSpellID(name string) int {
 	name = strings.TrimSpace(name)
-	if name == "" || e.db == nil {
+	if name == "" {
 		return 0
 	}
 	key := strings.ToLower(name)
 	e.mu.Lock()
 	id, cached := e.pipeSpellIDs[key]
 	e.mu.Unlock()
-	if cached {
+	if cached || e.db == nil {
 		return id
 	}
 	if sp, err := e.db.GetSpellByExactName(name); err == nil && sp != nil {
@@ -303,7 +307,7 @@ func (e *Engine) reconcilePipeBuffsLocked(active string, set map[string]bool, ti
 		since, ok := e.pipeMissingSince[key]
 		if !ok {
 			e.pipeMissingSince[key] = now
-			if !arrived && t.ExpiresAt.Sub(now) >= stripMinRemaining {
+			if !arrived && t.ExpiresAt.Sub(now) >= stripMinRemaining && !e.landInfo[t.SpellID].rune {
 				e.pipeStripCandidate[key] = true
 			}
 			// How far the predicted fade was from the buff actually leaving
