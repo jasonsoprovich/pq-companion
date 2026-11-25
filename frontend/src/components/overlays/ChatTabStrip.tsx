@@ -176,7 +176,7 @@ export default function ChatTabStrip({
       fit.push(ai)
     }
     setVisibleIds(fit.map((i) => tabs[i].id))
-  }, [width, countsKey, active]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [width, countsKey, active, fontPx]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!menuOpen) return
