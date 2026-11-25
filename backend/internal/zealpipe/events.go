@@ -366,10 +366,10 @@ type Death struct {
 	KillerName string `json:"killer_name,omitempty"`
 }
 
-// ItemDisplay is the payload of the proposed Zeal item message, sent each time
-// an in-game item display window is filled (a chat link clicked, or an item
-// inspected from a slot). Its type number isn't settled — 7 on a build with
-// only that PR, 8 alongside the death PR — so it's recognised by shape with
+// ItemDisplay is the payload of the Zeal item message, sent each time an
+// in-game item display window is filled (a chat link clicked, or an item
+// inspected from a slot). Upstream it is type 8 (Zeal 1.5.0, #261); test
+// builds made before it merged used 7, so it's recognised by shape with
 // DecodeItemDisplay rather than by a MsgX constant.
 type ItemDisplay struct {
 	ItemID int    `json:"item_id"`
@@ -380,8 +380,8 @@ type ItemDisplay struct {
 // each time the server answers a consider of an NPC (never a player or a
 // corpse). Faction is the standing the server reported, with the wire swap
 // already undone by Zeal: 1 ally .. 5 indifferent .. 9 scowls, so higher is
-// worse. Like ItemDisplay its type number isn't settled (7 with only that PR,
-// 9 on the combined test build), so it's recognised by shape with
+// worse. It's proposed in Zeal PR #282 as type 10, after spell; test builds
+// used 7 (alone) or 9 (combined), so it's recognised by shape with
 // DecodeConsider.
 //
 // The value is the server's answer at that moment, not the raw standing: it
@@ -398,8 +398,8 @@ type Consider struct {
 // for every cast attempt (resists included) to the caster, the target and
 // clients near the target, then a second with Success set only to the caster
 // and the target, so a bystander only ever sees Success=false. Its type number
-// isn't settled (9 with only that PR, 10 on the combined test build), so it's
-// recognised by shape with DecodeSpellAction. Names are omitted when the
+// is 9 upstream (merged in Zeal #281, after 1.5.1); combined test builds used
+// 10, so it's recognised by shape with DecodeSpellAction. Names are omitted when the
 // client didn't know the spawn.
 type SpellAction struct {
 	SpellID    int    `json:"spell_id"`
@@ -567,7 +567,7 @@ func DecodeDeath(payload string) (Death, error) {
 
 // DecodeItemDisplay parses an item display payload. Like DecodeDeath, the
 // payload must look like an item — an object with item_id and name, and a
-// positive id — because the type number it arrives under is not fixed.
+// positive id — because older test builds sent it under another type number.
 func DecodeItemDisplay(payload string) (ItemDisplay, error) {
 	var it ItemDisplay
 	var keys map[string]json.RawMessage
@@ -591,7 +591,7 @@ func DecodeItemDisplay(payload string) (ItemDisplay, error) {
 
 // DecodeSpellAction parses a spell action payload. The payload must look like
 // one — an object with spell_id, source_id and target_id, and a positive spell
-// and target id — because the type number it arrives under is not fixed. No
+// and target id — because older test builds sent it under another type. No
 // other pipe message carries spell_id.
 func DecodeSpellAction(payload string) (SpellAction, error) {
 	var a SpellAction
@@ -618,8 +618,8 @@ func DecodeSpellAction(payload string) (SpellAction, error) {
 // other error means it is a consider whose values can't be used.
 var ErrNotConsider = errors.New("zealpipe: not a consider payload")
 
-// DecodeConsider parses a consider payload. The type number isn't fixed (7, or
-// 9 on the combined test build), and 7 is also the death message, so the
+// DecodeConsider parses a consider payload. Its type is 10 in Zeal PR #282 but
+// was 7 or 9 on test builds, and 7 is also the death message, so the
 // payload must look like a consider: an object with spawn_id, name and
 // faction, and none of killer_id (a death) or item_id (an item display).
 // Shape mismatches return ErrNotConsider. A consider with a non-positive
@@ -662,10 +662,10 @@ type Proposed struct {
 }
 
 // DecodeProposed recognises the proposed consider, item display and spell
-// action messages by payload shape, for any envelope type from MsgDeath up: a
-// consider is 7 on a Zeal build with only that PR and 9 on the combined test
-// build, an item display 7 or 8, a spell action 9 or 10, and any may be
-// renumbered on merge. A death payload never
+// action messages by payload shape, for any envelope type from MsgDeath up.
+// Upstream numbering is item 8, spell 9 and (PR #282) consider 10, but test
+// builds used consider 7 or 9, item 7 and spell 10, and those builds are
+// still in use. A death payload never
 // matches either shape, so ok=false hands it (and every other message) on to
 // the caller's type switch.
 //

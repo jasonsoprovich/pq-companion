@@ -74,9 +74,9 @@ func main() {
 	types := flag.Bool("types", false, "count envelopes per type; print one sample payload per type (diagnoses which message types a Zeal build actually emits — e.g. raid/type 5)")
 	deaths := flag.Bool("deaths", false, "print one line per death event (type 7, proposed Zeal PR) instead of target changes")
 	items := flag.Bool("items", false, "print one line per item display event (proposed Zeal PR; type 7 or 8) instead of target changes")
-	considers := flag.Bool("considers", false, "print one line per consider event (proposed Zeal PR; type 7 alone, 9 on the combined build) instead of target changes")
+	considers := flag.Bool("considers", false, "print one line per consider event (Zeal PR #282, type 10; 7 or 9 on test builds) instead of target changes")
 	roster := flag.Bool("roster", false, "print each raid/group member's appearance when it first appears or changes (proposed Zeal PR), and who is missing it")
-	spells := flag.Bool("spells", false, "print one line per spell action (proposed Zeal PR; type 9 alone, 10 on the combined build), with a per-second rate")
+	spells := flag.Bool("spells", false, "print one line per spell action (type 9, Zeal #281; 10 on combined test builds), with a per-second rate")
 	report := flag.Bool("report", false, "record everything while you play; on Ctrl+C write a test summary with the events behind it to a text file")
 	out := flag.String("out", "", "file for -report (default zealdump-report-<date>-<time>.txt in the current folder)")
 	pipeName := flag.String("pipe", "", "pipe to read (default: first one discovered)")
@@ -303,8 +303,8 @@ func runItems(ctx context.Context, conn io.Reader) {
 	fmt.Printf("\n%d item display events\n", n)
 }
 
-// runConsiders prints one line per consider event. Like item display, the
-// message type isn't settled, so any envelope from type 7 up whose payload is
+// runConsiders prints one line per consider event. Test builds sent it under
+// other type numbers than PR #282's 10, so any envelope from type 7 up whose payload is
 // shaped like a consider counts, and the type it arrived under is shown.
 func runConsiders(ctx context.Context, conn io.Reader) {
 	fmt.Println("waiting for consider events. Con an NPC (or click one with /leftclickcon on). Ctrl+C to stop.")

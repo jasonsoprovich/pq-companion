@@ -18,6 +18,12 @@ import (
 // key alone never counts as support: it survives downgrading Zeal. When a
 // pending PR ships in a release, set its MinVersion; if it's declined, delete
 // the entry (and the UI hints that mention it).
+//
+// Status 2026-11-25: spell actions (#281) and roster appearance (#283) are
+// merged upstream but not yet in a release (latest is 1.5.1); set their
+// MinVersion to the first release after 1.5.1. Consider (#282) is approved
+// pending merge. Target spawn location (#284) was declined for now; its entry
+// stays (it only shows once proven on the pipe) in case it's reopened.
 
 // CapID names one checklist entry.
 type CapID string
