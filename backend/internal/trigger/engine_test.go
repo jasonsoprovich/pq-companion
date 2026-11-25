@@ -1908,3 +1908,53 @@ func TestStore_TimerRepeatRoundTrip(t *testing.T) {
 		t.Fatal("update did not clear timer_repeat")
 	}
 }
+
+// A "Group Member Died" row installed before the NPC-victim excludes shipped
+// has only the bare pattern and fires on every mob killed. The shipped
+// DefaultUpdate must backfill the excludes so NPC deaths stop firing while
+// single-word (player) victims still do.
+func TestDefaultUpdate_GroupMemberDiedBackfillsNPCExcludes(t *testing.T) {
+	s, e := openTestEngine(t)
+	tr := &Trigger{
+		ID:        "gmd1",
+		Name:      "Group Member Died",
+		PackName:  "General Triggers",
+		Enabled:   true,
+		Pattern:   `\w+ has been slain by`,
+		Actions:   []Action{},
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := s.Insert(tr); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+
+	var updates []DefaultUpdate
+	for _, u := range DefaultUpdates() {
+		if u.TriggerName == "Group Member Died" {
+			updates = append(updates, u)
+		}
+	}
+	if len(updates) != 1 {
+		t.Fatalf("want 1 Group Member Died default update, got %d", len(updates))
+	}
+	if _, err := ApplyDefaultUpdates(s, updates); err != nil {
+		t.Fatalf("ApplyDefaultUpdates: %v", err)
+	}
+	e.Reload()
+
+	for _, line := range []string{
+		"a gnoll has been slain by Vortikai!",
+		"an ulthork has been slain by Soandso!",
+		"Trooper Coglee has been slain by Soandso!",
+		"Eye of Zomm has been slain by a gnoll!",
+	} {
+		e.Handle(time.Now(), line)
+	}
+	if n := len(e.GetHistory()); n != 0 {
+		t.Fatalf("NPC deaths fired %d times; want 0", n)
+	}
+	e.Handle(time.Now(), "Soandso has been slain by a gnoll guard!")
+	if n := len(e.GetHistory()); n != 1 {
+		t.Errorf("player death fired %d times; want 1", n)
+	}
+}
