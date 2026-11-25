@@ -89,6 +89,21 @@ export default function OverlaysHub(): React.ReactElement {
   const [selected, setSelected] = useState<HubSelection | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
   const panelParam = searchParams.get('panel')
+  const tabParam = searchParams.get('tab')
+
+  // ?tab=library (the Overlays tour) opens a hub tab.
+  useEffect(() => {
+    if (!tabParam) return
+    if ((HUB_TABS as readonly string[]).includes(tabParam)) setTab(tabParam as HubTab)
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete('tab')
+        return next
+      },
+      { replace: true },
+    )
+  }, [tabParam, setTab, setSearchParams])
 
   useEffect(() => {
     if (!panelParam) return
@@ -128,7 +143,7 @@ export default function OverlaysHub(): React.ReactElement {
             Overlays
           </span>
         </div>
-        <div className="flex shrink-0 items-stretch self-stretch">
+        <div data-tour="overlays-views" className="flex shrink-0 items-stretch self-stretch">
           {TAB_DEFS.map(({ id, label, icon: Icon }) => {
             const active = tab === id
             return (
@@ -151,7 +166,7 @@ export default function OverlaysHub(): React.ReactElement {
         <div className="min-w-0 flex-1 py-2">
           <LayoutChips />
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div data-tour="overlays-actions" className="flex shrink-0 items-center gap-2">
           <button
             onClick={openGlobal}
             className="flex shrink-0 items-center gap-1.5 rounded px-2 py-1 text-xs"

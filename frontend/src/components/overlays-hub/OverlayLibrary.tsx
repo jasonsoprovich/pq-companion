@@ -43,6 +43,7 @@ import { acceleratorParts, overlayAction } from '../../lib/hotkeys'
 import TimerGroupsModal from '../TimerGroupsModal'
 import { useConfigDraft, type DraftSaveState } from '../../hooks/useConfigDraft'
 import { useEscapeToClose } from '../../hooks/useEscapeToClose'
+import { useAutoTour } from '../guide/GuideProvider'
 import GlobalOverlaySettings, { AlertTextSettings } from './settings/GlobalOverlaySettings'
 import { IDLE_COLLAPSE_HINT, IdleCollapseSelect, OverlayWindowControls } from './settings/OverlayWindowSettings'
 import { SettingsSection } from './settings/SettingsSection'
@@ -454,6 +455,7 @@ export default function OverlayLibrary({
   const [chatEditing, setChatEditing] = useState<{ id: string; suggest?: { seq: number; mode: 'hide' | 'keep' } } | null>(null)
   const chatEditingWindow = chatWindows.windows.find((w) => w.def.id === chatEditing?.id)
   const setSelected = onSelect
+  useAutoTour('overlays')
 
   // Chat windows have no drawer: selecting one (a card click, or a deep
   // link from its popout's pencil or "lines like this") opens its editor,
@@ -955,8 +957,8 @@ export default function OverlayLibrary({
     <div className="relative flex h-full min-h-0">
       <div className="min-w-0 flex-1 overflow-y-auto p-4">
         <div className="flex flex-col gap-6">
-          {byCategory.map((cat) => (
-            <section key={cat.id}>
+          {byCategory.map((cat, ci) => (
+            <section key={cat.id} data-tour={ci === 0 ? 'overlays-library' : undefined}>
               <SectionHeading label={cat.label} />
               <div style={GRID_STYLE}>
                 {cat.entries.map((entry) => {
@@ -1020,7 +1022,7 @@ export default function OverlayLibrary({
             </section>
           ))}
 
-          <section>
+          <section data-tour="overlays-your-windows">
             <SectionHeading label="Your windows" />
             <div style={GRID_STYLE}>
               {groups.map((g, i) => {

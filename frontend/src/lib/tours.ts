@@ -104,6 +104,46 @@ export const TOURS: TourDef[] = [
     ],
   },
   {
+    id: 'overlays',
+    title: 'Overlays',
+    description: 'The overlay library, arranging windows, and making windows of your own.',
+    route: '/overlays?tab=library',
+    ready: 'overlays-library',
+    steps: [
+      {
+        anchor: 'overlays-library',
+        title: 'Every overlay, one card each',
+        body:
+          'Click a card for its settings. Pop out opens it over the game; ' +
+          'the switch puts it on the Dashboard tab instead.',
+      },
+      {
+        anchor: 'overlays-views',
+        title: 'Arrange and layouts',
+        body:
+          'Arrange shows your screens so you can drag windows into place. ' +
+          'Layouts (the chips beside it) save a whole setup to switch between.',
+      },
+      {
+        anchor: 'overlays-your-windows',
+        title: 'Make your own windows',
+        body:
+          'The dashed + tiles make windows of your own: a timer window for ' +
+          'named raid or boss timers, a custom overlay built from widgets and ' +
+          'your own log rules, or a chat window that filters chat into one ' +
+          'list or tabs. The new window gets a card here; click it to set it up.',
+      },
+      {
+        anchor: 'overlays-actions',
+        title: 'Settings for all of them',
+        body:
+          'Overlay settings covers every overlay at once (opacity, fade, ' +
+          'lock modes). The ⋯ menu runs Overlay Setup again, closes all ' +
+          'popouts or resets window positions.',
+      },
+    ],
+  },
+  {
     id: 'timers',
     title: 'Timer settings',
     description: 'Which spells get timers, when they show, and how they look.',
