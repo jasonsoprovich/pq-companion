@@ -8,12 +8,17 @@
  * it); one from a newer epoch, or with a seq gap, means we missed something,
  * so the snapshot is refetched. Lines a snapshot already had (a batch racing
  * the fetch) are skipped by seq. Refetches whenever the socket (re)opens.
+ *
+ * onAppend sees exactly the lines each accepted batch added (not snapshots,
+ * replacements or refetches), with the batch's replay flag: the chat tabs'
+ * unread counts are built from it.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useWebSocket } from './useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
 import { chatWindowAction, getChatWindows } from '../services/api'
 import type {
+  ChatLine,
   ChatLinesEvent,
   ChatWindow,
   ChatWindowAction,
@@ -30,12 +35,14 @@ export interface ChatWindowsHook {
   act: (id: string, body: ChatWindowAction) => Promise<void>
 }
 
+export type ChatAppendHandler = (id: string, lines: ChatLine[], replay: boolean) => void
+
 // applyBatch merges one window's appends, or returns null when the client
 // must refetch.
 function applyBatch(
   w: ChatWindow,
   b: ChatLinesEvent['windows'][number],
-): ChatWindow | null | 'skip' {
+): { w: ChatWindow; fresh: ChatLine[] } | null | 'skip' {
   if (b.epoch < w.state.epoch) return 'skip'
   if (b.epoch > w.state.epoch) return null
   const fresh = b.lines.filter((l) => l.seq > w.state.seq)
@@ -44,17 +51,23 @@ function applyBatch(
   let lines = fresh.length ? [...w.state.lines, ...fresh] : w.state.lines
   if (lines.length > max) lines = lines.slice(lines.length - max)
   return {
-    ...w,
-    state: {
-      ...w.state,
-      seq: fresh.length ? fresh[fresh.length - 1].seq : w.state.seq,
-      lines,
-      pins: b.pins ?? [],
+    w: {
+      ...w,
+      state: {
+        ...w.state,
+        seq: fresh.length ? fresh[fresh.length - 1].seq : w.state.seq,
+        lines,
+        pins: b.pins ?? [],
+        replay: !!b.replay,
+      },
     },
+    fresh,
   }
 }
 
-export function useChatWindows(): ChatWindowsHook {
+export function useChatWindows(onAppend?: ChatAppendHandler): ChatWindowsHook {
+  const onAppendRef = useRef(onAppend)
+  onAppendRef.current = onAppend
   const [windows, setWindows] = useState<ChatWindow[]>([])
   const [skewMs, setSkewMs] = useState(0)
   const [loaded, setLoaded] = useState(false)
@@ -107,6 +120,7 @@ export function useChatWindows(): ChatWindowsHook {
       if (ev.now) setSkewMs(ev.now - Date.now())
       let next = windowsRef.current
       let stale = false
+      const appended: { id: string; lines: ChatLine[]; replay: boolean }[] = []
       for (const b of ev.windows ?? []) {
         const i = next.findIndex((x) => x.def.id === b.id)
         if (i < 0) {
@@ -120,9 +134,11 @@ export function useChatWindows(): ChatWindowsHook {
           continue
         }
         if (next === windowsRef.current) next = [...next]
-        next[i] = merged
+        next[i] = merged.w
+        if (merged.fresh.length) appended.push({ id: b.id, lines: merged.fresh, replay: !!b.replay })
       }
       if (next !== windowsRef.current) set(next)
+      for (const a of appended) onAppendRef.current?.(a.id, a.lines, a.replay)
       if (stale) refresh()
     }
   })

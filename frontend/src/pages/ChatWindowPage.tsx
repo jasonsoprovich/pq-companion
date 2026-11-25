@@ -10,12 +10,17 @@
  *
  * Right-click a line for Copy, Hide lines like this and Keep lines like this;
  * the last two open the editor in the main window with the suggested rule.
+ *
+ * In the tabs layout a tab row sits below the title bar (outside it, since
+ * the title bar fades and is hidden in display-only mode); see useChatTabs.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { MessagesSquare, Pencil } from 'lucide-react'
 import ChatLinesView from '../components/overlays/ChatLinesView'
+import ChatTabStrip from '../components/overlays/ChatTabStrip'
 import { useChatWindows } from '../hooks/useChatWindows'
+import { useChatTabs } from '../hooks/useChatTabs'
 import { useNowMs } from '../hooks/useCustomOverlays'
 import { CollapseToggle, useOverlayCollapse } from '../hooks/useOverlayCollapse'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
@@ -52,7 +57,11 @@ export default function ChatWindowPage(): React.ReactElement {
   const chrome = chromeFade || collapsed
   const onDragMouseDown = useWindowDrag()
 
-  const cw = useChatWindows()
+  // Appends go to this window's tabs for unread counts.
+  const appendRef = useRef<(lines: ChatLine[], replay: boolean) => void>()
+  const cw = useChatWindows((wid, lines, replay) => {
+    if (wid === id) appendRef.current?.(lines, replay)
+  })
   const win = cw.windows.find((w) => w.def.id === id)
   const now = useNowMs((win?.state.pins.length ?? 0) > 0, cw.skewMs, PIN_TICK_MS)
 
@@ -147,6 +156,14 @@ export default function ChatWindowPage(): React.ReactElement {
   }
 
   const def = win ? { ...win.def, appearance: { ...win.def.appearance, font_scale: fontScale } } : null
+  const tabs = useChatTabs({
+    def: win?.def ?? null,
+    lines: win?.state.lines ?? [],
+    replay: !!win?.state.replay,
+    persistKey: id || null,
+  })
+  appendRef.current = tabs.onAppend
+  const tabFontPx = Math.round(Math.max(10, Math.min(16, 11 * fontScale)))
   const pinCount = win?.state.pins.filter((p) => p.until > now).length ?? 0
 
   return (
@@ -229,10 +246,26 @@ export default function ChatWindowPage(): React.ReactElement {
       {!collapsed && (win && def ? (
         <ChatLinesView
           def={def}
-          lines={win.state.lines}
+          lines={tabs.lines}
           pins={win.state.pins}
           nowMs={now}
           interactive={interactive}
+          viewKey={tabs.active}
+          between={
+            tabs.enabled && (
+              <ChatTabStrip
+                tabs={tabs.tabs}
+                active={tabs.active}
+                unread={tabs.unread}
+                onSelect={tabs.select}
+                onClose={tabs.close}
+                onCloseAllRead={tabs.closeAllRead}
+                fontPx={tabFontPx}
+                interactive={mode !== 'display-only' || !locked}
+                interactionProps={headerInteractionProps}
+              />
+            )
+          }
           onDismissPin={(seq) => void dismissChatPin(win.def.id, seq).catch(() => {})}
           onLineMenu={(line, x, y) =>
             setMenu({ line, x, y, selection: window.getSelection()?.toString() ?? '' })

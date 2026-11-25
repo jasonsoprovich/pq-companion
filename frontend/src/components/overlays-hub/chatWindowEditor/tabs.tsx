@@ -36,6 +36,7 @@ import {
   isStandardChannel,
   mentionsMeRule,
 } from '../../../lib/chatWindow'
+import { DEFAULT_MAX_TELL_TABS, tabsOffered } from '../../../lib/chatTabs'
 
 function Check({
   checked,
@@ -394,6 +395,64 @@ export function AppearanceTab({
           <Check checked={a.show_timestamps} onChange={(v) => setA({ show_timestamps: v })} label="Show times" />
           <Check checked={a.show_channel} onChange={(v) => setA({ show_channel: v })} label="Show channel tags" />
         </div>
+      </Box>
+      <Box>
+        <span className="text-xs font-semibold" style={{ color: 'var(--color-foreground)' }}>Layout</span>
+        <div className="flex flex-col gap-1.5">
+          <label className="flex items-start gap-1.5 text-xs" style={{ color: 'var(--color-foreground)' }}>
+            <input type="radio" checked={a.layout !== 'tabs'} onChange={() => setA({ layout: undefined })} className="mt-0.5" />
+            <span>
+              One list
+              <span className="block text-[11px]" style={{ color: 'var(--color-muted-foreground)' }}>
+                Every channel together, each in its own color.
+              </span>
+            </span>
+          </label>
+          <label
+            className="flex items-start gap-1.5 text-xs"
+            style={{ color: 'var(--color-foreground)', opacity: tabsOffered(draft) || a.layout === 'tabs' ? 1 : 0.5 }}
+          >
+            <input
+              type="radio"
+              checked={a.layout === 'tabs'}
+              disabled={!tabsOffered(draft) && a.layout !== 'tabs'}
+              onChange={() => setA({ layout: 'tabs' })}
+              className="mt-0.5"
+            />
+            <span>
+              Tabs per channel
+              <span className="block text-[11px]" style={{ color: 'var(--color-muted-foreground)' }}>
+                {tabsOffered(draft)
+                  ? 'A tab for each channel. A tab with new lines fills with its color and pulses, with a count.'
+                  : 'Pick two or more sources (Sources tab) to use tabs.'}
+              </span>
+            </span>
+          </label>
+        </div>
+        {a.layout === 'tabs' && draft.sources.channels.includes('tell') && (
+          <div className="flex flex-col gap-1.5 border-t pt-2" style={{ borderColor: 'var(--color-border)' }}>
+            <Check
+              checked={!!a.tell_tabs}
+              onChange={(v) => setA({ tell_tabs: v || undefined })}
+              label="A tab for each tell conversation"
+              hint="Each player who sends you a tell (or you send one to) gets a tab; Tells still shows them all. Close a conversation with its × or a middle-click; it comes back on their next tell."
+            />
+            {a.tell_tabs && (
+              <Row label="Open at most">
+                <NumberInput
+                  value={a.max_tell_tabs ?? DEFAULT_MAX_TELL_TABS}
+                  onChange={(v) => setA({ max_tell_tabs: v })}
+                  min={2}
+                  max={30}
+                  ariaLabel="Most conversation tabs"
+                />
+                <span className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                  conversations. Past that the oldest read one closes; tabs that don’t fit go in a +N menu.
+                </span>
+              </Row>
+            )}
+          </div>
+        )}
       </Box>
       <Box>
         <span className="text-xs font-semibold" style={{ color: 'var(--color-foreground)' }}>Channel colors</span>

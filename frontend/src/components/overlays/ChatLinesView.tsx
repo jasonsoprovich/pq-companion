@@ -5,6 +5,10 @@
  * Follows the newest line while scrolled to the bottom; scrolling up pauses
  * that and shows a "jump to newest" button. Text is selectable. Right-click
  * a line (when onLineMenu is given) for its menu.
+ *
+ * between renders between the pinned strip and the scrollback (the tab
+ * row). Changing viewKey (switching tabs) jumps to the newest line and
+ * follows again, so one tab's scroll position can't strand another.
  */
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ArrowDown, Pin, X } from 'lucide-react'
@@ -23,6 +27,8 @@ export default function ChatLinesView({
   onLineMenu,
   emptyText,
   interactive = true,
+  between,
+  viewKey,
 }: {
   def: ChatWindowDef
   lines: ChatLine[]
@@ -33,6 +39,8 @@ export default function ChatLinesView({
   emptyText?: string
   // False while the window passes clicks through (no selection, no menu).
   interactive?: boolean
+  between?: React.ReactNode
+  viewKey?: string
 }): React.ReactElement {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [follow, setFollow] = useState(true)
@@ -47,6 +55,12 @@ export default function ChatLinesView({
     const el = scrollRef.current
     if (el && followRef.current) el.scrollTop = el.scrollHeight
   }, [last, lines.length, fontPx])
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (el) el.scrollTop = el.scrollHeight
+    setFollow(true)
+  }, [viewKey])
 
   // A resize (or the strip growing) shouldn't drop us off the bottom.
   useEffect(() => {
@@ -152,6 +166,7 @@ export default function ChatLinesView({
           ))}
         </div>
       )}
+      {between}
       <div
         ref={scrollRef}
         onScroll={onScroll}

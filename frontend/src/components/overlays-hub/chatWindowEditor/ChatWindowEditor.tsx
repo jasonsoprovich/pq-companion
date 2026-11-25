@@ -32,6 +32,8 @@ import {
 import { ConfirmModal } from '../../ConfirmModal'
 import { useEscapeToClose } from '../../../hooks/useEscapeToClose'
 import ChatLinesView from '../../overlays/ChatLinesView'
+import ChatTabStrip from '../../overlays/ChatTabStrip'
+import { useChatTabs } from '../../../hooks/useChatTabs'
 import { Hint, TextInput } from '../customOverlayEditor/fields'
 import { CHAT_WINDOW_COLOR } from '../../../lib/chatWindow'
 import { AppearanceTab, RulesTab, SourcesTab, TestTab } from './tabs'
@@ -172,6 +174,10 @@ export default function ChatWindowEditor({
       .catch((e: Error) => { setSaveError(e.message); setSaving(false) })
   }
 
+  // The preview's tabs live in memory only (no unread: it doesn't follow
+  // appends).
+  const tabs = useChatTabs({ def: draft, lines: win.state.lines, replay: !!win.state.replay, persistKey: null })
+
   const problem = saveError || check?.error || ''
   const sourceChannels = [
     ...draft.sources.channels,
@@ -293,7 +299,21 @@ export default function ChatWindowEditor({
             >
               <ChatLinesView
                 def={draft}
-                lines={win.state.lines}
+                lines={tabs.lines}
+                viewKey={tabs.active}
+                between={
+                  tabs.enabled && (
+                    <ChatTabStrip
+                      tabs={tabs.tabs}
+                      active={tabs.active}
+                      unread={tabs.unread}
+                      onSelect={tabs.select}
+                      onClose={tabs.close}
+                      onCloseAllRead={tabs.closeAllRead}
+                      fontPx={Math.round(Math.max(10, Math.min(16, 11 * (draft.appearance.font_scale || 1))))}
+                    />
+                  )
+                }
                 pins={win.state.pins}
                 nowMs={nowMs}
                 emptyText="Nothing in this window yet."

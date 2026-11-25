@@ -316,3 +316,10 @@ body {
 .pq-focus-pulse {
   animation: pq-focus-pulse 1.8s ease-out;
 }
+
+/* Chat window tabs: a tab with a new line pulses its channel color
+   (components/overlays/ChatTabStrip). */
+@keyframes chat-tab-pulse {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 0.55; }
+}
