@@ -64,7 +64,30 @@ export function channelColor(def: ChatWindowDef, key: string): string {
   return DEFAULT_CHANNEL_COLORS[key] ?? DEFAULT_CHANNEL_COLORS.other
 }
 
+export const DEFAULT_SELF_COLOR = '#ffffff'
+export const SELF_COLOR_NONE = 'none'
+
+// The color for your own lines, or null when they use the channel color.
+export function selfColor(def: ChatWindowDef): string | null {
+  const c = def.appearance.self_color
+  if (c === SELF_COLOR_NONE) return null
+  return c || DEFAULT_SELF_COLOR
+}
+
+// A line's text color: a keep rule's highlight, then your own color for
+// lines you sent, then the channel color.
 export function lineColor(def: ChatWindowDef, l: ChatLine): string {
+  if (l.color) return l.color
+  if (l.direction === 'out') {
+    const own = selfColor(def)
+    if (own) return own
+  }
+  return channelColor(def, l.channel)
+}
+
+// A line's channel tag color: the highlight, else always the channel color,
+// so your own lines still show which channel they went to.
+export function tagColor(def: ChatWindowDef, l: ChatLine): string {
   return l.color || channelColor(def, l.channel)
 }
 

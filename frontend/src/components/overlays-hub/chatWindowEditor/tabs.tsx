@@ -27,6 +27,8 @@ import {
 import {
   CHAT_CHANNELS,
   DEFAULT_CHANNEL_COLORS,
+  DEFAULT_SELF_COLOR,
+  SELF_COLOR_NONE,
   blankRule,
   capitalize,
   channelColor,
@@ -420,7 +422,36 @@ export function AppearanceTab({
             )
           })}
         </div>
-        <Hint>A keep rule’s highlight color wins over the channel color.</Hint>
+        <div className="flex items-center gap-2 border-t pt-2" style={{ borderColor: 'var(--color-border)' }}>
+          <input
+            type="color"
+            value={a.self_color && a.self_color !== SELF_COLOR_NONE ? a.self_color : DEFAULT_SELF_COLOR}
+            disabled={a.self_color === SELF_COLOR_NONE}
+            onChange={(e) => setA({ self_color: e.target.value })}
+            aria-label="Your messages color"
+            style={{ width: 26, height: 20, background: 'transparent', border: 'none', opacity: a.self_color === SELF_COLOR_NONE ? 0.4 : 1 }}
+          />
+          <span
+            className="flex-1 text-xs"
+            style={{ color: a.self_color === SELF_COLOR_NONE ? 'var(--color-muted-foreground)' : a.self_color || DEFAULT_SELF_COLOR }}
+          >
+            Your messages
+          </span>
+          <Check
+            checked={a.self_color === SELF_COLOR_NONE}
+            onChange={(v) => setA({ self_color: v ? SELF_COLOR_NONE : undefined })}
+            label="Same as channel"
+          />
+          {a.self_color && a.self_color !== SELF_COLOR_NONE && (
+            <button onClick={() => setA({ self_color: undefined })} className="text-[10px] underline" style={{ color: 'var(--color-muted-foreground)' }}>
+              default
+            </button>
+          )}
+        </div>
+        <Hint>
+          Lines you send (tells, guild, raid…) use your color so they stand out; the channel tag keeps
+          the channel color. A keep rule’s highlight color wins over both.
+        </Hint>
       </Box>
     </div>
   )

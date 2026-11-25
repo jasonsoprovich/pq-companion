@@ -9,7 +9,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ArrowDown, Pin, X } from 'lucide-react'
 import type { ChatLine, ChatPin, ChatWindowDef } from '../../types/chatWindow'
-import { channelTag, formatTime, lineColor } from '../../lib/chatWindow'
+import { channelTag, formatTime, lineColor, tagColor } from '../../lib/chatWindow'
 
 const BOTTOM_SLACK_PX = 24
 const BASE_FONT_PX = 12
@@ -83,7 +83,7 @@ export default function ChatLinesView({
           </span>
         )}
         {tag && (
-          <span style={{ color, opacity: 0.7, marginRight: 5, fontWeight: 600 }}>[{tag}]</span>
+          <span style={{ color: tagColor(def, l), opacity: 0.7, marginRight: 5, fontWeight: 600 }}>[{tag}]</span>
         )}
         <span style={{ color, fontWeight: l.color || pinned ? 600 : undefined }}>{l.text}</span>
       </>

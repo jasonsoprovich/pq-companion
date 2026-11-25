@@ -28,7 +28,16 @@ export interface ChatAppearance {
   show_timestamps: boolean
   show_channel: boolean
   channel_colors?: Record<string, string>
+  // Your own lines: omitted = white, 'none' = the channel color, or a hex.
+  self_color?: string
+  // Omitted = 'combined'.
+  layout?: ChatLayout
+  tell_tabs?: boolean
+  max_tell_tabs?: number
 }
+
+export type ChatLayout = 'combined' | 'tabs'
+
 
 export interface ChatWindowDef {
   id?: string
@@ -66,6 +75,8 @@ export interface ChatWindowState {
   seq: number
   lines: ChatLine[]
   pins: ChatPin[]
+  // True while a Log Feed replay fills the window.
+  replay?: boolean
 }
 
 export interface ChatWindow {
@@ -83,6 +94,7 @@ export interface ChatLinesBatch {
   epoch: number
   lines: ChatLine[]
   pins: ChatPin[]
+  replay?: boolean
 }
 
 export interface ChatLinesEvent {
