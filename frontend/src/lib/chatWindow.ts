@@ -64,6 +64,23 @@ export function channelColor(def: ChatWindowDef, key: string): string {
   return DEFAULT_CHANNEL_COLORS[key] ?? DEFAULT_CHANNEL_COLORS.other
 }
 
+// Font size: stored as a scale of a 12 px base (font_scale), shown and
+// picked in pixels. Electron scales CSS px with the Windows display scale,
+// so a size looks the same next to the game at any resolution.
+export const CHAT_BASE_FONT_PX = 12
+export const CHAT_FONT_PX_MIN = 6
+export const CHAT_FONT_PX_MAX = 36
+export const CHAT_FONT_PX_CHOICES = [9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 22, 24, 28, 32]
+
+export function fontPx(scale: number | undefined): number {
+  return Math.round(CHAT_BASE_FONT_PX * (scale || 1))
+}
+
+export function scaleForPx(px: number): number {
+  const clamped = Math.max(CHAT_FONT_PX_MIN, Math.min(CHAT_FONT_PX_MAX, Math.round(px)))
+  return Math.round((clamped / CHAT_BASE_FONT_PX) * 10000) / 10000
+}
+
 export const DEFAULT_SELF_COLOR = '#ffffff'
 export const SELF_COLOR_NONE = 'none'
 

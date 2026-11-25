@@ -27,13 +27,10 @@ import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
 import { useWindowDrag } from '../hooks/useWindowDrag'
 import OverlayLockButton from '../components/OverlayLockButton'
-import { CHAT_WINDOW_COLOR } from '../lib/chatWindow'
+import { CHAT_WINDOW_COLOR, fontPx, scaleForPx } from '../lib/chatWindow'
 import { dismissChatPin } from '../services/api'
 import type { ChatLine } from '../types/chatWindow'
 
-const FONT_MIN = 0.5
-const FONT_MAX = 3
-const FONT_STEP = 0.1
 const FONT_SAVE_MS = 500
 // Pins expire server-side too; this tick only hides them on time.
 const PIN_TICK_MS = 5000
@@ -77,7 +74,8 @@ export default function ChatWindowPage(): React.ReactElement {
   const onWheel = useCallback((e: WheelEvent) => {
     if (!e.ctrlKey || e.deltaY === 0 || !winRef.current) return
     e.preventDefault()
-    const next = Math.round(Math.max(FONT_MIN, Math.min(FONT_MAX, fontRef.current + (e.deltaY < 0 ? FONT_STEP : -FONT_STEP))) * 10) / 10
+    // 1 px per notch.
+    const next = scaleForPx(fontPx(fontRef.current) + (e.deltaY < 0 ? 1 : -1))
     setFontOverride(next)
     if (saveTimer.current) clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(() => {

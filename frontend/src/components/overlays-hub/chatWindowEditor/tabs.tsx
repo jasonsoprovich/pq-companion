@@ -27,8 +27,11 @@ import {
 import {
   CHAT_CHANNELS,
   DEFAULT_CHANNEL_COLORS,
+  CHAT_FONT_PX_CHOICES,
   DEFAULT_SELF_COLOR,
   SELF_COLOR_NONE,
+  fontPx,
+  scaleForPx,
   blankRule,
   capitalize,
   channelColor,
@@ -364,16 +367,14 @@ export function AppearanceTab({
     <div className="flex flex-col gap-4">
       <Box>
         <Row label="Font size">
-          <input
-            type="range"
-            min={0.5}
-            max={3}
-            step={0.1}
-            value={a.font_scale}
-            onChange={(e) => setA({ font_scale: Number(e.target.value) })}
-            aria-label="Font size"
+          <Select
+            value={String(fontPx(a.font_scale))}
+            onChange={(v) => setA({ font_scale: scaleForPx(Number(v)) })}
+            options={[...new Set([...CHAT_FONT_PX_CHOICES, fontPx(a.font_scale)])]
+              .sort((x, y) => x - y)
+              .map((px) => ({ value: String(px), label: `${px} px${px === 12 ? ' (default)' : ''}` }))}
+            ariaLabel="Font size"
           />
-          <span className="text-xs" style={{ color: 'var(--color-foreground)' }}>{Math.round(a.font_scale * 100)}%</span>
         </Row>
         <Row label="Background">
           <input
@@ -388,8 +389,9 @@ export function AppearanceTab({
           <span className="text-xs" style={{ color: 'var(--color-foreground)' }}>{Math.round(a.opacity * 100)}%</span>
         </Row>
         <Hint>
-          These belong to this window. Ctrl+scroll over the window changes its font size too. 100%
-          background is fully solid.
+          These belong to this window. Ctrl+scroll over the window changes its font size 1 px at a
+          time. Sizes follow your Windows display scale, so they look the same at any resolution.
+          100% background is fully solid.
         </Hint>
         <div className="flex gap-4">
           <Check checked={a.show_timestamps} onChange={(v) => setA({ show_timestamps: v })} label="Show times" />
