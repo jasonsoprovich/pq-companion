@@ -1,7 +1,14 @@
 /**
  * The Chat Window editor: a wide modal over the hub with Sources / Keep /
- * Hide / Appearance / Test tabs and a live preview. Edits stay in a draft
- * until Save; Discard (or Esc) drops them, asking first when there are any.
+ * Hide / Appearance / Test / Window tabs and a live preview. It opens from
+ * the window's hub card. Edits stay in a draft until Save; Discard (or Esc)
+ * drops them, asking first when there are any. The Window tab (built by the
+ * hub) acts at once, outside the draft.
+ *
+ * Some changes save straight away while the editor is open (Pause/Resume,
+ * Ctrl+scroll font size over the popout). The draft is rebased onto the new
+ * saved definition: fields the user hasn't edited follow it, edited ones
+ * keep the draft, so Save doesn't undo them and Discard keeps them.
  *
  * Opened from the popout's "Hide/Keep lines like this", it asks the backend
  * for a rule built from that line and adds it to the draft, so the user can
@@ -29,7 +36,7 @@ import { Hint, TextInput } from '../customOverlayEditor/fields'
 import { CHAT_WINDOW_COLOR } from '../../../lib/chatWindow'
 import { AppearanceTab, RulesTab, SourcesTab, TestTab } from './tabs'
 
-type Tab = 'sources' | 'keep' | 'hide' | 'appearance' | 'test'
+type Tab = 'sources' | 'keep' | 'hide' | 'appearance' | 'test' | 'window'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'sources', label: 'Sources' },
@@ -37,6 +44,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'hide', label: 'Hide' },
   { id: 'appearance', label: 'Appearance' },
   { id: 'test', label: 'Test' },
+  { id: 'window', label: 'Window' },
 ]
 
 const CHECK_DEBOUNCE_MS = 400
@@ -45,18 +53,42 @@ function cloneDef(d: ChatWindowDef): ChatWindowDef {
   return JSON.parse(JSON.stringify(d)) as ChatWindowDef
 }
 
+const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
+const isObj = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v)
+
+// rebase merges a new saved value into a draft field by field: a field the
+// draft hasn't changed from base takes the saved value; a changed one keeps
+// the draft. Objects merge per key; arrays are one value.
+export function rebase(base: unknown, draft: unknown, saved: unknown): unknown {
+  if (same(draft, base)) return saved
+  if (isObj(base) && isObj(draft) && isObj(saved)) {
+    const out: Record<string, unknown> = {}
+    for (const k of new Set([...Object.keys(base), ...Object.keys(draft), ...Object.keys(saved)])) {
+      const v = rebase(base[k], draft[k], saved[k])
+      if (v !== undefined) out[k] = v
+    }
+    return out
+  }
+  return draft
+}
+
 export default function ChatWindowEditor({
   window: win,
   nowMs,
   suggest,
+  windowTab,
   onClose,
 }: {
   window: ChatWindow
   nowMs: number
   suggest?: { seq: number; mode: 'hide' | 'keep' }
+  windowTab?: React.ReactNode
   onClose: () => void
 }): React.ReactElement {
   const [draft, setDraftState] = useState<ChatWindowDef>(() => cloneDef(win.def))
+  // The saved definition the draft started from (see rebase).
+  const [base, setBase] = useState<ChatWindowDef>(() => cloneDef(win.def))
   const [tab, setTab] = useState<Tab>(suggest ? suggest.mode : 'sources')
   const [note, setNote] = useState('')
   const [saving, setSaving] = useState(false)
@@ -69,7 +101,16 @@ export default function ChatWindowEditor({
   // The rule just added by a suggestion, highlighted until edited away.
   const [newRuleId, setNewRuleId] = useState('')
 
-  const dirty = useMemo(() => JSON.stringify(draft) !== JSON.stringify(win.def), [draft, win.def])
+  const dirty = useMemo(() => !same(draft, base), [draft, base])
+
+  // The saved definition changed under the editor (an immediate action, or
+  // another window's save): rebase the draft onto it.
+  useEffect(() => {
+    if (same(win.def, base)) return
+    const saved = cloneDef(win.def)
+    setDraftState((d) => rebase(base, d, saved) as ChatWindowDef)
+    setBase(saved)
+  }, [win.def, base])
 
   const setDraft = (d: ChatWindowDef): void => {
     setDraftState(d)
@@ -223,6 +264,14 @@ export default function ChatWindowEditor({
             )}
             {tab === 'appearance' && <AppearanceTab draft={draft} setDraft={setDraft} />}
             {tab === 'test' && <TestTab draft={draft} defaultCharacter={active} />}
+            {tab === 'window' && (
+              <div className="flex flex-col gap-3">
+                <Hint>
+                  These take effect right away; they aren’t part of Save.
+                </Hint>
+                {windowTab}
+              </div>
+            )}
           </div>
 
           <div

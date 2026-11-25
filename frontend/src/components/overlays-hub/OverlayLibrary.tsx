@@ -455,12 +455,13 @@ export default function OverlayLibrary({
   const chatEditingWindow = chatWindows.windows.find((w) => w.def.id === chatEditing?.id)
   const setSelected = onSelect
 
-  // A deep link from a chat window popout (pencil, or "lines like this")
-  // opens its editor once, then leaves the plain selection behind.
+  // Chat windows have no drawer: selecting one (a card click, or a deep
+  // link from its popout's pencil or "lines like this") opens its editor,
+  // and the selection is dropped.
   useEffect(() => {
-    if (selected?.kind !== 'chat' || !selected.edit) return
+    if (selected?.kind !== 'chat') return
     setChatEditing({ id: selected.id, suggest: selected.suggest })
-    onSelect({ kind: 'chat', id: selected.id })
+    onSelect(null)
   }, [selected, onSelect])
   const { config, setConfig, saveState } = useConfigDraft()
   const { state: layoutState } = useOverlayLayouts()
@@ -606,12 +607,9 @@ export default function OverlayLibrary({
 
   const doDeleteChat = (w: ChatWindow): void => {
     window.electron?.overlay?.closeChatWindow(w.def.id)
-    deleteChatWindow(w.def.id)
-      .then(() => {
-        if (selected?.kind === 'chat' && selected.id === w.def.id) setSelected(null)
-      })
-      .catch(() => {})
+    deleteChatWindow(w.def.id).catch(() => {})
     setConfirmDeleteChat(null)
+    setChatEditing(null)
   }
 
   const byCategory = useMemo(
@@ -827,84 +825,6 @@ export default function OverlayLibrary({
     }
   }
 
-  if (selected?.kind === 'chat') {
-    const w = chatWindows.windows.find((x) => x.def.id === selected.id)
-    if (w) {
-      const key = chatWindowKey(w.def.id)
-      const state = windowStates[key]
-      details = (
-        <Drawer
-          icon={MessagesSquare}
-          color={CHAT_WINDOW_COLOR}
-          title={w.def.name}
-          details={CHAT_WINDOW_INFO.details}
-          status={<StatusText state={state} />}
-          saveState={saveState}
-          onClose={close}
-          actions={
-            <>
-              <PopButton state={state} onClick={() => toggleChatPopout(w)} />
-              {moveButton(key, w.def.name, () => toggleChatPopout(w))}
-              {resetButton(key, w.def.name)}
-              <SecondaryButton icon={Pencil} label="Edit window" onClick={() => setChatEditing({ id: w.def.id })} />
-              <SecondaryButton
-                icon={w.def.enabled ? Pause : Play}
-                label={w.def.enabled ? 'Pause' : 'Resume'}
-                onClick={() => chatWindows.act(w.def.id, { action: 'enable', enabled: !w.def.enabled })}
-                title={w.def.enabled ? 'Stop adding new lines to this window' : 'Start adding new lines again'}
-              />
-              <SecondaryButton
-                icon={Eraser}
-                label="Clear"
-                onClick={() => chatWindows.act(w.def.id, { action: 'clear' })}
-                title="Empty this window’s lines and pins"
-              />
-              <SecondaryButton
-                icon={Keyboard}
-                label={bindings[CHAT_WINDOWS_LOCK_ACTION] ? 'Change lock hotkey' : 'Set a lock hotkey'}
-                onClick={openHotkeys}
-                title="One hotkey locks or unlocks every chat window"
-              />
-              <SecondaryButton icon={Trash2} label="Delete" onClick={() => setConfirmDeleteChat(w)} />
-            </>
-          }
-        >
-          <SettingsSection title="Share">
-            <p className="pb-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-              Share this window’s channels, rules and looks, or move them to another PC. Its lines and
-              character filter stay here.
-            </p>
-            <ChatShareButtons ids={[w.def.id]} name={w.def.name} />
-            {chatWindows.windows.length > 1 && (
-              <div className="pt-2">
-                <p className="pb-1 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-                  All {chatWindows.windows.length} chat windows as one file:
-                </p>
-                <ChatShareButtons ids={[]} name="all" />
-              </div>
-            )}
-          </SettingsSection>
-          {config && (
-            <SettingsSection title="Window">
-              <p className="pb-1 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-                Lock and fade are shared by every chat window. Font size and background are on each
-                window (Edit window → Appearance, or Ctrl+scroll over it).
-              </p>
-              <OverlayWindowControls
-                name="chatWindow"
-                windowKey={key}
-                label={w.def.name}
-                config={config}
-                setConfig={setConfig}
-                hideOpacity
-              />
-            </SettingsSection>
-          )}
-        </Drawer>
-      )
-    }
-  }
-
   if (selected?.kind === 'stack') {
     const s = stacks.find((x) => x.key === selected.key)
     if (s) {
@@ -961,6 +881,75 @@ export default function OverlayLibrary({
   }
 
   const isSel = (s: Selection): boolean => sameSelection(selected, s)
+
+  // The chat editor's Window tab: what the other cards keep in their
+  // drawer. These act at once, outside the editor's Save.
+  const chatWindowTab = (w: ChatWindow): React.ReactNode => {
+    const key = chatWindowKey(w.def.id)
+    const state = windowStates[key]
+    return (
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <PopButton state={state} onClick={() => toggleChatPopout(w)} />
+          {moveButton(key, w.def.name, () => toggleChatPopout(w))}
+          {resetButton(key, w.def.name)}
+          <SecondaryButton
+            icon={w.def.enabled ? Pause : Play}
+            label={w.def.enabled ? 'Pause' : 'Resume'}
+            onClick={() => chatWindows.act(w.def.id, { action: 'enable', enabled: !w.def.enabled })}
+            title={w.def.enabled ? 'Stop adding new lines to this window' : 'Start adding new lines again'}
+          />
+          <SecondaryButton
+            icon={Eraser}
+            label="Clear"
+            onClick={() => chatWindows.act(w.def.id, { action: 'clear' })}
+            title="Empty this window’s lines and pins"
+          />
+          <SecondaryButton
+            icon={Keyboard}
+            label={bindings[CHAT_WINDOWS_LOCK_ACTION] ? 'Change lock hotkey' : 'Set a lock hotkey'}
+            onClick={openHotkeys}
+            title="One hotkey locks or unlocks every chat window"
+          />
+          <SecondaryButton icon={Trash2} label="Delete" onClick={() => setConfirmDeleteChat(w)} />
+          <span className="flex-1" />
+          <StatusText state={state} />
+        </div>
+        <SettingsSection title="Share">
+          <p className="pb-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+            Share this window’s channels, rules and looks, or move them to another PC. Its lines and
+            character filter stay here. Unsaved edits aren’t included.
+          </p>
+          <ChatShareButtons ids={[w.def.id]} name={w.def.name} />
+          {chatWindows.windows.length > 1 && (
+            <div className="pt-2">
+              <p className="pb-1 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                All {chatWindows.windows.length} chat windows as one file:
+              </p>
+              <ChatShareButtons ids={[]} name="all" />
+            </div>
+          )}
+        </SettingsSection>
+        {config && (
+          <SettingsSection title="Window">
+            <p className="pb-1 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+              Lock and fade are shared by every chat window. Font size and background are on each
+              window (Appearance tab, or Ctrl+scroll over it).
+              {saveState === 'saving' ? ' Saving…' : saveState === 'error' ? ' Couldn’t save.' : ''}
+            </p>
+            <OverlayWindowControls
+              name="chatWindow"
+              windowKey={key}
+              label={w.def.name}
+              config={config}
+              setConfig={setConfig}
+              hideOpacity
+            />
+          </SettingsSection>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="relative flex h-full min-h-0">
@@ -1091,7 +1080,6 @@ export default function OverlayLibrary({
               {chatWindows.windows.map((w) => {
                 const key = chatWindowKey(w.def.id)
                 const state = windowStates[key]
-                const sel: Selection = { kind: 'chat', id: w.def.id }
                 return (
                   <Card
                     key={key}
@@ -1099,8 +1087,8 @@ export default function OverlayLibrary({
                     color={CHAT_WINDOW_COLOR}
                     title={w.def.name}
                     blurb={chatWindowBlurb(w)}
-                    selected={isSel(sel)}
-                    onSelect={() => setSelected(sel)}
+                    selected={chatEditing?.id === w.def.id}
+                    onSelect={() => setChatEditing({ id: w.def.id })}
                     footer={
                       <>
                         <PopButton state={state} onClick={() => toggleChatPopout(w)} />
@@ -1213,7 +1201,7 @@ export default function OverlayLibrary({
           onImport={() => { setShowNewChat(false); setShowChatImport(true) }}
           onCreated={(def) => {
             setShowNewChat(false)
-            setSelected({ kind: 'chat', id: def.id })
+            setChatEditing({ id: def.id })
             window.electron?.overlay?.openChatWindow(def.id, def.name)
             afterToggle()
           }}
@@ -1224,7 +1212,7 @@ export default function OverlayLibrary({
           onClose={() => setShowChatImport(false)}
           onImported={(defs) => {
             setShowChatImport(false)
-            if (defs[0]?.id) setSelected({ kind: 'chat', id: defs[0].id })
+            if (defs[0]?.id) setChatEditing({ id: defs[0].id })
           }}
         />
       )}
@@ -1234,6 +1222,7 @@ export default function OverlayLibrary({
           window={chatEditingWindow}
           nowMs={Date.now() + chatWindows.skewMs}
           suggest={chatEditing.suggest}
+          windowTab={chatWindowTab(chatEditingWindow)}
           onClose={() => setChatEditing(null)}
         />
       )}
