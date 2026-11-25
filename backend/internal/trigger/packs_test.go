@@ -167,6 +167,12 @@ func TestCommunityPackPatterns(t *testing.T) {
 		{"Crit Alerts", "Critical Hit", "Osui Scores a critical hit!(62)", true, "62", 0},
 		{"Crit Alerts", "Critical Hit", "Somebodyelse Scores a critical hit!(62)", false, "", 0},
 
+		// ── Rogue ───────────────────────────────────────────────────────
+		{"Rogue", "Backstab", "You backstab a froglok krup knight for 180 points of damage.", true, "180", 0},
+		{"Rogue", "Backstab", "You backstab Zun Thall for 1 point of damage.", true, "1", 0},
+		{"Rogue", "Backstab", "Stonae backstabs Zun Thall for 169 points of damage.", false, "", 0},
+		{"Rogue", "Backstab", "You try to backstab a gnoll, but miss!", false, "", 0},
+
 		// ── Group Alerts ────────────────────────────────────────────────
 		{"Group Alerts", "Group Invite", "Nariana invites you to join a group.", true, "Nariana", 0},
 		{"Group Alerts", "New Group Leader", "Feane is now the leader of your group.", true, "Feane", 0},

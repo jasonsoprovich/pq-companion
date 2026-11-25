@@ -1916,7 +1916,7 @@ func RoguePack() TriggerPack {
 	return TriggerPack{
 		PackName:    "Rogue",
 		Class:       ClassPtr(ClassRogue),
-		Description: "Spell timers for all 6 rogue disciplines (Duelist, Deadeye, Counterattack, Nimble, Kinesthetics, Blinding Speed) plus the shared melee disciplines Resistant and Fearless.",
+		Description: "Spell timers for all 6 rogue disciplines (Duelist, Deadeye, Counterattack, Nimble, Kinesthetics, Blinding Speed) plus the shared melee disciplines Resistant and Fearless, and a backstab damage popup.",
 		Triggers: append([]Trigger{
 			// ── Offensive disciplines (timers) ──────────────────────────
 			{
@@ -1996,6 +1996,20 @@ func RoguePack() TriggerPack {
 				CooldownSecs:      1800,
 				PackName:          "Rogue",
 				Actions:           []Action{},
+			},
+			// ── Combat popups ───────────────────────────────────────────
+			{
+				// Your own landed backstabs, damage shown. Misses log as
+				// "You try to backstab …, but miss!" and don't match; a
+				// double backstab logs two lines and pops twice. Suggested
+				// by Graddox on Discord.
+				Name:     "Backstab",
+				Enabled:  true,
+				Pattern:  `^You backstab .+ for (\d+) points? of damage\.$`,
+				PackName: "Rogue",
+				Actions: []Action{
+					{Type: ActionOverlayText, Text: "Backstab: {1}", DurationSecs: 3, Color: "#00ff04"},
+				},
 			},
 		}, meleeSharedDisciplines("Rogue")...),
 	}
