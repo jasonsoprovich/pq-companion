@@ -3017,6 +3017,17 @@ export interface UpgradeWeights {
   haste: number
   mana_regen: number
   dps: number
+  // PoP item stats (Project Quarm 2026-11-23); see lib/itemMod2.ts.
+  accuracy: number
+  avoidance: number
+  strikethrough: number
+  stun_resist: number
+  combat_effects: number
+  spell_shield: number
+  shielding: number
+  damage_shield: number
+  // Rogue backstab: per point of backstab base damage.
+  backstab: number
 }
 
 export interface UpgradeStatDelta {

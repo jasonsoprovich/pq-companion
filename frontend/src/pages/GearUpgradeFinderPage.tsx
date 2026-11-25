@@ -48,6 +48,7 @@ import type { WishlistEntry } from '../types/wishlist'
 import type { Zone } from '../types/zone'
 import type { RespawnState } from '../types/respawn'
 import { matchesSearch } from '../lib/textSearch'
+import { MOD2_STATS } from '../lib/itemMod2'
 
 // Logical worn slots, keyed to the backend slot keys. `bucket` is the wishlist
 // slot-bucket name (singular Shoulder/Finger) that an item from this slot is
@@ -107,7 +108,12 @@ const STAT_KEYS: { key: keyof UpgradeWeights; label: string }[] = [
   { key: 'cr', label: 'CR' }, { key: 'dr', label: 'DR' }, { key: 'pr', label: 'PR' },
   { key: 'atk', label: 'ATK' }, { key: 'haste', label: 'Haste' },
   { key: 'mana_regen', label: 'ManaReg' },
+  // PoP item stats, labelled as on the item cards.
+  ...MOD2_STATS.map((d) => ({ key: d.key as keyof UpgradeWeights, label: d.short })),
 ]
+
+// PoP stats shown as percentages in the delta chips.
+const PCT_STATS = new Set<string>(MOD2_STATS.filter((d) => d.pct).map((d) => d.key))
 
 const STAT_LABEL: Record<string, string> = Object.fromEntries(
   STAT_KEYS.map((s) => [s.key, s.label]),
@@ -116,9 +122,18 @@ const STAT_LABEL: Record<string, string> = Object.fromEntries(
 // Every editable weight, in display order: the STAT_KEYS grid plus the weight
 // that only lives in the editor (DPS), not the delta chips.
 const WEIGHT_ROWS: { key: keyof UpgradeWeights; label: string }[] = [
-  ...STAT_KEYS,
+  ...STAT_KEYS.map((s) => {
+    // The editor has room for the full PoP stat names.
+    const def = MOD2_STATS.find((d) => d.key === s.key)
+    return def ? { key: s.key, label: def.label } : s
+  }),
   { key: 'dps', label: 'Weapon DPS' },
+  { key: 'backstab', label: 'Backstab' },
 ]
+
+// Weights only some classes can use; the row is hidden for the rest.
+const ROGUE_CLASS = 8
+const ROGUE_ONLY = new Set<keyof UpgradeWeights>(['backstab'])
 
 // Importance presets per weight. Each weight lives on its own scale (1 AC is
 // worth more per point than 1 STR, weapon DPS is a big ratio multiplier, etc.),
@@ -135,6 +150,15 @@ const WEIGHT_PRESETS: Partial<Record<keyof UpgradeWeights, number[]>> = {
   haste: [0, 5, 10, 12, 15],
   mana_regen: [0, 5, 15, 25, 40],
   dps: [0, 40, 100, 180, 250],
+  accuracy: [0, 0.3, 0.6, 1, 2],
+  avoidance: [0, 0.2, 0.5, 1, 2],
+  strikethrough: [0, 1, 2, 4, 6],
+  stun_resist: [0, 0.5, 1.5, 3, 5],
+  combat_effects: [0, 0.2, 0.4, 0.6, 1],
+  spell_shield: [0, 1, 2, 4, 6],
+  shielding: [0, 0.5, 1.5, 3, 5],
+  damage_shield: [0, 0.2, 0.3, 0.6, 1],
+  backstab: [0, 1, 2, 3, 5],
 }
 
 // Caveats for the conditional weights, so they don't read as broken when a
@@ -144,6 +168,15 @@ const WEIGHT_NOTE: Partial<Record<keyof UpgradeWeights, string>> = {
   haste: 'best worn haste wins, level-capped',
   mana_regen: 'capped at 15 — no gain once capped; 0 for pure melee',
   dps: 'weapon slots only (Primary / Secondary / Range)',
+  accuracy: 'melee to-hit; capped at 150 from gear',
+  avoidance: 'melee avoidance (not shown AC); capped at 100',
+  strikethrough: 'hit through block/parry/riposte/dodge; capped at 35%',
+  stun_resist: 'melee stuns only; capped at 35%',
+  combat_effects: 'weapon proc chance (10 = +1%); capped at 100',
+  spell_shield: 'less direct-damage spell damage; capped at 35%',
+  shielding: "cuts the damage bonus of hits on you; capped at 35%",
+  damage_shield: 'only boosts a damage shield spell on you; capped at 30',
+  backstab: 'per point of backstab damage — needs a 1H piercer in Primary; scales with its damage and your best Backstab skill mod',
 }
 
 function presetsFor(key: keyof UpgradeWeights): number[] {
@@ -154,6 +187,7 @@ function presetsFor(key: keyof UpgradeWeights): number[] {
 function stepFor(key: keyof UpgradeWeights): number {
   if (key === 'dps') return 10
   if (key === 'mana_regen' || key === 'haste') return 1
+  if (key === 'strikethrough' || key === 'spell_shield' || key === 'backstab') return 0.5
   return 0.1
 }
 
@@ -681,6 +715,7 @@ export default function GearUpgradeFinderPage(): React.ReactElement {
           {showWeights && weights && (
             <WeightsEditor
               weights={weights}
+              isRogue={selected?.class === ROGUE_CLASS}
               isCustom={weightsCustom}
               onChange={updateWeight}
               onSave={saveWeights}
@@ -843,9 +878,10 @@ function WeightRow({
 }
 
 function WeightsEditor({
-  weights, isCustom, onChange, onSave, onReset,
+  weights, isRogue, isCustom, onChange, onSave, onReset,
 }: {
   weights: UpgradeWeights
+  isRogue: boolean
   isCustom: boolean
   onChange: (key: keyof UpgradeWeights, value: number) => void
   onSave: () => Promise<void>
@@ -883,7 +919,7 @@ function WeightsEditor({
         </div>
       </div>
       <div className="flex flex-col" style={{ maxHeight: '42vh', overflowY: 'auto' }}>
-        {WEIGHT_ROWS.map((s) => (
+        {WEIGHT_ROWS.filter((s) => isRogue || !ROGUE_ONLY.has(s.key)).map((s) => (
           <WeightRow key={s.key} weightKey={s.key} label={s.label}
             value={weights[s.key]} onChange={onChange} />
         ))}
@@ -1252,6 +1288,18 @@ function DeltaChips({ cand }: { cand: UpgradeCandidate }): React.ReactElement {
             </span>
           )
         }
+        if (d.stat === 'backstab') {
+          // Backstab damage before → after the swap. A Primary that isn't a
+          // 1H piercer can't backstab at all, so call that out by name.
+          const lost = d.cand === 0 && d.current > 0
+          return (
+            <span key={d.stat} className="rounded px-1 text-[10px]"
+              style={{ backgroundColor: 'var(--color-surface-2)', color }}
+              title={`backstab damage ${d.current} → ${d.cand} (before hit roll and damage bonus)`}>
+              {lost ? 'No backstab' : 'Backstab'} {d.effective > 0 ? '+' : ''}{d.effective}
+            </span>
+          )
+        }
         if (d.stat === 'haste') {
           // Worn haste is best-of/capped: show the EFFECTIVE % gained, not the
           // item's raw haste (which can differ from what actually helps).
@@ -1269,7 +1317,7 @@ function DeltaChips({ cand }: { cand: UpgradeCandidate }): React.ReactElement {
           <span key={d.stat} className="rounded px-1 text-[10px]"
             style={{ backgroundColor: 'var(--color-surface-2)', color }}
             title={d.capped ? `${raw > 0 ? '+' : ''}${raw} on paper, but capped — only ${d.effective} counts` : undefined}>
-            {STAT_LABEL[d.stat] ?? d.stat} {raw > 0 ? '+' : ''}{raw}
+            {STAT_LABEL[d.stat] ?? d.stat} {raw > 0 ? '+' : ''}{raw}{PCT_STATS.has(d.stat) ? '%' : ''}
             {d.capped && <span style={{ color: 'var(--color-muted)' }}> (cap)</span>}
           </span>
         )

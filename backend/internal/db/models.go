@@ -58,6 +58,13 @@ type Item struct {
 	RecLevel int `json:"rec_level"`
 	ReqLevel int `json:"req_level"`
 
+	// SkillModType/SkillModValue are the item's skill modifier: +Value% to
+	// skill SkillModType (EQ skill id, e.g. 8 = Backstab) while worn. Only
+	// the best mod per skill across worn gear applies (EQMacEmu
+	// bonuses.cpp). Value 0 = no mod.
+	SkillModType  int `json:"skill_mod_type"`
+	SkillModValue int `json:"skill_mod_value"`
+
 	// Effects
 	ClickEffect int    `json:"click_effect"`
 	ClickName   string `json:"click_name"`

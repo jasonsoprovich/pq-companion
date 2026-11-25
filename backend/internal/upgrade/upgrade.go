@@ -21,6 +21,7 @@
 package upgrade
 
 import (
+	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/eqstat"
 )
 
@@ -60,6 +61,92 @@ type StatLine struct {
 	// (only the single highest item applies) and is level-capped, so it's scored
 	// as a separate loadout-aware term, not summed. See Score + Context.
 	Haste int `json:"haste"`
+
+	// PoP item stats ("mod2", Project Quarm 2026-11-23). Each is summed across
+	// worn gear and capped per character at db.Mod2Caps, so they score like
+	// the other capped stats. Same JSON keys as db.Mod2Stats.
+	Accuracy      int `json:"accuracy"`
+	Avoidance     int `json:"avoidance"`
+	Strikethrough int `json:"strikethrough"`
+	StunResist    int `json:"stun_resist"`
+	CombatEffects int `json:"combat_effects"`
+	SpellShield   int `json:"spell_shield"`
+	Shielding     int `json:"shielding"`
+	DamageShield  int `json:"damage_shield"`
+
+	// BackstabMod is the item's Backstab skill mod percent. Skill mods are
+	// best-of across worn gear (only the highest applies), so it's scored in
+	// the loadout-aware backstab term, not summed. See BackstabDamage.
+	BackstabMod int `json:"backstab_mod"`
+	// ItemType and RecLevel identify a weapon for backstab: it needs a 1H
+	// piercer (ItemType1HPiercing) in Primary, and the server scales weapon
+	// damage down below the recommended level.
+	ItemType int `json:"item_type"`
+	RecLevel int `json:"rec_level"`
+}
+
+// Mod2Of returns the PoP stats of a StatLine as db.Mod2Stats.
+func (s StatLine) Mod2Of() db.Mod2Stats {
+	return db.Mod2Stats{
+		Accuracy: s.Accuracy, Avoidance: s.Avoidance,
+		Strikethrough: s.Strikethrough, StunResist: s.StunResist,
+		CombatEffects: s.CombatEffects, SpellShield: s.SpellShield,
+		Shielding: s.Shielding, DamageShield: s.DamageShield,
+	}
+}
+
+// WithMod2 returns s with its PoP stats set from m.
+func (s StatLine) WithMod2(m db.Mod2Stats) StatLine {
+	s.Accuracy, s.Avoidance = m.Accuracy, m.Avoidance
+	s.Strikethrough, s.StunResist = m.Strikethrough, m.StunResist
+	s.CombatEffects, s.SpellShield = m.CombatEffects, m.SpellShield
+	s.Shielding, s.DamageShield = m.Shielding, m.DamageShield
+	return s
+}
+
+// Backstab constants (EQMacEmu zone/special_attacks.cpp Client::DoBackstab).
+const (
+	// ItemType1HPiercing is the only weapon type a client can backstab with
+	// from Primary; anything else makes backstab fail outright.
+	ItemType1HPiercing = 2
+	// SkillBackstab is the EQ skill id an item's skill mod names for Backstab.
+	SkillBackstab = 8
+	// HardSkillCap caps a skill raised by an item skill mod (features.h).
+	HardSkillCap = 252
+)
+
+// BackstabDamage is the client backstab base damage the server computes for
+// a Primary weapon (before the hit roll and damage bonus):
+// (skill × 0.02 + 2) × weapon damage, where skill includes the best worn
+// Backstab skill mod (skill × (100+mod)/100, integer, capped at 252) and the
+// weapon's damage is scaled below its recommended level. Zero when Primary
+// isn't a 1H piercer. Bane and elemental damage are target-dependent and
+// left out.
+func BackstabDamage(level, skill, mod int, primary StatLine) int {
+	if primary.ItemType != ItemType1HPiercing || primary.Damage <= 0 || skill <= 0 {
+		return 0
+	}
+	dmg := primary.Damage
+	if primary.RecLevel > 0 && level < primary.RecLevel {
+		dmg = recommendedLevelBonus(level, primary.RecLevel, dmg)
+	}
+	if mod > 0 {
+		skill = skill * (100 + mod) / 100
+		if skill > HardSkillCap {
+			skill = HardSkillCap
+		}
+	}
+	return int((float32(skill)*0.02 + 2.0) * float32(dmg))
+}
+
+// recommendedLevelBonus is Client::CalcRecommendedLevelBonus (zone/bonuses.cpp):
+// a stat scaled by level/reclevel, rounded half away from zero.
+func recommendedLevelBonus(level, recLevel, base int) int {
+	mod := (level * 10000 / recLevel) * base
+	if mod < 0 {
+		return (mod - 5000) / 10000
+	}
+	return (mod + 5000) / 10000
 }
 
 // Scoring caps for the two soft-capped worn stats.
@@ -118,6 +205,22 @@ type Weights struct {
 	// far above a shield or stat-stick, while a tank (low DPS, high AC) still
 	// prefers a shield offhand. Zero for casters. Applied in Score.
 	DPS float64 `json:"dps"`
+
+	// PoP item stats, per point (per percent for the % stats, per tenth of a
+	// percent for Combat Effects). Each earns nothing past its cap.
+	Accuracy      float64 `json:"accuracy"`
+	Avoidance     float64 `json:"avoidance"`
+	Strikethrough float64 `json:"strikethrough"`
+	StunResist    float64 `json:"stun_resist"`
+	CombatEffects float64 `json:"combat_effects"`
+	SpellShield   float64 `json:"spell_shield"`
+	Shielding     float64 `json:"shielding"`
+	DamageShield  float64 `json:"damage_shield"`
+	// Backstab weights each point of backstab base damage (BackstabDamage).
+	// Rogue only: it makes a 1H piercer in Primary a priority (anything else
+	// can't backstab) and values weapon damage and the best Backstab skill
+	// mod. Applied in Score; needs Context.BackstabSkill.
+	Backstab float64 `json:"backstab"`
 }
 
 // Context carries the character state needed for cap-aware scoring.
@@ -138,6 +241,19 @@ type Context struct {
 	// best-of-type, so a candidate's haste only helps if it beats this, and only
 	// up to the level cap (eqstat.MeleeHasteCap(Level)).
 	OtherHaste int
+
+	// BackstabSkill is the character's Backstab skill (0 = can't backstab,
+	// which skips the backstab term).
+	BackstabSkill int
+	// OtherBackstabMod is the best Backstab skill mod worn outside the
+	// compared slot and outside anything the candidate displaces (a 2H
+	// Primary drops the offhand's mod). The caller sets it per comparison.
+	OtherBackstabMod int
+	// Primary is the actual worn Primary weapon (zero = empty hand), never a
+	// summed Primary+Secondary baseline. SlotIsPrimary marks a Primary
+	// comparison, where the candidate becomes the Primary weapon.
+	Primary       StatLine
+	SlotIsPrimary bool
 }
 
 // statKind classifies how a stat's effective value is computed.
@@ -149,6 +265,7 @@ const (
 	resistCap                  // the five resists — eqstat.ResistCap
 	atkCapped                  // worn ATK — soft cap ATKSoftCap
 	ftCapped                   // worn mana regen — item cap ItemFTCap
+	mod2Capped                 // PoP item stats — per-stat cap (statDef.cap)
 )
 
 // statDef describes one scorable stat: how to read it from a StatLine, its
@@ -158,28 +275,37 @@ type statDef struct {
 	get  func(StatLine) int
 	wget func(Weights) float64
 	kind statKind
+	cap  int // mod2Capped only
 }
 
 // statDefs is the canonical ordered list of scorable stats. The order is the
 // display order used by the API/UI.
 var statDefs = []statDef{
-	{"hp", func(s StatLine) int { return s.HP }, func(w Weights) float64 { return w.HP }, uncapped},
-	{"mana", func(s StatLine) int { return s.Mana }, func(w Weights) float64 { return w.Mana }, uncapped},
-	{"mana_regen", func(s StatLine) int { return s.ManaRegen }, func(w Weights) float64 { return w.ManaRegen }, ftCapped},
-	{"atk", func(s StatLine) int { return s.Attack }, func(w Weights) float64 { return w.ATK }, atkCapped},
-	{"ac", func(s StatLine) int { return s.AC }, func(w Weights) float64 { return w.AC }, uncapped},
-	{"str", func(s StatLine) int { return s.STR }, func(w Weights) float64 { return w.STR }, attrCapped},
-	{"sta", func(s StatLine) int { return s.STA }, func(w Weights) float64 { return w.STA }, attrCapped},
-	{"agi", func(s StatLine) int { return s.AGI }, func(w Weights) float64 { return w.AGI }, attrCapped},
-	{"dex", func(s StatLine) int { return s.DEX }, func(w Weights) float64 { return w.DEX }, attrCapped},
-	{"wis", func(s StatLine) int { return s.WIS }, func(w Weights) float64 { return w.WIS }, attrCapped},
-	{"int", func(s StatLine) int { return s.INT }, func(w Weights) float64 { return w.INT }, attrCapped},
-	{"cha", func(s StatLine) int { return s.CHA }, func(w Weights) float64 { return w.CHA }, attrCapped},
-	{"mr", func(s StatLine) int { return s.MR }, func(w Weights) float64 { return w.MR }, resistCap},
-	{"fr", func(s StatLine) int { return s.FR }, func(w Weights) float64 { return w.FR }, resistCap},
-	{"cr", func(s StatLine) int { return s.CR }, func(w Weights) float64 { return w.CR }, resistCap},
-	{"dr", func(s StatLine) int { return s.DR }, func(w Weights) float64 { return w.DR }, resistCap},
-	{"pr", func(s StatLine) int { return s.PR }, func(w Weights) float64 { return w.PR }, resistCap},
+	{"hp", func(s StatLine) int { return s.HP }, func(w Weights) float64 { return w.HP }, uncapped, 0},
+	{"mana", func(s StatLine) int { return s.Mana }, func(w Weights) float64 { return w.Mana }, uncapped, 0},
+	{"mana_regen", func(s StatLine) int { return s.ManaRegen }, func(w Weights) float64 { return w.ManaRegen }, ftCapped, 0},
+	{"atk", func(s StatLine) int { return s.Attack }, func(w Weights) float64 { return w.ATK }, atkCapped, 0},
+	{"ac", func(s StatLine) int { return s.AC }, func(w Weights) float64 { return w.AC }, uncapped, 0},
+	{"str", func(s StatLine) int { return s.STR }, func(w Weights) float64 { return w.STR }, attrCapped, 0},
+	{"sta", func(s StatLine) int { return s.STA }, func(w Weights) float64 { return w.STA }, attrCapped, 0},
+	{"agi", func(s StatLine) int { return s.AGI }, func(w Weights) float64 { return w.AGI }, attrCapped, 0},
+	{"dex", func(s StatLine) int { return s.DEX }, func(w Weights) float64 { return w.DEX }, attrCapped, 0},
+	{"wis", func(s StatLine) int { return s.WIS }, func(w Weights) float64 { return w.WIS }, attrCapped, 0},
+	{"int", func(s StatLine) int { return s.INT }, func(w Weights) float64 { return w.INT }, attrCapped, 0},
+	{"cha", func(s StatLine) int { return s.CHA }, func(w Weights) float64 { return w.CHA }, attrCapped, 0},
+	{"mr", func(s StatLine) int { return s.MR }, func(w Weights) float64 { return w.MR }, resistCap, 0},
+	{"fr", func(s StatLine) int { return s.FR }, func(w Weights) float64 { return w.FR }, resistCap, 0},
+	{"cr", func(s StatLine) int { return s.CR }, func(w Weights) float64 { return w.CR }, resistCap, 0},
+	{"dr", func(s StatLine) int { return s.DR }, func(w Weights) float64 { return w.DR }, resistCap, 0},
+	{"pr", func(s StatLine) int { return s.PR }, func(w Weights) float64 { return w.PR }, resistCap, 0},
+	{"accuracy", func(s StatLine) int { return s.Accuracy }, func(w Weights) float64 { return w.Accuracy }, mod2Capped, db.Mod2Caps.Accuracy},
+	{"avoidance", func(s StatLine) int { return s.Avoidance }, func(w Weights) float64 { return w.Avoidance }, mod2Capped, db.Mod2Caps.Avoidance},
+	{"strikethrough", func(s StatLine) int { return s.Strikethrough }, func(w Weights) float64 { return w.Strikethrough }, mod2Capped, db.Mod2Caps.Strikethrough},
+	{"stun_resist", func(s StatLine) int { return s.StunResist }, func(w Weights) float64 { return w.StunResist }, mod2Capped, db.Mod2Caps.StunResist},
+	{"combat_effects", func(s StatLine) int { return s.CombatEffects }, func(w Weights) float64 { return w.CombatEffects }, mod2Capped, db.Mod2Caps.CombatEffects},
+	{"spell_shield", func(s StatLine) int { return s.SpellShield }, func(w Weights) float64 { return w.SpellShield }, mod2Capped, db.Mod2Caps.SpellShield},
+	{"shielding", func(s StatLine) int { return s.Shielding }, func(w Weights) float64 { return w.Shielding }, mod2Capped, db.Mod2Caps.Shielding},
+	{"damage_shield", func(s StatLine) int { return s.DamageShield }, func(w Weights) float64 { return w.DamageShield }, mod2Capped, db.Mod2Caps.DamageShield},
 }
 
 // StatDelta is the per-stat effective comparison between a candidate item and
@@ -229,6 +355,8 @@ func (d statDef) effective(ctx Context, base, itemVal int) (eff int, capped bool
 		eff = clamp(base+itemVal, 0, ATKSoftCap) - clamp(base, 0, ATKSoftCap)
 	case ftCapped:
 		eff = clamp(base+itemVal, 0, ItemFTCap) - clamp(base, 0, ItemFTCap)
+	case mod2Capped:
+		eff = clamp(base+itemVal, 0, d.cap) - clamp(base, 0, d.cap)
 	default: // uncapped
 		return itemVal, false
 	}
@@ -311,6 +439,31 @@ func Score(ctx Context, w Weights, slotCur, cand StatLine) Result {
 				Current:   int(curR*100 + 0.5),
 				Effective: int(deltaR*100 + 0.5*sign(deltaR)),
 				Weight:    w.DPS,
+				Weighted:  weighted,
+			})
+		}
+	}
+
+	// Backstab — loadout-aware like haste: the before/after backstab damage
+	// with the actual Primary weapon and the best Backstab skill mod. Swapping
+	// a dagger for anything that isn't a 1H piercer in Primary drops it to 0.
+	if w.Backstab != 0 && ctx.BackstabSkill > 0 {
+		candPrimary := ctx.Primary
+		if ctx.SlotIsPrimary {
+			candPrimary = cand
+		}
+		curD := BackstabDamage(ctx.Level, ctx.BackstabSkill, maxInt(ctx.OtherBackstabMod, slotCur.BackstabMod), ctx.Primary)
+		candD := BackstabDamage(ctx.Level, ctx.BackstabSkill, maxInt(ctx.OtherBackstabMod, cand.BackstabMod), candPrimary)
+		if curD != 0 || candD != 0 {
+			eff := candD - curD
+			weighted := w.Backstab * float64(eff)
+			res.Score += weighted
+			res.Deltas = append(res.Deltas, StatDelta{
+				Stat:      "backstab",
+				Cand:      candD,
+				Current:   curD,
+				Effective: eff,
+				Weight:    w.Backstab,
 				Weighted:  weighted,
 			})
 		}

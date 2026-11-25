@@ -71,6 +71,9 @@ var archetypeWeights = map[Archetype]Weights{
 		// Tanks want haste capped too; ATK matters for aggro/dps. A shield
 		// offhand (high AC) still usually wins via the AC weight.
 		ATK: 0.6, Haste: 10, DPS: 40,
+		// PoP item stats: defensive ones lead for a tank.
+		Accuracy: 0.3, Avoidance: 1.0, Strikethrough: 2, StunResist: 3,
+		CombatEffects: 0.3, SpellShield: 4, Shielding: 3, DamageShield: 0.3,
 	},
 	ArchMelee: {
 		HP: 0.6, Mana: 0, AC: 3.0,
@@ -79,12 +82,16 @@ var archetypeWeights = map[Archetype]Weights{
 		// Cap worn haste first (high weight, drops to 0 once capped), then ATK
 		// and weapon ratio dominate.
 		ATK: 1.0, Haste: 12, DPS: 250,
+		Accuracy: 1.0, Avoidance: 0.4, Strikethrough: 4, StunResist: 1.5,
+		CombatEffects: 0.5, SpellShield: 2, Shielding: 1.5,
 	},
 	ArchHybrid: {
 		HP: 0.7, Mana: 0.4, AC: 2.0,
 		STR: 0.6, STA: 0.5, AGI: 0.3, DEX: 0.5, WIS: 0.3, INT: 0, CHA: 0,
 		MR: 0.2, FR: 0.2, CR: 0.2, DR: 0.2, PR: 0.2,
 		ATK: 0.8, Haste: 11, DPS: 180,
+		Accuracy: 0.8, Avoidance: 0.4, Strikethrough: 3, StunResist: 1.5,
+		CombatEffects: 0.4, SpellShield: 2, Shielding: 1.5,
 	},
 	ArchWisCaster: {
 		HP: 0.5, Mana: 1.0, AC: 1.0,
@@ -93,12 +100,14 @@ var archetypeWeights = map[Archetype]Weights{
 		// Mana regen (Flowing Thought) is the guides' #2 priority for every
 		// caster, right after focus items — high weight, caps at 15.
 		ManaRegen: 25, ATK: 0, Haste: 0, DPS: 0,
+		Avoidance: 0.2, StunResist: 1, SpellShield: 2, Shielding: 0.5,
 	},
 	ArchIntCaster: {
 		HP: 0.4, Mana: 1.0, AC: 0.3,
 		STR: 0, STA: 0.1, AGI: 0, DEX: 0, WIS: 0, INT: 1.0, CHA: 0,
 		MR: 0.2, FR: 0.2, CR: 0.2, DR: 0.2, PR: 0.2,
 		ManaRegen: 25, ATK: 0, Haste: 0, DPS: 0,
+		Avoidance: 0.2, StunResist: 1, SpellShield: 2, Shielding: 0.5,
 	},
 }
 
@@ -121,6 +130,12 @@ func applyClassTweaks(class int, w *Weights) {
 	case classRanger, classBeastlord:
 		// Melee first, but they cast/buff — modest mana regen value.
 		w.ManaRegen = 5
+	case classRogue:
+		// Backstab needs a 1H piercer in Primary and scales with its damage,
+		// and it's a large share of rogue damage: 3 per point of backstab
+		// base damage makes a sword in Primary (≈ −250 vs a 12-damage
+		// dagger) lose to any piercer, and +1 dagger damage ≈ +21.
+		w.Backstab = 3.0
 	case classBard:
 		// "prioritize AC and +Attack"; not a weapon-ratio DPS class (twists
 		// songs), so AC-leaning with lower weapon-DPS weight + some mana regen.

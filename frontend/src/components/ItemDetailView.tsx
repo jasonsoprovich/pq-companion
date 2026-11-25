@@ -34,6 +34,7 @@ import {
   weightLabel,
 } from '../lib/itemHelpers'
 import { mod2List, mod2Value } from '../lib/itemMod2'
+import { skillModOf, SKILL_MOD_HINT } from '../lib/itemSkillMod'
 import { ItemIcon } from './Icon'
 import { ItemTradeskillsTab } from './RecipeView'
 import { SourceNPCTable } from './SourceNPCTable'
@@ -88,6 +89,7 @@ function OverviewTab({ item, copied, onCopy, sources, onNavigate }: {
   const hasStats = item.hp > 0 || item.mana > 0 || item.str > 0 || item.sta > 0 || item.agi > 0 || item.dex > 0 || item.wis > 0 || item.int > 0 || item.cha > 0
   const hasResists = item.mr > 0 || item.cr > 0 || item.dr > 0 || item.fr > 0 || item.pr > 0
   const mod2 = mod2List(item)
+  const skillMod = skillModOf(item)
   const hasEffects =
     (item.click_effect > 0 && !!item.click_name) ||
     (item.proc_effect > 0 && !!item.proc_name) ||
@@ -173,6 +175,13 @@ function OverviewTab({ item, copied, onCopy, sources, onNavigate }: {
           {mod2.map((e) => (
             <StatRow key={e.key} label={e.label} value={mod2Value(e)} title={e.hint} />
           ))}
+        </Section>
+      )}
+      {skillMod && (
+        <Section title="Skill Mod">
+          <StatRow label={skillMod.skill}
+            value={`${skillMod.value > 0 ? '+' : ''}${skillMod.value}%`}
+            title={SKILL_MOD_HINT} />
         </Section>
       )}
       {hasEffects && (

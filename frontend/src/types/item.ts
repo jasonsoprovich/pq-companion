@@ -75,6 +75,10 @@ export interface Item {
 
   // Levels
   rec_level: number
+  // Item skill modifier: +skill_mod_value% to skill skill_mod_type (see
+  // lib/itemSkillMod.ts). Optional for older backends.
+  skill_mod_type?: number
+  skill_mod_value?: number
   req_level: number
 
   // Effects

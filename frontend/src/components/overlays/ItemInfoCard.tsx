@@ -36,6 +36,7 @@ import { sectionDef, type ItemInfoSectionId } from '../../lib/itemInfoLayout'
 import { ItemIcon } from '../Icon'
 import { ResistChip } from '../ResistChip'
 import { mod2List, mod2Value } from '../../lib/itemMod2'
+import { skillModOf } from '../../lib/itemSkillMod'
 import SpellHoverCard from '../SpellHoverCard'
 import WishlistStarButton from '../WishlistStarButton'
 import ItemHoverCard from '../ItemHoverCard'
@@ -366,6 +367,8 @@ function FactsSection({ item, theme, vis }: SectionProps): React.ReactElement | 
   if (vis('facts.pop')) {
     for (const e of mod2List(item)) add(e.key, <Chip label={e.short} value={mod2Value(e)} theme={theme} />)
   }
+  const skillMod = vis('facts.stats') ? skillModOf(item) : null
+  if (skillMod) add('skillmod', <Chip label={skillMod.skill} value={`${skillMod.value > 0 ? '+' : ''}${skillMod.value}%`} theme={theme} />)
   if (vis('facts.level') && item.req_level > 0) add('req', <Chip label="Req Lv" value={item.req_level} theme={theme} />)
   if (vis('facts.level') && item.rec_level > 0) add('rec', <Chip label="Rec Lv" value={item.rec_level} theme={theme} />)
   if (vis('facts.stack') && item.stackable > 0 && item.stack_size > 1) add('stack', <Chip label="Stack" value={item.stack_size} theme={theme} />)

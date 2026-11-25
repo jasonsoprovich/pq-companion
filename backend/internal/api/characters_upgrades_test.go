@@ -521,3 +521,54 @@ func TestZoneCandidates_ViaMold(t *testing.T) {
 		t.Errorf("product sources = %+v, want the mold's", sources[11446])
 	}
 }
+
+// Backstab in a rogue's Primary comparison must use the actual worn Primary
+// (12 damage), never the summed Primary+Secondary baseline (22), and a 2H
+// candidate drops the offhand's Backstab skill mod.
+func TestScoreSlotCands_BackstabUsesActualPrimary(t *testing.T) {
+	h := &charactersHandler{}
+	wc := h.newWornCache()
+	byLoc := map[string][]zeal.InventoryEntry{
+		"Primary":   {{Location: "Primary", ID: 1, Name: "Dagger"}},
+		"Secondary": {{Location: "Secondary", ID: 2, Name: "Mod Dagger"}},
+	}
+	worn := map[int]*db.Item{
+		1: {ID: 1, Name: "Dagger", ItemType: 2, Damage: 12, Slots: 0x006000},
+		2: {ID: 2, Name: "Mod Dagger", ItemType: 2, Damage: 10, Slots: 0x006000,
+			SkillModType: upgrade.SkillBackstab, SkillModValue: 12},
+	}
+	cands := []db.UpgradeCandidate{
+		{ID: 3, Name: "Better Dagger", ItemType: 2, Damage: 13, Slots: 0x006000},
+		{ID: 4, Name: "2H Spear", ItemType: 35, Damage: 30, Slots: 0x002000},
+	}
+	slot, _ := upgradeSlotByKey("primary")
+	ctx := upgrade.Context{Level: 65, BackstabSkill: 225}
+	weights := upgrade.Weights{Backstab: 1}
+
+	_, _, results, _, _ := h.scoreSlotCands(character.Character{}, ctx, weights, slot, byLoc, worn, true, "", 10, nil, nil, wc, nil, cands)
+	got := map[string]float64{}
+	for _, r := range results {
+		got[r.Name] = r.Score
+	}
+	// With the offhand's +12% mod (skill 252): 7.04×12 = 84 → 7.04×13 = 91.
+	if got["Better Dagger"] != 7 {
+		t.Errorf("Better Dagger score = %v, want 7 (84 → 91)", got["Better Dagger"])
+	}
+	// The 2H spear can't backstab and displaces the mod offhand: 84 → 0.
+	if got["2H Spear"] != -84 {
+		t.Errorf("2H Spear score = %v, want -84", got["2H Spear"])
+	}
+}
+
+func TestBackfillNewWeights(t *testing.T) {
+	def := upgrade.DefaultWeights(8) // rogue
+	w := upgrade.Weights{SpellShield: 0}
+	// A profile saved before the PoP stats, except spell_shield set to 0.
+	backfillNewWeights(`{"hp":1,"spell_shield":0}`, &w, def)
+	if w.Backstab != def.Backstab || w.Strikethrough != def.Strikethrough {
+		t.Errorf("missing keys not backfilled: %+v", w)
+	}
+	if w.SpellShield != 0 {
+		t.Errorf("saved spell_shield 0 overwritten with %v", w.SpellShield)
+	}
+}

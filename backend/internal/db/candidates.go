@@ -54,6 +54,12 @@ type UpgradeCandidate struct {
 	// finder derives worn ATK and melee haste.
 	WornEffect int `json:"worn_effect"`
 	WornLevel  int `json:"worn_level"`
+
+	// PoP mod2 stats and the skill modifier, scored by the finder (see
+	// upgrade.StatLine).
+	Mod2Stats
+	SkillModType  int `json:"skill_mod_type"`
+	SkillModValue int `json:"skill_mod_value"`
 }
 
 // FocusOption is a distinct focus effect found on a class's usable gear, for
@@ -255,7 +261,10 @@ func (db *DB) UpgradeCandidates(f CandidateFilter) ([]UpgradeCandidate, error) {
 	  COALESCE(NULLIF(i.clickname, ''), (SELECT s.name FROM spells_new s WHERE s.id = i.clickeffect), '') AS clickname,
 	  i.proceffect,
 	  COALESCE(NULLIF(i.procname, ''), (SELECT s.name FROM spells_new s WHERE s.id = i.proceffect), '') AS procname,
-	  i.worneffect, i.wornlevel
+	  i.worneffect, i.wornlevel,
+	  i.accuracy, i.avoidance, i.strikethrough, i.stunresist,
+	  i.combateffects, i.spellshield, i.shielding, i.damageshield,
+	  i.skillmodtype, i.skillmodvalue
 	  FROM items i WHERE ` + where
 
 	rows, err := db.Query(q, args...)
@@ -277,6 +286,9 @@ func (db *DB) UpgradeCandidates(f CandidateFilter) ([]UpgradeCandidate, error) {
 			&c.ClickEffect, &c.ClickName,
 			&c.ProcEffect, &c.ProcName,
 			&c.WornEffect, &c.WornLevel,
+			&c.Accuracy, &c.Avoidance, &c.Strikethrough, &c.StunResist,
+			&c.CombatEffects, &c.SpellShield, &c.Shielding, &c.DamageShield,
+			&c.SkillModType, &c.SkillModValue,
 		); err != nil {
 			return nil, fmt.Errorf("upgrade candidates scan: %w", err)
 		}

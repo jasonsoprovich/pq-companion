@@ -42,3 +42,36 @@ func TestMod2Capped(t *testing.T) {
 		t.Errorf("Capped() = %+v, want %+v", got, want)
 	}
 }
+
+// The full item read (GetItem) and the finder's lean candidate read return
+// the same skill mod and PoP stats for an item.
+func TestSkillModAndMod2_ItemAndCandidateAgree(t *testing.T) {
+	d := openTestDB(t)
+	cases := []struct {
+		id, slotMask    int
+		modType, modVal int
+		mod2            db.Mod2Stats
+	}{
+		// Ifir, Dagger of Fire: Backstab (8) +12%.
+		{24602, 1 << 13, 8, 12, db.Mod2Stats{}},
+		// Padded Tigerskin Gloves: Strikethrough 10.
+		{27000, 1 << 12, 0, 0, db.Mod2Stats{Strikethrough: 10}},
+	}
+	for _, c := range cases {
+		it, err := d.GetItem(c.id)
+		if err != nil {
+			t.Fatalf("GetItem(%d): %v", c.id, err)
+		}
+		if it.SkillModType != c.modType || it.SkillModValue != c.modVal || it.Mod2Stats != c.mod2 {
+			t.Errorf("GetItem(%d): mod %d/%d mod2 %+v", c.id, it.SkillModType, it.SkillModValue, it.Mod2Stats)
+		}
+		cands, err := d.UpgradeCandidates(db.CandidateFilter{SlotMask: c.slotMask, ItemIDs: []int{c.id}})
+		if err != nil || len(cands) != 1 {
+			t.Fatalf("UpgradeCandidates(%d): %d rows, %v", c.id, len(cands), err)
+		}
+		cd := cands[0]
+		if cd.SkillModType != it.SkillModType || cd.SkillModValue != it.SkillModValue || cd.Mod2Stats != it.Mod2Stats {
+			t.Errorf("candidate %d disagrees with item: %d/%d %+v", c.id, cd.SkillModType, cd.SkillModValue, cd.Mod2Stats)
+		}
+	}
+}

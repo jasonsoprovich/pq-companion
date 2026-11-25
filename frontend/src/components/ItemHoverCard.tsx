@@ -23,6 +23,7 @@ import {
 } from '../lib/itemHelpers'
 import type { Item } from '../types/item'
 import { mod2List, mod2Value } from '../lib/itemMod2'
+import { skillModOf, skillModText } from '../lib/itemSkillMod'
 
 const OPEN_DELAY_MS = 300
 const CURSOR_OFFSET = 12
@@ -197,7 +198,9 @@ function CardBody({
   const stats = statList(item)
   const resists = resistList(item)
   const mod2 = mod2List(item)
+  const skillMod = skillModOf(item)
   const effects = [
+    skillMod && `Skill mod: ${skillModText(skillMod)}`,
     item.click_name && `Click: ${item.click_name}`,
     item.proc_name && `Proc: ${item.proc_name}`,
     item.worn_name && `Worn: ${item.worn_name}`,

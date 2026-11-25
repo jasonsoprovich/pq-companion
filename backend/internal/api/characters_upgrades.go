@@ -110,7 +110,17 @@ func sumStatLine(a, b upgrade.StatLine) upgrade.StatLine {
 		Damage: a.Damage + b.Damage, Delay: a.Delay + b.Delay,
 		Attack: a.Attack + b.Attack, ManaRegen: a.ManaRegen + b.ManaRegen,
 		Haste: haste,
-	}
+		// Skill mods are best-of like haste; the weapon identity stays a's
+		// (the Primary) — backstab reads Context.Primary, not this sum.
+		BackstabMod: max(a.BackstabMod, b.BackstabMod),
+		ItemType:    a.ItemType, RecLevel: a.RecLevel,
+	}.WithMod2(sumMod2(a, b))
+}
+
+func sumMod2(a, b upgrade.StatLine) db.Mod2Stats {
+	m := a.Mod2Of()
+	m.Add(b.Mod2Of())
+	return m
 }
 
 // upgradeCurrentItem describes an item currently worn in the searched slot.
@@ -236,7 +246,7 @@ func (h *charactersHandler) upgrades(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := upgrade.Context{
 		Level: char.Level, Current: statLineFromBlock(h.currentTotals(char)),
-		StatCapMod: h.statCapMods(char),
+		StatCapMod: h.statCapMods(char), BackstabSkill: h.backstabSkill(char),
 	}
 
 	byLoc, hasGear := h.loadEquipped(cfg.EQPath, char.Name)
@@ -416,7 +426,7 @@ func (h *charactersHandler) loadUpgradeSweep(w http.ResponseWriter, r *http.Requ
 		weights: weights,
 		ctx: upgrade.Context{
 			Level: char.Level, Current: statLineFromBlock(h.currentTotals(char)),
-			StatCapMod: h.statCapMods(char),
+			StatCapMod: h.statCapMods(char), BackstabSkill: h.backstabSkill(char),
 		},
 		excludePoP:     !(q.Get("show_pop") == "1" || q.Get("show_pop") == "true"),
 		excludeCrafted: q.Get("hide_crafted") != "0" && q.Get("hide_crafted") != "false",
@@ -791,6 +801,36 @@ func (h *charactersHandler) scoreSlotCands(
 	}
 	ctx.OtherHaste = otherHaste
 
+	// Backstab: the actual worn Primary (for every slot, never a summed
+	// baseline) and the best Backstab skill mod outside this slot. A 2H
+	// Primary candidate also displaces the offhand, so it gets the best mod
+	// outside both hands (otherBSModNoOffhand, applied per candidate below).
+	var otherBSModNoOffhand int
+	if ctx.BackstabSkill > 0 {
+		secLoc := ""
+		if secSlot, ok := upgradeSlotByKey("secondary"); ok {
+			secLoc = secSlot.Location
+		}
+		ctx.OtherBackstabMod, otherBSModNoOffhand = 0, 0
+		for loc, m := range h.backstabModByLocation(byLoc, worn) {
+			if loc == slot.Location {
+				continue
+			}
+			ctx.OtherBackstabMod = max(ctx.OtherBackstabMod, m)
+			if loc != secLoc {
+				otherBSModNoOffhand = max(otherBSModNoOffhand, m)
+			}
+		}
+		ctx.Primary = upgrade.StatLine{}
+		if priSlot, ok := upgradeSlotByKey("primary"); ok {
+			priWorn := h.equippedItemsForSlot(byLoc, priSlot, wc, worn)
+			if priSlot.Index < len(priWorn) {
+				ctx.Primary = priWorn[priSlot.Index].Stats
+			}
+		}
+		ctx.SlotIsPrimary = slot.Key == "primary"
+	}
+
 	// allWorn is every item at this Location (both earrings, both rings, …);
 	// current is just the one in THIS physical slot (slot.Index), which is what
 	// we display and rank against. An empty second slot → empty baseline → the
@@ -870,7 +910,11 @@ func (h *charactersHandler) scoreSlotCands(
 			replacesSecondary = true
 			secondaryName = offhand.Name
 		}
-		res := upgrade.Score(ctx, weights, slotCur, h.candStatLine(c, wc))
+		cctx := ctx
+		if replacesSecondary {
+			cctx.OtherBackstabMod = otherBSModNoOffhand
+		}
+		res := upgrade.Score(cctx, weights, slotCur, h.candStatLine(c, wc))
 		score := res.Score
 		// A wanted focus (that rank or better, not already worn) is listed in
 		// priority whatever its stat score; the score itself stays honest.
@@ -943,6 +987,7 @@ func (h *charactersHandler) resolveWeights(char character.Character) upgrade.Wei
 			if !strings.Contains(raw, `"mana_regen"`) {
 				wts.ManaRegen = def.ManaRegen
 			}
+			backfillNewWeights(raw, &wts, def)
 			return wts
 		}
 	}
@@ -1351,7 +1396,7 @@ func statLineFromBlock(b statBlock) upgrade.StatLine {
 		// regen) is uncapped and never item-sourced, so folding it in would
 		// falsely report the 15 cap as reached and hide real FT upgrades.
 		Attack: b.Breakdown.Attack.Item, ManaRegen: b.FTRaw,
-	}
+	}.WithMod2(b.Mod2Raw) // raw: Score clamps both sides to each cap
 }
 
 // wornCache memoizes worn-effect spell contributions within one request. A
@@ -1460,7 +1505,9 @@ func statLineFromCandidate(c db.UpgradeCandidate) upgrade.StatLine {
 		WIS: c.WIS, INT: c.INT, CHA: c.CHA,
 		MR: c.MR, FR: c.FR, CR: c.CR, DR: c.DR, PR: c.PR,
 		Damage: c.Damage, Delay: c.Delay,
-	}
+		BackstabMod: backstabMod(c.SkillModType, c.SkillModValue),
+		ItemType:    c.ItemType, RecLevel: c.RecLevel,
+	}.WithMod2(c.Mod2Stats)
 }
 
 func statLineFromItem(it *db.Item) upgrade.StatLine {
@@ -1471,5 +1518,71 @@ func statLineFromItem(it *db.Item) upgrade.StatLine {
 		MR: it.MagicResist, FR: it.FireResist, CR: it.ColdResist,
 		DR: it.DiseaseResist, PR: it.PoisonResist,
 		Damage: it.Damage, Delay: it.Delay,
+		BackstabMod: backstabMod(it.SkillModType, it.SkillModValue),
+		ItemType:    it.ItemType, RecLevel: it.RecLevel,
+	}.WithMod2(it.Mod2Stats)
+}
+
+// backstabMod returns an item's Backstab skill mod percent, 0 for any other
+// skill or a negative mod (the server only applies positive skill mods).
+func backstabMod(skillType, value int) int {
+	if skillType != upgrade.SkillBackstab || value <= 0 {
+		return 0
+	}
+	return value
+}
+
+// backstabModByLocation returns the best Backstab skill mod worn at each
+// location (skill mods are best-of, like worn haste).
+func (h *charactersHandler) backstabModByLocation(byLoc map[string][]zeal.InventoryEntry, worn map[int]*db.Item) map[string]int {
+	out := make(map[string]int, len(byLoc))
+	for loc, entries := range byLoc {
+		for _, e := range entries {
+			if item := worn[e.ID]; item != nil {
+				out[loc] = max(out[loc], backstabMod(item.SkillModType, item.SkillModValue))
+			}
+		}
+	}
+	return out
+}
+
+// backstabSkill is the character's Backstab skill for scoring: the class
+// cap at its level (225 for a rogue at 60–65, the skill nearly every
+// endgame rogue has maxed). 0 for classes without Backstab, which skips the
+// backstab term entirely.
+func (h *charactersHandler) backstabSkill(char character.Character) int {
+	if h.db == nil || char.Level <= 0 {
+		return 0
+	}
+	c, err := h.db.SkillCap(upgrade.SkillBackstab, char.Class+1, char.Level)
+	if err != nil {
+		return 0
+	}
+	return c
+}
+
+// backfillNewWeights fills weights added with the PoP item stats and
+// backstab from the class default when an older saved profile lacks the key
+// (JSON can't tell a missing key from an intentional 0).
+func backfillNewWeights(raw string, w *upgrade.Weights, def upgrade.Weights) {
+	fields := []struct {
+		key string
+		dst *float64
+		src float64
+	}{
+		{"accuracy", &w.Accuracy, def.Accuracy},
+		{"avoidance", &w.Avoidance, def.Avoidance},
+		{"strikethrough", &w.Strikethrough, def.Strikethrough},
+		{"stun_resist", &w.StunResist, def.StunResist},
+		{"combat_effects", &w.CombatEffects, def.CombatEffects},
+		{"spell_shield", &w.SpellShield, def.SpellShield},
+		{"shielding", &w.Shielding, def.Shielding},
+		{"damage_shield", &w.DamageShield, def.DamageShield},
+		{"backstab", &w.Backstab, def.Backstab},
+	}
+	for _, f := range fields {
+		if !strings.Contains(raw, `"`+f.key+`"`) {
+			*f.dst = f.src
+		}
 	}
 }
