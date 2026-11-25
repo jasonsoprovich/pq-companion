@@ -2852,6 +2852,16 @@ func BeastlordPack() TriggerPack {
 
 // GeneralTriggersPack returns the pre-built class-agnostic trigger pack with
 // alerts for incoming tells, deaths, spell resists, and spell interrupts.
+// groupMemberDiedExcludes drops NPC/pet victims from the "Group Member Died"
+// trigger (see its definition). Shared with the DefaultUpdate that backfills
+// them onto older installs; a func so callers never share one slice.
+func groupMemberDiedExcludes() []string {
+	return []string{
+		`^[a-z]`,
+		`^\S+ \S+.*has been slain by`,
+	}
+}
+
 func GeneralTriggersPack() TriggerPack {
 	return TriggerPack{
 		PackName:    "General Triggers",
@@ -2916,10 +2926,7 @@ func GeneralTriggersPack() TriggerPack {
 				// word named NPCs (e.g. "Sontalak") are textually
 				// indistinguishable from a player and can still leak — that
 				// needs NPC-awareness, not regex.
-				ExcludePatterns: []string{
-					`^[a-z]`,
-					`^\S+ \S+.*has been slain by`,
-				},
+				ExcludePatterns: groupMemberDiedExcludes(),
 			},
 			{
 				Name:     "Spell Resist",
@@ -3729,6 +3736,19 @@ func DefaultUpdates() []DefaultUpdate {
 			AppendExcludePatterns: []string{
 				`tells you, 'You are already trained to the limit`,
 			},
+		},
+		{
+			// 2026-11-24: the NPC-victim excludes on "Group Member Died"
+			// (b8be60b9, v0.13.2) only reached fresh installs. Rows created
+			// before then kept the bare `\w+ has been slain by` pattern, and
+			// the pack-baseline seed (v0.2x) recorded the already-fixed
+			// definition as baseline, so the pack-update diff never offered
+			// them the fix either — GROUP DEATH fired on every mob killed.
+			// Reported by Vortikai on Discord.
+			Key:                   "GeneralTriggers:GroupMemberDied:npc-victim-excludes-v1",
+			PackName:              "General Triggers",
+			TriggerName:           "Group Member Died",
+			AppendExcludePatterns: groupMemberDiedExcludes(),
 		},
 	}
 }
