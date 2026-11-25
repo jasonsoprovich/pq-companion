@@ -61,7 +61,21 @@ const (
 	MaxPinMinutes   = 60
 	MinFontScale    = 0.5
 	MaxFontScale    = 3.0
+	// Tell conversation tabs: how many stay open before the least recently
+	// active read one is closed.
+	DefaultMaxTellTabs = 8
+	MinMaxTellTabs     = 2
+	LimitMaxTellTabs   = 30
 )
+
+// Layout values: one list for every channel, or a tab per channel.
+const (
+	LayoutCombined = "combined"
+	LayoutTabs     = "tabs"
+)
+
+// SelfColorNone turns off the separate color for your own lines.
+const SelfColorNone = "none"
 
 // Sources picks which log lines a window considers at all.
 type Sources struct {
@@ -105,6 +119,15 @@ type Appearance struct {
 	ShowChannel    bool    `json:"show_channel"`
 	// ChannelColors overrides the default text color per channel key.
 	ChannelColors map[string]string `json:"channel_colors,omitempty"`
+	// SelfColor colors your own lines: "" = the default (white),
+	// SelfColorNone = the channel color, or a #rrggbb color.
+	SelfColor string `json:"self_color,omitempty"`
+	// Layout is LayoutCombined ("" means the same) or LayoutTabs.
+	Layout string `json:"layout,omitempty"`
+	// TellTabs gives each tell conversation its own tab (tabs layout only),
+	// with at most MaxTellTabs open (0 = DefaultMaxTellTabs).
+	TellTabs    bool `json:"tell_tabs,omitempty"`
+	MaxTellTabs int  `json:"max_tell_tabs,omitempty"`
 }
 
 // WindowDef is the user-editable definition of one chat window.
@@ -156,6 +179,9 @@ type WindowState struct {
 	Seq   int64  `json:"seq"`   // last seq handed out
 	Lines []Line `json:"lines"` // oldest first
 	Pins  []Pin  `json:"pins"`
+	// Replay is true while a Log Feed replay fills the window, so clients
+	// can tell replayed lines from live ones.
+	Replay bool `json:"replay,omitempty"`
 }
 
 // Window is a definition plus its live contents.
@@ -178,6 +204,8 @@ type LinesBatch struct {
 	Epoch int64  `json:"epoch"`
 	Lines []Line `json:"lines"`
 	Pins  []Pin  `json:"pins"`
+	// Replay: these lines come from a Log Feed replay (see WindowState).
+	Replay bool `json:"replay,omitempty"`
 }
 
 // LinesEvent is the WSEventLines payload.

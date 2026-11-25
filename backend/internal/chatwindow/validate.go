@@ -96,6 +96,16 @@ func Validate(def WindowDef) (WindowDef, error) {
 	if len(colors) > 0 {
 		a.ChannelColors = colors
 	}
+	if a.SelfColor != SelfColorNone && !colorRe.MatchString(a.SelfColor) {
+		a.SelfColor = ""
+	}
+	if a.Layout != LayoutTabs {
+		a.Layout = ""
+	}
+	if a.MaxTellTabs == 0 {
+		a.MaxTellTabs = DefaultMaxTellTabs
+	}
+	a.MaxTellTabs = int(clamp(float64(a.MaxTellTabs), MinMaxTellTabs, LimitMaxTellTabs))
 
 	if def.MaxLines <= 0 {
 		def.MaxLines = DefaultMaxLines

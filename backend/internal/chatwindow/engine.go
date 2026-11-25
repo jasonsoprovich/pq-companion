@@ -195,10 +195,11 @@ func (e *Engine) flush() {
 			continue
 		}
 		ev.Windows = append(ev.Windows, LinesBatch{
-			ID:    w.Def.ID,
-			Epoch: w.State.Epoch,
-			Lines: lines,
-			Pins:  append([]Pin{}, w.State.Pins...),
+			ID:     w.Def.ID,
+			Epoch:  w.State.Epoch,
+			Lines:  lines,
+			Pins:   append([]Pin{}, w.State.Pins...),
+			Replay: w.State.Replay,
 		})
 	}
 	e.pending = map[string][]Line{}
@@ -497,6 +498,7 @@ func (e *Engine) SetReplaying(active bool) {
 			e.replaySaved[w.Def.ID] = cloneState(w.State)
 			w.State.Lines = nil
 			w.State.Pins = nil
+			w.State.Replay = true
 			e.replaceLocked(w)
 		}
 	} else {
@@ -509,6 +511,7 @@ func (e *Engine) SetReplaying(active bool) {
 				w.State = WindowState{}
 			}
 			w.State.Seq = seq
+			w.State.Replay = false
 			e.replaceLocked(w)
 		}
 		e.replaySaved = nil
@@ -559,7 +562,7 @@ func (e *Engine) Create(def WindowDef) (WindowDef, error) {
 		return def, fmt.Errorf("at most %d chat windows", MaxWindows)
 	}
 	v.ID = newID()
-	w := &Window{Def: v, State: WindowState{Epoch: e.nextEpoch()}}
+	w := &Window{Def: v, State: WindowState{Epoch: e.nextEpoch(), Replay: e.replaySaved != nil}}
 	e.windows = append(e.windows, w)
 	e.comp[v.ID] = compileWindow(v, e.compSelf)
 	e.saveLocked(w)

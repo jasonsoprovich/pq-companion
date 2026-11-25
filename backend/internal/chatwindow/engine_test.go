@@ -1,6 +1,7 @@
 package chatwindow
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -500,5 +501,95 @@ func BenchmarkHandleLine(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		e.HandleLine(t0, lines[i%len(lines)])
+	}
+}
+
+func TestAppearanceLayoutFields(t *testing.T) {
+	base := func(a Appearance) WindowDef {
+		return WindowDef{Name: "x", Sources: Sources{Channels: []string{"tell", "guild"}}, Appearance: a}
+	}
+	cases := []struct {
+		name    string
+		in      Appearance
+		self    string
+		layout  string
+		maxTabs int
+	}{
+		{"omitted", Appearance{}, "", "", DefaultMaxTellTabs},
+		{"self none", Appearance{SelfColor: SelfColorNone}, SelfColorNone, "", DefaultMaxTellTabs},
+		{"self hex", Appearance{SelfColor: "#AbC123"}, "#AbC123", "", DefaultMaxTellTabs},
+		{"self invalid", Appearance{SelfColor: "white"}, "", "", DefaultMaxTellTabs},
+		{"tabs", Appearance{Layout: LayoutTabs, TellTabs: true, MaxTellTabs: 5}, "", LayoutTabs, 5},
+		{"combined normalized", Appearance{Layout: LayoutCombined}, "", "", DefaultMaxTellTabs},
+		{"layout invalid", Appearance{Layout: "grid"}, "", "", DefaultMaxTellTabs},
+		{"cap low", Appearance{MaxTellTabs: 1}, "", "", MinMaxTellTabs},
+		{"cap high", Appearance{MaxTellTabs: 99}, "", "", LimitMaxTellTabs},
+	}
+	for _, tc := range cases {
+		v, err := Validate(base(tc.in))
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		a := v.Appearance
+		if a.SelfColor != tc.self || a.Layout != tc.layout || a.MaxTellTabs != tc.maxTabs {
+			t.Errorf("%s: got self %q layout %q max %d", tc.name, a.SelfColor, a.Layout, a.MaxTellTabs)
+		}
+	}
+
+	// The fields survive a share round trip.
+	e, _, _ := newTestEngine(nil)
+	mustCreate(t, e, base(Appearance{SelfColor: SelfColorNone, Layout: LayoutTabs, TellTabs: true, MaxTellTabs: 12}))
+	sh, err := e.Export(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := json.Marshal(sh)
+	e2, _, _ := newTestEngine(nil)
+	got, err := e2.Import(data)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("import: %v %+v", err, got)
+	}
+	a := got[0].Appearance
+	if a.SelfColor != SelfColorNone || a.Layout != LayoutTabs || !a.TellTabs || a.MaxTellTabs != 12 {
+		t.Errorf("round trip lost fields: %+v", a)
+	}
+}
+
+func TestReplayFlag(t *testing.T) {
+	e, hub, _ := newTestEngine(nil)
+	def := mustCreate(t, e, WindowDef{Name: "g", Sources: Sources{Channels: []string{"guild"}}})
+	e.HandleLine(t0, "A tells the guild, 'live'")
+	e.flush()
+	evs := hub.take()
+	if b := evs[len(evs)-1].Data.(LinesEvent).Windows[0]; b.Replay {
+		t.Fatal("live batch flagged as replay")
+	}
+
+	e.SetReplaying(true)
+	if !window(e, def.ID).State.Replay {
+		t.Fatal("snapshot not flagged during replay")
+	}
+	late := mustCreate(t, e, WindowDef{Name: "late", Sources: Sources{Channels: []string{"guild"}}})
+	if !window(e, late.ID).State.Replay {
+		t.Error("window made mid-replay not flagged")
+	}
+	hub.take()
+	e.HandleLine(t0, "A tells the guild, 'replayed'")
+	e.flush()
+	evs = hub.take()
+	if len(evs) != 1 {
+		t.Fatalf("events = %+v", evs)
+	}
+	for _, b := range evs[0].Data.(LinesEvent).Windows {
+		if !b.Replay {
+			t.Errorf("replay batch for %s not flagged", b.ID)
+		}
+	}
+
+	e.SetReplaying(false)
+	for _, w := range e.State().Windows {
+		if w.State.Replay {
+			t.Errorf("%s still flagged after replay", w.Def.Name)
+		}
 	}
 }
