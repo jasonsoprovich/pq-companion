@@ -1318,6 +1318,8 @@ export default function TriggerForm({ initial, prefill, categories, onCategories
                 line. <span className="font-mono">{'{name}'}</span> captures any text,
                 and you can use it in alert text the same way.{' '}
                 <span className="font-mono">{'{C}'}</span> is your character,{' '}
+                <span className="font-mono">{'{groupmember}'}</span> a player in
+                your group (needs Zeal; any player without it),{' '}
                 <span className="font-mono">{'{N}'}</span> a number,{' '}
                 <span className="font-mono">{'{{ }}'}</span> literal braces.
                 {pattern && (
@@ -1339,7 +1341,9 @@ export default function TriggerForm({ initial, prefill, categories, onCategories
               <span className="font-mono">{'{name}'}</span> for named groups like{' '}
               <span className="font-mono">(?P&lt;name&gt;…)</span>. Built-ins:{' '}
               <span className="font-mono">{'{c}'}</span> = your character (works in the
-              pattern too), <span className="font-mono">{'{repeated}'}</span> = match count
+              pattern too), <span className="font-mono">{'{groupmember}'}</span> in the
+              pattern = a player in your group (needs Zeal; matches any player
+              without it), <span className="font-mono">{'{repeated}'}</span> = match count
               within the repeat window, <span className="font-mono">{'{target}'}</span> = the mob you’re
               fighting — or set “Target from capture” below to pull it from the matched line
               (a groupmate’s slow victim, a proc target).

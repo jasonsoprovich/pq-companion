@@ -21,6 +21,7 @@ import (
 //	                  lazy, (?P<name>.+?). name is [A-Za-z_][A-Za-z0-9_]*
 //	                  and may appear only once.
 //	{C} {char} {self} the active character's name   } passed through as-is;
+//	{groupmember}     a player in your group         }
 //	{S} {S1}…{S9}     any text                       } normalizePattern
 //	{N} {N1}…{N9}     a number                       } expands them
 //	{{  }}            literal { and }
@@ -34,7 +35,7 @@ var plainNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 // through instead of turning into a capture.
 func isReservedToken(name string) bool {
 	switch strings.ToLower(name) {
-	case "c", "char", "self":
+	case "c", "char", "self", groupMemberToken:
 		return true
 	}
 	up := strings.ToUpper(name)

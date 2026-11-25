@@ -2909,14 +2909,18 @@ func GeneralTriggersPack() TriggerPack {
 			{
 				Name:     "Group Member Died",
 				Enabled:  true,
-				Pattern:  `\w+ has been slain by`,
+				Pattern:  `{groupmember} has been slain by`,
 				PackName: "General Triggers",
 				Actions: []Action{
 					{Type: ActionOverlayText, Text: "GROUP DEATH!", DurationSecs: 5, Color: "#ff6600"},
 				},
 				// "X has been slain by Y" is logged for every death in range,
-				// not just group members — so a charmed/normal pet killing an
-				// NPC would otherwise fire GROUP DEATH. Player names are always
+				// not just group members. With Zeal running, {groupmember}
+				// limits the victim to the character's actual group (see
+				// GroupRoster). Without Zeal the token matches any one-word
+				// name, and the excludes below are the fallback: a charmed or
+				// normal pet killing an NPC would otherwise fire GROUP DEATH.
+				// Player names are always
 				// a single capitalized word, so anything else as the victim is
 				// an NPC/pet: exclude victims that start lowercase ("a poacher",
 				// "an ulthork", "the guardian") or are multi-word ("Trooper

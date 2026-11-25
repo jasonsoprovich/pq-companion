@@ -1111,6 +1111,10 @@ func main() {
 	})
 
 	triggerEngine := trigger.NewEngine(triggerStore, hub, timerEngine, activeChar)
+	// {groupmember} patterns check names against the Zeal group roster,
+	// fed from the pipe supervisor below.
+	groupRoster := trigger.NewGroupRoster()
+	triggerEngine.SetGroupRoster(groupRoster)
 	// {target}/{t} tokens in action text resolve to the NPC overlay's
 	// inferred combat target.
 	triggerEngine.SetTargetProvider(func() string {
@@ -1954,6 +1958,9 @@ func main() {
 	}
 
 	pipeSupervisor := zealpipe.NewSupervisor(func(env zealpipe.Envelope) {
+		// Any frame proves the pipe is live, which is how the roster tells a
+		// solo character (no group frames) from one without Zeal.
+		groupRoster.ObservePipe(env.Character)
 		// Proposed Zeal consider and item display messages. Their type
 		// numbers aren't fixed (consider 7 alone or 9 on the combined build,
 		// item display 7 or 8), so they're matched by payload shape ahead of
@@ -2116,7 +2123,9 @@ func main() {
 			}
 			pts := make([]playerpos.GroupMemberInput, 0, len(members))
 			looks := make(map[string]*zealpipe.Appearance, len(members))
+			names := make([]string, 0, len(members))
 			for _, m := range members {
+				names = append(names, m.Name)
 				if m.Name != "" && m.Appearance != nil {
 					looks[m.Name] = m.Appearance
 					zealCaps.Saw(zeal.CapRosterAppearance)
@@ -2139,6 +2148,7 @@ func main() {
 					Heading: h,
 				})
 			}
+			groupRoster.ObserveGroup(env.Character, names)
 			posTracker.UpdateGroup(pipeZoneShort, pts)
 			recordLooks(playerStore, looks)
 			return

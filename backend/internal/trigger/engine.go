@@ -110,6 +110,10 @@ type Engine struct {
 	// (ok=false when unknown). Wired via SetClassLevelProvider; feeds the
 	// level-scaled discipline reuse in startCooldownTimer.
 	activeClassLevel func() (class, level int, ok bool)
+	// group is the Zeal-fed group roster that {groupmember} patterns are
+	// checked against (see passesGroupGate). Nil (tests, or wiring left
+	// out) leaves those patterns matching any player name.
+	group *GroupRoster
 	// resolveWebhook looks up a Preferences.DiscordWebhooks entry by ID,
 	// returning its URL and whether it was found. Wired via
 	// SetWebhookResolver to a closure over the config manager (kept as a
@@ -263,6 +267,31 @@ func NewEngine(store *Store, hub *ws.Hub, sink TimerSink, activeChar func() stri
 // lines; nil leaves the token unresolved.
 func (e *Engine) SetTargetProvider(fn func() string) {
 	e.currentTarget = fn
+}
+
+// SetGroupRoster wires the roster {groupmember} patterns are checked
+// against. Call before routing lines.
+func (e *Engine) SetGroupRoster(r *GroupRoster) {
+	e.group = r
+}
+
+// passesGroupGate applies the {groupmember} check to a match: when the
+// matching pattern captured a groupmember name and the roster knows the
+// active character's group, the name must be in it. Without a live roster
+// (no Zeal) or during a log replay (the roster is live, the lines aren't)
+// the match stands, so the trigger behaves as it does without the token.
+func (e *Engine) passesGroupGate(active string, m, names []string) bool {
+	if e.group == nil || e.replaying.Load() {
+		return true
+	}
+	for i, n := range names {
+		if n != groupMemberToken || i >= len(m) {
+			continue
+		}
+		member, known := e.group.Check(active, m[i])
+		return member || !known
+	}
+	return true
 }
 
 // SetClassLevelProvider wires the active character's class/level lookup so
@@ -424,6 +453,9 @@ func (e *Engine) Handle(timestamp time.Time, message string) {
 			if m != nil {
 				extra = &c.extras[i].meta
 			}
+		}
+		if m != nil && !e.passesGroupGate(active, m, names) {
+			m = nil
 		}
 		if m != nil && !matchesAny(c.excludes, message) {
 			e.fc.noteRepeat(c.trigger, timestamp)
@@ -803,6 +835,10 @@ var patternTokenRe = regexp.MustCompile(`\{([A-Za-z][A-Za-z0-9_]*)\}`)
 //	                        character is detected; Reload reruns on change
 //	{S} {S1}…{S9}           text wildcard → (?P<SN>.+)
 //	{N} {N1}…{N9}           number wildcard → (?P<NN>[0-9]+)
+//	{groupmember}           one player name → (?P<groupmember>[A-Za-z]+);
+//	                        Handle then requires it to be in the active
+//	                        character's group when Zeal reports one (see
+//	                        passesGroupGate)
 //
 // and converts .NET (?<name>…) named groups to Go (?P<name>…) syntax so raw
 // GINA regexes compile. Unrecognized brace tokens are left as-is (Go treats
@@ -817,6 +853,8 @@ func normalizePattern(pattern, character string) string {
 				return tok
 			}
 			return regexp.QuoteMeta(character)
+		case groupMemberToken:
+			return groupMemberCapture
 		}
 		up := strings.ToUpper(key)
 		if len(up) <= 2 && (up[0] == 'S' || up[0] == 'N') &&
