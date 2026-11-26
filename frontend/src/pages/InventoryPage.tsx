@@ -328,9 +328,9 @@ export default function InventoryPage(): React.ReactElement {
               No equipment data
             </p>
           ) : (
-            equipment.map((e) => (
+            equipment.map((e, i) => (
               <ItemRow
-                key={e.location}
+                key={`${e.location}-${i}`}
                 entry={e}
                 onLookup={handleLookup}
               />
@@ -349,8 +349,8 @@ export default function InventoryPage(): React.ReactElement {
           {bank.length > 0 && (
             <>
               <SectionHeader label="Bank" count={bank.length} />
-              {bank.map((e) => (
-                <ItemRow key={e.location} entry={e} onLookup={handleLookup} />
+              {bank.map((e, i) => (
+                <ItemRow key={`${e.location}-${i}`} entry={e} onLookup={handleLookup} />
               ))}
             </>
           )}
