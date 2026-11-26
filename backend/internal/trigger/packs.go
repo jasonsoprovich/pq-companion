@@ -3197,39 +3197,26 @@ func RaidAlertsPack() TriggerPack {
 			{Type: ActionTextToSpeech, Text: "Enrage soon", Volume: 1.0},
 		},
 	})
-	triggers = append(triggers, raidSignatureSpellAlerts()...)
 	return TriggerPack{
 		PackName:    "Raid Alerts",
-		Description: "Divine Intervention procs, mobs casting gate, assist calls, an enrage-soon warning at 12% on mobs that enrage (needs Zeal), and signature-spell recast warnings for Ring War raid targets.",
+		Description: "Divine Intervention procs, mobs casting gate, assist calls and an enrage-soon warning at 12% on mobs that enrage (needs Zeal). Boss spell timers live in the \"Raid:\" packs.",
 		Triggers:    triggers,
 	}
 }
 
-// raidSignatureSpellAlerts returns recast-warning triggers for a handful of
-// high-impact signature spells cast by Kunark "Ring War" raid targets (Aten
-// Ha Ra, Lord Inquisitor Seru, Vyzh`dra, Shei Vinitras, etc). The pattern
-// only matches on the spell's own land text — which NPC cast it is
-// irrelevant, so the same trigger covers every mob that has it in its spell
-// set. Each pattern matches both branches of the land message ("cast on
-// you" and "cast on other") so the timer restarts regardless of which raid
-// member the spell actually lands on.
+// raidSignatureSpellAlerts returns the recast timers for five high-impact
+// boss spells that first shipped in Raid Alerts and now live in the raid
+// packs ("Raid: Luclin", and Caustic Mist / Putrefy Flesh in "Raid:
+// Velious" too). Each is one shared definition with a DedupKey, identical in
+// every pack that ships it except PackName (set by the pack), so whichever
+// pack is installed first owns it and uninstalling promotes the other's copy.
+// Names, patterns and PackKeys are unchanged from Raid Alerts, so existing
+// rows are matched and moved, not duplicated (see raidmigrate.go).
 //
-// TimerDurationSecs is the spell's own recast_time from spells_new — the
-// best available proxy for how often a scripted boss re-casts it, since
-// there's no other way to know the real cadence without the first cast
-// landing in the log. TimerAlerts fires a TTS warning 5 seconds before the
-// timer would hit zero (i.e. 5 seconds before the boss can cast it again),
-// overriding the pack's default 10-second detrimental warning. The Actions
-// overlay banner confirms each observed cast. Leaving TimerTargetCapture
-// unset means the timer carries no bound NPC name, so it's swept by the
-// spelltimer engine's orphan-cleanup on the next kill — "cleared when the
-// boss dies" falls out of that for free without needing to identify which
-// NPC was casting it.
-//
-// RefireCooldownSecs suppresses the duplicate lines a single AE cast
-// produces (one broadcast line per raid member hit) from each restarting
-// the timer and re-firing the banner/TTS — see the comment on the field
-// literal for why.
+// The timer binds to the boss whose "begins to cast a spell." line preceded
+// the land text (BossCasters), with a per-caster duration where two bosses
+// share the spell's messages. RefireCooldownSecs collapses the per-victim
+// broadcast lines a single AE cast produces.
 func raidSignatureSpellAlerts() []Trigger {
 	spell := func(name, landOnYou, landOnOtherSuffix string, spellID int, recastSecs float64, casters ...BossCaster) Trigger {
 		return Trigger{
@@ -3237,7 +3224,7 @@ func raidSignatureSpellAlerts() []Trigger {
 			Name:              name,
 			Enabled:           true,
 			Pattern:           `^(?:` + landOnYou + `|[A-Z][a-zA-Z']{2,14}` + landOnOtherSuffix + `)$`,
-			PackName:          "Raid Alerts",
+			DedupKey:          raidSignatureDedupKey(name),
 			TimerType:         TimerTypeDetrimental,
 			TimerDurationSecs: recastSecs,
 			SpellID:           spellID,
@@ -3692,34 +3679,10 @@ func DefaultUpdates() []DefaultUpdate {
 			PackName:      "Spell Breaks",
 			InsertTrigger: func() *Trigger { t := petSpellWornOff("Spell Breaks"); return &t }(),
 		},
-		{
-			// 2026-07-10: add the five Ring War signature-spell recast
-			// warnings to existing Raid Alerts installs, one insert per
-			// spell (InsertTrigger only adds one trigger per update).
-			Key:           "RaidAlerts:SigSpell:Fling:add-v1",
-			PackName:      "Raid Alerts",
-			InsertTrigger: func() *Trigger { t := raidSignatureSpellAlerts()[0]; return &t }(),
-		},
-		{
-			Key:           "RaidAlerts:SigSpell:SilenceOfTheShadows:add-v1",
-			PackName:      "Raid Alerts",
-			InsertTrigger: func() *Trigger { t := raidSignatureSpellAlerts()[1]; return &t }(),
-		},
-		{
-			Key:           "RaidAlerts:SigSpell:TorturingWinds:add-v1",
-			PackName:      "Raid Alerts",
-			InsertTrigger: func() *Trigger { t := raidSignatureSpellAlerts()[2]; return &t }(),
-		},
-		{
-			Key:           "RaidAlerts:SigSpell:CausticMist:add-v1",
-			PackName:      "Raid Alerts",
-			InsertTrigger: func() *Trigger { t := raidSignatureSpellAlerts()[3]; return &t }(),
-		},
-		{
-			Key:           "RaidAlerts:SigSpell:TouchOfVinitras:add-v1",
-			PackName:      "Raid Alerts",
-			InsertTrigger: func() *Trigger { t := raidSignatureSpellAlerts()[4]; return &t }(),
-		},
+		// 2026-07-10 "RaidAlerts:SigSpell:*:add-v1" inserted the five Ring
+		// War signature spells into Raid Alerts; removed 2026-11-25 when
+		// they moved to the raid packs (raidmigrate.go moves existing rows).
+
 		{
 			// 2026-07-10: the five signature-spell triggers above shipped
 			// without a refire lockout, so a single AE cast (broadcast as
@@ -3782,12 +3745,12 @@ func DefaultUpdates() []DefaultUpdate {
 			AppendExcludePatterns: groupMemberDiedExcludes(),
 		},
 		{
-			// 2026-11-25: boss-cast binding moved from a name-keyed map in
-			// bosscast.go to Trigger.BossCasters. Stamp the casters onto
-			// installed Raid Alerts signature-spell rows (renamed ones too)
-			// so they keep binding to the boss that cast them.
-			Key: "raid-alerts-signature-boss-casters-v1",
-			Run: stampRaidSignatureCasters,
+			// 2026-11-25: the Raid Alerts signature-spell rows move to the
+			// raid packs. Stamp their BossCasters and shared DedupKey
+			// (renamed rows too) and make sure each has a Raid Alerts
+			// baseline, so the pack update lists them as moved.
+			Key: "raid-alerts-signature-move-v1",
+			Run: migrateRaidSignatureRows,
 		},
 	}
 }

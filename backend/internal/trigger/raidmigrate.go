@@ -48,26 +48,83 @@ func installedSignatureRows(store *Store) ([]*Trigger, []*Trigger, error) {
 	return rows, matched, nil
 }
 
-// stampRaidSignatureCasters copies each shipped signature trigger's
-// BossCasters onto its installed row when the row has none yet. Every other
-// field — the user's customizations — is left untouched.
-func stampRaidSignatureCasters(store *Store) (bool, error) {
+// migrateRaidSignatureRows prepares installed Raid Alerts signature-spell
+// rows for their move to the raid packs. For each row it stamps the shipped
+// BossCasters (when the row has none) and the shared DedupKey, fills a
+// missing SourcePack/PackKey on legacy rows, and makes sure Raid Alerts has
+// a baseline for it: rows added by the old one-off inserts never got one,
+// and without it the Raid Alerts update couldn't list the row as moved.
+// Every user customization is left untouched.
+//
+// The raid packs ship in the same build, so this runs before any of them
+// can be installed; with the DedupKey owned by Raid Alerts, installing one
+// later skips these five instead of duplicating them, and applying the Raid
+// Alerts update re-homes them (ApplyPackUpdate).
+func migrateRaidSignatureRows(store *Store) (bool, error) {
 	rows, defs, err := installedSignatureRows(store)
+	if err != nil {
+		return false, err
+	}
+	baselines, err := store.PackBaselines(raidAlertsPackName)
 	if err != nil {
 		return false, err
 	}
 	changed := false
 	for i, t := range rows {
-		if len(t.BossCasters) > 0 {
-			continue
+		def := defs[i]
+		key := packKeyOf(def)
+		dirty := false
+		if len(t.BossCasters) == 0 {
+			t.BossCasters = append([]BossCaster(nil), def.BossCasters...)
+			dirty = true
 		}
-		t.BossCasters = append([]BossCaster(nil), defs[i].BossCasters...)
-		if err := store.Update(t); err != nil {
-			return changed, err
+		if t.DedupKey == "" {
+			t.DedupKey = def.DedupKey
+			dirty = true
 		}
-		changed = true
+		if t.SourcePack == "" {
+			t.SourcePack = raidAlertsPackName
+			dirty = true
+		}
+		if t.PackKey == "" {
+			t.PackKey = key
+			dirty = true
+		}
+		if dirty {
+			if err := store.Update(t); err != nil {
+				return changed, err
+			}
+			changed = true
+		}
+		if baselines[t.PackKey] == nil {
+			b := *def
+			b.PackName = raidAlertsPackName
+			if err := store.UpsertPackBaseline(raidAlertsPackName, &b); err != nil {
+				return changed, err
+			}
+		}
 	}
 	return changed, nil
+}
+
+// raidSignatureDedupKey is the shared DedupKey for a signature-spell
+// trigger, derived from its (stable) shipped name.
+func raidSignatureDedupKey(name string) string {
+	k := strings.ToLower(name)
+	k = strings.NewReplacer(" / ", "_", " ", "_").Replace(k)
+	return "raid_sig_" + k
+}
+
+// raidSignatureShared returns the shared signature-spell definitions with
+// the given names, for a raid pack to ship.
+func raidSignatureShared(names ...string) []Trigger {
+	var out []Trigger
+	for _, t := range raidSignatureSpellAlerts() {
+		if containsString(names, t.Name) {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // bc is shorthand for a BossCaster with no duration override.

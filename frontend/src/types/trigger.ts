@@ -460,6 +460,10 @@ export interface PackAddedTrigger {
 export interface PackRemovedTrigger {
   pack_key: string
   name: string
+  /** Another built-in pack that now ships this trigger. */
+  moved_to?: string
+  /** moved_to is installed: applying moves the row there, settings kept. */
+  rehome?: boolean
 }
 
 export interface PackDeletedLocalTrigger {
@@ -512,6 +516,7 @@ export interface PackUpdateResult {
   updated: number
   added: number
   removed: number
+  moved?: number
 }
 
 // ── Action templates + bulk edits ────────────────────────────────────────────

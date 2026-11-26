@@ -1374,6 +1374,7 @@ function PacksTab({ installedPacks, onInstalled }: PacksTabProps): React.ReactEl
             if (res.updated) parts.push(`${res.updated} updated`)
             if (res.added) parts.push(`${res.added} added`)
             if (res.removed) parts.push(`${res.removed} removed`)
+            if (res.moved) parts.push(`${res.moved} moved`)
             setUpdateApplied(
               `"${name}" pack updated (${parts.join(', ') || 'no changes'}).`,
             )

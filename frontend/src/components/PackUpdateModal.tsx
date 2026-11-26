@@ -333,11 +333,22 @@ export default function PackUpdateModal({
                           className="text-xs"
                           style={{
                             color: 'var(--color-foreground)',
-                            textDecoration: selected.has(r.pack_key) ? 'line-through' : 'none',
+                            textDecoration:
+                              selected.has(r.pack_key) && !r.rehome ? 'line-through' : 'none',
                           }}
                         >
                           {r.name}
                         </span>
+                        {r.moved_to && (
+                          <span
+                            className="text-[10px] ml-auto"
+                            style={{ color: 'var(--color-muted-foreground)' }}
+                          >
+                            {r.rehome
+                              ? `Moves to ${r.moved_to} with your settings`
+                              : `Now in ${r.moved_to}`}
+                          </span>
+                        )}
                       </div>
                     ))}
                   </div>

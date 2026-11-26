@@ -81,6 +81,10 @@ type raidPackDef struct {
 	Description string
 	Bosses      []raidBoss
 	Events      []Trigger
+	// Shared are signature-spell timers several packs ship under one
+	// DedupKey (raidSignatureShared). The boss table's own timer for the
+	// same spell ID is not generated; its cure alert still is.
+	Shared []Trigger
 }
 
 // build turns the table into a TriggerPack. Trigger order: per boss its Who
@@ -156,25 +160,31 @@ func (d raidPackDef) build() TriggerPack {
 
 	var out []Trigger
 	emitted := map[int]bool{}
+	for _, t := range d.Shared {
+		emitted[t.SpellID] = true
+	}
 	cureDone := map[string]bool{}
 	for _, b := range d.Bosses {
 		if !b.NoWho {
 			out = append(out, raidWhoTrigger(d.Name, b))
 		}
 		for _, s := range b.Spells {
-			if emitted[s.ID] {
-				continue
-			}
-			emitted[s.ID] = true
 			sh := byID[s.ID]
-			if t, ok := raidTimerTrigger(d.Name, sh.spell, sh.casters, sh.names, unique); ok {
-				out = append(out, t)
+			if !emitted[s.ID] {
+				emitted[s.ID] = true
+				if t, ok := raidTimerTrigger(d.Name, sh.spell, sh.casters, sh.names, unique); ok {
+					out = append(out, t)
+				}
 			}
 			if s.Counter != "" && !cureDone[s.OnYou] {
 				cureDone[s.OnYou] = true
 				out = append(out, raidCureTrigger(d.Name, sh.spell, cureNames[s.OnYou]))
 			}
 		}
+	}
+	for _, t := range d.Shared {
+		t.PackName = d.Name
+		out = append(out, t)
 	}
 	for _, e := range d.Events {
 		e.PackName = d.Name
@@ -404,6 +414,7 @@ func raidEventTimer(name, pattern string, secs float64, extras ...ExtraPattern) 
 // raidPackDefs lists every raid pack table, oldest content first.
 func raidPackDefs() []raidPackDef {
 	return []raidPackDef{
+		raidLuclin(),
 		raidPoPTier1(),
 		raidPoPTier2(),
 		raidPoPTier3(),

@@ -119,27 +119,32 @@ var raidEventSamples = map[string][]string{
 		"The last mudwalker bursts in a spray of wet clay. Within the temple, a great mound of sludge swells into the hulking Sludge Lurker. The mudwalkers surrounding it stir.",
 		"The final mudwalker bursts in a spray of filth. The Sludge Lurker heaves free, dragging its bulk through the mire as ropes of sludge drip from its body.",
 	},
-	"Mud Ring — mudlets":                  {"The Sludge Lurker ruptures in a heavy splash, spraying muck and grime across the ground. Quivering clots of sludge pull themselves upright as grasping mudlets."},
-	"Mud Ring — gorgers":                  {"The Sludge Lurker collapses into a churning pool of filth. Four bloated gorgers heave themselves from the muck, dripping grime as they lumber toward you."},
-	"Mud Ring — final guardian":           {"The last filth gorger bursts, drenching the stones in greasy sludge. The scattered muck swells into a towering, misshapen guardian, its body seeping filth."},
-	"Stone Ring — fortifications":         {"Massive slabs of stone wrench themselves from the earth and lock together. The living fortifications advance with crushing weight, each stride grinding rock beneath them."},
-	"Stone Ring — rubble mounds":          {"The last fortification shatters with a thunderous crack. The Rock Monstrosity's massive frame splits into four mounds of rubble, each grinding with the strength of the broken whole."},
-	"Stone Ring — Rock Monstrosity":       {"The rubble locks together with a roar of grinding stone. The Rock Monstrosity rises once more, its massive frame bearing the gathered strength of the temple."},
-	"Stone Ring — stone heaps":            {"The Rock Monstrosity crashes apart, its weight shaking the temple. A towering stone figure rises and folds into stillness as heaps of broken rock grind forward to crush the intruders."},
-	"Stone Ring — final defender":         {"The last stone heap shatters. The temple's remaining strength gathers into its final defender, a grinding mass of stone and packed earth that shakes the ground as it advances."},
-	"Vine Ring — bloodthirsty creatures":  {"The last tainted rock beast crashes down. Living vines wrench its remains upright as the bloodthirsty creatures uncoil and lash out from the temple."},
-	"Vine Ring — final defender":          {"The last bloodthirsty creature collapses in a tangle of severed vines. Thick roots split the earth as the temple's final defender emerges, trailing coils of living growth."},
-	"Vine Ring — next adds":               {"The temple's defender drives its roots into the earth. Mangled creatures claw free amid a thrashing mass of vines."},
-	"Rathe Council — engaged":             {"The stone beneath Ragrax trembles as the Rathe Council speaks as one: \"We stand together against you, Norrathians. The balance must be restored.\""},
-	"Rathe Council — first kill expires":  {"One of the Rathe Council crumbles into lifeless stone. The remaining voices answer without hesitation: \"We remain united. We shall rise again. You will not unravel the balance through the fall of one.\""},
-	"Rathe Council — councilman returned": {"Stone knits together as a fallen Councilman rises anew. The Council speaks as one: \"We stand together, Norrathians. We shall not yield because one has fallen.\""},
-	"Rathe Council — Avatar of Earth":     {"The Rathe speak through the towering Avatar of Earth: \"We remain as one while battle is joined. We shall tolerate thirty-five minutes of hesitation. No more.\""},
-	"Time — phase 2 wall opening":         {"Ethereal mists gather at the far wall, causing it fade in and out of focus."},
-	"Quarm — red head down":               {"Quarm roars in pain as his red head explodes in a shower of flaming ethereal energy!"},
-	"Quarm — blue head down":              {"Quarm roars in pain as his blue head explodes into pure ethereal energy!"},
-	"Quarm — white head down":             {"Quarm shakes the cavern with a bellow of pain as the white head explodes into a swirling vortex of ethereal energy!"},
-	"Quarm — Druzzil appears":             {"Suddenly in a bright flash a feminine figure appears before you.  Your ears ring from the loud burst as she slowly materializes."},
-	"Terris — leashed":                    {"Terris Thule disappears into the ether and reforms at the center of her chamber, cleansed of your magic!"},
+	"Mud Ring — mudlets":                                 {"The Sludge Lurker ruptures in a heavy splash, spraying muck and grime across the ground. Quivering clots of sludge pull themselves upright as grasping mudlets."},
+	"Mud Ring — gorgers":                                 {"The Sludge Lurker collapses into a churning pool of filth. Four bloated gorgers heave themselves from the muck, dripping grime as they lumber toward you."},
+	"Mud Ring — final guardian":                          {"The last filth gorger bursts, drenching the stones in greasy sludge. The scattered muck swells into a towering, misshapen guardian, its body seeping filth."},
+	"Stone Ring — fortifications":                        {"Massive slabs of stone wrench themselves from the earth and lock together. The living fortifications advance with crushing weight, each stride grinding rock beneath them."},
+	"Stone Ring — rubble mounds":                         {"The last fortification shatters with a thunderous crack. The Rock Monstrosity's massive frame splits into four mounds of rubble, each grinding with the strength of the broken whole."},
+	"Stone Ring — Rock Monstrosity":                      {"The rubble locks together with a roar of grinding stone. The Rock Monstrosity rises once more, its massive frame bearing the gathered strength of the temple."},
+	"Stone Ring — stone heaps":                           {"The Rock Monstrosity crashes apart, its weight shaking the temple. A towering stone figure rises and folds into stillness as heaps of broken rock grind forward to crush the intruders."},
+	"Stone Ring — final defender":                        {"The last stone heap shatters. The temple's remaining strength gathers into its final defender, a grinding mass of stone and packed earth that shakes the ground as it advances."},
+	"Vine Ring — bloodthirsty creatures":                 {"The last tainted rock beast crashes down. Living vines wrench its remains upright as the bloodthirsty creatures uncoil and lash out from the temple."},
+	"Vine Ring — final defender":                         {"The last bloodthirsty creature collapses in a tangle of severed vines. Thick roots split the earth as the temple's final defender emerges, trailing coils of living growth."},
+	"Vine Ring — next adds":                              {"The temple's defender drives its roots into the earth. Mangled creatures claw free amid a thrashing mass of vines."},
+	"Rathe Council — engaged":                            {"The stone beneath Ragrax trembles as the Rathe Council speaks as one: \"We stand together against you, Norrathians. The balance must be restored.\""},
+	"Rathe Council — first kill expires":                 {"One of the Rathe Council crumbles into lifeless stone. The remaining voices answer without hesitation: \"We remain united. We shall rise again. You will not unravel the balance through the fall of one.\""},
+	"Rathe Council — councilman returned":                {"Stone knits together as a fallen Councilman rises anew. The Council speaks as one: \"We stand together, Norrathians. We shall not yield because one has fallen.\""},
+	"Rathe Council — Avatar of Earth":                    {"The Rathe speak through the towering Avatar of Earth: \"We remain as one while battle is joined. We shall tolerate thirty-five minutes of hesitation. No more.\""},
+	"Time — phase 2 wall opening":                        {"Ethereal mists gather at the far wall, causing it fade in and out of focus."},
+	"Quarm — red head down":                              {"Quarm roars in pain as his red head explodes in a shower of flaming ethereal energy!"},
+	"Quarm — blue head down":                             {"Quarm roars in pain as his blue head explodes into pure ethereal energy!"},
+	"Quarm — white head down":                            {"Quarm shakes the cavern with a bellow of pain as the white head explodes into a swirling vortex of ethereal energy!"},
+	"Quarm — Druzzil appears":                            {"Suddenly in a bright flash a feminine figure appears before you.  Your ears ring from the loud burst as she slowly materializes."},
+	"Shei Vinitras — next Tatrua adds":                   {"Shei Vinitras Sivuelaeus Rulour ans Rashan!"},
+	"Vyzh`dra — first Touch of Vinitras":                 {"Vyzh`dra the Exiled shouts 'Bow before your only god! I will tear all others from the heavens!'"},
+	"Emperor Ssraeshza — spawns":                         {"  The Emperor twitches.  He appears to have been weakened by the destruction of the golem."},
+	"Emperor Ssraeshza — Rage of Ssraeshza":              {"Emperor Ssraeshza  hit Tankname for 4000 points of non-melee damage."},
+	"a glyph covered serpent — Wave of Death (stand up)": {"Your mind fills with images of death."},
+	"Terris — leashed":                                   {"Terris Thule disappears into the ether and reforms at the center of her chamber, cleansed of your magic!"},
 }
 
 // bertoxPrepare is codecay/encounters/Bertox.lua RP_TEXT.prepare.
@@ -225,7 +230,7 @@ func TestRaidPacks_MatchQuarmDB(t *testing.T) {
 	for _, d := range raidPackDefs() {
 		for _, b := range d.Bosses {
 			name := strings.ReplaceAll(b.Name, " ", "_")
-			rows, err := conn.Query(`SELECT level, MR, CR, FR, npc_spells_id, COALESCE(special_abilities,'') FROM npc_types WHERE lower(name) IN (lower(?), lower(?))`, name, "#"+name)
+			rows, err := conn.Query(`SELECT level, MR, CR, FR, npc_spells_id, COALESCE(special_abilities,'') FROM npc_types WHERE lower(name) IN (lower(?), lower(?), lower(?))`, name, "#"+name, name+"_")
 			if err != nil {
 				t.Fatal(err)
 			}

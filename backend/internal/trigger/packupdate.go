@@ -239,10 +239,15 @@ type AddedTrigger struct {
 }
 
 // RemovedTrigger is an installed trigger whose definition no longer exists
-// in the current build — applying the update deletes it.
+// in the current build — applying the update deletes it, unless it moved:
+// MovedTo names another built-in pack that now ships it (same DedupKey).
+// When that pack is installed (Rehome), applying the update moves the row,
+// with every user setting, into it instead of deleting it.
 type RemovedTrigger struct {
 	PackKey string `json:"pack_key"`
 	Name    string `json:"name"`
+	MovedTo string `json:"moved_to,omitempty"`
+	Rehome  bool   `json:"rehome,omitempty"`
 }
 
 // DeletedLocalTrigger is a definition the user deleted from their install
@@ -350,15 +355,52 @@ func ComputePackDiff(store *Store, pack TriggerPack) (*PackDiff, error) {
 	// Baselines with no matching definition: the developer removed the
 	// trigger from the pack. Only report ones the user still has installed;
 	// stale baseline rows with no row are purged on the next apply.
+	var installed map[string]bool
 	for key := range baselines {
 		if defKeys[key] {
 			continue
 		}
-		if row := rowsByKey[key]; row != nil {
-			diff.Removed = append(diff.Removed, RemovedTrigger{PackKey: key, Name: row.Name})
+		row := rowsByKey[key]
+		if row == nil {
+			continue
 		}
+		r := RemovedTrigger{PackKey: key, Name: row.Name}
+		if row.DedupKey != "" {
+			if installed == nil {
+				if installed, err = store.InstalledPackNames(); err != nil {
+					return nil, err
+				}
+			}
+			r.MovedTo, _, r.Rehome = movedTarget(pack.PackName, row.DedupKey, installed)
+		}
+		diff.Removed = append(diff.Removed, r)
 	}
 	return diff, nil
+}
+
+// movedTarget finds the built-in pack (other than from) that now ships a
+// trigger with dedupKey, preferring an installed one. rehome reports that
+// the returned pack is installed, so the row can move into it.
+func movedTarget(from, dedupKey string, installed map[string]bool) (pack string, def *Trigger, rehome bool) {
+	for _, p := range AllPacks() {
+		if p.PackName == from {
+			continue
+		}
+		for i := range p.Triggers {
+			if p.Triggers[i].DedupKey != dedupKey {
+				continue
+			}
+			if installed[p.PackName] {
+				d := p.Triggers[i]
+				return p.PackName, &d, true
+			}
+			if pack == "" {
+				d := p.Triggers[i]
+				pack, def = p.PackName, &d
+			}
+		}
+	}
+	return pack, def, false
 }
 
 // diffFields returns one FieldDiff per field where the shipped definition
@@ -432,6 +474,7 @@ type PackUpdateResult struct {
 	Updated int `json:"updated"`
 	Added   int `json:"added"`
 	Removed int `json:"removed"`
+	Moved   int `json:"moved"`
 }
 
 // ApplyPackUpdate applies the pending diff for def (the pack definition in
@@ -592,10 +635,18 @@ func ApplyPackUpdate(store *Store, def, defaulted TriggerPack, mode string, keys
 			continue
 		}
 		if row := rowsByKey[r.PackKey]; row != nil {
-			if err := store.Delete(row.ID); err != nil {
+			moved, err := rehomeRow(store, def.PackName, row)
+			if err != nil {
 				return res, err
 			}
-			res.Removed++
+			if moved {
+				res.Moved++
+			} else {
+				if err := store.Delete(row.ID); err != nil {
+					return res, err
+				}
+				res.Removed++
+			}
 		}
 		if err := store.DeletePackBaseline(def.PackName, r.PackKey); err != nil {
 			return res, err
@@ -613,4 +664,43 @@ func ApplyPackUpdate(store *Store, def, defaulted TriggerPack, mode string, keys
 		}
 	}
 	return res, nil
+}
+
+// rehomeRow moves row, removed from pack from, into the installed pack that
+// now ships its DedupKey. The row keeps every user setting (enabled,
+// characters, actions, patterns); only its install origin changes, and its
+// category follows only if the user left it in from's default category.
+// The receiving pack's baseline is its shipped definition, so later diffs
+// of that pack read the user's edits as customizations. Reports false when
+// there is nowhere to move it.
+func rehomeRow(store *Store, from string, row *Trigger) (bool, error) {
+	if row.DedupKey == "" {
+		return false, nil
+	}
+	installed, err := store.InstalledPackNames()
+	if err != nil {
+		return false, err
+	}
+	to, def, ok := movedTarget(from, row.DedupKey, installed)
+	if !ok {
+		return false, nil
+	}
+	// Another copy already in the receiving pack wins; this one is removed.
+	owner, err := store.FindByDedupKey(row.DedupKey)
+	if err != nil {
+		return false, err
+	}
+	if owner != nil && owner.ID != row.ID && owner.SourcePack == to {
+		return false, nil
+	}
+	row.SourcePack = to
+	row.PackKey = packKeyOf(def)
+	if row.PackName == from {
+		row.PackName = to
+		row.CategoryID = ""
+	}
+	if err := store.Update(row); err != nil {
+		return false, err
+	}
+	return true, store.UpsertPackBaseline(to, def)
 }
