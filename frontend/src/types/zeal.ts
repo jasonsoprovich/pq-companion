@@ -9,13 +9,18 @@ export interface InventoryEntry {
   // (clickeffect > 0, maxcharges > 1). When present, `count` is the current
   // charge count, so charges-remaining reads as count / max_charges.
   max_charges?: number
-  // Total base vendor value in copper (price × count for true stacks), set by
-  // the API. Absent when the item has no value.
+  // Base vendor price and the entry's total (price × count for true stacks),
+  // in copper, set by the API. Absent for items a merchant won't buy (no
+  // price, or NO DROP).
+  price?: number
   value?: number
 }
 
 export interface Inventory {
   character: string
+  // Estimated Charisma (base + gear + AAs, capped; no buffs) for the merchant
+  // payout estimate. Absent when the character isn't on the Characters page.
+  cha?: number
   exported_at: string // ISO datetime
   entries: InventoryEntry[]
 }

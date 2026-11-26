@@ -19,6 +19,7 @@ import (
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/db/enums"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/eqconfig"
+	"github.com/jasonsoprovich/pq-companion/backend/internal/eqstat"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/zeal"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/zealpipe"
 )
@@ -97,6 +98,7 @@ func (h *zealHandler) enrichEntries(entries []zeal.InventoryEntry) {
 			if p.Stackable && entries[i].Count > 1 {
 				qty = entries[i].Count
 			}
+			entries[i].Price = p.Price
 			entries[i].Value = p.Price * qty
 		}
 	}
@@ -199,6 +201,13 @@ func (h *zealHandler) allInventories(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	h.enrichEntries(resp.SharedBank)
+	if eqPath := h.cfgMgr.Get().EQPath; eqPath != "" {
+		for _, c := range resp.Characters {
+			if c != nil {
+				c.CHA = h.estimateCHA(eqPath, c.Character)
+			}
+		}
+	}
 	json.NewEncoder(w).Encode(resp)
 }
 
@@ -1121,4 +1130,30 @@ func (h *zealHandler) allSpellsets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	json.NewEncoder(w).Encode(resp)
+}
+
+// estimateCHA returns a character's Charisma for the merchant sell-price
+// estimate: Quarmy base CHA + equipped gear + trained AAs, clamped to the
+// level cap — the same layers as the Character Info "Equipped" column. Buffs
+// are left out (they come and go). 0 when there's no character record.
+func (h *zealHandler) estimateCHA(eqPath, name string) int {
+	if h.charStore == nil || h.db == nil {
+		return 0
+	}
+	char, ok, err := h.charStore.GetByName(name)
+	if err != nil || !ok || char.BaseCHA <= 0 {
+		return 0
+	}
+	var aa db.AABonuses
+	if trained, err := h.charStore.ListAAs(char.ID); err == nil {
+		conv := make([]db.TrainedAA, 0, len(trained))
+		for _, t := range trained {
+			conv = append(conv, db.TrainedAA{AAID: t.AAID, Rank: t.Rank})
+		}
+		aa, _ = h.db.AAStatBonuses(conv)
+	}
+	ch := &charactersHandler{store: h.charStore, mgr: h.cfgMgr, db: h.db}
+	gear, _ := ch.sumEquipment(eqPath, char.Name)
+	raw := char.BaseCHA + gear.CHA + aa.CHA
+	return eqstat.CapAttribute(raw, char.Level, aa.StatCap.CHA)
 }

@@ -188,8 +188,9 @@ type ItemPrice struct {
 	Stackable bool
 }
 
-// ItemPrices returns id→price info for the given IDs in one query. Items with
-// no price (price <= 0) and IDs missing from the items table are omitted.
+// ItemPrices returns id→price info for the given IDs in one query, limited to
+// items a merchant will buy: price > 0 and not NO DROP (items.nodrop = 0 —
+// the server rejects selling those). Everything else is omitted.
 func (db *DB) ItemPrices(ids []int) (map[int]ItemPrice, error) {
 	out := make(map[int]ItemPrice, len(ids))
 	if len(ids) == 0 {
@@ -198,7 +199,8 @@ func (db *DB) ItemPrices(ids []int) (map[int]ItemPrice, error) {
 	placeholders := strings.Repeat("?,", len(ids))
 	placeholders = placeholders[:len(placeholders)-1]
 	q := fmt.Sprintf(
-		"SELECT id, price, stackable FROM items WHERE price > 0 AND id IN (%s)",
+		"SELECT id, price, stackable FROM items "+
+			"WHERE price > 0 AND nodrop != 0 AND id IN (%s)",
 		placeholders,
 	)
 	args := make([]any, len(ids))

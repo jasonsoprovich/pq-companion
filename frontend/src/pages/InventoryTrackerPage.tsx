@@ -8,6 +8,7 @@ import ItemDetailModal from '../components/ItemDetailModal'
 import CharacterSubTabs from '../components/CharacterSubTabs'
 import { ItemIcon } from '../components/Icon'
 import { priceLabel } from '../lib/itemHelpers'
+import { payout, sellRate } from '../lib/merchantPrice'
 import {
   bagContainerInfo,
   bagSlotInfo,
@@ -105,15 +106,42 @@ interface BagCardProps {
   group: BagGroup
   showCharBadge: boolean
   onLookup: (id: number) => void
+  // Seller's estimated Charisma for the merchant payout; 0 = unknown, which
+  // falls back to showing base value.
+  cha: number
 }
 
-function BagCard({ group, showCharBadge, onLookup }: BagCardProps): React.ReactElement {
+// What a merchant would pay for these entries at `rate` (see merchantPrice).
+function sumPayout(entries: InventoryEntry[], rate: number): number {
+  let total = 0
+  for (const e of entries) {
+    if (!e.price || !e.value) continue
+    total += payout(e.price, Math.round(e.value / e.price), rate)
+  }
+  return total
+}
+
+function BagCard({ group, showCharBadge, onLookup, cha }: BagCardProps): React.ReactElement {
   const [open, setOpen] = useState(true)
   const visibleSlots = group.slots.filter((s) => !isEmptyEntry(s))
   const bagName = group.bag && !isEmptyEntry(group.bag) ? group.bag.name : '(empty bag)'
   const label = group.kind === 'General' ? `Bag ${group.num}` : `${group.kind} ${group.num}`
-  // Contents only — the bag itself isn't counted, since you'd keep it.
+  // Contents only — the bag itself isn't counted, since you'd keep it. NO
+  // DROP items carry no value (merchants won't buy them).
   const bagValue = visibleSlots.reduce((sum, s) => sum + (s.value ?? 0), 0)
+  const sellAt = (f: 'amiable' | 'indifferent' | 'apprehensive') =>
+    sumPayout(visibleSlots, sellRate(cha, f))
+  const shown = cha > 0 ? sellAt('indifferent') : bagValue
+  const valueTitle =
+    cha > 0
+      ? `Merchant payout at ${cha} CHA (gear + AAs, no buffs), ` +
+        'indifferent faction, normal merchant.\n' +
+        `Amiable or better: ${priceLabel(sellAt('amiable'))}\n` +
+        `Apprehensive: ${priceLabel(sellAt('apprehensive'))}\n` +
+        `Base value: ${priceLabel(bagValue)}\n` +
+        'Greedy merchants pay less. NO DROP items are excluded.'
+      : 'Combined base value of the sellable items in this bag. ' +
+        'Merchants pay less, depending on Charisma and faction.'
 
   return (
     <div
@@ -147,13 +175,11 @@ function BagCard({ group, showCharBadge, onLookup }: BagCardProps): React.ReactE
           <span
             className="ml-auto flex shrink-0 items-center gap-1 text-[10px]"
             style={{ color: 'var(--color-muted-foreground)' }}
-            title={
-              'Combined base vendor value of the items in this bag. ' +
-              'Merchants pay somewhat less, depending on Charisma and faction.'
-            }
+            title={valueTitle}
           >
             <Coins size={10} />
-            {priceLabel(bagValue)}
+            {cha > 0 ? '' : '~'}
+            {priceLabel(shown)}
           </span>
         )}
         <span
@@ -373,6 +399,17 @@ export default function InventoryTrackerPage(): React.ReactElement {
     () => groupBags(allTagged.filter((e) => isBagOrBank(e.location, 'Bank')), 'Bank'),
     [allTagged],
   )
+
+  // Estimated Charisma per character, for the bag payout estimate. The
+  // shared bank uses the selected character, or the best seller in view.
+  const chaByName = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const c of inventories) m.set(c.character, c.cha ?? 0)
+    return m
+  }, [inventories])
+  const sharedBankCha = selectedChar
+    ? chaByName.get(selectedChar) ?? 0
+    : Math.max(0, ...chaByName.values())
 
   const sharedBankGroups = useMemo<BagGroup[]>(() => {
     if (!data) return []
@@ -965,6 +1002,7 @@ export default function InventoryTrackerPage(): React.ReactElement {
                       group={g}
                       showCharBadge={showCharBadge}
                       onLookup={handleLookup}
+                      cha={chaByName.get(g.character) ?? 0}
                     />
                   ))}
                 </div>
@@ -982,6 +1020,7 @@ export default function InventoryTrackerPage(): React.ReactElement {
                       group={g}
                       showCharBadge={showCharBadge}
                       onLookup={handleLookup}
+                      cha={chaByName.get(g.character) ?? 0}
                     />
                   ))}
                 </div>
@@ -999,6 +1038,7 @@ export default function InventoryTrackerPage(): React.ReactElement {
                       group={g}
                       showCharBadge={false}
                       onLookup={handleLookup}
+                      cha={sharedBankCha}
                     />
                   ))}
                 </div>

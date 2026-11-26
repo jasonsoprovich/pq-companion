@@ -20,16 +20,21 @@ type InventoryEntry struct {
 	// otherwise. When set, Count carries the item's current charge count, so the
 	// "Rechargeable Items" view reads charges-remaining as Count / MaxCharges.
 	MaxCharges int `json:"max_charges,omitempty"`
-	// Value is the entry's total base vendor value in copper (items.price,
-	// times Count for true stacks), joined in by the API layer. Omitted when
-	// the item has no value. Charged/clicky items count once: their Count is
-	// charges, not quantity.
+	// Price is the item's base vendor price in copper and Value the entry's
+	// total (Price × Count for true stacks; charged items count once, since
+	// their Count is charges), joined in by the API layer. Both are omitted
+	// for items a merchant won't buy (no price, or NO DROP).
+	Price int `json:"price,omitempty"`
 	Value int `json:"value,omitempty"`
 }
 
 // Inventory is the full parsed state of a character's inventory export.
 type Inventory struct {
-	Character  string           `json:"character"`
+	Character string `json:"character"`
+	// CHA is the character's estimated Charisma (base + gear + AAs, capped;
+	// no buffs), set by the API's all-inventories handler for the merchant
+	// sell-price estimate. 0 when unknown (no character record).
+	CHA        int              `json:"cha,omitempty"`
 	ExportedAt time.Time        `json:"exported_at"`
 	Entries    []InventoryEntry `json:"entries"`
 }

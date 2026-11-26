@@ -1081,20 +1081,30 @@ func TestItemPrices(t *testing.T) {
 	if err != nil || len(got) != 0 {
 		t.Fatalf("ItemPrices(nil) = %v, %v; want empty, nil", got, err)
 	}
-	// 13005 Iron Ration: price 150, true stack. 14361 Star of Eyes: price 1,
-	// stackable = 3 (charged). 9963 Essence Emerald: price 0 → omitted.
-	got, err = d.ItemPrices([]int{13005, 14361, 9963, -1})
+	// 13005 Iron Ration: price 150, true stack. 1194 Mountain Death Belt: price
+	// 4000, stackable = 3 (charged). 9963 Essence Emerald: price 0 → omitted.
+	// Words of Darkness: NO DROP → omitted (merchants won't buy it).
+	var wordsID int
+	if err := d.QueryRow(
+		"SELECT id FROM items WHERE name = 'Words of Darkness' AND nodrop = 0 LIMIT 1",
+	).Scan(&wordsID); err != nil {
+		t.Fatalf("seed Words of Darkness: %v", err)
+	}
+	got, err = d.ItemPrices([]int{13005, 1194, 9963, wordsID, -1})
 	if err != nil {
 		t.Fatalf("ItemPrices: %v", err)
 	}
 	if p := got[13005]; p.Price != 150 || !p.Stackable {
 		t.Errorf("Iron Ration = %+v, want {150 true}", p)
 	}
-	if p := got[14361]; p.Price != 1 || p.Stackable {
-		t.Errorf("Star of Eyes = %+v, want {1 false}", p)
+	if p := got[1194]; p.Price != 4000 || p.Stackable {
+		t.Errorf("Mountain Death Belt = %+v, want {4000 false}", p)
 	}
 	if _, ok := got[9963]; ok {
 		t.Error("zero-price item should be omitted")
+	}
+	if _, ok := got[wordsID]; ok {
+		t.Error("NO DROP item should be omitted")
 	}
 	if _, ok := got[-1]; ok {
 		t.Error("missing id should be omitted")
