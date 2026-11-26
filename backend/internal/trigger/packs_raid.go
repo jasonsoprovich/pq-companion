@@ -194,9 +194,10 @@ func (d raidPackDef) build() TriggerPack {
 		}
 	}
 	cureDone := map[string]bool{}
+	multi := raidMultiPackBosses()
 	for _, b := range d.Bosses {
 		if !b.NoWho {
-			out = append(out, raidWhoTrigger(d.Name, b))
+			out = append(out, raidWhoTrigger(d.Name, b, multi[b.Name]))
 		}
 		for _, s := range b.Spells {
 			if s.Buff {
@@ -318,7 +319,11 @@ func raidCureTrigger(pack string, s raidSpell, names []string) Trigger {
 
 // raidWhoTrigger shows the boss's card when you /tell it: the server answers
 // "<name> is not online at this time." with the name as typed.
-func raidWhoTrigger(pack string, b raidBoss) Trigger {
+//
+// withZone puts the zone on the card, for bosses fought in more than one
+// pack (the Plane of Time gods): /tell can't say which version you meant,
+// so each installed pack shows its own card and the zone tells them apart.
+func raidWhoTrigger(pack string, b raidBoss, withZone bool) Trigger {
 	names := append([]string{b.Name}, b.Aliases...)
 	alts := make([]string, len(names))
 	for i, n := range names {
@@ -330,7 +335,7 @@ func raidWhoTrigger(pack string, b raidBoss) Trigger {
 		Pattern:  `(?i)^(?:` + strings.Join(alts, "|") + `) is not online at this time\.$`,
 		PackName: pack,
 		Actions: []Action{
-			{Type: ActionOverlayText, Text: raidWhoText(b), DurationSecs: 15, Color: "#e5e7eb"},
+			{Type: ActionOverlayText, Text: raidWhoText(b, withZone), DurationSecs: 15, Color: "#e5e7eb"},
 		},
 	}
 }
@@ -383,9 +388,13 @@ func raidTellWord(w string, keep int) string {
 }
 
 // raidWhoText is the Who card body.
-func raidWhoText(b raidBoss) string {
+func raidWhoText(b raidBoss, withZone bool) string {
+	name := b.Name
+	if withZone {
+		name += " (" + b.Zone + ")"
+	}
 	parts := []string{
-		fmt.Sprintf("%s · Lv%d · MR %d / CR %d / FR %d", b.Name, b.Level, b.MR, b.CR, b.FR),
+		fmt.Sprintf("%s · Lv%d · MR %d / CR %d / FR %d", name, b.Level, b.MR, b.CR, b.FR),
 	}
 	if b.Note != "" {
 		parts = append(parts, b.Note)
@@ -408,6 +417,30 @@ func raidWhoText(b raidBoss) string {
 		parts = append(parts, "Procs: "+strings.Join(procs, ", "))
 	}
 	return strings.Join(parts, " · ")
+}
+
+// raidMultiPackBosses names the Who-card bosses that appear in more than
+// one raid pack.
+func raidMultiPackBosses() map[string]bool {
+	packsOf := map[string]map[string]bool{}
+	for _, d := range raidPackDefs() {
+		for _, b := range d.Bosses {
+			if b.NoWho {
+				continue
+			}
+			if packsOf[b.Name] == nil {
+				packsOf[b.Name] = map[string]bool{}
+			}
+			packsOf[b.Name][d.Name] = true
+		}
+	}
+	out := map[string]bool{}
+	for n, ps := range packsOf {
+		if len(ps) > 1 {
+			out[n] = true
+		}
+	}
+	return out
 }
 
 // raidAlert is a one-shot encounter event: overlay plus optional TTS.
