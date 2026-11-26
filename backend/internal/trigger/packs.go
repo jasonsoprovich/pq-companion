@@ -3231,8 +3231,9 @@ func RaidAlertsPack() TriggerPack {
 // the timer and re-firing the banner/TTS — see the comment on the field
 // literal for why.
 func raidSignatureSpellAlerts() []Trigger {
-	spell := func(name, landOnYou, landOnOtherSuffix string, spellID int, recastSecs float64) Trigger {
+	spell := func(name, landOnYou, landOnOtherSuffix string, spellID int, recastSecs float64, casters ...BossCaster) Trigger {
 		return Trigger{
+			BossCasters:       casters,
 			Name:              name,
 			Enabled:           true,
 			Pattern:           `^(?:` + landOnYou + `|[A-Z][a-zA-Z']{2,14}` + landOnOtherSuffix + `)$`,
@@ -3264,17 +3265,22 @@ func raidSignatureSpellAlerts() []Trigger {
 		}
 	}
 	return []Trigger{
-		spell("Fling", `A massive force knocks you into the air\.`, ` is knocked into the air by a massive force\.`, 2167, 45),
-		spell("Silence of the Shadows", `Your mind is assaulted by horrifying visions\.`, `'s mind is assaulted by horrifying visions\.`, 2164, 30),
-		spell("Torturing Winds", `You are stricken by torturing winds\.`, ` is stricken by torturing winds\.`, 2061, 45),
+		spell("Fling", `A massive force knocks you into the air\.`, ` is knocked into the air by a massive force\.`, 2167, 45,
+			bc("Aten Ha Ra"), bc("Kaas Thox Xi Aten Ha Ra"), bc("Kaas Thox Xi Ans Dyek"), bc("Va Xi Aten Ha Ra")),
+		spell("Silence of the Shadows", `Your mind is assaulted by horrifying visions\.`, `'s mind is assaulted by horrifying visions\.`, 2164, 30,
+			bc("Aten Ha Ra"), bc("Diabo Xi Xin Thall"), bc("Thall Va Xakra")),
+		spell("Torturing Winds", `You are stricken by torturing winds\.`, ` is stricken by torturing winds\.`, 2061, 45,
+			bc("Lord Inquisitor Seru")),
 		// The "landed on other" text ("'s flesh begins to liquefy.") is
 		// byte-identical between Caustic Mist (Vyzh'dra the Cursed, 24s
 		// recast) and Putrefy Flesh (Zlandicar, 30s recast) — EQ reused the
 		// same broadcast string for both spells, so the trigger can't tell
 		// which boss actually cast it from the log line alone. The name
 		// reflects both so the alert isn't mislabeled on either fight.
-		spell("Caustic Mist / Putrefy Flesh", `Your skin begins to rot\.`, `'s flesh begins to liquefy\.`, 2814, 24),
-		spell("Touch of Vinitras", `Your soul fades into darkness\.`, `'s soul fades into darkness\.`, 2859, 120),
+		spell("Caustic Mist / Putrefy Flesh", `Your skin begins to rot\.`, `'s flesh begins to liquefy\.`, 2814, 24,
+			BossCaster{Name: "Vyzh`dra the Cursed", DurationSecs: 24}, BossCaster{Name: "Zlandicar", DurationSecs: 30}),
+		spell("Touch of Vinitras", `Your soul fades into darkness\.`, `'s soul fades into darkness\.`, 2859, 120,
+			bc("Shei Vinitras"), bc("Vyzh`dra the Banished"), bc("Vyzh`dra the Exiled")),
 	}
 }
 
@@ -3610,6 +3616,12 @@ type DefaultUpdate struct {
 	// idempotent and never resurrects a pack the user removed. TriggerName is
 	// ignored for insert updates.
 	InsertTrigger *Trigger
+	// Run, when non-nil, is a one-off migration executed instead of the
+	// field-based changes above, for updates that need to find their rows
+	// some other way (e.g. by SourcePack + PackKey so renamed triggers are
+	// included). It reports whether anything changed. PackName and
+	// TriggerName are ignored.
+	Run func(store *Store) (bool, error)
 }
 
 // DefaultUpdates is the list of one-time additive pack updates to apply on
@@ -3768,6 +3780,14 @@ func DefaultUpdates() []DefaultUpdate {
 			TriggerName:           "Group Member Died",
 			AppendExcludePatterns: groupMemberDiedExcludes(),
 		},
+		{
+			// 2026-11-25: boss-cast binding moved from a name-keyed map in
+			// bosscast.go to Trigger.BossCasters. Stamp the casters onto
+			// installed Raid Alerts signature-spell rows (renamed ones too)
+			// so they keep binding to the boss that cast them.
+			Key: "raid-alerts-signature-boss-casters-v1",
+			Run: stampRaidSignatureCasters,
+		},
 	}
 }
 
@@ -3807,6 +3827,9 @@ func ApplyDefaultUpdates(store *Store, updates []DefaultUpdate) (int, error) {
 // SetCooldownSecs. Returns whether the trigger was actually mutated (false if
 // the trigger doesn't exist, or every change was already present).
 func applyDefaultUpdate(store *Store, u DefaultUpdate) (bool, error) {
+	if u.Run != nil {
+		return u.Run(store)
+	}
 	if u.PackName == "" {
 		return false, nil
 	}

@@ -250,6 +250,36 @@ func (fc *fireContext) passesRefireCooldown(t *Trigger, ts time.Time) bool {
 	return true
 }
 
+// gateFire decides whether a matched trigger fires at ts. Ordinary triggers
+// go through the per-trigger RefireCooldownSecs lockout. Boss-caster
+// triggers (see Trigger.bindsBossCaster) instead resolve which boss cast the
+// spell and apply their duplicate lockout per caster, returning that caster
+// ("" = fall back to the live target) for planFire to bind the timer to.
+func (fc *fireContext) gateFire(t *Trigger, ts time.Time, liveTarget string) (caster string, ok bool) {
+	if t.bindsBossCaster() {
+		return fc.bossCast.bind(t, ts, liveTarget)
+	}
+	return "", fc.passesRefireCooldown(t, ts)
+}
+
+// compiledTriggers returns the triggers behind a compiled set.
+func compiledTriggers(cs []compiled) []*Trigger {
+	out := make([]*Trigger, len(cs))
+	for i := range cs {
+		out[i] = cs[i].trigger
+	}
+	return out
+}
+
+// liveTarget returns the inferred combat target's name, "" when unknown or
+// when no target provider is wired (tests).
+func (e *Engine) liveTarget() string {
+	if e.currentTarget == nil {
+		return ""
+	}
+	return e.currentTarget()
+}
+
 // NewEngine creates an Engine backed by store. Call Reload before routing
 // lines. sink may be nil when timer integration is disabled (e.g. in tests).
 // activeChar returns the currently active character name; nil disables
@@ -359,6 +389,8 @@ func (e *Engine) Reload() {
 		cs = append(cs, c)
 	}
 
+	e.fc.bossCast.setKnown(compiledTriggers(cs))
+
 	e.mu.Lock()
 	e.compiled = cs
 	e.pipeCompiled = pipeCs
@@ -460,9 +492,11 @@ func (e *Engine) Handle(timestamp time.Time, message string) {
 		if m != nil && !matchesAny(c.excludes, message) {
 			e.fc.noteRepeat(c.trigger, timestamp)
 		}
-		if m != nil && !matchesAny(c.excludes, message) && e.fc.passesRefireCooldown(c.trigger, timestamp) {
-			plan := e.planFire(e.fc, c, message, timestamp, m, names, extra, "")
-			e.applyFire(plan, fireOpts{})
+		if m != nil && !matchesAny(c.excludes, message) {
+			if caster, ok := e.fc.gateFire(c.trigger, timestamp, e.liveTarget()); ok {
+				plan := e.planFire(e.fc, c, message, timestamp, m, names, extra, "", caster)
+				e.applyFire(plan, fireOpts{})
+			}
 		}
 		if c.wornOff != nil && e.sink != nil && c.timerKey != "" {
 			if wm := c.wornOff.FindStringSubmatch(message); wm != nil {
@@ -1040,7 +1074,7 @@ type firePlan struct {
 // trigger's; nil when the primary matched. fc supplies the boss-cast tracker
 // used to resolve a signature spell's caster; character overrides the live
 // active character (see builtinTokens) for the Trigger Tester's benefit.
-func (e *Engine) planFire(fc *fireContext, c compiled, matchedLine string, firedAt time.Time, match []string, names []string, extra *ExtraPattern, character string) firePlan {
+func (e *Engine) planFire(fc *fireContext, c compiled, matchedLine string, firedAt time.Time, match []string, names []string, extra *ExtraPattern, character string, caster string) firePlan {
 	t := c.trigger
 
 	// Substitute regex captures into the action text on a copy — never mutate
@@ -1091,26 +1125,32 @@ func (e *Engine) planFire(fc *fireContext, c compiled, matchedLine string, fired
 			// was last targeted, so they vanished the moment that mob died —
 			// reported by suprphrk/HughJeffner 2026-08-07.
 			target := resolveTimerTarget(t, match, names)
-			// True for a known signature-spell trigger (bosscast.go)
-			// regardless of how its target below ends up resolved: the row
-			// always represents that NPC's own recast cooldown, never a
-			// debuff sitting on whatever it's bound to. Drives the NPC
-			// Timers tab's "boss cooldown" badge, which needs to read
-			// differently from an ordinary "X has this debuff" row even
-			// though both key off the same TargetName.
-			casters, isSignatureSpell := signatureSpellCasters[t.Name]
+			// True for a boss-caster trigger (Trigger.BossCasters, see
+			// bosscast.go) regardless of how its target below ends up
+			// resolved: the row always represents that NPC's own recast
+			// cooldown, never a debuff sitting on whatever it's bound to.
+			// Drives the NPC Timers tab's "boss cooldown" badge, which needs
+			// to read differently from an ordinary "X has this debuff" row
+			// even though both key off the same TargetName.
+			isSignatureSpell := len(t.BossCasters) > 0
 			if target == "" && t.TimerType == TimerTypeDetrimental {
-				// Prefer the actual caster over the live-target guess when this
-				// is a known signature spell: the land text never names the
-				// caster, but a recent "<boss> begins to cast a spell." line
-				// does, and unlike the current combat target it doesn't break
-				// when the player is off-tanking an add or has nothing
-				// targeted.
+				// Prefer the actual caster (resolved by gateFire from a recent
+				// "<boss> begins to cast a spell." line) over the live-target
+				// guess: the land text never names the caster, and unlike the
+				// current combat target this doesn't break when the player is
+				// off-tanking an add or has nothing targeted.
 				if isSignatureSpell {
-					target = fc.bossCast.resolveCaster(firedAt, casters, builtins["target"])
+					target = caster
 				}
 				if target == "" {
 					target = builtins["target"]
+				}
+			}
+			// Two bosses' spells can share one land line but recast at
+			// different rates; a per-caster duration wins for that caster.
+			if isSignatureSpell && target != "" {
+				if d := casterDuration(t, target); d > 0 {
+					durationSecs = d
 				}
 			}
 			spellID := t.SpellID

@@ -20,152 +20,193 @@ var reNPCBeginsCast = regexp.MustCompile("^([A-Za-z][A-Za-z`' ]*?) begins to cas
 // eligible to bind a later land-text timer to that caster. Generous
 // relative to these spells' actual cast times (a few seconds, plus PBAE
 // broadcast jitter across several near-simultaneous land lines) while
-// staying well under the shortest signature-spell recast time (24s, Caustic
-// Mist) so a stale observation can never carry over into the boss's next
-// cast cycle.
+// staying well under the shortest boss recast these triggers track, so a
+// stale observation — an interrupted cast, or one whose land line never
+// reached the log — expires instead of binding the boss's next cast.
 const bossCastWindow = 15 * time.Second
 
-// signatureSpellCasters maps a raidSignatureSpellAlerts() trigger's Name to
-// the raid NPCs actually known (via quarm.db npc_spells) to cast that
-// spell, so bossCastTracker only has to watch for these specific names
-// instead of every cast-start line in a raid. Keyed by trigger Name rather
-// than SpellID because the Caustic Mist/Putrefy Flesh entry covers two
-// different underlying spell IDs cast by two different bosses (see the
-// trigger's own doc comment on the text collision) — Name is the one field
-// that already disambiguates that case.
-//
-// Scoped to the Kunark Ring War trial bosses these triggers were written
-// for (plus Zlandicar, whose Putrefy Flesh produces byte-identical land
-// text to Caustic Mist). Other npc_types rows that happen to share these
-// spell IDs via generic/reused spell lists (ward/guardian trash) are left
-// out to keep the allowlist tied to actual named encounters; extend here if
-// another raid target turns out to share one of these signatures.
-//
-// A renamed trigger (user edits the Name in the UI) silently loses this
-// lookup and falls back to the live-combat-target guess — a safe
-// degradation, not a hard failure.
-var signatureSpellCasters = map[string][]string{
-	"Fling": {
-		"Aten Ha Ra",
-		"Kaas Thox Xi Aten Ha Ra",
-		"Kaas Thox Xi Ans Dyek",
-		"Va Xi Aten Ha Ra",
-	},
-	"Silence of the Shadows": {
-		"Aten Ha Ra",
-		"Diabo Xi Xin Thall",
-		"Thall Va Xakra",
-	},
-	"Torturing Winds": {
-		"Lord Inquisitor Seru",
-	},
-	"Caustic Mist / Putrefy Flesh": {
-		"Vyzh`dra the Cursed",
-		"Zlandicar",
-	},
-	"Touch of Vinitras": {
-		"Shei Vinitras",
-		"Vyzh`dra the Banished",
-		"Vyzh`dra the Exiled",
-	},
-}
+// bossDuplicateWindow is the default per-caster refire lockout for a
+// boss-caster trigger with no RefireCooldownSecs of its own. A single PBAE
+// cast logs one land line per raid member hit, all within the same second or
+// two; this collapses them into one fire.
+const bossDuplicateWindow = 3 * time.Second
 
-// knownSignatureBosses is the lowercased union of every name in
-// signatureSpellCasters, used to cheaply reject cast-start lines from
-// unrelated NPCs/players before bothering to record them.
-var knownSignatureBosses = func() map[string]bool {
-	m := make(map[string]bool)
-	for _, casters := range signatureSpellCasters {
-		for _, c := range casters {
-			m[strings.ToLower(c)] = true
-		}
-	}
-	return m
-}()
+// maxBossObservations caps the observation buffer. Observations older than
+// bossCastWindow are pruned anyway; the cap only guards against a log replay
+// whose timestamps jump backwards and defeat age-based pruning.
+const maxBossObservations = 256
 
 // bossCastTracker watches log lines for known raid-boss cast-start events so
-// a signature-spell timer — whose land text never names the caster, only the
+// a boss-recast timer — whose land text never names the caster, only the
 // victim — can bind to the actual casting NPC instead of guessing from
-// whatever the player currently has targeted. That guess (see engine.go's
-// combat-target fallback) breaks the moment the player is off-tanking an add
-// or has nothing targeted; this doesn't depend on target state at all.
+// whatever the player currently has targeted. That guess breaks the moment
+// the player is off-tanking an add or has nothing targeted; this doesn't
+// depend on target state at all.
+//
+// Cast-start lines name the boss but not the spell, so observations are
+// shared by every trigger that lists that boss, but each trigger consumes an
+// observation at most once (see bind). A boss with two tracked spells can
+// therefore feed both triggers, and casting one spell never uses up the
+// evidence the other spell's trigger needs.
+//
+// Attribution is best effort: the log can't say which of two overlapping
+// casts produced a given land line. See bind for the exact rules.
 type bossCastTracker struct {
-	mu   sync.Mutex
-	last map[string]time.Time // lowercased boss name -> last observed cast-start time
+	mu    sync.Mutex
+	known map[string]bool // lowercased boss names worth recording
+	obs   []castObservation
+	last  map[string]bossBinding // trigger ID -> its most recent fire
+}
+
+// castObservation is one "<boss> begins to cast a spell." line.
+type castObservation struct {
+	name   string          // lowercased boss name
+	at     time.Time       // log timestamp
+	usedBy map[string]bool // trigger IDs that already consumed it
+}
+
+// bossBinding records when a boss-caster trigger last fired and which caster
+// it bound to ("" when it fell back to the live target).
+type bossBinding struct {
+	caster string
+	at     time.Time
 }
 
 func newBossCastTracker() *bossCastTracker {
-	return &bossCastTracker{last: make(map[string]time.Time)}
+	return &bossCastTracker{last: make(map[string]bossBinding)}
 }
 
-// observe records a cast-start line if its caster is a known signature-spell
-// boss; every other line (the vast majority in a busy raid — player casts,
-// trash, everything else) is a cheap no-op after the name lookup misses.
+// setKnown rebuilds the set of boss names worth recording from the given
+// triggers' BossCasters. Called on every engine reload, so a pack install,
+// edit or removal takes effect without a restart.
+func (b *bossCastTracker) setKnown(triggers []*Trigger) {
+	known := make(map[string]bool)
+	for _, t := range triggers {
+		for _, c := range t.BossCasters {
+			if n := strings.ToLower(strings.TrimSpace(c.Name)); n != "" {
+				known[n] = true
+			}
+		}
+	}
+	b.mu.Lock()
+	b.known = known
+	b.mu.Unlock()
+}
+
+// observe records a cast-start line if its caster is a known boss; every
+// other line (the vast majority in a busy raid — player casts, trash,
+// everything else) is a cheap no-op after the name lookup misses.
 func (b *bossCastTracker) observe(now time.Time, line string) {
+	if !strings.HasSuffix(line, " begins to cast a spell.") {
+		return
+	}
 	m := reNPCBeginsCast.FindStringSubmatch(line)
 	if m == nil {
 		return
 	}
 	name := strings.ToLower(m[1])
-	if !knownSignatureBosses[name] {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if !b.known[name] {
 		return
 	}
-	b.mu.Lock()
-	b.last[name] = now
-	b.mu.Unlock()
+	b.pruneLocked(now)
+	b.obs = append(b.obs, castObservation{name: name, at: now})
+	if len(b.obs) > maxBossObservations {
+		b.obs = b.obs[len(b.obs)-maxBossObservations:]
+	}
 }
 
-// resolveCaster returns whichever of candidates most recently began casting
-// within bossCastWindow before now, in its canonical (properly-cased) form
-// from candidates — or "" if none of them were observed casting recently
-// (e.g. the boss started casting before this log file was open, or the
-// trigger fired well outside any observed cast-start).
+// pruneLocked drops observations older than bossCastWindow relative to now.
+// Observations are appended in log order, so the expired ones are a prefix.
+func (b *bossCastTracker) pruneLocked(now time.Time) {
+	i := 0
+	for i < len(b.obs) && now.Sub(b.obs[i].at) > bossCastWindow {
+		i++
+	}
+	if i > 0 {
+		b.obs = append(b.obs[:0], b.obs[i:]...)
+	}
+}
+
+// bind resolves which of t's BossCasters cast the spell whose land line just
+// matched at now, and reports whether the trigger should fire at all. The
+// returned caster is the canonical name from t.BossCasters, or "" when no
+// observation applies and the caller should fall back to the live target.
 //
-// liveTarget, when non-empty and equal (case-insensitively) to one of
-// candidates that was itself observed casting within the window, wins over
-// the "most recent" tiebreak below. This matters because "most recently
-// observed casting *something*" doesn't reliably identify who cast *this*
-// spell once more than one candidate is active at once — e.g. two
-// same-family adds up simultaneously (Aten Ha Ra's several "Kaas Thox Xi..."
-// permutations, several of which are candidates for the same signature
-// spell), or a boss that's a candidate for two different signature spells
-// and just cast the other one. The player's actual live target, independently
-// confirmed to be casting, is a much stronger signal — and using it also
-// makes this line up by construction with the NPC overlay's Timers tab,
-// which filters strictly by matching the live target name (see
-// frontend/src/hooks/useTargetTimers.ts).
-func (b *bossCastTracker) resolveCaster(now time.Time, candidates []string, liveTarget string) string {
+// Rules, in priority order (timestamps only resolve to the second, so rule 1
+// deliberately beats duplicate detection):
+//
+//  1. An observation of one of t's casters, within bossCastWindow and not yet
+//     consumed by t, binds: the live target if it is one of those, otherwise
+//     the oldest (the same spell has the same cast time, so casts finish in
+//     the order they started). The observation is then consumed by t.
+//  2. Otherwise, a line within the duplicate window of t's previous fire is
+//     an AE broadcast duplicate: fire=false.
+//  3. Otherwise, fire with caster "" (live-target fallback).
+//
+// Worked case: A and B begin casting in the same second, then A's land line
+// and its AE duplicate, then B's land line and duplicate. A's first line
+// binds A, A's duplicate binds B (B's countdown starts a second or two
+// early), and both of B's lines are then duplicates — one timer per boss.
+func (b *bossCastTracker) bind(t *Trigger, now time.Time, liveTarget string) (caster string, fire bool) {
+	canon := make(map[string]string, len(t.BossCasters))
+	for _, c := range t.BossCasters {
+		canon[strings.ToLower(c.Name)] = c.Name
+	}
+	live := strings.ToLower(liveTarget)
+
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	if liveTarget != "" {
-		want := strings.ToLower(liveTarget)
-		for _, c := range candidates {
-			if strings.ToLower(c) != want {
-				continue
-			}
-			if ts, ok := b.last[want]; ok {
-				if d := now.Sub(ts); d >= 0 && d <= bossCastWindow {
-					return c
-				}
-			}
+	pick := -1
+	for i := range b.obs {
+		o := &b.obs[i]
+		if _, ok := canon[o.name]; !ok || o.usedBy[t.ID] {
+			continue
+		}
+		if d := now.Sub(o.at); d < 0 || d > bossCastWindow {
+			continue
+		}
+		if live != "" && o.name == live {
+			pick = i
 			break
 		}
+		if pick < 0 {
+			pick = i
+		}
+	}
+	if pick >= 0 {
+		o := &b.obs[pick]
+		if o.usedBy == nil {
+			o.usedBy = make(map[string]bool)
+		}
+		o.usedBy[t.ID] = true
+		caster = canon[o.name]
+		b.last[t.ID] = bossBinding{caster: caster, at: now}
+		return caster, true
 	}
 
-	var best string
-	var bestTime time.Time
-	for _, c := range candidates {
-		ts, ok := b.last[strings.ToLower(c)]
-		if !ok {
-			continue
-		}
-		if d := now.Sub(ts); d < 0 || d > bossCastWindow {
-			continue
-		}
-		if ts.After(bestTime) {
-			bestTime, best = ts, c
+	window := bossDuplicateWindow
+	if t.RefireCooldownSecs > 0 {
+		window = time.Duration(t.RefireCooldownSecs * float64(time.Second))
+	}
+	if prev, ok := b.last[t.ID]; ok {
+		if d := now.Sub(prev.at); d >= 0 && d < window {
+			return "", false
 		}
 	}
-	return best
+	b.last[t.ID] = bossBinding{at: now}
+	return "", true
+}
+
+// casterDuration returns the per-caster duration override for caster on t,
+// or 0 when there is none.
+func casterDuration(t *Trigger, caster string) float64 {
+	for _, c := range t.BossCasters {
+		if strings.EqualFold(c.Name, caster) {
+			return c.DurationSecs
+		}
+	}
+	return 0
 }

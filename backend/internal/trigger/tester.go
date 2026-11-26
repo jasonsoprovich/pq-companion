@@ -241,6 +241,7 @@ func (e *Engine) testLine(fc *fireContext, cs []compiled, character string, ts t
 	// Never nil: a no-match line must serialize as "matches": [] — the UI
 	// reads .length on it, and null blanked the whole renderer.
 	out := []TestMatch{}
+	fc.bossCast.observe(ts, message)
 	for _, c := range cs {
 		m, names := c.re.FindStringSubmatch(message), c.re.SubexpNames()
 		label := "primary"
@@ -255,6 +256,7 @@ func (e *Engine) testLine(fc *fireContext, cs []compiled, character string, ts t
 		applies := triggerAppliesTo(c.trigger, character)
 
 		if m != nil {
+			var caster string
 			tm := TestMatch{
 				TriggerID:    c.trigger.ID,
 				TriggerName:  c.trigger.Name,
@@ -267,11 +269,16 @@ func (e *Engine) testLine(fc *fireContext, cs []compiled, character string, ts t
 			case matchingExclude(c.excludes, message) != nil:
 				tm.Status = LineStatusExcluded
 				tm.ExcludePattern = matchingExclude(c.excludes, message).String()
-			case func() bool { fc.noteRepeat(c.trigger, ts); return !fc.passesRefireCooldown(c.trigger, ts) }():
+			case func() bool {
+				fc.noteRepeat(c.trigger, ts)
+				var ok bool
+				caster, ok = fc.gateFire(c.trigger, ts, e.liveTarget())
+				return !ok
+			}():
 				tm.Status = LineStatusCooldown
 			default:
 				tm.Status = LineStatusMatched
-				plan := e.planFire(fc, c, message, ts, m, names, extra, character)
+				plan := e.planFire(fc, c, message, ts, m, names, extra, character, caster)
 				tm.Actions = plan.actions
 				tm.Webhooks = e.previewWebhooks(plan.actions)
 				if plan.hasTimer {
@@ -356,6 +363,7 @@ func (e *Engine) RunTest(req TestRequest) TestReport {
 	}
 
 	fc := newFireContext()
+	fc.bossCast.setKnown(compiledTriggers(cs))
 	prevTS := time.Now()
 	for _, raw := range splitTestLines(req.Lines) {
 		ts, msg, ok := logparser.ParseRawLine(raw)
@@ -486,6 +494,7 @@ func (rt *Tester) run(req TestRequest, stop <-chan struct{}) {
 	}
 
 	fc := newFireContext()
+	fc.bossCast.setKnown(compiledTriggers(cs))
 	var prevTS time.Time
 	for _, raw := range splitTestLines(req.Lines) {
 		select {

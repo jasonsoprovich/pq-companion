@@ -180,6 +180,22 @@ type ExtraPattern struct {
 	SpellID           int     `json:"spell_id,omitempty"`
 }
 
+// BossCaster is one raid NPC that casts a trigger's spell. DurationSecs, when
+// non-zero, overrides the trigger's timer duration for this caster — used
+// when two bosses' spells share one land line but recast at different rates
+// (Caustic Mist 24s vs Putrefy Flesh 30s).
+type BossCaster struct {
+	Name         string  `json:"name"`
+	DurationSecs float64 `json:"duration_secs,omitempty"`
+}
+
+// bindsBossCaster reports whether t's timer resolves its target through the
+// boss-cast tracker: a detrimental timer with known casters and no capture
+// group of its own naming the target.
+func (t *Trigger) bindsBossCaster() bool {
+	return len(t.BossCasters) > 0 && t.TimerType == TimerTypeDetrimental && t.TimerTargetCapture == ""
+}
+
 // SourceLog and SourcePipe are the legal values for Trigger.Source.
 const (
 	SourceLog  = "log"
@@ -354,6 +370,16 @@ type Trigger struct {
 	// Fractional values (e.g. 1.5) are allowed so imports from tools that use
 	// sub-second cooldowns (EQNag and friends) survive without truncation.
 	RefireCooldownSecs float64 `json:"refire_cooldown_secs,omitempty"`
+	// BossCasters lists the raid NPCs known to cast this trigger's spell. A
+	// detrimental trigger with casters binds its timer to whichever listed
+	// boss was seen logging "<boss> begins to cast a spell." shortly before
+	// the land line (see bosscast.go), so each boss gets its own countdown,
+	// cleared when that boss dies, and the NPC Timers tab badges it as a
+	// boss cooldown. For these triggers RefireCooldownSecs is applied per
+	// resolved caster instead of per trigger (default 3s when unset), so two
+	// bosses casting the same spell aren't collapsed into one fire. Empty =
+	// ordinary trigger, no change in behaviour.
+	BossCasters []BossCaster `json:"boss_casters,omitempty"`
 	// RepeatResetSecs > 0 turns on match counting for the {repeated}/{count}
 	// tokens: consecutive matches no more than this many seconds apart form one
 	// run (EQLogParser's "Repeated Reset Time"). Follow-up matches update the

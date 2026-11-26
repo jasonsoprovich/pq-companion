@@ -131,6 +131,9 @@ var packFields = []packField{
 	{"timer_clear_on_context_change", "Clear on zone or character change",
 		func(t *Trigger) any { return t.TimerClearOnContextChange },
 		func(d, s *Trigger) { d.TimerClearOnContextChange = s.TimerClearOnContextChange }},
+	{"boss_casters", "Boss casters",
+		func(t *Trigger) any { return emptyIfNilCasters(t.BossCasters) },
+		func(d, s *Trigger) { d.BossCasters = s.BossCasters }},
 	{"timer_repeat", "Repeat timer",
 		func(t *Trigger) any { return t.TimerRepeat },
 		func(d, s *Trigger) { d.TimerRepeat = s.TimerRepeat }},
@@ -151,6 +154,13 @@ var packFields = []packField{
 func emptyIfNilStr(v []string) []string {
 	if v == nil {
 		return []string{}
+	}
+	return v
+}
+
+func emptyIfNilCasters(v []BossCaster) []BossCaster {
+	if v == nil {
+		return []BossCaster{}
 	}
 	return v
 }

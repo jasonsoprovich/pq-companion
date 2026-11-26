@@ -210,6 +210,12 @@ export interface Trigger {
    */
   refire_cooldown_secs?: number
   /**
+   * Raid NPCs known to cast this trigger's spell. A detrimental timer binds
+   * to whichever of them was seen casting, so each boss gets its own
+   * countdown. Set by built-in raid packs; not edited in the UI.
+   */
+  boss_casters?: { name: string; duration_secs?: number }[]
+  /**
    * Repeat-count window: matches no more than this many seconds apart form one
    * run, counted by the {repeated}/{count} tokens, and follow-ups update the
    * on-screen alert in place. 0/absent = off.
