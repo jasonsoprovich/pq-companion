@@ -67,7 +67,7 @@ it, sets its lock hotkey, or deletes it.
 ### Locking and hotkeys
 
 Chat windows lock and unlock like other overlays. Two hotkeys in
-**Settings › Hotkeys** help: **lock all chat windows**, and **position
+**Settings › Hotkeys** are useful here: **lock all chat windows**, and **position
 overlays** to move every window at once. Tabs stay clickable while a window
 is locked.
 
