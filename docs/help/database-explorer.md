@@ -24,6 +24,10 @@ Press <kbd>Ctrl + K</kbd> from anywhere in the app for global search. Results gr
 
 From an item's detail view, open Item Compare to line it up side-by-side against other items — or against whatever's currently equipped in that slot on your active character — so you can see exactly which stats change before you decide it's an upgrade.
 
+### PoP armor molds
+
+Planes of Power molds and patterns show what they make: a mold's page lists the class armor it combines into, and each piece of that armor names the mold and recipe behind it. The same appears in NPC loot tables, the Item Info overlay (per class) and Gear Upgrades, so you know what you're rolling on.
+
 ### NPC zones, scrolls & spell components
 
 Every NPC shows the zones it spawns in right under its name, in NPC search results (including **Ctrl + K**), and on item drop and vendor sources. NPCs spawned by events or scripts, such as the Plane of Time bosses, show the zone their NPC id belongs to, marked with \* (hover for details).

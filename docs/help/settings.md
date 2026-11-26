@@ -18,6 +18,16 @@ The character switcher in the top-right lets you flip between any character with
 
 Settings save automatically as you change them — there are no Save or Discard buttons to remember.
 
+### Feature health
+
+The top of **Settings → General** lists everything PQ Companion reads from the game and whether it's working, in three groups:
+
+- **Setup** — EverQuest folder, character, log file and when the log was last written. Grey log activity just means EverQuest is closed.
+- **Logging** — the app's log parsing switch, **EverQuest logging** (sets `Log=TRUE` in `eqclient.ini` so the game logs on every login) and **Zeal output on camp** (Zeal exports inventory, spellbook and stats when you /camp). The two ini switches need EverQuest closed, since the client rewrites its files on exit; a backup is saved first.
+- **Zeal** — whether Zeal is installed and current, the live pipe connection, and Zeal's in-game settings PQ Companion benefits from, each with the command to turn it on and a copy button.
+
+Click any row to see what it does, which features use it and how to turn it on. The Getting Started checklist uses the same checks.
+
 ### Master Volume
 
 Settings has a master volume slider that scales every trigger sound, TTS utterance, event alert, and timer alert on top of each action's per-trigger volume — dampen everything together without losing the relative balance between individual triggers.
@@ -34,9 +44,9 @@ Settings is organized around a grouped side navigation, and an Accessibility sec
 
 A status panel under Settings shows the `eqgame.exe` version detected at your configured Project Quarm path. Useful for confirming you patched after a server-side update; the panel uses the file's FileVersion as the primary signal so patch-day MD5 churn doesn't flip the status to "unknown".
 
-### Zeal version & ExportOnCamp
+### Zeal integration
 
-When Zeal is installed, the app detects its version via the crash-handler anchor and shows a soft warning if you're below the minimum supported version — features that depend on newer pipe events may not work until you update. A separate warning fires if Zeal's `ExportOnCamp` setting is disabled, since Spell Checklist, Inventory, and AAs won't refresh after camping until that's turned back on.
+The **Zeal integration** card shows whether Zeal is installed, its version, and a soft warning when a newer release is out or you're below the minimum supported version. The live pipe, output on camp and Zeal's in-game settings are in Feature health above it.
 
 ### Navigation
 

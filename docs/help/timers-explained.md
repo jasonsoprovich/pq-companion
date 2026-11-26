@@ -56,7 +56,7 @@ These live under **Overlays → Overlay settings → Timers**:
 ### Common surprises
 
 - **No timers at all:** the log isn't being written. Type `/log on` and
-  check **Settings → General → Setup health**.
+  check **Settings → General → Feature health**.
 - **A long buff is missing:** it's probably above the display threshold and
   will appear later.
 - **Someone else's debuff isn't shown:** switch the scope to *Anyone*.

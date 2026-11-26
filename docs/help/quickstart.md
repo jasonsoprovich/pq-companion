@@ -22,8 +22,10 @@ auto-detect and the app follows whoever logged in most recently.
 
 In Project Quarm, type `/log on`. The game then writes your log to disk,
 and the DPS meter, spell timers, NPC info overlay and triggers all read
-from it. No log means no live data. The setup wizard shows a green check as
-soon as it sees the log being written.
+from it. No log means no live data. You don't need the game open for setup:
+the wizard's **Turn on** button sets `Log=TRUE` in `eqclient.ini` so logging
+starts on every login (close EverQuest first, since it rewrites that file on
+exit).
 
 ### 3. (Recommended) Install Zeal
 
@@ -53,5 +55,5 @@ appears, start a spell timer, or warn on a mob emote. See
 - The **?** button at the top of each page opens the help for that page.
 - Snapshot your EverQuest `.ini` files under **Settings → Backup &
   Restore** before changing your UI or hotkeys.
-- Not seeing data? Check the **Setup health** card at the top of
+- Not seeing data? Check **Feature health** at the top of
   **Settings → General**, then [Troubleshooting](help:troubleshooting).

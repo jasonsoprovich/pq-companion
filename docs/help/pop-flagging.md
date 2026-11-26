@@ -18,6 +18,10 @@ Each flag is classified and colour-coded by how you earn it — kill, turn-in, z
 
 The Flow view lays the same steps out as a tiered chart: one band per tier, one card per zone in reading order, with arrows showing what each zone unlocks. Rows that no sync can ever check off are marked **Manual**, so you know to tick them yourself.
 
+### Bonus steps
+
+Since Project Quarm's 2026-11-23 patch, the five Tower of Solusek Ro mini bosses and Carpryn's Lower Crypt cycle are no longer needed for the Plane of Fire and Bertoxxulous credit. They're marked **Bonus**: left out of your progress count until you do them, then counted, so a tier can show complete without them. Skipping them means entering Solusek Ro's room or the Lower Crypt with a raid that is mostly flagged. The server's `#popflags` still lists them.
+
 ### Seeding your progress
 
 New to the tracker with flags already earned? Sit near Seer Mal Nae\`Shi in the Plane of Knowledge and say `guided meditation`, or run `#popflags` (or `#popflags 1` through `5` for one tier at a time) — the tracker can scan your log for either one automatically, or you can paste the output in by hand. It also picks up new progress automatically as kills happen in your combat log going forward. Manual toggles always take priority over anything auto-detected.

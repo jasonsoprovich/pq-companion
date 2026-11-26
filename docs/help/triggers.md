@@ -32,6 +32,10 @@ Patterns can be typed as **Plain text**: write the line as it appears in your lo
 
 A single trigger can hold several regex patterns, each with its own on/off toggle, so different log lines that mean the same thing all drive one alert. Patterns understand GINA-style `{c}` (your character name) and `{target}` tokens, so shared community triggers work without rewriting them, and any regex capture group can be substituted into the alert text.
 
+### Group members: {groupmember}
+
+`{groupmember}` matches a player name only when that player is in your group. Built-in **Group Member Died** uses it, so it no longer fires for other deaths. It needs Zeal's live pipe to know your group; without Zeal (or during a log replay) it matches any name.
+
 ### Capturing the target name
 
 A capture group — say, the name of the mob you just mezzed — can flow straight into both the alert text and the timer the trigger starts, so the bar on your buff or detrimental overlay is labelled with the actual target instead of a generic spell name. Per-pattern timer overrides let each pattern start its own capture-keyed timer.

@@ -17,7 +17,10 @@ windows above the game; the same panels can also sit together on a
 New here? Open **⋯ → Set up overlays…** for a short wizard that picks a
 starting set for your class, places them on your game monitor, and lets you
 fine-tune the arrangement. The same wizard runs automatically after first-
-launch setup.
+launch setup. A short guided tour of the hub runs the first time you open it;
+replay it from **Help → Tours**.
+
+Filtered chat overlays have their own page: [Chat Windows](help:chat-windows).
 
 ### Library, Arrange and Dashboard
 
