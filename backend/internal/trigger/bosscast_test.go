@@ -457,3 +457,15 @@ func findSignatureTrigger(t *testing.T, name string) *Trigger {
 	t.Fatalf("signature trigger %q not found in raidSignatureSpellAlerts()", name)
 	return nil
 }
+
+// TestBossCastTracker_CommaNames: titled bosses ("Ralthazor, Champion of
+// Marr") are seen casting too.
+func TestBossCastTracker_CommaNames(t *testing.T) {
+	tr := bossTrig("ralt", "Ralthazor, Champion of Marr")
+	b := trackerFor(tr)
+	t0 := time.Now()
+	b.observe(t0, "Ralthazor, Champion of Marr begins to cast a spell.")
+	if caster, ok := b.bind(tr, t0.Add(2*time.Second), ""); !ok || caster != "Ralthazor, Champion of Marr" {
+		t.Errorf("bind = %q, %v; want Ralthazor, Champion of Marr", caster, ok)
+	}
+}

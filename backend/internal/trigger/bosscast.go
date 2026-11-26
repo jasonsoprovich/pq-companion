@@ -13,8 +13,9 @@ import (
 // than chchain's reBeginCastOther (single capitalized word, sized for player
 // names): raid boss names are multi-word and carry apostrophes/backticks
 // ("Aten Ha Ra", "Vyzh`dra the Cursed") and some share NPCs use a
-// lowercase-article name ("a warder of Xuzl").
-var reNPCBeginsCast = regexp.MustCompile("^([A-Za-z][A-Za-z`' ]*?) begins to cast a spell\\.$")
+// lowercase-article name ("a warder of Xuzl"), and titled ones a comma
+// ("Ralthazor, Champion of Marr", "Falto, Lord of Thunder").
+var reNPCBeginsCast = regexp.MustCompile("^([A-Za-z][A-Za-z`', ]*?) begins to cast a spell\\.$")
 
 // bossCastWindow bounds how long a "begins to cast" observation stays
 // eligible to bind a later land-text timer to that caster. Generous
