@@ -2,6 +2,15 @@ package trigger
 
 import "strings"
 
+// raidCausticOnYou is the shared Caustic Mist / Putrefy Flesh trigger's
+// on-you branch: both spells' on-you lines and resists (only the on-other
+// line is shared). raidCausticOldPattern is the pattern Raid Alerts
+// shipped, with Caustic Mist's on-you line only.
+const (
+	raidCausticOnYou      = `Your skin begins to rot\.|Your flesh begins to liquefy\.|You resist the (?:Caustic Mist|Putrefy Flesh) spell!`
+	raidCausticOldPattern = `^(?:Your skin begins to rot\.|[A-Z][a-zA-Z']{2,14}'s flesh begins to liquefy\.)$`
+)
+
 // raidAlertsPackName is the built-in pack the Ring War signature-spell
 // triggers originally shipped in.
 const raidAlertsPackName = "Raid Alerts"
@@ -21,6 +30,9 @@ func installedSignatureRows(store *Store) ([]*Trigger, []*Trigger, error) {
 		d := &defs[i]
 		byKey[packKeyOf(d)] = d
 		byPattern[d.Pattern] = d
+		if strings.HasPrefix(d.Name, "Caustic Mist") {
+			byPattern[raidCausticOldPattern] = d
+		}
 	}
 
 	all, err := store.List()
@@ -88,6 +100,11 @@ func migrateRaidSignatureRows(store *Store) (bool, error) {
 		}
 		if t.PackKey == "" {
 			t.PackKey = key
+			dirty = true
+		}
+		// A pattern the user never edited follows the new definition.
+		if t.Pattern == raidCausticOldPattern && def.Pattern != t.Pattern {
+			t.Pattern = def.Pattern
 			dirty = true
 		}
 		if dirty {

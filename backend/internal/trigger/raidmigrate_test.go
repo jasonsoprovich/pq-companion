@@ -1,6 +1,7 @@
 package trigger
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -118,6 +119,9 @@ func oldRaidAlertsInstall(t *testing.T) *Store {
 		row.CreatedAt = time.Now().UTC()
 		row.DedupKey, row.BossCasters = "", nil
 		row.SourcePack, row.PackKey, row.PackName = raidAlertsPackName, d.Name, raidAlertsPackName
+		if strings.HasPrefix(d.Name, "Caustic Mist") {
+			row.Pattern = raidCausticOldPattern
+		}
 		if d.Name == "Fling" {
 			row.Name, row.Enabled = "Fling (mine)", false
 			row.Characters = []string{"Tankname"}
@@ -259,8 +263,12 @@ func TestRaidSignatureMove_UpdateThenInstall(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, r := range diff.Removed {
-		if r.MovedTo != "Raid: Luclin" || r.Rehome {
-			t.Errorf("%s: moved_to %q rehome %v, want Raid: Luclin / false", r.Name, r.MovedTo, r.Rehome)
+		want := "Raid: Luclin"
+		if strings.HasPrefix(r.Name, "Caustic Mist") {
+			want = "Raid: Velious or Raid: Luclin"
+		}
+		if r.MovedTo != want || r.Rehome {
+			t.Errorf("%s: moved_to %q rehome %v, want %s / false", r.Name, r.MovedTo, r.Rehome, want)
 		}
 	}
 	if res := applyAll(t, s, RaidAlertsPack()); res.Removed != 5 || res.Moved != 0 {
@@ -304,6 +312,50 @@ func TestRaidAlertsPack_NoSignatureSpells(t *testing.T) {
 	for _, tr := range RaidAlertsPack().Triggers {
 		if len(tr.BossCasters) > 0 || strings.HasPrefix(tr.DedupKey, "raid_sig_") {
 			t.Errorf("Raid Alerts still ships %q", tr.Name)
+		}
+	}
+}
+
+// TestMigrateRaidSignatureRows_CausticPattern: an unedited old Caustic Mist
+// pattern gains Putrefy Flesh's on-you line; the resulting trigger matches
+// both spells.
+func TestMigrateRaidSignatureRows_CausticPattern(t *testing.T) {
+	s := oldRaidAlertsInstall(t)
+	rows := sigRows(t, s)["raid_sig_caustic_mist_putrefy_flesh"]
+	if len(rows) != 1 {
+		t.Fatalf("caustic rows = %d", len(rows))
+	}
+	re := regexp.MustCompile(rows[0].Pattern)
+	for _, line := range []string{"Your skin begins to rot.", "Your flesh begins to liquefy.",
+		"You resist the Putrefy Flesh spell!", "Tankname's flesh begins to liquefy."} {
+		if !re.MatchString(line) {
+			t.Errorf("migrated Caustic pattern misses %q", line)
+		}
+	}
+}
+
+// TestRaidSignatureMove_CausticToVelious: with only Raid: Velious installed,
+// Caustic Mist / Putrefy Flesh moves there and the other four go.
+func TestRaidSignatureMove_CausticToVelious(t *testing.T) {
+	s := oldRaidAlertsInstall(t)
+	if err := InstallPack(s, builtinPack(t, "Raid: Velious")); err != nil {
+		t.Fatal(err)
+	}
+	res := applyAll(t, s, RaidAlertsPack())
+	if res.Moved != 1 || res.Removed != 4 {
+		t.Fatalf("update result %+v, want 1 moved, 4 removed", res)
+	}
+	rows := sigRows(t, s)
+	if c := rows["raid_sig_caustic_mist_putrefy_flesh"]; len(c) != 1 || c[0].SourcePack != "Raid: Velious" {
+		t.Errorf("caustic rows %+v, want one in Raid: Velious", c)
+	}
+	// Installing Luclin afterwards adds its four, not a second Caustic.
+	if err := InstallPack(s, builtinPack(t, "Raid: Luclin")); err != nil {
+		t.Fatal(err)
+	}
+	for k, rows := range sigRows(t, s) {
+		if len(rows) != 1 {
+			t.Errorf("%s: %d rows, want 1", k, len(rows))
 		}
 	}
 }

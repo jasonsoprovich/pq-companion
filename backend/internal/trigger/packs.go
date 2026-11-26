@@ -3264,7 +3264,8 @@ func raidSignatureSpellAlerts() []Trigger {
 		// same broadcast string for both spells, so the trigger can't tell
 		// which boss actually cast it from the log line alone. The name
 		// reflects both so the alert isn't mislabeled on either fight.
-		spell("Caustic Mist / Putrefy Flesh", `Your skin begins to rot\.`, `'s flesh begins to liquefy\.`, 2814, 24,
+		// The on-you lines differ, so both are listed, with both resists.
+		spell("Caustic Mist / Putrefy Flesh", raidCausticOnYou, `'s flesh begins to liquefy\.`, 2814, 24,
 			BossCaster{Name: "Vyzh`dra the Cursed", DurationSecs: 24}, BossCaster{Name: "Zlandicar", DurationSecs: 30}),
 		spell("Touch of Vinitras", `Your soul fades into darkness\.`, `'s soul fades into darkness\.`, 2859, 120,
 			bc("Shei Vinitras"), bc("Vyzh`dra the Banished"), bc("Vyzh`dra the Exiled")),

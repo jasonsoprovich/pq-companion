@@ -83,7 +83,8 @@ type raidPackDef struct {
 	Events      []Trigger
 	// Shared are signature-spell timers several packs ship under one
 	// DedupKey (raidSignatureShared). The boss table's own timer for the
-	// same spell ID is not generated; its cure alert still is.
+	// same spell (by ID, or by a name in "A / B") is not generated; its
+	// cure alert still is.
 	Shared []Trigger
 }
 
@@ -93,17 +94,41 @@ type raidPackDef struct {
 // encounter events come last.
 func (d raidPackDef) build() TriggerPack {
 	type shared struct {
-		spell   raidSpell
-		casters []BossCaster
-		names   []string
+		spell      raidSpell
+		casters    []BossCaster
+		names      []string
+		spellNames []string
+	}
+	// Spells with identical land lines are one timer whatever their IDs
+	// (Lava Breath on Nanzata and Telkorenar, Molten Breath on Sontalak):
+	// the log can't tell them apart, but boss-cast binding can tell which
+	// dragon cast it. canon maps each spell to its group's first ID.
+	groupOf := map[string]int{}
+	canon := func(s raidSpell) int {
+		if s.Proc || s.Scripted {
+			return s.ID // no cast to bind; stays its own (ambiguous) line
+		}
+		k := s.OnYou + "\x00" + s.OnOther
+		if id, ok := groupOf[k]; ok {
+			return id
+		}
+		groupOf[k] = s.ID
+		return s.ID
 	}
 	byID := map[int]*shared{}
 	for _, b := range d.Bosses {
 		for _, s := range b.Spells {
-			sh, ok := byID[s.ID]
+			if s.Buff {
+				continue
+			}
+			cid := canon(s)
+			sh, ok := byID[cid]
 			if !ok {
 				sh = &shared{spell: s}
-				byID[s.ID] = sh
+				byID[cid] = sh
+			}
+			if !containsString(sh.spellNames, s.Name) {
+				sh.spellNames = append(sh.spellNames, s.Name)
 			}
 			// Every boss that casts the spell is a caster, whatever its own
 			// recast; the trigger's duration is the longest of them.
@@ -149,10 +174,11 @@ func (d raidPackDef) build() TriggerPack {
 			if s.Buff {
 				continue
 			}
-			own("you:"+s.OnYou, s.ID)
-			own("resist:"+s.Name, s.ID)
+			cid := canon(s)
+			own("you:"+s.OnYou, cid)
+			own("resist:"+s.Name, cid)
 			if s.OnOther != "" {
-				own("other:"+s.OnOther, s.ID)
+				own("other:"+s.OnOther, cid)
 			}
 		}
 	}
@@ -160,8 +186,12 @@ func (d raidPackDef) build() TriggerPack {
 
 	var out []Trigger
 	emitted := map[int]bool{}
+	sharedNames := map[string]bool{}
 	for _, t := range d.Shared {
 		emitted[t.SpellID] = true
+		for _, n := range strings.Split(t.Name, " / ") {
+			sharedNames[n] = true
+		}
 	}
 	cureDone := map[string]bool{}
 	for _, b := range d.Bosses {
@@ -169,10 +199,14 @@ func (d raidPackDef) build() TriggerPack {
 			out = append(out, raidWhoTrigger(d.Name, b))
 		}
 		for _, s := range b.Spells {
-			sh := byID[s.ID]
-			if !emitted[s.ID] {
-				emitted[s.ID] = true
-				if t, ok := raidTimerTrigger(d.Name, sh.spell, sh.casters, sh.names, unique); ok {
+			if s.Buff {
+				continue
+			}
+			cid := canon(s)
+			sh := byID[cid]
+			if !emitted[cid] && !emitted[s.ID] && !sharedNames[s.Name] {
+				emitted[cid] = true
+				if t, ok := raidTimerTrigger(d.Name, sh.spell, sh.spellNames, sh.casters, sh.names, unique); ok {
 					out = append(out, t)
 				}
 			}
@@ -199,7 +233,7 @@ func (d raidPackDef) build() TriggerPack {
 // to that spell within the pack. Returns false when no caster's recast is
 // long enough to be worth a bar, or no unique line is left. Each caster carries its own recast, so
 // a spell two bosses cast at different rates times correctly for each.
-func raidTimerTrigger(pack string, s raidSpell, casters []BossCaster, names []string, unique func(string) bool) (Trigger, bool) {
+func raidTimerTrigger(pack string, s raidSpell, spellNames []string, casters []BossCaster, names []string, unique func(string) bool) (Trigger, bool) {
 	if len(casters) == 0 || s.Recast < raidMinTimerSecs {
 		return Trigger{}, false
 	}
@@ -207,8 +241,10 @@ func raidTimerTrigger(pack string, s raidSpell, casters []BossCaster, names []st
 	if unique("you:" + s.OnYou) {
 		alts = append(alts, lit(s.OnYou))
 	}
-	if unique("resist:" + s.Name) {
-		alts = append(alts, `You resist the `+lit(s.Name)+` spell!`)
+	for _, n := range spellNames {
+		if unique("resist:" + n) {
+			alts = append(alts, `You resist the `+lit(n)+` spell!`)
+		}
 	}
 	if s.OnOther != "" && unique("other:"+s.OnOther) {
 		alts = append(alts, "[A-Za-z`' ]+"+lit(s.OnOther))
@@ -224,7 +260,7 @@ func raidTimerTrigger(pack string, s raidSpell, casters []BossCaster, names []st
 		}
 	}
 	t := Trigger{
-		Name:              raidSpellTriggerName(s.Name, names),
+		Name:              raidSpellTriggerName(strings.Join(spellNames, " / "), names),
 		Enabled:           true,
 		Pattern:           `^(?:` + strings.Join(alts, "|") + `)$`,
 		PackName:          pack,
@@ -240,7 +276,7 @@ func raidTimerTrigger(pack string, s raidSpell, casters []BossCaster, names []st
 			ID:          "raid-recast-5s",
 			Seconds:     5,
 			Type:        TimerAlertTypeTextToSpeech,
-			TTSTemplate: s.Name + " in 5",
+			TTSTemplate: strings.Join(spellNames, " / ") + " in 5",
 			TTSVolume:   100,
 		}}
 	}
@@ -414,6 +450,7 @@ func raidEventTimer(name, pattern string, secs float64, extras ...ExtraPattern) 
 // raidPackDefs lists every raid pack table, oldest content first.
 func raidPackDefs() []raidPackDef {
 	return []raidPackDef{
+		raidVelious(),
 		raidLuclin(),
 		raidPoPTier1(),
 		raidPoPTier2(),

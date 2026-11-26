@@ -144,6 +144,13 @@ var raidEventSamples = map[string][]string{
 	"Emperor Ssraeshza — spawns":                         {"  The Emperor twitches.  He appears to have been weakened by the destruction of the golem."},
 	"Emperor Ssraeshza — Rage of Ssraeshza":              {"Emperor Ssraeshza  hit Tankname for 4000 points of non-melee damage."},
 	"a glyph covered serpent — Wave of Death (stand up)": {"Your mind fills with images of death."},
+	"Ring War — first wave":                              {"Seneschal Aldikar shouts, 'Good citizens of Thurgadin, hear me! Our city, our people, our very lives are in danger this day.'"},
+	"Ring War — Narandi":                                 {"Seneschal Aldikar shouts, 'Good citizens of Thurgadin, hear me! Our city, our people, our very lives are in danger this day.'"},
+	"Ring War — wave called early":                       {"Seneschal Aldikar shouts, 'Tankname has spotted tha' next wave! Charge!'"},
+	"Ring War — Narandi arrives":                         {"Narandi the Wretched shouts, 'Meddling fools, you are no match for the likes of me. Be warned... Engage me at your own peril!'"},
+	"Plane of Growth — protector respawn":                {"You have slain a protector of growth!", "a protector of growth has been slain by Tankname!"},
+	"Temple of Veeshan — Acid Jet trap":                  {"Acid begins to eat at your flesh."},
+	"Temple of Veeshan — Flame Jet trap":                 {"Your body is engulfed in a jet of flames."},
 	"Terris — leashed":                                   {"Terris Thule disappears into the ether and reforms at the center of her chamber, cleansed of your magic!"},
 }
 
@@ -539,4 +546,27 @@ func raidTriggerByName(t *testing.T, p TriggerPack, name string) Trigger {
 	}
 	t.Fatalf("%s: no trigger %q", p.PackName, name)
 	return Trigger{}
+}
+
+// TestRaidPacks_IdenticalMessagesMerge: spells with different IDs but the
+// same land lines become one timer listing every caster, so each dragon's
+// breath still times (binding picks the dragon); procs stay out of it.
+func TestRaidPacks_IdenticalMessagesMerge(t *testing.T) {
+	p := raidVelious().build()
+	tr := raidTriggerByName(t, p, "Lava Breath / Molten Breath (Nanzata the Warder, Telkorenar, Sontalak)")
+	if len(tr.BossCasters) != 3 {
+		t.Errorf("casters = %+v, want Nanzata, Telkorenar, Sontalak", tr.BossCasters)
+	}
+	re := regexp.MustCompile(tr.Pattern)
+	for _, line := range []string{"Your body combusts as the lava hits you.",
+		"You resist the Lava Breath spell!", "You resist the Molten Breath spell!"} {
+		if !re.MatchString(line) {
+			t.Errorf("merged breath timer misses %q", line)
+		}
+	}
+	for _, tr := range raidLuclin().build().Triggers {
+		if strings.Contains(tr.Name, "Stunning Strike") && len(tr.BossCasters) > 0 {
+			t.Errorf("proc Stunning Strike merged into a timer: %s", tr.Name)
+		}
+	}
 }

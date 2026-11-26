@@ -3,6 +3,7 @@ package trigger
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -379,9 +380,11 @@ func ComputePackDiff(store *Store, pack TriggerPack) (*PackDiff, error) {
 }
 
 // movedTarget finds the built-in pack (other than from) that now ships a
-// trigger with dedupKey, preferring an installed one. rehome reports that
-// the returned pack is installed, so the row can move into it.
+// trigger with dedupKey, preferring an installed one; rehome reports that
+// it is installed, so the row can move into it. With none installed, pack
+// names every pack that ships it ("Raid: Velious or Raid: Luclin").
 func movedTarget(from, dedupKey string, installed map[string]bool) (pack string, def *Trigger, rehome bool) {
+	var names []string
 	for _, p := range AllPacks() {
 		if p.PackName == from {
 			continue
@@ -390,17 +393,18 @@ func movedTarget(from, dedupKey string, installed map[string]bool) (pack string,
 			if p.Triggers[i].DedupKey != dedupKey {
 				continue
 			}
+			d := p.Triggers[i]
 			if installed[p.PackName] {
-				d := p.Triggers[i]
 				return p.PackName, &d, true
 			}
-			if pack == "" {
-				d := p.Triggers[i]
-				pack, def = p.PackName, &d
+			if def == nil {
+				def = &d
 			}
+			names = append(names, p.PackName)
+			break
 		}
 	}
-	return pack, def, false
+	return strings.Join(names, " or "), def, false
 }
 
 // diffFields returns one FieldDiff per field where the shipped definition
