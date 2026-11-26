@@ -450,6 +450,7 @@ func raidEventTimer(name, pattern string, secs float64, extras ...ExtraPattern) 
 // raidPackDefs lists every raid pack table, oldest content first.
 func raidPackDefs() []raidPackDef {
 	return []raidPackDef{
+		raidKunark(),
 		raidVelious(),
 		raidLuclin(),
 		raidPoPTier1(),

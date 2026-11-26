@@ -151,6 +151,7 @@ var raidEventSamples = map[string][]string{
 	"Plane of Growth — protector respawn":                {"You have slain a protector of growth!", "a protector of growth has been slain by Tankname!"},
 	"Temple of Veeshan — Acid Jet trap":                  {"Acid begins to eat at your flesh."},
 	"Temple of Veeshan — Flame Jet trap":                 {"Your body is engulfed in a jet of flames."},
+	"Master Yael — Death Touch":                          {"Master Yael shouts, 'Tankname!'"},
 	"Terris — leashed":                                   {"Terris Thule disappears into the ether and reforms at the center of her chamber, cleansed of your magic!"},
 }
 
