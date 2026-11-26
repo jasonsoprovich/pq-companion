@@ -576,7 +576,7 @@ export function RespawnAlertSettings({ config, setConfig }: TimerSettingsProps):
 
 // Detrimental Timers: alert before a debuff wears off.
 export function DetrimAlertSettings({ config, setConfig }: TimerSettingsProps): React.ReactElement {
-  // Spell actions are from a Zeal PR; only mention the command to users whose
+  // Spell actions need Zeal 1.5.2+; only mention the command to users whose
   // Zeal build has it.
   const { settings: zealSettings } = useZealSettings()
   const zealSpells = zealSupports(zealSettings, 'pipe_spells')

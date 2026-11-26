@@ -76,6 +76,22 @@ func TestBuildCapRows_PendingHiddenOnReleasedZeal(t *testing.T) {
 	}
 }
 
+// TestBuildCapRows_Zeal152: spell actions, quiet consider and roster
+// appearance shipped in Zeal 1.5.2, so they list there without pipe proof;
+// target spawn location (declined) still needs proof.
+func TestBuildCapRows_Zeal152(t *testing.T) {
+	dir := fakeInstall(t, "1.5.2", "[Zeal]\nPipeSpells=2\n")
+	rows := rowsByID(BuildCapRows(CapEvidence{Version: "1.5.2", INI: ReadZealINI(dir)}))
+	for _, id := range []CapID{CapPipeSpells, CapPipeConsider, CapRosterAppearance} {
+		if r, ok := rows[id]; !ok || r.Pending {
+			t.Errorf("%s should be listed as released on Zeal 1.5.2 (got %+v, %v)", id, r, ok)
+		}
+	}
+	if _, ok := rows[CapTargetSpawnLoc]; ok {
+		t.Error("target_spawn_loc listed without proof")
+	}
+}
+
 func TestBuildCapRows_States(t *testing.T) {
 	ini := ReadZealINI(fakeInstall(t, "1.5.0", "[Zeal]\nPipeVerbose=TRUE\nPipeSpells=1\nExportOnCamp=TRUE\n"))
 	all := map[CapID]bool{CapPipeSpells: true, CapPipeConsider: true, CapRosterAppearance: true, CapTargetSpawnLoc: true}
@@ -98,7 +114,7 @@ func TestBuildCapRows_States(t *testing.T) {
 	if rows[CapPipeSpells].Value != "detrimental" {
 		t.Errorf("PipeSpells value = %q", rows[CapPipeSpells].Value)
 	}
-	if !rows[CapPipeSpells].Pending || rows[CapPipeVerbose].Pending {
+	if !rows[CapTargetSpawnLoc].Pending || rows[CapPipeSpells].Pending || rows[CapPipeVerbose].Pending {
 		t.Error("pending flag wrong")
 	}
 	if rows[CapPipeVerbose].Hint == "" {

@@ -30,7 +30,7 @@ const STYLES: { key: MapRenderMode; label: string; blurb: string }[] = [
 // MapSettingsPanel controls how maps are drawn everywhere in the app, and
 // explains how to add a third-party map pack.
 export default function MapSettingsPanel(): React.ReactElement {
-  // Group/raid appearance is from a Zeal PR; only mention it to users whose
+  // Group/raid appearance needs Zeal 1.5.2+; only mention it to users whose
   // Zeal build has it.
   const { settings: zealSettings } = useZealSettings()
   const zealAppearance = zealSupports(zealSettings, 'roster_appearance')

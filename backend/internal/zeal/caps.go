@@ -19,11 +19,10 @@ import (
 // pending PR ships in a release, set its MinVersion; if it's declined, delete
 // the entry (and the UI hints that mention it).
 //
-// Status 2026-11-25: spell actions (#281) and roster appearance (#283) are
-// merged upstream but not yet in a release (latest is 1.5.1); set their
-// MinVersion to the first release after 1.5.1. Consider (#282) is approved
-// pending merge. Target spawn location (#284) was declined for now; its entry
-// stays (it only shows once proven on the pipe) in case it's reopened.
+// Status 2026-11-26: spell actions (#281), quiet consider (#282) and roster
+// appearance (#283) shipped in Zeal 1.5.2. Target spawn location (#284) was
+// declined for now; its entry stays (it only shows once proven on the pipe)
+// in case it's reopened.
 
 // CapID names one checklist entry.
 type CapID string
@@ -107,6 +106,7 @@ var Capabilities = []Capability{
 		Command:     "/pipespells all",
 		INIKey:      "PipeSpells",
 		INIDefault:  "0",
+		MinVersion:  "1.5.2",
 		Proof:       true,
 		WaitingHint: "Shows the next time a spell lands near you.",
 		Recommended: true,
@@ -115,9 +115,10 @@ var Capabilities = []Capability{
 		ID:          CapPipeConsider,
 		Label:       "Quiet consider",
 		Benefit:     "NPC overlay KOS border and faction readings on every target, without con messages in chat.",
-		Command:     "/pipeconsider",
+		Command:     "/pipeconsider on",
 		INIKey:      "PipeConsider",
 		INIDefault:  "FALSE",
+		MinVersion:  "1.5.2",
 		Proof:       true,
 		WaitingHint: "Shows when you target an NPC.",
 		Recommended: true,
@@ -128,6 +129,7 @@ var Capabilities = []Capability{
 		Benefit:     "Groupmates and raiders show their real race and gear on 3D maps.",
 		Command:     "/pipeverbose on",
 		DependsOn:   CapPipeVerbose,
+		MinVersion:  "1.5.2",
 		Proof:       true,
 		WaitingHint: "Shows once you're in a group or raid.",
 	},
