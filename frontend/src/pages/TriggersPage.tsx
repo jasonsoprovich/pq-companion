@@ -938,6 +938,17 @@ function PacksTab({ installedPacks, onInstalled }: PacksTabProps): React.ReactEl
   const [installed, setInstalled] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  // The "Raid:" boss packs sit under their own collapsible header so they
+  // don't swamp the general list; the open/closed choice persists.
+  const [raidOpen, setRaidOpen] = useState(
+    () => localStorage.getItem('pqc.triggers.raidPacksOpen') !== '0',
+  )
+  const toggleRaidOpen = () => {
+    setRaidOpen((prev) => {
+      localStorage.setItem('pqc.triggers.raidPacksOpen', prev ? '0' : '1')
+      return !prev
+    })
+  }
   const [confirm, setConfirm] = useState<PackConfirm | null>(null)
   useEscapeToClose(() => setConfirm(null), !!confirm)
   const importInputRef = useRef<HTMLInputElement>(null)
@@ -1130,7 +1141,40 @@ function PacksTab({ installedPacks, onInstalled }: PacksTabProps): React.ReactEl
           Built-in Packs
         </p>
         <div className="space-y-3">
-          {packs.map((pack) => {
+          {[
+            ...packs.filter((p) => p.group !== 'raid'),
+            null,
+            ...(raidOpen ? packs.filter((p) => p.group === 'raid') : []),
+          ].map((pack) => {
+            if (pack === null) {
+              const raid = packs.filter((p) => p.group === 'raid')
+              if (raid.length === 0) return null
+              const active = raid.filter((p) => installedPacks.has(p.pack_name)).length
+              return (
+                <button
+                  key="raid-packs-header"
+                  onClick={toggleRaidOpen}
+                  className="w-full flex items-center gap-1.5 pt-3 text-left"
+                  aria-expanded={raidOpen}
+                >
+                  {raidOpen ? (
+                    <ChevronDown size={13} style={{ color: 'var(--color-muted)' }} />
+                  ) : (
+                    <ChevronRight size={13} style={{ color: 'var(--color-muted)' }} />
+                  )}
+                  <span
+                    className="text-[11px] font-semibold uppercase tracking-widest"
+                    style={{ color: 'var(--color-muted)' }}
+                  >
+                    Raid Packs
+                  </span>
+                  <span className="text-[10px]" style={{ color: 'var(--color-muted-foreground)' }}>
+                    {raid.length} packs{active > 0 ? ` · ${active} active` : ''} · boss
+                    timers, cures and Who cards, curated with Xanax &lt;Former Glory&gt;
+                  </span>
+                </button>
+              )
+            }
             const isOpen = expanded.has(pack.pack_name)
             const isInstalled = installedPacks.has(pack.pack_name)
             const isBusy = busy === pack.pack_name

@@ -408,6 +408,8 @@ export interface TriggerPack {
   // omitted/null/undefined for class-agnostic packs (e.g. General Triggers)
   // and user-authored packs that don't specify a class.
   class?: number | null
+  /** "raid" for the "Raid:" boss packs, listed under their own header. */
+  group?: string
   triggers: Trigger[]
 }
 

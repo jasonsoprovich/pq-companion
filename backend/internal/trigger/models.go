@@ -536,7 +536,10 @@ type TriggerPack struct {
 	// Characters lists to the matching-class characters only, instead of every
 	// known character. Pointer so missing-in-JSON is distinguishable from
 	// explicit 0 (=Warrior).
-	Class    *int      `json:"class,omitempty"`
+	Class *int `json:"class,omitempty"`
+	// Group sorts built-in packs on the Packs tab: "raid" for the
+	// "Raid:" boss packs, empty for everything else.
+	Group    string    `json:"group,omitempty"`
 	Triggers []Trigger `json:"triggers"`
 }
 

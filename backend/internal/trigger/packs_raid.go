@@ -225,7 +225,7 @@ func (d raidPackDef) build() TriggerPack {
 		e.Enabled = true
 		out = append(out, e)
 	}
-	return TriggerPack{PackName: d.Name, Description: d.Description, Triggers: out}
+	return TriggerPack{PackName: d.Name, Description: d.Description, Group: PackGroupRaid, Triggers: out}
 }
 
 // raidTimerTrigger builds the boss recast timer for a spell, bound to the
@@ -446,6 +446,9 @@ func raidEventTimer(name, pattern string, secs float64, extras ...ExtraPattern) 
 	}
 	return t
 }
+
+// PackGroupRaid is TriggerPack.Group for the raid boss packs.
+const PackGroupRaid = "raid"
 
 // raidPackDefs lists every raid pack table, oldest content first.
 func raidPackDefs() []raidPackDef {

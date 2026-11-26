@@ -580,3 +580,14 @@ func TestRaidPacks_IdenticalMessagesMerge(t *testing.T) {
 		}
 	}
 }
+
+// TestRaidPacks_Group: the raid packs, and only they, carry the raid group
+// the Packs tab lists under its own header.
+func TestRaidPacks_Group(t *testing.T) {
+	for _, p := range AllPacks() {
+		isRaid := strings.HasPrefix(p.PackName, "Raid: ")
+		if (p.Group == PackGroupRaid) != isRaid {
+			t.Errorf("%s: group %q", p.PackName, p.Group)
+		}
+	}
+}
