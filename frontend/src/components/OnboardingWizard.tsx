@@ -442,7 +442,7 @@ export default function OnboardingWizard({
             >
               <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
               <div>
-                <p>Folder looks good!</p>
+                <p>{discovered.length > 0 ? 'Folder looks good!' : 'Folder found'}</p>
                 <p className="mt-1 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
                   {discovered.length > 0 ? (
                     <>

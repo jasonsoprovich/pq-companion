@@ -225,11 +225,11 @@ func (h *configHandler) validateEQPath(w http.ResponseWriter, r *http.Request) {
 		}
 		switch {
 		case diag.LogFound && !diag.LogEnabled:
-			resp.Note = "No log files yet: EverQuest logging is off (eqclient.ini Log=FALSE). The next step can turn it on."
+			resp.Note = "No log files yet, which is normal for a new install. Logging is off in eqclient.ini; the next step can turn it on."
 		case !diag.LogFound:
-			resp.Note = "No log files yet, and eqclient.ini has no Log setting. The next step can turn logging on."
+			resp.Note = "No log files yet, which is normal for a new install. The next step can turn logging on."
 		default:
-			resp.Note = "No log files yet. They appear the first time you play with logging on."
+			resp.Note = "No log files yet, which is normal for a new install. They appear the first time you play with logging on."
 		}
 	}
 	resp.Valid = true
