@@ -16,11 +16,11 @@ const DOT: Record<ZealCapState, { color: string; dashed?: boolean; label: string
 
 // A command is a slash command when it starts with '/'; otherwise it's an
 // instruction (e.g. the Zeal options window) and gets no copy button.
-function isSlash(cmd?: string): cmd is string {
+export function isSlash(cmd?: string): cmd is string {
   return !!cmd && cmd.startsWith('/')
 }
 
-function CopyCommand({ cmd }: { cmd: string }): React.ReactElement {
+export function CopyCommand({ cmd }: { cmd: string }): React.ReactElement {
   const [copied, setCopied] = useState(false)
   return (
     <button

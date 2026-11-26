@@ -26,7 +26,7 @@ import {
   type EqDiagnostics,
 } from '../services/api'
 import { useWebSocket } from '../hooks/useWebSocket'
-import { ago } from '../hooks/useSetupHealth'
+import { ago, SETUP_HEALTH_CHANGED } from '../hooks/useSetupHealth'
 import { WSEvent } from '../lib/wsEvents'
 import type { Config } from '../types/config'
 import type { ZealInstallStatus, ZealSettings } from '../types/zeal'
@@ -191,7 +191,7 @@ export default function OnboardingWizard({
       )
       setConfig(saved)
       await setLogging(true)
-      window.dispatchEvent(new Event('pq:setup-health-changed'))
+      window.dispatchEvent(new Event(SETUP_HEALTH_CHANGED))
       refreshProbe()
     } catch (err) {
       setLogWriteError((err as Error).message)

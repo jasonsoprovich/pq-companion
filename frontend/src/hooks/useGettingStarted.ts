@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   detectZeal,
   getConfig,
+  getEqDiagnostics,
   getLogStatus,
   listTriggers,
   saveConfigChanges,
@@ -16,7 +17,7 @@ import {
 import type { GettingStartedState } from '../types/config'
 import { useWebSocket } from './useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
-import { saveLogSeen } from './useSetupHealth'
+import { SETUP_HEALTH_CHANGED, saveLogSeen } from './useSetupHealth'
 
 export type ChecklistId = 'eq' | 'log' | 'zeal' | 'overlays' | 'triggers' | 'search'
 
@@ -70,15 +71,20 @@ async function compute(
   // trigger checks entirely.
   if (skipWhenDismissed && gs.dismissed) return { items: [], dismissed: true }
   const eqPath = cfg.eq_path?.trim() ?? ''
-  const [valid, zeal, overlays, triggers, log] = await Promise.all([
+  const [valid, zeal, overlays, triggers, log, diag] = await Promise.all([
     eqPath ? validateEQPath(eqPath).then((v) => v.valid).catch(() => false) : Promise.resolve(false),
     eqPath ? detectZeal().catch(() => null) : Promise.resolve(null),
     overlaysConfigured(),
     listTriggers().then((t) => t.length).catch(() => 0),
     gs.log_seen_at ? Promise.resolve(null) : getLogStatus().catch(() => null),
+    gs.log_seen_at || !eqPath ? Promise.resolve(null) : getEqDiagnostics().catch(() => null),
   ])
-  let logSeen = !!gs.log_seen_at
-  if (!logSeen && log?.last_write_at && Date.now() - new Date(log.last_write_at).getTime() < FRESH_MS) {
+  // Same rule as Settings › Feature health: logging counts as on when
+  // EverQuest is set to log at every login (eqclient.ini Log=TRUE) or the
+  // character's log file exists. A fresh write also saves the milestone so
+  // the item stays ticked if the ini or file changes later.
+  let logSeen = !!gs.log_seen_at || !!diag?.log_enabled || !!log?.file_exists
+  if (!gs.log_seen_at && log?.last_write_at && Date.now() - new Date(log.last_write_at).getTime() < FRESH_MS) {
     logSeen = true
     saveLogSeen()
   }
@@ -92,7 +98,7 @@ async function compute(
     {
       id: 'log',
       label: 'Turn on logging',
-      detail: 'Type /log on in game. Live features read your log.',
+      detail: 'Turn on EverQuest logging, or type /log on in game. Live features read your log.',
       done: logSeen,
     },
     {
@@ -162,9 +168,11 @@ export function useGettingStarted(
       if (Date.now() - lastRun.current >= FOCUS_REFRESH_MS) refresh()
     }
     window.addEventListener('focus', onFocus)
+    window.addEventListener(SETUP_HEALTH_CHANGED, refresh)
     return () => {
       window.clearTimeout(t)
       window.removeEventListener('focus', onFocus)
+      window.removeEventListener(SETUP_HEALTH_CHANGED, refresh)
     }
   }, [refresh, opts.delayMs])
 

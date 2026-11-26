@@ -1,25 +1,34 @@
 // useSetupHealth combines the existing status sources (config, EQ path
 // validation, log tailer status, Zeal detection and pipe status) into a
 // list of green / amber / red checks with a "Fix" link each. Used by the
-// Setup health card in Settings and the Getting Started checklist.
+// Feature health section in Settings and the Getting Started checklist.
 //
 // Rules:
 // - The character check uses the tailer's resolved character, so a blank
 //   config character (auto-detect) with a live log is healthy.
-// - Log activity is amber, not red, when the file exists but hasn't been
-//   written recently: EQ may simply be closed. Red is only for confirmed
-//   problems (no folder, no log file, parser off).
+// - Log activity is neutral (grey), not a warning, when the file exists but
+//   hasn't been written recently: that's normal while EQ is closed. Red is
+//   only for confirmed problems (no folder, no log file, parser off).
+// - The hook also returns the eqclient.ini / zeal.ini diagnostics and the
+//   Zeal settings checklist, so the Settings health section and the Getting
+//   Started checklist read the same state. It refreshes on a poll, on
+//   ConfigUpdated / ZealSettings events, and on the window event
+//   SETUP_HEALTH_CHANGED (fired after an ini toggle).
 // - The first time fresh log activity is seen, the Getting Started
 //   log_seen_at milestone is saved so the checklist stays ticked.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   detectZeal,
   getConfig,
+  getEqDiagnostics,
   getLogStatus,
   getZealPipeStatus,
+  getZealSettings,
   saveConfigChanges,
   validateEQPath,
+  type EqDiagnostics,
 } from '../services/api'
+import type { ZealSettings } from '../types/zeal'
 import { useWebSocket } from './useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
 
@@ -35,9 +44,20 @@ export interface HealthCheck {
 
 export interface SetupHealth {
   checks: HealthCheck[]
+  // eqclient.ini Log / zeal.ini ExportOnCamp state; null until loaded or
+  // when the EQ folder isn't usable.
+  diag: EqDiagnostics | null
+  zealSettings: ZealSettings | null
+  parserOn: boolean
   loading: boolean
   refresh: () => void
+  // Apply a diagnostics response from a toggle right away (then refresh).
+  applyDiag: (d: EqDiagnostics) => void
 }
+
+// Fired on window after anything changes setup state outside a config save
+// (the eqclient.ini / zeal.ini toggles), so every health consumer refreshes.
+export const SETUP_HEALTH_CHANGED = 'pq:setup-health-changed'
 
 const FRESH_MS = 10 * 60 * 1000
 const POLL_MS = 15000
@@ -55,7 +75,15 @@ export function ago(iso: string): string {
   return `${Math.round(h / 24)} days ago`
 }
 
-async function buildChecks(): Promise<{ checks: HealthCheck[]; fresh: boolean }> {
+interface Built {
+  checks: HealthCheck[]
+  fresh: boolean
+  diag: EqDiagnostics | null
+  zealSettings: ZealSettings | null
+  parserOn: boolean
+}
+
+async function buildChecks(): Promise<Built> {
   const cfg = await getConfig()
   const checks: HealthCheck[] = []
   const eqPath = cfg.eq_path?.trim() ?? ''
@@ -132,11 +160,10 @@ async function buildChecks(): Promise<{ checks: HealthCheck[]; fresh: boolean }>
       checks.push({
         id: 'log-activity',
         label: 'Log activity',
-        level: fresh ? 'ok' : 'warn',
+        level: fresh ? 'ok' : 'off',
         detail: fresh
           ? `Written ${ago(log.last_write_at)}`
-          : `Last written ${ago(log.last_write_at)}. EQ may be closed, or type /log on.`,
-        fix: fresh ? undefined : { label: 'Logging', to: settingsLink('eq-logging') },
+          : `Last written ${ago(log.last_write_at)}. Normal while EverQuest is closed.`,
       })
     }
   }
@@ -183,7 +210,13 @@ async function buildChecks(): Promise<{ checks: HealthCheck[]; fresh: boolean }>
   }
 
   const fresh = checks.some((c) => c.id === 'log-activity' && c.level === 'ok')
-  return { checks, fresh }
+  const [diag, zealSettings] = folderOk
+    ? await Promise.all([
+        getEqDiagnostics().catch(() => null),
+        zeal?.installed ? getZealSettings().catch(() => null) : Promise.resolve(null),
+      ])
+    : [null, null]
+  return { checks, fresh, diag, zealSettings, parserOn }
 }
 
 let logSeenSaved = false
@@ -212,16 +245,22 @@ export function saveLogSeen(): void {
 
 export function useSetupHealth(): SetupHealth {
   const [checks, setChecks] = useState<HealthCheck[]>([])
+  const [diag, setDiag] = useState<EqDiagnostics | null>(null)
+  const [zealSettings, setZealSettings] = useState<ZealSettings | null>(null)
+  const [parserOn, setParserOn] = useState(false)
   const [loading, setLoading] = useState(true)
   const seq = useRef(0)
 
   const refresh = useCallback(() => {
     const n = ++seq.current
     buildChecks()
-      .then(({ checks: c, fresh }) => {
+      .then((b) => {
         if (n !== seq.current) return
-        setChecks(c)
-        if (fresh) saveLogSeen()
+        setChecks(b.checks)
+        setDiag(b.diag)
+        setZealSettings(b.zealSettings)
+        setParserOn(b.parserOn)
+        if (b.fresh) saveLogSeen()
       })
       .catch(() => undefined)
       .finally(() => {
@@ -229,20 +268,39 @@ export function useSetupHealth(): SetupHealth {
       })
   }, [])
 
+  const applyDiag = useCallback(
+    (d: EqDiagnostics) => {
+      setDiag(d)
+      refresh()
+    },
+    [refresh],
+  )
+
   useEffect(() => {
     refresh()
     const t = window.setInterval(refresh, POLL_MS)
-    return () => window.clearInterval(t)
+    window.addEventListener(SETUP_HEALTH_CHANGED, refresh)
+    return () => {
+      window.clearInterval(t)
+      window.removeEventListener(SETUP_HEALTH_CHANGED, refresh)
+    }
   }, [refresh])
 
   useWebSocket(
     useCallback(
       (msg: { type: string }) => {
-        if (msg.type === WSEvent.ConfigUpdated) refresh()
+        if (
+          msg.type === WSEvent.ConfigUpdated ||
+          msg.type === WSEvent.ZealSettings ||
+          msg.type === WSEvent.ZealConnected ||
+          msg.type === WSEvent.ZealDisconnected
+        ) {
+          refresh()
+        }
       },
       [refresh],
     ),
   )
 
-  return { checks, loading, refresh }
+  return { checks, diag, zealSettings, parserOn, loading, refresh, applyDiag }
 }

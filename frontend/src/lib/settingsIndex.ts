@@ -32,9 +32,9 @@ const SETTINGS_TAB_ENTRIES: SettingEntry[] = [
   },
   {
     id: 'setup-health',
-    label: 'Setup health',
+    label: 'Feature health',
     where: 'Settings › General',
-    keywords: ['status', 'not working', 'no data', 'log on', 'check', 'health', 'troubleshoot'],
+    keywords: ['status', 'not working', 'no data', 'log on', 'check', 'health', 'troubleshoot', 'setup health', 'zeal pipe', 'zeal settings', 'zeal commands', 'live data'],
     to: settings('general', 'setup-health'),
     anchor: 'setup-health',
   },
@@ -49,7 +49,7 @@ const SETTINGS_TAB_ENTRIES: SettingEntry[] = [
   {
     id: 'eq-logging',
     label: 'EverQuest logging (Log=TRUE)',
-    where: 'Settings › General',
+    where: 'Settings › General › Feature health',
     keywords: ['log on', '/log', 'logging', 'eqclient.ini', 'export on camp', 'zeal export'],
     to: settings('general', 'eq-logging'),
     anchor: 'eq-logging',

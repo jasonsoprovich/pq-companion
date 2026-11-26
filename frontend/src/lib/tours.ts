@@ -220,10 +220,11 @@ export const TOURS: TourDef[] = [
       },
       {
         anchor: 'settings-health',
-        title: 'Setup health',
+        title: 'Feature health',
         body:
-          'Green means working. Anything amber or red has a Fix button ' +
-          'that takes you to the setting that sorts it.',
+          'Everything the app reads from the game, in one list. Green means ' +
+          'working; amber or red rows have a switch or Fix button. Click a ' +
+          'row to see what it does and how to turn it on.',
       },
       {
         anchor: 'settings-tabs',

@@ -5,13 +5,12 @@ import { Settings, Search, FolderOpen, Save, AlertTriangle, CheckCircle2, Loader
 import type { OverlayProcessMode, PerfStatus } from '../types/electron'
 import BackfillPanel from '../components/settings/BackfillPanel'
 import SidebarNavSettings from '../components/settings/SidebarNavSettings'
-import EqLogStatusCard from '../components/settings/EqLogStatusCard'
-import SetupHealthCard from '../components/settings/SetupHealthCard'
+import FeatureHealthSection from '../components/settings/FeatureHealthSection'
 import { TtsVoiceDefault } from '../components/settings/AlertDefaultsSettings'
 import PiperTtsSettings from '../components/settings/PiperTtsSettings'
 import KokoroTtsSettings from '../components/settings/KokoroTtsSettings'
 import DiscordWebhookSettings from '../components/settings/DiscordWebhookSettings'
-import { getConfig, saveConfigChanges, getLogStatus, getLogFileInfo, cleanupLog, exportDebugLogs, getServerInfo, testPortAvailability, detectZeal, getZealPipeStatus, getQuarmClientStatus, getEqwStatus, getChangelog, type ServerInfo, type TestPortResult, type ChangelogEntry } from '../services/api'
+import { getConfig, saveConfigChanges, getLogStatus, getLogFileInfo, cleanupLog, exportDebugLogs, getServerInfo, testPortAvailability, detectZeal, getQuarmClientStatus, getEqwStatus, getChangelog, type ServerInfo, type TestPortResult, type ChangelogEntry } from '../services/api'
 import { searchSettings } from '../lib/settingsIndex'
 import { renderChangelogBody } from '../components/WhatsNewModal'
 import type { Config, LogTrimSettings } from '../types/config'
@@ -24,7 +23,7 @@ import { applyZoom } from '../hooks/useZoom'
 import { OVERLAY_ZOOM_MAX, OVERLAY_ZOOM_MIN } from '../hooks/useOverlayZoom'
 import { speakTextForTest, stopTestPlayback } from '../services/audio'
 import AudioOutputDeviceSetting from '../components/settings/AudioOutputDeviceSetting'
-import type { ZealInstallStatus, ZealPipeStatus } from '../types/zeal'
+import type { ZealInstallStatus } from '../types/zeal'
 import type { QuarmClientStatus, QuarmFileStatus, EqwStatus } from '../types/quarm'
 import { useWebSocket, type WsMessage } from '../hooks/useWebSocket'
 import { WSEvent } from '../lib/wsEvents'
@@ -58,8 +57,7 @@ import { NewDot, useFeatureDots } from '../hooks/useFeatureDots'
 import GameMapExportPanel from '../components/maps/GameMapExportPanel'
 import MapSettingsPanel from '../components/settings/MapSettingsPanel'
 import DeveloperTab from './DeveloperTab'
-import ZealChecklist from '../components/ZealChecklist'
-import { useZealSettings, zealSupports } from '../hooks/useZealSettings'
+import { SETUP_HEALTH_CHANGED } from '../hooks/useSetupHealth'
 
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'discarded' | 'error'
@@ -507,11 +505,8 @@ export default function SettingsPage(): React.ReactElement {
   const [configFolder, setConfigFolder] = useState<string | null>(null)
 
   const [zealStatus, setZealStatus] = useState<ZealInstallStatus | null>(null)
-  const { settings: zealSettings, refresh: refreshZealSettings } =
-    useZealSettings()
   const [zealChecking, setZealChecking] = useState(false)
   const [zealError, setZealError] = useState<string | null>(null)
-  const [pipeStatus, setPipeStatus] = useState<ZealPipeStatus | null>(null)
 
   const [quarmStatus, setQuarmStatus] = useState<QuarmClientStatus | null>(null)
   const [quarmChecking, setQuarmChecking] = useState(false)
@@ -544,13 +539,9 @@ export default function SettingsPage(): React.ReactElement {
     setZealChecking(true)
     setZealError(null)
     try {
-      const [install, pipe] = await Promise.all([
-        detectZeal(),
-        getZealPipeStatus().catch(() => null),
-      ])
-      setZealStatus(install)
-      setPipeStatus(pipe)
-      refreshZealSettings()
+      setZealStatus(await detectZeal())
+      // Feature health shows the pipe and Zeal checklist; re-check it too.
+      window.dispatchEvent(new Event(SETUP_HEALTH_CHANGED))
     } catch (err) {
       setZealError((err as Error).message)
       setZealStatus(null)
@@ -579,15 +570,6 @@ export default function SettingsPage(): React.ReactElement {
       setEqwStatus(null)
     }
   }
-
-  // Subscribe to backend pipe state changes so the status row reflects
-  // connect/disconnect without the user having to click Re-check. The Re-check
-  // button is still useful for re-running the filesystem detection when the
-  // user has just installed Zeal — that signal doesn't come over the wire.
-  useWebSocket((msg: WsMessage) => {
-    if (msg.type !== WSEvent.ZealConnected && msg.type !== WSEvent.ZealDisconnected) return
-    getZealPipeStatus().then(setPipeStatus).catch(() => null)
-  })
 
   // Config also changes outside this page: overlay windows save their own
   // zoom (Ctrl+scroll — see useOverlayZoom) and other settings, and the
@@ -1115,7 +1097,7 @@ export default function SettingsPage(): React.ReactElement {
       </div>
 
       <div className="flex flex-col gap-6">
-        {tab === 'general' && <SetupHealthCard />}
+        {tab === 'general' && <FeatureHealthSection />}
 
         {/* ── App ──────────────────────────────────────────────────────────── */}
         {tab === 'general' && (
@@ -1533,9 +1515,6 @@ export default function SettingsPage(): React.ReactElement {
         </section>
         )}
 
-        {/* ── EverQuest logging & Zeal status/toggles ──────────────────────── */}
-        {tab === 'general' && <EqLogStatusCard />}
-
         {/* ── Zeal integration ───────────────────────────────────────────── */}
         {tab === 'general' && (
         <section data-setting="zeal"
@@ -1615,34 +1594,6 @@ export default function SettingsPage(): React.ReactElement {
                 </div>
               )}
 
-              {!zealSupports(zealSettings, 'export_on_camp') &&
-                zealStatus.export_on_camp_found && !zealStatus.export_on_camp && (
-                <div
-                  className="flex items-start gap-2 rounded px-3 py-2 text-xs"
-                  style={{
-                    backgroundColor: 'rgba(245, 158, 11, 0.10)',
-                    border: '1px solid rgba(245, 158, 11, 0.35)',
-                    color: 'var(--color-text)',
-                  }}
-                >
-                  <AlertTriangle size={12} className="mt-0.5 shrink-0" style={{ color: '#f59e0b' }} />
-                  <div className="flex-1">
-                    Zeal&apos;s <code>ExportOnCamp</code> is disabled. Character inventory,
-                    spellbook, and stats will not refresh on /camp.{' '}
-                    <span style={{ color: 'var(--color-muted-foreground)' }}>
-                      Fix: edit <code>zeal.ini</code>, set{' '}
-                      <code>ExportOnCamp=TRUE</code> under <code>[Zeal]</code>, then relaunch EQ.
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {!zealSupports(zealSettings, 'export_on_camp') &&
-                zealStatus.export_on_camp_found && zealStatus.export_on_camp && (
-                <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-                  <code>ExportOnCamp</code> is enabled — character data refreshes when you /camp.
-                </p>
-              )}
             </div>
           )}
 
@@ -1696,65 +1647,9 @@ export default function SettingsPage(): React.ReactElement {
             </p>
           )}
 
-          {pipeStatus && pipeStatus.state !== 'unsupported' && (
-            <div
-              className="mt-3 space-y-2 rounded px-3 py-2 text-xs"
-              style={{
-                backgroundColor: 'var(--color-surface-2)',
-                border: '1px solid var(--color-border)',
-              }}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span
-                    className="inline-block h-2 w-2 rounded-full"
-                    style={{
-                      backgroundColor:
-                        pipeStatus.state === 'connected'
-                          ? '#22c55e'
-                          : pipeStatus.state === 'disconnected'
-                            ? '#f87171'
-                            : 'var(--color-muted)',
-                    }}
-                  />
-                  <span style={{ color: 'var(--color-foreground)' }}>
-                    Live pipe:{' '}
-                    {pipeStatus.state === 'connected'
-                      ? `connected${pipeStatus.character ? ` (${pipeStatus.character})` : ''}`
-                      : pipeStatus.state === 'disconnected'
-                        ? 'disconnected'
-                        : 'waiting for EverQuest'}
-                  </span>
-                </div>
-                {pipeStatus.state === 'connected' && pipeStatus.pid ? (
-                  <span style={{ color: 'var(--color-muted-foreground)' }}>
-                    PID {pipeStatus.pid}
-                  </span>
-                ) : null}
-              </div>
-              {pipeStatus.state !== 'connected' && pipeStatus.last_error && (
-                <pre
-                  className="whitespace-pre-wrap break-words font-mono"
-                  style={{ color: 'var(--color-muted-foreground)', fontSize: '11px' }}
-                >
-                  {pipeStatus.last_error}
-                </pre>
-              )}
-            </div>
-          )}
-
-          {zealStatus?.installed && zealSettings?.installed &&
-            zealSettings.capabilities.length > 0 && (
-            <div className="mt-4">
-              <h3
-                className="mb-1 text-xs font-semibold uppercase tracking-wide"
-                style={{ color: 'var(--color-muted)' }}
-              >
-                Zeal settings for PQ Companion
-              </h3>
-              <ZealChecklist settings={zealSettings} />
-            </div>
-          )}
+          <p className="mt-3 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+            The live pipe and Zeal&apos;s in-game settings are under Feature health at the top of this page.
+          </p>
         </section>
         )}
 

@@ -30,7 +30,7 @@ export default function GettingStartedChecklist(): React.ReactElement | null {
 
   const actions: Record<ChecklistId, { label: string; run: () => void }[]> = {
     eq: [{ label: 'Setup wizard', run: () => window.dispatchEvent(new Event('pq:open-onboarding')) }],
-    log: [{ label: 'Check status', run: () => navigate('/settings?tab=general&focus=setup-health') }],
+    log: [{ label: 'Check status', run: () => navigate('/settings?tab=general&focus=eq-logging') }],
     zeal: [
       { label: 'Install', run: () => navigate('/settings?tab=general&focus=zeal') },
       { label: 'Skip', run: gs.skipZeal },
