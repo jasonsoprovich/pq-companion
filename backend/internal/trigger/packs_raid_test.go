@@ -50,8 +50,20 @@ var raidEventSamples = map[string][]string{
 	"Terris — engaged":                 {"The sound of a thousand terrified screams fills your head.  You feel yourself becoming a part of the fabric of this nightmare realm."},
 	"Terris — 50% Direption of Dreams": {"As if in a waking nightmare, you feel your movements slow and your arms begin to fail you."},
 	"Terris — 40% gargoyles":           {"The air grows thick with the smell of burning mana.  A rumbling sound draws your attention to the massive statues that rest above the ancient monoliths.  The statues begin to crumble, as they shift their attention from the heavens to you!"},
+	"Bertox — waves begin":             {bertoxPrepare},
+	"Bertox — event deadline":          {bertoxPrepare},
+	"Bertox — waves":                   {"A foul wind is felt carrying on it the stench of death and decay.  Suddenly a thunderous bang is heard throughout the crypt and then these words, 'Great soldiers of decay you are summoned forth to do battle with these infidels!'"},
+	"Bertox — king summoned":           {"An unsettling feeling of fear passes through you as the summoners cry, 'We call to you, corrupted King of Lxanvom, Darwol Adan! Your master has need of you!'"},
+	"Bertox — last four kings":         {"An unsettling feeling of fear passes through you as you hear the summoners finish a dark incantation then cry out saying, 'We call to you the last corrupted Kings of Lxanvom. Meedo Adan! Qezzin Adan! Pzo Adan! Bhaly Adan! Your master has need of you!'"},
+	"Bertox — Bertoxxulous up":         {"A sinister vision enters your mind of a faceless one handsome yet dead and decaying. The vision then shifts to that of a torn bestial creature and a loud shout is heard, 'Defilers death comes for you today!'"},
+	"Bertox — 5 minutes left":          {"Dark voices whisper in your ear saying, 'Your time is close in coming to an end. Time to flee little ones!'"},
+	"Bertox — event failed":            {"Harsh laughter echoes around the crypt and a voice then speaks saying, 'Perhaps you would care to try when you are more powerful fools.'  The harsh laughter continues softly as all of  the summoned minions of Bertoxxulous vanish."},
+	"Bertox — defeated":                {"A nimbus of light floods through the crypt in one magnificent wave as an earth shattering howl is heard.  The Bringer of Plagues, Lord of All Disease and Decay, Bertoxxulous has been defeated."},
 	"Terris — leashed":                 {"Terris Thule disappears into the ether and reforms at the center of her chamber, cleansed of your magic!"},
 }
+
+// bertoxPrepare is codecay/encounters/Bertox.lua RP_TEXT.prepare.
+const bertoxPrepare = "Crazed laughter is heard as you notice a foul creature standing before you. The creature then speaks saying, 'Violators of the depths of Lxanvom shall pay with your lives!'  The foul minion of decay then begins chanting a dark ritual."
 
 func openQuarmDB(t *testing.T) *db.DB {
 	t.Helper()

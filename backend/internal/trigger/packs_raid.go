@@ -257,7 +257,7 @@ func raidWhoTrigger(pack string, b raidBoss) Trigger {
 func raidTellNamePattern(name string) string {
 	words := strings.FieldsFunc(name, func(r rune) bool { return r == ' ' || r == '_' || r == '-' })
 	if len(words) == 1 {
-		return lit(words[0]) // one word: the whole name, or "/tell g x" would match
+		return raidTellWord(words[0], len(words[0])) // whole name, or "/tell g x" would match
 	}
 	parts := make([]string, len(words))
 	for i, w := range words {
@@ -265,13 +265,35 @@ func raidTellNamePattern(name string) string {
 		if i == len(words)-1 {
 			keep = 1
 		}
-		if len(w) <= keep {
-			parts[i] = lit(w)
-			continue
-		}
-		parts[i] = lit(w[:keep]) + `(?:` + lit(w[keep:]) + `)?`
+		parts[i] = raidTellWord(w, keep)
 	}
 	return strings.Join(parts, `[_ -]?`)
+}
+
+// raidTellWord matches one word of a boss name: its first keep letters
+// required, the rest optional, and punctuation ("Falto," "Aerin`Dar")
+// optional wherever it appears, since players rarely type it.
+func raidTellWord(w string, keep int) string {
+	var req, opt strings.Builder
+	letters := 0
+	for _, r := range w {
+		var tok string
+		if r == ',' || r == '`' || r == '\'' {
+			tok = "[`',]?"
+		} else {
+			tok = lit(string(r))
+			letters++
+		}
+		if letters <= keep && (letters < keep || tok != "[`',]?") {
+			req.WriteString(tok)
+		} else {
+			opt.WriteString(tok)
+		}
+	}
+	if opt.Len() == 0 {
+		return req.String()
+	}
+	return req.String() + `(?:` + opt.String() + `)?`
 }
 
 // raidWhoText is the Who card body.
@@ -343,6 +365,7 @@ func raidEventTimer(name, pattern string, secs float64, extras ...ExtraPattern) 
 func raidPackDefs() []raidPackDef {
 	return []raidPackDef{
 		raidPoPTier1(),
+		raidPoPTier2(),
 	}
 }
 
