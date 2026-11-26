@@ -3583,7 +3583,8 @@ func AllPacks() []TriggerPack {
 	for _, p := range classPacks {
 		out = append(out, applyBuffTargetCapture(applyDefaultTimerAlerts(p)))
 	}
-	return append(out, generalPacks...)
+	out = append(out, generalPacks...)
+	return append(out, raidPacks()...)
 }
 
 // DefaultUpdate is a one-time additive change to an installed built-in

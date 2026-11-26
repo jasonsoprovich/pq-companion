@@ -66,6 +66,11 @@ func TestPackDurationsMatchSpellFormula(t *testing.T) {
 			if tr.PackName == "Raid Alerts" && recastTimers[tr.Name] {
 				continue
 			}
+			// Boss-caster timers count down the boss's recast, not the
+			// debuff; packs_raid_test.go checks those against npc_spells.
+			if len(tr.BossCasters) > 0 {
+				continue
+			}
 			check(p.PackName, tr.Name, tr.SpellID, tr.TimerDurationSecs)
 			for _, x := range tr.ExtraPatterns {
 				id, secs := x.SpellID, x.TimerDurationSecs
