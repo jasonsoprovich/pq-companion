@@ -152,6 +152,15 @@ var raidEventSamples = map[string][]string{
 	"Temple of Veeshan — Acid Jet trap":                  {"Acid begins to eat at your flesh."},
 	"Temple of Veeshan — Flame Jet trap":                 {"Your body is engulfed in a jet of flames."},
 	"Master Yael — Death Touch":                          {"Master Yael shouts, 'Tankname!'"},
+	"Dread — Death Touch":                                {"Dread shouts, 'Tankname!'"},
+	"Fright — Death Touch":                               {"Fright shouts, 'Tankname!'"},
+	"Bazzt Zzzt — Death Touch":                           {"Bazzt Zzzt shouts, 'Tankname!'"},
+	"Eye of Veeshan — Death Touch":                       {"Eye of Veeshan shouts, 'Tankname!'"},
+	"Keeper of Souls — Death Touch":                      {"Keeper of Souls shouts, 'Tankname!'"},
+	"Overseer of Air — Death Touch":                      {"Overseer of Air shouts, 'Tankname!'"},
+	"Sister of the Spire — Death Touch":                  {"Sister of the Spire shouts, 'Tankname!'"},
+	"the Hand of Veeshan — Death Touch":                  {"the Hand of Veeshan shouts, 'Tankname!'"},
+	"The Spiroc Lord — Death Touch":                      {"The Spiroc Lord shouts, 'Tankname!'"},
 	"Terris — leashed":                                   {"Terris Thule disappears into the ether and reforms at the center of her chamber, cleansed of your magic!"},
 }
 
