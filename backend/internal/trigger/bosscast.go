@@ -131,8 +131,8 @@ func (b *bossCastTracker) pruneLocked(now time.Time) {
 
 // bind resolves which of t's BossCasters cast the spell whose land line just
 // matched at now, and reports whether the trigger should fire at all. The
-// returned caster is the canonical name from t.BossCasters, or "" when no
-// observation applies and the caller should fall back to the live target.
+// returned caster is always one of t.BossCasters (canonical spelling) when
+// fire is true.
 //
 // Rules, in priority order (timestamps only resolve to the second, so rule 1
 // deliberately beats duplicate detection):
@@ -143,7 +143,12 @@ func (b *bossCastTracker) pruneLocked(now time.Time) {
 //     the order they started). The observation is then consumed by t.
 //  2. Otherwise, a line within the duplicate window of t's previous fire is
 //     an AE broadcast duplicate: fire=false.
-//  3. Otherwise, fire with caster "" (live-target fallback).
+//  3. Otherwise, fall back to the live target, but only when it is one of
+//     t's casters (returned as that caster). Any other target means the
+//     spell came from an NPC this trigger doesn't track — typically the
+//     same spell in another raid pack's zone — so fire=false. A player
+//     who filters other people's spell casts (no cast-start lines) still
+//     gets timers for whichever listed boss they have targeted.
 //
 // Worked case: A and B begin casting in the same second, then A's land line
 // and its AE duplicate, then B's land line and duplicate. A's first line
@@ -196,8 +201,11 @@ func (b *bossCastTracker) bind(t *Trigger, now time.Time, liveTarget string) (ca
 			return "", false
 		}
 	}
-	b.last[t.ID] = bossBinding{at: now}
-	return "", true
+	if c, ok := canon[live]; ok {
+		b.last[t.ID] = bossBinding{caster: c, at: now}
+		return c, true
+	}
+	return "", false
 }
 
 // casterDuration returns the per-caster duration override for caster on t,

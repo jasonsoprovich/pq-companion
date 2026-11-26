@@ -42,9 +42,31 @@ func TestBossCastTracker_ExpiresOutsideWindow(t *testing.T) {
 	now := time.Now()
 	b.observe(now, "Aten Ha Ra begins to cast a spell.")
 
-	got, ok := b.bind(tr, now.Add(bossCastWindow+time.Second), "")
-	if !ok || got != "" {
-		t.Errorf("bind after expiry = %q, %v; want live-target fallback (\"\", true)", got, ok)
+	late := now.Add(bossCastWindow + time.Second)
+	if got, ok := b.bind(tr, late, ""); ok {
+		t.Errorf("bind after expiry with no target = %q, true; want no fire", got)
+	}
+	// The live-target fallback still applies when the target is a caster.
+	if got, ok := b.bind(tr, late, "aten ha ra"); !ok || got != "Aten Ha Ra" {
+		t.Errorf("fallback bind = %q, %v; want Aten Ha Ra, true", got, ok)
+	}
+}
+
+// TestBossCastTracker_IgnoresOtherPacksBosses: the same spell cast by a boss
+// this trigger doesn't list (another raid pack's zone) must not fire it,
+// even with that boss targeted.
+func TestBossCastTracker_IgnoresOtherPacksBosses(t *testing.T) {
+	earth := bossTrig("earth-gravel", "War Chieftan Awisano")
+	t1 := bossTrig("t1-gravel", "Yurae Zhaleem")
+	b := trackerFor(earth, t1)
+	now := time.Now()
+	b.observe(now, "Yurae Zhaleem begins to cast a spell.")
+
+	if got, ok := b.bind(earth, now.Add(2*time.Second), "Yurae Zhaleem"); ok {
+		t.Errorf("earth trigger fired for Yurae (bound %q), want no fire", got)
+	}
+	if got, ok := b.bind(t1, now.Add(2*time.Second), "Yurae Zhaleem"); !ok || got != "Yurae Zhaleem" {
+		t.Errorf("T1 trigger = %q, %v; want Yurae Zhaleem, true", got, ok)
 	}
 }
 
@@ -122,7 +144,8 @@ func TestBossCastTracker_AEDuplicatesCollapse(t *testing.T) {
 			t.Fatalf("duplicate line %d fired, want suppressed", i+1)
 		}
 	}
-	// A recast well after the duplicate window fires again (fallback).
+	// A recast well after the duplicate window fires again.
+	b.observe(land.Add(28*time.Second), "Aten Ha Ra begins to cast a spell.")
 	if _, ok := b.bind(tr, land.Add(30*time.Second), ""); !ok {
 		t.Error("next cast after the window suppressed, want fire")
 	}
