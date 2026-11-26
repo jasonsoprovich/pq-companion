@@ -86,6 +86,10 @@ var raidEventSamples = map[string][]string{
 	"Doomfire — Fennin defeated":         {"Fennin Ro, the Tyrant of Fire, falls! His colossal form crashes into the scorched earth as shockwaves tear through the Burning Lands."},
 	"Sol Ro tower — cauldron flag":       {"As you place your hand on the burning cauldron, you feel a wealth of knowledge enter your mind."},
 	"Sol Ro tower — portal blocked":      {"The lava runes scorch your skin as you run your hand across them."},
+	"Air — Dust island named up":         {"Avatar of Dust shouts, 'Elementals of Air and Dust, I call upon you to aid me in the defense of this land!'"},
+	"Air — Mist island named up":         {"Melernil Faal`Armanna shouts, 'Leave now foolish mortal you have begun to send events in motion that you cannot possibly understand!'"},
+	"Air — Smoke island named up":        {"An Elemental Masterpiece shouts, 'The time has come for all intruders to be tested I will not allow you to pillage this plane any longer!'"},
+	"Air — Wind island named up":         {"Pherlondien Clawpike shouts, 'I will certainly make sure that no mortal is allowed to defile this sacred realm!'"},
 	"Terris — leashed":                   {"Terris Thule disappears into the ether and reforms at the center of her chamber, cleansed of your magic!"},
 }
 

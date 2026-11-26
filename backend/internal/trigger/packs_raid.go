@@ -368,6 +368,7 @@ func raidPackDefs() []raidPackDef {
 		raidPoPTier2(),
 		raidPoPTier3(),
 		raidPoPFire(),
+		raidPoPAir(),
 	}
 }
 
