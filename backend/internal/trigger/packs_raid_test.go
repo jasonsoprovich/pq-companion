@@ -59,7 +59,24 @@ var raidEventSamples = map[string][]string{
 	"Bertox — 5 minutes left":          {"Dark voices whisper in your ear saying, 'Your time is close in coming to an end. Time to flee little ones!'"},
 	"Bertox — event failed":            {"Harsh laughter echoes around the crypt and a voice then speaks saying, 'Perhaps you would care to try when you are more powerful fools.'  The harsh laughter continues softly as all of  the summoned minions of Bertoxxulous vanish."},
 	"Bertox — defeated":                {"A nimbus of light floods through the crypt in one magnificent wave as an earth shattering howl is heard.  The Bringer of Plagues, Lord of All Disease and Decay, Bertoxxulous has been defeated."},
-	"Terris — leashed":                 {"Terris Thule disappears into the ether and reforms at the center of her chamber, cleansed of your magic!"},
+	"Honor — Crazed trial failed":      {"A woman screams in anguish as she's forcibly taken away by a band of crazed norrathians."},
+	"Honor — trial flag":               {"An ethereal mist descends from the air and surrounds your very being. Your body begins to emanate with the power of Alekson Garn."},
+	"Agnarr — engaged":                 {"Agnarr the Storm Lord says 'Fool! This is the realm of the Storm Giants now, and you hope to defeat me here?'"},
+	"Agnarr — portals": {
+		"Agnarr strikes his staff to the ground, causing great ripples of energy to rage across the room.",
+		"Agnarr the Storm Lord says 'Fool! This is the realm of the Storm Giants now, and you hope to defeat me here?'",
+	},
+	"Rallos — Warlord stirs":    {"The air of Drunder grows strangely cold as a rumble shakes through the fortress' walls. The Warlord stirs."},
+	"Rallos — sons fallen":      {"Rallos Zek takes notice at the death of his sons. The Warlord is impressed. \"Come then, mortals! Raise your blades against the might of the Warlord!\""},
+	"Rallos — engaged":          {"Rallos Zek raises his axe as flames explode from it! The Warlord has accepted your challenge!"},
+	"Rallos — leaps to the pit": {"Rallos Zek leaps from the War Room into the cleared pit below! The force of his landing shakes the very foundations of Drunder, sending dust and stone crashing from the halls above."},
+	"Rallos — corpse wave": {
+		"The corpses of the unworthy begin to twitch and spasm as fallen champions rise again to try and prove their worth to the might and glory of Rallos Zek!",
+		"The Warlord meets your challenge in the pit of Drunder. The might and fury of War are upon you!",
+	},
+	"Rallos — leashed":  {"Rallos begins to laugh, causing the earth to rumble around you. 'Enough of this foolishness!  The warlord has better things to do then chase petty mortals all day!'"},
+	"Rallos — defeated": {"Rallos Zek, the Warlord, has fallen! The halls of Drunder echo with cries of rage as the very foundations of the Plane of Tactics tremble and quake as his colossal form crashes to the ground before the might of the Norrathians!"},
+	"Terris — leashed":  {"Terris Thule disappears into the ether and reforms at the center of her chamber, cleansed of your magic!"},
 }
 
 // bertoxPrepare is codecay/encounters/Bertox.lua RP_TEXT.prepare.
@@ -143,8 +160,11 @@ func TestRaidPacks_MatchQuarmDB(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			// A boss can have several rows with the same level and resists
+			// (Vallon Zek's own fight and the copy Rallos's script spawns);
+			// the table must match one of them exactly.
 			var listID int
-			var abilities string
+			var candidates []string
 			found := false
 			for rows.Next() {
 				var lvl, mr, cr, fr, lid int
@@ -152,29 +172,20 @@ func TestRaidPacks_MatchQuarmDB(t *testing.T) {
 				if err := rows.Scan(&lvl, &mr, &cr, &fr, &lid, &sa); err != nil {
 					t.Fatal(err)
 				}
-				if lvl == b.Level && mr == b.MR && cr == b.CR && fr == b.FR {
-					found, listID, abilities = true, lid, sa
+				if lvl != b.Level || mr != b.MR || cr != b.CR || fr != b.FR {
+					continue
+				}
+				traits := raidTraitsOf(sa)
+				candidates = append(candidates, traits)
+				if traits == b.Traits && !found {
+					found, listID = true, lid
 				}
 			}
 			rows.Close()
 			if !found {
-				t.Errorf("%s: no npc_types row for %q with level %d and resists %d/%d/%d", d.Name, b.Name, b.Level, b.MR, b.CR, b.FR)
+				t.Errorf("%s: no npc_types row for %q with level %d, resists %d/%d/%d and traits %q (rows at that level/resists have traits %q)",
+					d.Name, b.Name, b.Level, b.MR, b.CR, b.FR, b.Traits, candidates)
 				continue
-			}
-			has := map[int]bool{}
-			for _, a := range db.ParseSpecialAbilities(abilities) {
-				if a.Value > 0 {
-					has[a.Code] = true
-				}
-			}
-			var traits []string
-			for _, tl := range raidTraitLabels {
-				if has[tl.Code] {
-					traits = append(traits, tl.Label)
-				}
-			}
-			if got := strings.Join(traits, ", "); got != b.Traits {
-				t.Errorf("%s / %s: Traits %q, quarm.db %q", d.Name, b.Name, b.Traits, got)
 			}
 			list := raidNPCSpells(t, conn, listID)
 			for _, s := range b.Spells {
@@ -340,6 +351,23 @@ func TestRaidPacks_Shape(t *testing.T) {
 			t.Errorf("raidEventSamples has %q but no raid pack has that event trigger", name)
 		}
 	}
+}
+
+// raidTraitsOf renders a special_abilities string as Who card traits.
+func raidTraitsOf(abilities string) string {
+	has := map[int]bool{}
+	for _, a := range db.ParseSpecialAbilities(abilities) {
+		if a.Value > 0 {
+			has[a.Code] = true
+		}
+	}
+	var traits []string
+	for _, tl := range raidTraitLabels {
+		if has[tl.Code] {
+			traits = append(traits, tl.Label)
+		}
+	}
+	return strings.Join(traits, ", ")
 }
 
 func lastWord(s string) string {
