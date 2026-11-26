@@ -74,9 +74,19 @@ var raidEventSamples = map[string][]string{
 		"The corpses of the unworthy begin to twitch and spasm as fallen champions rise again to try and prove their worth to the might and glory of Rallos Zek!",
 		"The Warlord meets your challenge in the pit of Drunder. The might and fury of War are upon you!",
 	},
-	"Rallos — leashed":  {"Rallos begins to laugh, causing the earth to rumble around you. 'Enough of this foolishness!  The warlord has better things to do then chase petty mortals all day!'"},
-	"Rallos — defeated": {"Rallos Zek, the Warlord, has fallen! The halls of Drunder echo with cries of rage as the very foundations of the Plane of Tactics tremble and quake as his colossal form crashes to the ground before the might of the Norrathians!"},
-	"Terris — leashed":  {"Terris Thule disappears into the ether and reforms at the center of her chamber, cleansed of your magic!"},
+	"Rallos — leashed":                   {"Rallos begins to laugh, causing the earth to rumble around you. 'Enough of this foolishness!  The warlord has better things to do then chase petty mortals all day!'"},
+	"Rallos — defeated":                  {"Rallos Zek, the Warlord, has fallen! The halls of Drunder echo with cries of rage as the very foundations of the Plane of Tactics tremble and quake as his colossal form crashes to the ground before the might of the Norrathians!"},
+	"Doomfire — Guardian engaged":        {"The Guardian of Doomfire unleashes an echoing howl. Across the scorched battlefield, weapons clash and frenzied voices rise as the army of the Tyrant answers your challenge."},
+	"Doomfire — event deadline":          {"The Guardian of Doomfire crashes to the scorched earth. Frenzied cries erupt as an Army of Flames burns across the scorched realm of Doomfire."},
+	"Doomfire — phase 2 commanders":      {"The first ranks fall, but the roar of battle grows louder. Four commanders rise amid the flames, driving fresh soldiers forward in a frenzy of rage."},
+	"Doomfire — phase 3 Council of Fire": {"The commanders collapse beneath the onslaught. Columns of fire tear through the air as the Council of Fire advances through the wreckage of the army."},
+	"Doomfire — Fennin Ro up":            {"The Council of Fire falls. A deafening roar shakes the Burning Lands as the flames gather into the towering form of Fennin Ro. The Tyrant of Fire rises from the inferno, his wrath spilling across Doomfire."},
+	"Doomfire — Fennin engaged":          {"The inferno erupts as Fennin Ro meets your challenge. \"Norrathians! You sought the power of a god. Now face the frenzy of Doomfire and the vengeance of its Tyrant!\""},
+	"Doomfire — failed":                  {"All of Doomfire trembles as the voice of Fennin Ro booms, \"Enough, Norrathians! Carry the memory of this failure back to your world. Should you return, my wrath will be waiting!\" The army withdraws into the raging flames, leaving the scorched battlefield silent."},
+	"Doomfire — Fennin defeated":         {"Fennin Ro, the Tyrant of Fire, falls! His colossal form crashes into the scorched earth as shockwaves tear through the Burning Lands."},
+	"Sol Ro tower — cauldron flag":       {"As you place your hand on the burning cauldron, you feel a wealth of knowledge enter your mind."},
+	"Sol Ro tower — portal blocked":      {"The lava runes scorch your skin as you run your hand across them."},
+	"Terris — leashed":                   {"Terris Thule disappears into the ether and reforms at the center of her chamber, cleansed of your magic!"},
 }
 
 // bertoxPrepare is codecay/encounters/Bertox.lua RP_TEXT.prepare.
