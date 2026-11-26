@@ -285,7 +285,11 @@ export default function FeatureHealthSection(): React.ReactElement {
         ? 'On. Character data refreshes when you /camp.'
         : 'Off. Inventory and spellbook won’t refresh on /camp.',
   }
-  const caps = zealSettings?.installed ? zealSettings.capabilities : []
+  // Zeal's checklist also lists output on camp; the Logging group already
+  // has it with a switch, so it isn't repeated here.
+  const caps = zealSettings?.installed
+    ? zealSettings.capabilities.filter((c) => c.id !== 'export_on_camp')
+    : []
   const levels: HealthLevel[] = [
     ...checks.filter((c) => c.id !== 'parser').map((c) => c.level),
     parserOn ? 'ok' : 'error',
