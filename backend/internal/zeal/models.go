@@ -20,6 +20,11 @@ type InventoryEntry struct {
 	// otherwise. When set, Count carries the item's current charge count, so the
 	// "Rechargeable Items" view reads charges-remaining as Count / MaxCharges.
 	MaxCharges int `json:"max_charges,omitempty"`
+	// Value is the entry's total base vendor value in copper (items.price,
+	// times Count for true stacks), joined in by the API layer. Omitted when
+	// the item has no value. Charged/clicky items count once: their Count is
+	// charges, not quantity.
+	Value int `json:"value,omitempty"`
 }
 
 // Inventory is the full parsed state of a character's inventory export.

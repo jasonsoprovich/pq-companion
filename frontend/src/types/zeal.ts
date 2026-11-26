@@ -9,6 +9,9 @@ export interface InventoryEntry {
   // (clickeffect > 0, maxcharges > 1). When present, `count` is the current
   // charge count, so charges-remaining reads as count / max_charges.
   max_charges?: number
+  // Total base vendor value in copper (price × count for true stacks), set by
+  // the API. Absent when the item has no value.
+  value?: number
 }
 
 export interface Inventory {

@@ -180,6 +180,46 @@ func (db *DB) ItemIcons(ids []int) (map[int]int, error) {
 	return out, rows.Err()
 }
 
+// ItemPrice is an item's base vendor price (copper) and whether it is a true
+// stack (stackable = 1), so a caller can tell whether an export's Count is a
+// quantity or a charge count.
+type ItemPrice struct {
+	Price     int
+	Stackable bool
+}
+
+// ItemPrices returns id→price info for the given IDs in one query. Items with
+// no price (price <= 0) and IDs missing from the items table are omitted.
+func (db *DB) ItemPrices(ids []int) (map[int]ItemPrice, error) {
+	out := make(map[int]ItemPrice, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	placeholders := strings.Repeat("?,", len(ids))
+	placeholders = placeholders[:len(placeholders)-1]
+	q := fmt.Sprintf(
+		"SELECT id, price, stackable FROM items WHERE price > 0 AND id IN (%s)",
+		placeholders,
+	)
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	rows, err := db.Query(q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query item prices: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, price, stackable int
+		if err := rows.Scan(&id, &price, &stackable); err != nil {
+			return nil, fmt.Errorf("scan item price: %w", err)
+		}
+		out[id] = ItemPrice{Price: price, Stackable: stackable == 1}
+	}
+	return out, rows.Err()
+}
+
 // StackableItems returns the subset of the given IDs whose items row has
 // stackable = 1. Anything not in the returned set (including IDs missing from
 // the items table entirely) should be treated as non-stackable — on Project

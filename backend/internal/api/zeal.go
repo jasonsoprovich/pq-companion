@@ -41,7 +41,7 @@ type zealHandler struct {
 	backupMgr *backup.Manager
 }
 
-// enrichEntries fills in the Icon and MaxCharges fields on each entry by looking
+// enrichEntries fills in the Icon, MaxCharges and Value fields on each entry by looking
 // up the items DB for all referenced IDs in batch queries. Errors are swallowed
 // (entries are returned without the enrichment) — these fields are decorative /
 // supplementary and shouldn't fail the inventory request. MaxCharges is set only
@@ -85,6 +85,19 @@ func (h *zealHandler) enrichEntries(entries []zeal.InventoryEntry) {
 			if max, ok := charges[entries[i].ID]; ok {
 				entries[i].MaxCharges = max
 			}
+		}
+	}
+	if prices, err := h.db.ItemPrices(ids); err == nil {
+		for i := range entries {
+			p, ok := prices[entries[i].ID]
+			if !ok {
+				continue
+			}
+			qty := 1
+			if p.Stackable && entries[i].Count > 1 {
+				qty = entries[i].Count
+			}
+			entries[i].Value = p.Price * qty
 		}
 	}
 }

@@ -112,6 +112,8 @@ function BagCard({ group, showCharBadge, onLookup }: BagCardProps): React.ReactE
   const visibleSlots = group.slots.filter((s) => !isEmptyEntry(s))
   const bagName = group.bag && !isEmptyEntry(group.bag) ? group.bag.name : '(empty bag)'
   const label = group.kind === 'General' ? `Bag ${group.num}` : `${group.kind} ${group.num}`
+  // Contents only — the bag itself isn't counted, since you'd keep it.
+  const bagValue = visibleSlots.reduce((sum, s) => sum + (s.value ?? 0), 0)
 
   return (
     <div
@@ -141,7 +143,23 @@ function BagCard({ group, showCharBadge, onLookup }: BagCardProps): React.ReactE
             {group.character}
           </span>
         )}
-        <span className="ml-auto text-[10px]" style={{ color: 'var(--color-muted)' }}>
+        {bagValue > 0 && (
+          <span
+            className="ml-auto flex shrink-0 items-center gap-1 text-[10px]"
+            style={{ color: 'var(--color-muted-foreground)' }}
+            title={
+              'Combined base vendor value of the items in this bag. ' +
+              'Merchants pay somewhat less, depending on Charisma and faction.'
+            }
+          >
+            <Coins size={10} />
+            {priceLabel(bagValue)}
+          </span>
+        )}
+        <span
+          className={`${bagValue > 0 ? 'ml-2' : 'ml-auto'} text-[10px]`}
+          style={{ color: 'var(--color-muted)' }}
+        >
           {visibleSlots.length}/{group.slots.length}
         </span>
       </button>

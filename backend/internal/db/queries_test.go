@@ -1074,3 +1074,29 @@ func TestSearchWildcards(t *testing.T) {
 		t.Error("Lord * Seru: no NPCs")
 	}
 }
+
+func TestItemPrices(t *testing.T) {
+	d := openTestDB(t)
+	got, err := d.ItemPrices(nil)
+	if err != nil || len(got) != 0 {
+		t.Fatalf("ItemPrices(nil) = %v, %v; want empty, nil", got, err)
+	}
+	// 13005 Iron Ration: price 150, true stack. 14361 Star of Eyes: price 1,
+	// stackable = 3 (charged). 9963 Essence Emerald: price 0 → omitted.
+	got, err = d.ItemPrices([]int{13005, 14361, 9963, -1})
+	if err != nil {
+		t.Fatalf("ItemPrices: %v", err)
+	}
+	if p := got[13005]; p.Price != 150 || !p.Stackable {
+		t.Errorf("Iron Ration = %+v, want {150 true}", p)
+	}
+	if p := got[14361]; p.Price != 1 || p.Stackable {
+		t.Errorf("Star of Eyes = %+v, want {1 false}", p)
+	}
+	if _, ok := got[9963]; ok {
+		t.Error("zero-price item should be omitted")
+	}
+	if _, ok := got[-1]; ok {
+		t.Error("missing id should be omitted")
+	}
+}
