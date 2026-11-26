@@ -1080,6 +1080,22 @@ const sharedWindows = new WeakSet<BrowserWindow>()
 const liveMapSeparateStacks = new WeakSet<BrowserWindow>()
 // Keys to reopen hidden (crash recovery / mode switch restoring hidden ones).
 const reopenHidden = new Set<WindowKey>()
+// Keys a rebuild will reopen once its short delay ends. An explicit close,
+// Close All or layout switch in that gap drops them, so a stale snapshot
+// never brings back (or re-adds to a layout) a window the user just closed.
+const queuedReopens = new Set<WindowKey>()
+
+// cancelOpen drops an overlay's in-flight shared open and any queued reopen.
+function cancelOpen(key: WindowKey): void {
+  overlayHost.cancel(key)
+  queuedReopens.delete(key)
+}
+
+// cancelAllOpens does the same for every overlay except the trigger alerts.
+function cancelAllOpens(): void {
+  overlayHost.cancelWhere((k) => k !== 'trigger')
+  for (const k of [...queuedReopens]) if (k !== 'trigger') queuedReopens.delete(k)
+}
 
 const overlayHost = new OverlayHost({
   hostUrl: rendererFileUrl('overlay-host.html'),
@@ -1157,10 +1173,12 @@ function rebuildSharedOverlays(why: string, crashed: boolean, pick: (w: BrowserW
   perfRecorder.event(`${why}; reopening ${snap.length} window(s)`)
   overlayHost.destroy()
   for (const w of wins) if (!w.isDestroyed()) w.destroy()
+  for (const s of snap) queuedReopens.add(s.key)
   setTimeout(() => {
     rebuildingShared = false
     if (isQuittingApp) return
     for (const s of snap) {
+      if (!queuedReopens.delete(s.key)) continue
       if (s.hidden) reopenHidden.add(s.key)
       reopenWindowKey(s.key, s.groupName)
     }
@@ -1702,6 +1720,7 @@ function closeAllOverlays(): void {
     if (win && !win.isDestroyed()) win.destroy()
   }
   // The hidden host would otherwise keep window-all-closed from firing.
+  queuedReopens.clear()
   overlayHost.destroy()
 }
 
@@ -1895,6 +1914,7 @@ function createCustomTimerGroupOverlay(groupId: string, groupName: string): void
 }
 
 function closeInstanceOverlay(key: InstanceKey): void {
+  cancelOpen(key)
   if (removeFromStack(key)) return
   const win = instanceWindows.get(key)
   if (win && !win.isDestroyed()) win.close()
@@ -2352,6 +2372,7 @@ for (const [name, spec] of Object.entries(STANDARD_OVERLAYS) as Array<[StandardO
     createStandardOverlay(name)
   })
   ipcMain.handle(`overlay:${spec.ipc}:close`, () => {
+    cancelOpen(name)
     if (removeFromStack(name)) return
     stdWin(name)?.close()
   })
@@ -2539,6 +2560,7 @@ ipcMain.handle('overlay:trigger:set-mode', (_event, mode: 'interactive' | 'passt
 })
 
 ipcMain.handle('overlay:trigger:close', () => {
+  cancelOpen('trigger')
   if (triggerOverlayWindow && !triggerOverlayWindow.isDestroyed()) {
     triggerOverlayWindow.close()
   }
@@ -2557,6 +2579,7 @@ ipcMain.handle('overlay:discordvoice:open', () => {
 })
 
 ipcMain.handle('overlay:discordvoice:close', () => {
+  cancelOpen('discordVoice')
   if (discordVoiceOverlayWindow && !discordVoiceOverlayWindow.isDestroyed()) {
     discordVoiceOverlayWindow.close()
   }
@@ -2750,7 +2773,7 @@ function toggleAllPopoutsOpen(): void {
 // Close All: the windows stay in the active layout, so it reopens them.
 function closeAllPopouts(): void {
   closedWhileHidden.clear()
-  overlayHost.cancelWhere((k) => k !== 'trigger')
+  cancelAllOpens()
   closePopoutsInBulk(userPopoutWindows())
 }
 
@@ -2759,7 +2782,7 @@ function closeAllPopouts(): void {
 function toggleOverlayWindow(win: BrowserWindow | null, create: () => void, key?: WindowKey): void {
   // A second press while a Shared-mode window is still being created is a
   // close: cancel it (it's destroyed if it still arrives).
-  if ((!win || win.isDestroyed()) && key && overlayHost.isPending(key)) overlayHost.cancel(key)
+  if ((!win || win.isDestroyed()) && key && (overlayHost.isPending(key) || queuedReopens.has(key))) cancelOpen(key)
   else if (!win || win.isDestroyed()) create()
   else if (userHiddenOverlays.has(win) && !win.isVisible()) showOverlayWindow(win)
   else win.close()
@@ -3912,7 +3935,7 @@ function switchLayout(id: string, flush = true): void {
   const target = store.layouts.find((l) => l.id === id)
   if (!target) return
   perfRecorder.event(`switched layout to "${target.name}"`)
-  overlayHost.cancelWhere((k) => k !== 'trigger')
+  cancelAllOpens()
   // Save pending moves into the outgoing layout before it stops being active.
   for (const win of userPopoutWindows()) {
     const key = windowToOverlayName.get(win)
