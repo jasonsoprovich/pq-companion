@@ -51,6 +51,17 @@ type Watcher struct {
 	// SetPopFlagsFileCallback.
 	onPopFlagsFile func(path string) error
 	popFlagsSeen   map[string]fileStamp
+
+	// personaSynced is each character's Quarmy export as of its last full
+	// sync in RefreshAllPersonas, keyed by character ID, so an unchanged
+	// export isn't re-parsed and rewritten to user.db on every list call.
+	personaSynced map[int]personaStamp
+}
+
+// personaStamp is the Quarmy file a character was last synced from.
+type personaStamp struct {
+	path string
+	fileStamp
 }
 
 // popFlagsFileGlob matches every character's Zeal PoPFlags export, in either
@@ -280,23 +291,38 @@ func (w *Watcher) RefreshAllPersonas() {
 		if path == "" {
 			continue
 		}
+		st, err := os.Stat(path)
+		if err != nil {
+			continue
+		}
+		stamp := personaStamp{path, fileStamp{mod: st.ModTime(), size: st.Size()}}
+		w.mu.RLock()
+		prev, seen := w.personaSynced[c.ID]
+		w.mu.RUnlock()
+		if seen && prev == stamp {
+			continue
+		}
 		data, err := ParseQuarmy(path, c.Name)
 		if err != nil {
 			slog.Warn("zeal: refresh personas: parse quarmy", "character", c.Name, "err", err)
 			continue
 		}
+		ok := true
 		s := data.Stats
 		if err := w.charStore.UpdateStats(c.ID, s.BaseSTR, s.BaseSTA, s.BaseCHA, s.BaseDEX, s.BaseINT, s.BaseAGI, s.BaseWIS); err != nil {
 			slog.Warn("zeal: refresh personas: save stats", "character", c.Name, "err", err)
+			ok = false
 		}
 		if data.Level > 0 && data.Class > 0 && data.Race > 0 {
 			if err := w.charStore.UpdatePersona(c.ID, data.Class-1, data.Race, data.Level); err != nil {
 				slog.Warn("zeal: refresh personas: save persona", "character", c.Name, "err", err)
+				ok = false
 			}
 		}
 		if data.Deity > 0 {
 			if err := w.charStore.UpdateDeity(c.ID, data.Deity); err != nil {
 				slog.Warn("zeal: refresh personas: save deity", "character", c.Name, "err", err)
+				ok = false
 			}
 		}
 		aas := make([]character.AAEntry, len(data.AAs))
@@ -305,9 +331,19 @@ func (w *Watcher) RefreshAllPersonas() {
 		}
 		if err := w.charStore.ReplaceAAs(c.ID, aas); err != nil {
 			slog.Warn("zeal: refresh personas: save aas", "character", c.Name, "err", err)
+			ok = false
 		}
 		if err := w.charStore.ReplaceTradeskills(c.ID, toTradeskillEntries(data.Tradeskills)); err != nil {
 			slog.Warn("zeal: refresh personas: save tradeskills", "character", c.Name, "err", err)
+			ok = false
+		}
+		if ok {
+			w.mu.Lock()
+			if w.personaSynced == nil {
+				w.personaSynced = make(map[int]personaStamp)
+			}
+			w.personaSynced[c.ID] = stamp
+			w.mu.Unlock()
 		}
 	}
 }
