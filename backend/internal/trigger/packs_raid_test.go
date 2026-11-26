@@ -90,11 +90,29 @@ var raidEventSamples = map[string][]string{
 	"Air — Mist island named up":         {"Melernil Faal`Armanna shouts, 'Leave now foolish mortal you have begun to send events in motion that you cannot possibly understand!'"},
 	"Air — Smoke island named up":        {"An Elemental Masterpiece shouts, 'The time has come for all intruders to be tested I will not allow you to pillage this plane any longer!'"},
 	"Air — Wind island named up":         {"Pherlondien Clawpike shouts, 'I will certainly make sure that no mortal is allowed to defile this sacred realm!'"},
-	"Terris — leashed":                   {"Terris Thule disappears into the ether and reforms at the center of her chamber, cleansed of your magic!"},
+	"Coirnav — event clock": {
+		coirnavShout("Povar", "vapor"),
+		"The waters churn as three voices rise as one through Coirnav, echoing throughout the reef. \"The powers of Povar, E`ci and Tarew Marr are bound within me. You will not break the will of the Triumvirate!\"",
+		"Ice spreads across the reef as vapor coils around Coirnav's towering form. His voice rolls through the depths. \"Our power gathers, and your time dwindles. Struggle against the currents! Spend what strength you have left. These waters will yield to no invader!\"",
+		"The reef trembles beneath the gathering fury of water, ice and vapor. Coirnav's voice resounds through the depths. \"Your time is nearly spent! Finish what you began. Soon the united power of the Triumvirate shall sweep you from this domain!\"",
+	},
+	"Coirnav — next minion wave":       {coirnavShout("Povar", "vapor"), coirnavShout("E`ci", "ice")},
+	"Coirnav — ice minions":            {coirnavShout("E`ci", "ice")},
+	"Coirnav — water minions":          {coirnavShout("Tarew Marr", "water")},
+	"Coirnav — Pwelon, Nrinda, Vamuil": {"The currents wrench across the reef as Pwelon, Nrinda and Vamuil gather before Coirnav. The Triumvirate speaks as one through the Avatar of Water: \"We will permit no further advance. Pwelon, Nrinda, Vamuil - unite and drive these invaders from the depths!\""},
+	"Coirnav — banished":               {"Three voices thunder as one through Coirnav. \"The Triumvirate has spoken! These waters reject you. Be banished from our domain!\" A crushing surge tears through the reef as his summoned defenders dissolve into water, ice and vapor."},
+	"Coirnav — defeated":               {"Coirnav, the Avatar of Water, has fallen! His colossal form collapses, driving a thunderous shockwave through the reef."},
+	"Terris — leashed":                 {"Terris Thule disappears into the ether and reforms at the center of her chamber, cleansed of your magic!"},
 }
 
 // bertoxPrepare is codecay/encounters/Bertox.lua RP_TEXT.prepare.
 const bertoxPrepare = "Crazed laughter is heard as you notice a foul creature standing before you. The creature then speaks saying, 'Violators of the depths of Lxanvom shall pay with your lives!'  The foul minion of decay then begins chanting a dark ritual."
+
+// coirnavShout is powater/encounters/Coirnav.lua's minion-wave emote.
+func coirnavShout(god, element string) string {
+	return "Coirnav the Avatar of Water shouts, \"Those that violate my domain will pay. I call upon the power imbued to me by " +
+		god + "! Come forth my minions of " + element + " and destroy these intruders.\""
+}
 
 func openQuarmDB(t *testing.T) *db.DB {
 	t.Helper()
