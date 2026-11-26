@@ -240,28 +240,43 @@ export default function CustomOverlayEditor({
           style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}
         >
           <p className="min-w-0 flex-1 truncate text-xs" style={{ color: problem ? 'var(--color-danger)' : 'var(--color-muted-foreground)' }} title={problem}>
-            {problem || (dirty ? 'Unsaved changes' : 'No changes')}
+            {problem || (dirty ? 'Unsaved changes' : 'All changes saved')}
           </p>
-          <button
-            onClick={requestClose}
-            className="rounded px-3 py-1.5 text-sm"
-            style={{ color: 'var(--color-muted-foreground)', border: '1px solid var(--color-border)' }}
-          >
-            {dirty ? 'Discard' : 'Close'}
-          </button>
-          <button
-            onClick={save}
-            disabled={!dirty || saving}
-            className="rounded px-3 py-1.5 text-sm font-semibold"
-            style={{
-              backgroundColor: 'var(--color-primary)',
-              color: 'var(--color-background)',
-              opacity: !dirty || saving ? 0.5 : 1,
-              cursor: !dirty || saving ? 'default' : 'pointer',
-            }}
-          >
-            {saving ? 'Saving…' : 'Save'}
-          </button>
+          {/* A new window/overlay is saved before the editor opens, so a
+              clean editor offers one enabled Done button rather than a
+              greyed-out Save next to Close. */}
+          {dirty ? (
+            <>
+              <button
+                onClick={requestClose}
+                className="rounded px-3 py-1.5 text-sm"
+                style={{ color: 'var(--color-muted-foreground)', border: '1px solid var(--color-border)' }}
+              >
+                Discard
+              </button>
+              <button
+                onClick={save}
+                disabled={saving}
+                className="rounded px-3 py-1.5 text-sm font-semibold"
+                style={{
+                  backgroundColor: 'var(--color-primary)',
+                  color: 'var(--color-background)',
+                  opacity: saving ? 0.5 : 1,
+                  cursor: saving ? 'default' : 'pointer',
+                }}
+              >
+                {saving ? 'Saving…' : 'Save'}
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={onClose}
+              className="rounded px-3 py-1.5 text-sm font-semibold"
+              style={{ backgroundColor: 'var(--color-primary)', color: 'var(--color-background)' }}
+            >
+              Done
+            </button>
+          )}
         </div>
       </div>
       {confirmDiscard && (
