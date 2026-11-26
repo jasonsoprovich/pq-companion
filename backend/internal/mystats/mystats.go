@@ -87,6 +87,23 @@ type Snapshot struct {
 	Avoidance         int    `json:"avoidance"`
 
 	Melee []MeleeBlock `json:"melee"`
+
+	// Mod2 is the "Item mod2 stats (before server caps)" section Zeal 1.5.2+
+	// prints on servers with PoP mod2 item stats; nil when absent.
+	Mod2 *Mod2 `json:"mod2,omitempty"`
+}
+
+// Mod2 holds the equipped-item mod2 totals as Zeal prints them, before the
+// server's per-stat caps.
+type Mod2 struct {
+	Shielding     int `json:"shielding"`
+	SpellShield   int `json:"spell_shield"`
+	StunResist    int `json:"stun_resist"`
+	Strikethrough int `json:"strikethrough"`
+	Avoidance     int `json:"avoidance"`
+	Accuracy      int `json:"accuracy"`
+	CombatEffects int `json:"combat_effects"`
+	DamageShield  int `json:"damage_shield"`
 }
 
 var (
@@ -95,6 +112,8 @@ var (
 	reACDisplay  = regexp.MustCompile(`^AC \(display\): (\d+) = \(Mit: (\d+)\s*\+ Avoidance: (\d+)\)`)
 	reMitigation = regexp.MustCompile(`^Mitigation: (\d+) \((softcap|hardcap): (\d+)\)`)
 	reAvoidance  = regexp.MustCompile(`^Avoidance: (\d+)`)
+	reMod2A      = regexp.MustCompile(`^Shielding: (-?\d+)%\s+Spell Shield: (-?\d+)%\s+Stun Resist: (-?\d+)%\s+Strikethrough: (-?\d+)%`)
+	reMod2B      = regexp.MustCompile(`^Avoidance: (-?\d+)\s+Accuracy: (-?\d+)\s+Combat Effects: (-?\d+)\s+Damage Shield: (-?\d+)`)
 
 	reMeleeHdr  = regexp.MustCompile(`^---- Melee (Primary|Secondary): (.+) ----$`)
 	reOffense   = regexp.MustCompile(`^Offense: (\d+)`)
@@ -127,6 +146,7 @@ func IsBlockLine(msg string) bool {
 		strings.HasPrefix(msg, "AC (display):"),
 		strings.HasPrefix(msg, "Mitigation:"),
 		strings.HasPrefix(msg, "Avoidance:"),
+		strings.HasPrefix(msg, "Shielding:"),
 		strings.HasPrefix(msg, "Offense:"),
 		strings.HasPrefix(msg, "To Hit:"),
 		strings.HasPrefix(msg, "Display ATK:"),
@@ -192,6 +212,23 @@ func Parse(lines []string) (Snapshot, bool) {
 		case reMitigation.MatchString(line):
 			m := reMitigation.FindStringSubmatch(line)
 			s.Mitigation, s.MitigationCapKind, s.MitigationCap = atoi(m[1]), m[2], atoi(m[3])
+			got = true
+		case reMod2A.MatchString(line):
+			m := reMod2A.FindStringSubmatch(line)
+			if s.Mod2 == nil {
+				s.Mod2 = &Mod2{}
+			}
+			s.Mod2.Shielding, s.Mod2.SpellShield = atoi(m[1]), atoi(m[2])
+			s.Mod2.StunResist, s.Mod2.Strikethrough = atoi(m[3]), atoi(m[4])
+			got = true
+		// Checked before the plain Avoidance line, which it also starts like.
+		case reMod2B.MatchString(line):
+			m := reMod2B.FindStringSubmatch(line)
+			if s.Mod2 == nil {
+				s.Mod2 = &Mod2{}
+			}
+			s.Mod2.Avoidance, s.Mod2.Accuracy = atoi(m[1]), atoi(m[2])
+			s.Mod2.CombatEffects, s.Mod2.DamageShield = atoi(m[3]), atoi(m[4])
 			got = true
 		case strings.HasPrefix(line, "Avoidance: ") && reAvoidance.MatchString(line):
 			s.Avoidance = atoi(reAvoidance.FindStringSubmatch(line)[1])

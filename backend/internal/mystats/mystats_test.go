@@ -156,3 +156,36 @@ func TestIsBlockLine(t *testing.T) {
 		}
 	}
 }
+
+// TestParseMod2Section: Zeal 1.5.2's mod2 section is captured, and its
+// "Avoidance: 45  Accuracy: ..." line doesn't overwrite the real Avoidance.
+func TestParseMod2Section(t *testing.T) {
+	block := sampleSK + `
+---- Item mod2 stats (before server caps) ----
+Shielding: 2%  Spell Shield: 2%  Stun Resist: 5%  Strikethrough: 0%
+Avoidance: 45  Accuracy: 15  Combat Effects: 0  Damage Shield: 5`
+	lines := strings.Split(block, "\n")
+	for _, l := range lines {
+		if !IsBlockLine(l) {
+			t.Errorf("IsBlockLine(%q) = false; the capture would stop early", l)
+		}
+	}
+	s, ok := Parse(lines)
+	if !ok {
+		t.Fatal("parse failed")
+	}
+	if s.Avoidance != 558 {
+		t.Errorf("Avoidance = %d, want 558", s.Avoidance)
+	}
+	want := Mod2{Shielding: 2, SpellShield: 2, StunResist: 5, Avoidance: 45, Accuracy: 15, DamageShield: 5}
+	if s.Mod2 == nil || *s.Mod2 != want {
+		t.Errorf("Mod2 = %+v, want %+v", s.Mod2, want)
+	}
+	if len(s.Melee) != 1 {
+		t.Errorf("melee blocks = %d", len(s.Melee))
+	}
+	old, _ := Parse(strings.Split(sampleSK, "\n"))
+	if old.Mod2 != nil {
+		t.Error("Mod2 should be nil without the section")
+	}
+}

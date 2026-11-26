@@ -86,6 +86,65 @@ const DEFENSIVE: Metric[] = [
   },
 ]
 
+// Item mod2 totals from Zeal 1.5.2+, as Zeal prints them: before the
+// server's caps (Shielding/Spell Shield/Stun Resist/Strikethrough 35%,
+// Avoidance 100, Accuracy 150, Combat Effects 100, Damage Shield 30).
+const pct = (n: number) => `${n}%`
+const MOD2: Metric[] = [
+  {
+    label: 'Accuracy',
+    hint: 'Flat to-hit bonus from items (cap 150).',
+    get: (s) => s.mod2?.accuracy ?? null,
+    better: 'up',
+  },
+  {
+    label: 'Avoidance',
+    hint: 'Flat avoidance from items (cap 100); not part of displayed AC.',
+    get: (s) => s.mod2?.avoidance ?? null,
+    better: 'up',
+  },
+  {
+    label: 'Strikethrough',
+    hint: 'Chance to hit through a block, parry, riposte or dodge (cap 35%).',
+    get: (s) => s.mod2?.strikethrough ?? null,
+    better: 'up',
+    fmt: pct,
+  },
+  {
+    label: 'Stun Resist',
+    hint: 'Resist chance against bash, kick and flee stuns (cap 35%).',
+    get: (s) => s.mod2?.stun_resist ?? null,
+    better: 'up',
+    fmt: pct,
+  },
+  {
+    label: 'Combat Effects',
+    hint: 'Raises weapon proc chance (cap 100).',
+    get: (s) => s.mod2?.combat_effects ?? null,
+    better: 'up',
+  },
+  {
+    label: 'Spell Shield',
+    hint: 'Reduces direct-damage spells, not DoTs (cap 35%).',
+    get: (s) => s.mod2?.spell_shield ?? null,
+    better: 'up',
+    fmt: pct,
+  },
+  {
+    label: 'Shielding',
+    hint: "Reduces the attacker's melee damage bonus (cap 35%).",
+    get: (s) => s.mod2?.shielding ?? null,
+    better: 'up',
+    fmt: pct,
+  },
+  {
+    label: 'Damage Shield',
+    hint: 'Adds to a spell damage shield you already have (cap 30).',
+    get: (s) => s.mod2?.damage_shield ?? null,
+    better: 'up',
+  },
+]
+
 function meleeMetrics(slot: 'Primary' | 'Secondary'): Metric[] {
   const pick = (s: MyStatsSnapshot): MyStatsMeleeBlock | undefined =>
     s.melee.find((bl) => bl.slot === slot)
@@ -306,6 +365,14 @@ export function StatSnapshotsPanel({ characterID }: Props): React.ReactElement {
       {a && (
         <>
           <ComparisonTable title="Defensive & misc" metrics={DEFENSIVE} a={a} b={b} />
+          {(a.snapshot.mod2 || b?.snapshot.mod2) && (
+            <ComparisonTable
+              title="Item mod2 stats (before server caps)"
+              metrics={MOD2}
+              a={a}
+              b={b}
+            />
+          )}
           <ComparisonTable
             title={`Melee — Primary hand (${primaryWeapon(a, 'Primary') ?? '—'}${
               b && primaryWeapon(b, 'Primary') !== primaryWeapon(a, 'Primary')

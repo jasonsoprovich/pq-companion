@@ -2970,6 +2970,20 @@ export interface MyStatsSnapshot {
   mitigation_cap_kind: string // "softcap" | "hardcap"
   avoidance: number
   melee: MyStatsMeleeBlock[]
+  // Zeal 1.5.2+ "Item mod2 stats" totals (before server caps); absent on
+  // older captures and servers without mod2 stats.
+  mod2?: MyStatsMod2
+}
+
+export interface MyStatsMod2 {
+  shielding: number
+  spell_shield: number
+  stun_resist: number
+  strikethrough: number
+  avoidance: number
+  accuracy: number
+  combat_effects: number
+  damage_shield: number
 }
 
 export interface StoredStatSnapshot {
