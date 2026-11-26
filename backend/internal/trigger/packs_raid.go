@@ -40,6 +40,10 @@ type raidSpell struct {
 	// Buff marks a beneficial spell (a self-buff, or a dispel the data flags
 	// as beneficial). Listed on the Who card, never timed.
 	Buff bool
+	// Scripted marks a spell the boss's quest script casts (not on its
+	// npc_spells list), so there is no AI recast to time. Gets a cure alert
+	// when curable; the test checks its messages but not list membership.
+	Scripted bool
 }
 
 // raidBoss is one raid NPC: its Who card facts and its spells.
@@ -99,7 +103,7 @@ func (d raidPackDef) build() TriggerPack {
 			}
 			// Every boss that casts the spell is a caster, whatever its own
 			// recast; the trigger's duration is the longest of them.
-			if !s.Proc && !s.Buff {
+			if !s.Proc && !s.Buff && !s.Scripted {
 				sh.casters = append(sh.casters, BossCaster{Name: b.Name, DurationSecs: s.Recast})
 				sh.names = append(sh.names, b.Name)
 				if s.Recast > sh.spell.Recast {
@@ -124,6 +128,32 @@ func (d raidPackDef) build() TriggerPack {
 		}
 	}
 
+	// A land line two different spells in the pack log can't say which
+	// spell (or boss) it came from: Rallos's Vindictive Strike and Tallon's
+	// Strategic Blow both log "<name> falls to the ground and convulses.",
+	// and Tallon's four Barbs share one resist line. Timers use only the
+	// lines unique to their spell.
+	owners := map[string]map[int]bool{}
+	own := func(key string, id int) {
+		if owners[key] == nil {
+			owners[key] = map[int]bool{}
+		}
+		owners[key][id] = true
+	}
+	for _, b := range d.Bosses {
+		for _, s := range b.Spells {
+			if s.Buff {
+				continue
+			}
+			own("you:"+s.OnYou, s.ID)
+			own("resist:"+s.Name, s.ID)
+			if s.OnOther != "" {
+				own("other:"+s.OnOther, s.ID)
+			}
+		}
+	}
+	unique := func(key string) bool { return len(owners[key]) == 1 }
+
 	var out []Trigger
 	emitted := map[int]bool{}
 	cureDone := map[string]bool{}
@@ -137,7 +167,7 @@ func (d raidPackDef) build() TriggerPack {
 			}
 			emitted[s.ID] = true
 			sh := byID[s.ID]
-			if t, ok := raidTimerTrigger(d.Name, sh.spell, sh.casters, sh.names); ok {
+			if t, ok := raidTimerTrigger(d.Name, sh.spell, sh.casters, sh.names, unique); ok {
 				out = append(out, t)
 			}
 			if s.Counter != "" && !cureDone[s.OnYou] {
@@ -155,16 +185,26 @@ func (d raidPackDef) build() TriggerPack {
 }
 
 // raidTimerTrigger builds the boss recast timer for a spell, bound to the
-// casting boss (Trigger.BossCasters). Returns false when no caster's recast
-// is long enough to be worth a bar. Each caster carries its own recast, so
+// casting boss (Trigger.BossCasters), matching only the land lines unique
+// to that spell within the pack. Returns false when no caster's recast is
+// long enough to be worth a bar, or no unique line is left. Each caster carries its own recast, so
 // a spell two bosses cast at different rates times correctly for each.
-func raidTimerTrigger(pack string, s raidSpell, casters []BossCaster, names []string) (Trigger, bool) {
+func raidTimerTrigger(pack string, s raidSpell, casters []BossCaster, names []string, unique func(string) bool) (Trigger, bool) {
 	if len(casters) == 0 || s.Recast < raidMinTimerSecs {
 		return Trigger{}, false
 	}
-	alts := []string{lit(s.OnYou), `You resist the ` + lit(s.Name) + ` spell!`}
-	if s.OnOther != "" {
+	var alts []string
+	if unique("you:" + s.OnYou) {
+		alts = append(alts, lit(s.OnYou))
+	}
+	if unique("resist:" + s.Name) {
+		alts = append(alts, `You resist the `+lit(s.Name)+` spell!`)
+	}
+	if s.OnOther != "" && unique("other:"+s.OnOther) {
 		alts = append(alts, "[A-Za-z`' ]+"+lit(s.OnOther))
+	}
+	if len(alts) == 0 {
+		return Trigger{}, false
 	}
 	bc := make([]BossCaster, len(casters))
 	for i, c := range casters {
@@ -371,6 +411,7 @@ func raidPackDefs() []raidPackDef {
 		raidPoPAir(),
 		raidPoPWater(),
 		raidPoPEarth(),
+		raidPoPTime(),
 	}
 }
 

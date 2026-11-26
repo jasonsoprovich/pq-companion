@@ -134,6 +134,11 @@ var raidEventSamples = map[string][]string{
 	"Rathe Council — first kill expires":  {"One of the Rathe Council crumbles into lifeless stone. The remaining voices answer without hesitation: \"We remain united. We shall rise again. You will not unravel the balance through the fall of one.\""},
 	"Rathe Council — councilman returned": {"Stone knits together as a fallen Councilman rises anew. The Council speaks as one: \"We stand together, Norrathians. We shall not yield because one has fallen.\""},
 	"Rathe Council — Avatar of Earth":     {"The Rathe speak through the towering Avatar of Earth: \"We remain as one while battle is joined. We shall tolerate thirty-five minutes of hesitation. No more.\""},
+	"Time — phase 2 wall opening":         {"Ethereal mists gather at the far wall, causing it fade in and out of focus."},
+	"Quarm — red head down":               {"Quarm roars in pain as his red head explodes in a shower of flaming ethereal energy!"},
+	"Quarm — blue head down":              {"Quarm roars in pain as his blue head explodes into pure ethereal energy!"},
+	"Quarm — white head down":             {"Quarm shakes the cavern with a bellow of pain as the white head explodes into a swirling vortex of ethereal energy!"},
+	"Quarm — Druzzil appears":             {"Suddenly in a bright flash a feminine figure appears before you.  Your ears ring from the loud burst as she slowly materializes."},
 	"Terris — leashed":                    {"Terris Thule disappears into the ether and reforms at the center of her chamber, cleansed of your magic!"},
 }
 
@@ -255,11 +260,16 @@ func TestRaidPacks_MatchQuarmDB(t *testing.T) {
 			for _, s := range b.Spells {
 				where := fmt.Sprintf("%s / %s / %s (%d)", d.Name, b.Name, s.Name, s.ID)
 				entry, ok := list[s.ID]
-				if !ok {
+				if s.Scripted {
+					if ok {
+						t.Errorf("%s: Scripted, but it is on the boss's spell list", where)
+					}
+					entry = raidListEntry{proc: true} // no AI recast: expect Recast 0
+				} else if !ok {
 					t.Errorf("%s: not on the boss's spell list", where)
 					continue
 				}
-				if entry.proc != s.Proc {
+				if !s.Scripted && entry.proc != s.Proc {
 					t.Errorf("%s: Proc = %v, quarm.db says %v", where, s.Proc, entry.proc)
 				}
 				var (
@@ -491,4 +501,37 @@ func TestRaidPacks_InstalledPackBindsBosses(t *testing.T) {
 			t.Errorf("timer %d = %+v; want %s, 40s, boss cooldown", i, st, want)
 		}
 	}
+}
+
+// TestRaidPacks_SharedLandLinesDropped: two spells in one pack logging the
+// same land line can't be told apart, so neither timer uses that line.
+func TestRaidPacks_SharedLandLinesDropped(t *testing.T) {
+	p := raidPoPTime().build()
+	const convulses = " falls to the ground and convulses."
+	for _, tr := range p.Triggers {
+		if len(tr.BossCasters) == 0 {
+			continue
+		}
+		if strings.Contains(tr.Pattern, regexp.QuoteMeta(convulses)) {
+			t.Errorf("%s matches the shared %q line", tr.Name, convulses)
+		}
+		if tr.Name == "Tallon Zek — Barb of Tallon" && strings.Contains(tr.Pattern, "You resist") {
+			t.Errorf("Barb of Tallon matches the resist line all four Barbs share")
+		}
+	}
+	re := regexp.MustCompile(raidTriggerByName(t, p, "Rallos Zek — Vindictive Strike").Pattern)
+	if !re.MatchString("You muscles spasm and refuse to obey you.") || !re.MatchString("You resist the Vindictive Strike spell!") {
+		t.Error("Vindictive Strike lost its unique on-you or resist line")
+	}
+}
+
+func raidTriggerByName(t *testing.T, p TriggerPack, name string) Trigger {
+	t.Helper()
+	for _, tr := range p.Triggers {
+		if tr.Name == name {
+			return tr
+		}
+	}
+	t.Fatalf("%s: no trigger %q", p.PackName, name)
+	return Trigger{}
 }
