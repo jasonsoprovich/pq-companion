@@ -102,7 +102,14 @@ function SearchPane({ selectedId, onSelect }: SearchPaneProps): React.ReactEleme
       .finally(() => { if (seq === seqRef.current) setLoading(false) })
   }, [])
 
+  // The mount effect below runs the first search immediately, so the
+  // debounced run skips that first render instead of repeating it.
+  const firstRunRef = useRef(true)
   useEffect(() => {
+    if (firstRunRef.current) {
+      firstRunRef.current = false
+      return
+    }
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => runSearch(query, expansion), 300)
     return () => {

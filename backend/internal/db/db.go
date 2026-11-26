@@ -48,6 +48,11 @@ type DB struct {
 	// recourse.go).
 	recourseOnce    sync.Once
 	recourseParents map[int]string
+
+	// Zone short_name → NPC level range, built on first use (see
+	// zoneLevels in queries.go).
+	zoneLevelsOnce  sync.Once
+	zoneLevelRanges map[string]zoneLevelRange
 }
 
 // Open opens the SQLite database at the given path in read-only mode.

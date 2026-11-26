@@ -2717,8 +2717,6 @@ const zoneColumns = `
   z.min_level, COALESCE(z.note,''), COALESCE(z.flag_needed,''),
   z.castoutdoor, z.hotzone, z.canlevitate, z.canbind,
   COALESCE(z.zone_exp_multiplier, 1.0), z.expansion,
-  COALESCE((SELECT MIN(n.level) FROM npc_types n JOIN spawnentry se ON se.npcID = n.id JOIN spawn2 s2 ON s2.spawngroupID = se.spawngroupID WHERE s2.zone = z.short_name AND TRIM(n.name, '_#') != '' AND NOT (n.race = 127 AND n.bodytype IN (11, 60, 65, 66, 67))), 0),
-  COALESCE((SELECT MAX(n.level) FROM npc_types n JOIN spawnentry se ON se.npcID = n.id JOIN spawn2 s2 ON s2.spawngroupID = se.spawngroupID WHERE s2.zone = z.short_name AND TRIM(n.name, '_#') != '' AND NOT (n.race = 127 AND n.bodytype IN (11, 60, 65, 66, 67))), 0),
   COALESCE(z.pull_limit, 80),
   COALESCE(z.graveyard_id, 0),
   COALESCE(z.graveyard_time, 0),
@@ -2751,7 +2749,6 @@ func scanZone(row interface {
 		&z.MinLevel, &z.Note, &z.FlagNeeded,
 		&z.Outdoor, &z.Hotzone, &z.CanLevitate, &z.CanBind,
 		&z.ExpMod, &z.Expansion,
-		&z.NPCLevelMin, &z.NPCLevelMax,
 		&z.PullLimit,
 		&graveyardID, &graveyardTime,
 		&gyDestID, &gyShort, &gyLong,
@@ -2840,6 +2837,7 @@ func (db *DB) GetZone(id int) (*Zone, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get zone %d: %w", id, err)
 	}
+	db.applyZoneLevels(z)
 	return z, nil
 }
 
@@ -2851,6 +2849,7 @@ func (db *DB) GetZoneByShortName(shortName string) (*Zone, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get zone %q: %w", shortName, err)
 	}
+	db.applyZoneLevels(z)
 	return z, nil
 }
 
@@ -2865,6 +2864,7 @@ func (db *DB) GetZoneByZoneIDNumber(zoneIDNumber int) (*Zone, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get zone by zoneidnumber %d: %w", zoneIDNumber, err)
 	}
+	db.applyZoneLevels(z)
 	return z, nil
 }
 
@@ -2895,6 +2895,9 @@ func (db *DB) SearchZones(query string, filters ZoneSearchFilters, limit, offset
 	zones, err := collectZones(rows)
 	if err != nil {
 		return nil, err
+	}
+	for i := range zones {
+		db.applyZoneLevels(&zones[i])
 	}
 
 	if filters.Expansion != nil {
@@ -2931,6 +2934,50 @@ func (db *DB) ZoneExpansions() ([]int, error) {
 	}
 	sort.Ints(out)
 	return out, nil
+}
+
+// zoneLevelRange is the lowest and highest level of the NPCs that spawn in a
+// zone (see zoneLevels).
+type zoneLevelRange struct{ min, max int }
+
+// zoneLevels returns short_name → NPC level range for every zone, computed
+// once with a single grouped query. The game DB is read-only, so the ranges
+// never change. This used to be two correlated subqueries per zone row,
+// which made the full zone list cost ~150 ms per load. Placeholder NPCs
+// (blank names, invisible-man helpers) are skipped, as before.
+func (db *DB) zoneLevels() map[string]zoneLevelRange {
+	db.zoneLevelsOnce.Do(func() {
+		out := map[string]zoneLevelRange{}
+		rows, err := db.Query(`
+			SELECT s2.zone, MIN(n.level), MAX(n.level)
+			FROM npc_types n
+			JOIN spawnentry se ON se.npcID = n.id
+			JOIN spawn2 s2 ON s2.spawngroupID = se.spawngroupID
+			WHERE TRIM(n.name, '_#') != ''
+			  AND NOT (n.race = 127 AND n.bodytype IN (11, 60, 65, 66, 67))
+			GROUP BY s2.zone`)
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var zone string
+				var r zoneLevelRange
+				if rows.Scan(&zone, &r.min, &r.max) == nil {
+					out[zone] = r
+				}
+			}
+		}
+		db.zoneLevelRanges = out
+	})
+	return db.zoneLevelRanges
+}
+
+// applyZoneLevels fills a zone's NPCLevelMin/Max from zoneLevels.
+func (db *DB) applyZoneLevels(z *Zone) {
+	if z == nil {
+		return
+	}
+	r := db.zoneLevels()[z.ShortName]
+	z.NPCLevelMin, z.NPCLevelMax = r.min, r.max
 }
 
 func collectZones(rows *sql.Rows) ([]Zone, error) {
