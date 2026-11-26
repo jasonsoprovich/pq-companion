@@ -154,3 +154,68 @@ func TestResolveProvenance(t *testing.T) {
 		t.Errorf("source = %q, want %q", by["poj_preflag"].Source, SourceSeer)
 	}
 }
+
+// TestResolveBonusRows covers the "bonus" role (Sol Ro minis, Carpryn): left
+// out of every tally until done, then counted in done AND total, while other
+// optional rows stay excluded either way.
+func TestResolveBonusRows(t *testing.T) {
+	progress := func(r Resolved) (all, tier3, solro Progress) {
+		all = Progress{Done: r.Done, Total: r.Total}
+		for _, p := range r.Tiers {
+			if p.Tier == 3 {
+				tier3 = p
+			}
+		}
+		for _, p := range r.Zones {
+			if p.Key == "Tower of Solusek Ro" {
+				solro = p
+			}
+		}
+		return
+	}
+
+	base := []State{{FlagID: "solro_miak", Done: true, Source: SourceManual}}
+	a0, t0, z0 := progress(Resolve(base))
+
+	// Unfinished minis are not in any total.
+	required := 0
+	for _, f := range Flags() {
+		if f.Zone == "Tower of Solusek Ro" && !f.Optional && f.Group == "" {
+			required++
+		}
+	}
+	if z0.Total != required {
+		t.Errorf("Sol Ro zone total = %d, want %d (minis excluded until done)", z0.Total, required)
+	}
+
+	// Two minis done: +2 to done and total at every level.
+	withMinis := append(append([]State{}, base...),
+		State{FlagID: "solro_xuzl", Done: true, Source: SourceManual},
+		State{FlagID: "solro_jiva", Done: true, Source: SourceManual},
+	)
+	a1, t1, z1 := progress(Resolve(withMinis))
+	for _, c := range []struct {
+		name       string
+		before, af Progress
+	}{{"overall", a0, a1}, {"tier 3", t0, t1}, {"Sol Ro zone", z0, z1}} {
+		if c.af.Done != c.before.Done+2 || c.af.Total != c.before.Total+2 {
+			t.Errorf("%s: %d/%d -> %d/%d, want +2/+2", c.name, c.before.Done, c.before.Total, c.af.Done, c.af.Total)
+		}
+	}
+
+	// A done ordinary optional row (the Plane of Fire key-ring) stays out.
+	withKeyring := append(append([]State{}, base...),
+		State{FlagID: "solro_pofire_keyring", Done: true, Source: SourceManual})
+	a2, _, _ := progress(Resolve(withKeyring))
+	if a2.Done != a0.Done || a2.Total != a0.Total {
+		t.Errorf("keyring changed the tally: %d/%d -> %d/%d", a0.Done, a0.Total, a2.Done, a2.Total)
+	}
+
+	// An explicitly unchecked bonus row is not counted.
+	unchecked := append(append([]State{}, base...),
+		State{FlagID: "solro_xuzl", Done: false, Source: SourceManual})
+	a3, _, _ := progress(Resolve(unchecked))
+	if a3.Done != a0.Done || a3.Total != a0.Total {
+		t.Errorf("unchecked bonus changed the tally: %d/%d -> %d/%d", a0.Done, a0.Total, a3.Done, a3.Total)
+	}
+}

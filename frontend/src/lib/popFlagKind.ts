@@ -4,7 +4,7 @@
 // tell at a glance whether a step is a raid kill, a must-act-now post-kill
 // hail, or solo "homework" (an always-up hail / a loot-and-turn-in).
 import {
-  Swords, AlarmClock, Megaphone, Package, DoorOpen, KeyRound, Sparkles, Hand,
+  Swords, AlarmClock, Megaphone, Package, DoorOpen, KeyRound, Sparkles, Hand, Gift,
   type LucideIcon,
 } from 'lucide-react'
 import type { PoPFlag } from '../types/popflag'
@@ -84,7 +84,7 @@ export function stepKindMeta(kind?: string): StepKindMeta | null {
 // from the action step_kind. Drives a secondary badge + the "not required"
 // dimming on optional rows. Mirrors backend popflag.PoPFlag.Role.
 
-export type Role = 'key' | 'keyring' | 'optional'
+export type Role = 'key' | 'keyring' | 'optional' | 'bonus'
 
 export interface RoleMeta {
   role: Role
@@ -123,6 +123,15 @@ export const ROLE_META: Record<Role, RoleMeta> = {
     bg: 'rgba(148,163,184,0.14)',
     border: 'rgba(148,163,184,0.45)',
     tip: 'Optional content — not required to progress.',
+  },
+  bonus: {
+    role: 'bonus',
+    label: 'Bonus',
+    icon: Gift,
+    color: '#a3e635',
+    bg: 'rgba(163,230,53,0.14)',
+    border: 'rgba(163,230,53,0.45)',
+    tip: 'No longer required since the 2026-11-23 patch. Counts toward your progress once done.',
   },
 }
 

@@ -117,7 +117,9 @@ func Resolve(states []State) Resolved {
 
 		// Optional rows (keys, keyrings, bonus content) and any-of members are
 		// display-only: they neither count toward the personal tally nor block.
-		if f.Optional || f.Group != "" {
+		// The exception is a done "bonus" row, which counts toward both done
+		// and total (see PoPFlag.Role).
+		if !Counted(f, done) {
 			continue
 		}
 
@@ -158,4 +160,17 @@ func tierLabel(t int) string {
 		return "Plane of Time"
 	}
 	return "Tier " + strconv.Itoa(t)
+}
+
+// Counted reports whether a flag counts toward the done/total tallies given
+// whether it is done: required, non-group rows always; "bonus" rows only once
+// done; every other optional row and any-of member never.
+func Counted(f PoPFlag, done bool) bool {
+	if f.Group != "" {
+		return false
+	}
+	if !f.Optional {
+		return true
+	}
+	return f.Role == "bonus" && done
 }

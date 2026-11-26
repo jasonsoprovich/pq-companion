@@ -134,7 +134,7 @@ func TestGroupsAndRoles(t *testing.T) {
 	for _, f := range all {
 		byID[f.ID] = f
 	}
-	validRole := map[string]bool{"key": true, "keyring": true, "optional": true}
+	validRole := map[string]bool{"key": true, "keyring": true, "optional": true, "bonus": true}
 
 	for _, f := range all {
 		if f.Group != "" {

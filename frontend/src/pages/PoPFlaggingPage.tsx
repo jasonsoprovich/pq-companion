@@ -31,8 +31,9 @@ function buildEmptyResolved(flags: PoPFlagStatus[]): PoPResolved {
   const zones = new Map<string, { done: number; total: number }>()
   let total = 0
   for (const f of flags) {
-    // Mirror the backend tally: optional rows (keys/keyrings/bonus) and any-of
-    // members don't count toward completion.
+    // Mirror the backend tally (popflag.Counted): optional rows and any-of
+    // members don't count. Nothing is done here, so "bonus" rows (which count
+    // once done) are excluded too.
     if (f.optional || f.group) continue
     total++
     const t = tiers.get(f.tier) ?? { done: 0, total: 0 }
@@ -537,6 +538,22 @@ export default function PoPFlaggingPage(): React.ReactElement {
             </span>
           )
         })}
+        <span
+          className="mx-1 h-3 w-px shrink-0"
+          style={{ backgroundColor: 'var(--color-border)' }}
+          aria-hidden
+        />
+        <span className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--color-muted)' }}>
+          Counts once done
+        </span>
+        <span
+          className="inline-flex items-center gap-1 text-[11px]"
+          title={ROLE_META.bonus.tip}
+          style={{ color: ROLE_META.bonus.color }}
+        >
+          <ROLE_META.bonus.icon size={12} />
+          {ROLE_META.bonus.label}
+        </span>
         <span
           className="mx-1 h-3 w-px shrink-0"
           style={{ backgroundColor: 'var(--color-border)' }}

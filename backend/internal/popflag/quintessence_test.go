@@ -127,8 +127,8 @@ func TestQuintessenceStepsCoverEveryQglobal(t *testing.T) {
 }
 
 // The 2026-11-23 patch: Solusek Ro and Bertoxxulous credit no longer need the
-// five minis / Carpryn's key, but those still count toward the tier (the
-// server's own #popflags does).
+// five minis / Carpryn's key. Those are now "bonus" rows: optional, counted
+// only once done (TestResolveBonusRows covers the tally).
 func TestSolRoAndBertoxNoLongerGatedByEntrySteps(t *testing.T) {
 	states := []State{
 		{FlagID: "solro_miak", Done: true, Source: SourceManual},
@@ -143,8 +143,8 @@ func TestSolRoAndBertoxNoLongerGatedByEntrySteps(t *testing.T) {
 				t.Errorf("%s locked, missing %v", f.ID, f.Missing)
 			}
 		case "solro_xuzl", "cod_carpryn":
-			if f.Optional {
-				t.Errorf("%s became optional; it still counts toward the tier", f.ID)
+			if !f.Optional || f.Role != "bonus" {
+				t.Errorf("%s optional=%v role=%q, want a bonus row", f.ID, f.Optional, f.Role)
 			}
 		}
 	}

@@ -80,6 +80,10 @@ type PoPFlag struct {
 	//   "key"      — a one-per-raid item/turn-in that opens a door for the group.
 	//   "keyring"  — a zone-in that keyrings personal access to the next zone.
 	//   "optional" — skippable bonus content (e.g. the Seventh Hammer fight).
+	//   "bonus"    — a former requirement the server no longer needs (the Sol
+	//                Ro minis, Carpryn's Lower Crypt key). Not required, but
+	//                unlike other optional rows it counts toward done AND total
+	//                once completed, so doing it still shows as progress.
 	// Empty for ordinary required milestones. A non-empty Role implies Optional.
 	Role string `json:"role,omitempty"`
 
