@@ -42,29 +42,84 @@ if (size < MIN_BYTES) {
 
 // Staleness: the extractor changing without a regen means the shipped geometry
 // is not what the current code produces. That is invisible in the app.
+//
+// "The extractor" is only the code cmd/mapgen can reach, listed in
+// backend/internal/mapgen/extractor_files.txt (kept current by the Go test
+// TestExtractorFiles). The same package also holds the 3D view, textures and
+// character models, which run only inside the app; editing those must not
+// demand a regen.
+//
+// Each file's last change is its last commit time, not its mtime: a fresh
+// checkout, worktree or pull stamps every file "now" without changing a byte.
+// Files with uncommitted edits fall back to their mtime.
+const { execFileSync } = require('child_process')
+const backendDir = path.join(repoRoot, 'backend')
+const listPath = path.join(mapgenDir, 'extractor_files.txt')
+if (!fs.existsSync(listPath)) {
+  console.error(`[verify-maps-db] FAIL: ${path.relative(repoRoot, listPath)} is missing.`)
+  console.error('  Regenerate: cd backend && go test ./internal/mapgen -run TestExtractorFiles -update')
+  process.exit(1)
+}
+const sources = fs
+  .readFileSync(listPath, 'utf8')
+  .split('\n')
+  .map((l) => l.trim())
+  .filter((l) => l && !l.startsWith('#'))
+  .map((rel) => path.join('backend', rel))
+
+function git(args) {
+  return execFileSync('git', args, { cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+}
+
 const dbMtime = fs.statSync(dbPath).mtimeMs
 let newestSource = 0
 let newestSourcePath = ''
-for (const entry of fs.readdirSync(mapgenDir, { withFileTypes: true })) {
-  // _test.go files do not affect output.
-  if (!entry.isFile() || !entry.name.endsWith('.go') || entry.name.endsWith('_test.go')) continue
-  const full = path.join(mapgenDir, entry.name)
-  const m = fs.statSync(full).mtimeMs
-  if (m > newestSource) {
-    newestSource = m
-    newestSourcePath = full
+let newestHow = ''
+const consider = (ms, file, how) => {
+  if (ms > newestSource) {
+    newestSource = ms
+    newestSourcePath = file
+    newestHow = how
+  }
+}
+
+const dirty = new Set()
+let useGit = true
+try {
+  for (const line of git(['status', '--porcelain', '--', ...sources]).split('\n')) {
+    if (line.length > 3) dirty.add(line.slice(3).trim())
+  }
+} catch {
+  useGit = false
+}
+
+for (const rel of sources) {
+  const full = path.join(repoRoot, rel)
+  if (!fs.existsSync(full)) {
+    console.error(`[verify-maps-db] FAIL: ${rel} is listed in extractor_files.txt but missing.`)
+    console.error('  Regenerate: cd backend && go test ./internal/mapgen -run TestExtractorFiles -update')
+    process.exit(1)
+  }
+  if (!useGit || dirty.has(rel)) {
+    consider(fs.statSync(full).mtimeMs, rel, useGit ? 'uncommitted edit' : 'mtime (no git)')
+    continue
+  }
+  const out = git(['log', '-1', '--format=%ct %h', '--', rel]).trim()
+  if (out) {
+    const [ct, sha] = out.split(' ')
+    consider(Number(ct) * 1000, rel, `commit ${sha}`)
   }
 }
 
 if (newestSource > dbMtime) {
   console.error(`[verify-maps-db] FAIL: ${path.relative(repoRoot, dbPath)} is older than the extractor.`)
-  console.error(`  maps.db mtime: ${new Date(dbMtime).toISOString()}`)
-  console.error(`  newest source: ${new Date(newestSource).toISOString()}  (${path.relative(repoRoot, newestSourcePath)})`)
-  console.error('  The shipped geometry is not what the current pipeline produces.')
+  console.error(`  maps.db built:     ${new Date(dbMtime).toISOString()}`)
+  console.error(`  extractor changed: ${new Date(newestSource).toISOString()}  (${newestSourcePath}, ${newestHow})`)
+  console.error('  The shipped geometry may not be what the current pipeline produces.')
   console.error(REGEN)
   process.exit(1)
 }
 
 console.log(
-  `[verify-maps-db] OK: maps.db present (${(size / (1 << 20)).toFixed(1)} MB) and newer than the extractor.`,
+  `[verify-maps-db] OK: maps.db present (${(size / (1 << 20)).toFixed(1)} MB) and newer than the extractor (${sources.length} files).`,
 )

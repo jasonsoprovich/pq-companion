@@ -2,10 +2,8 @@ package mapgen
 
 import (
 	"encoding/binary"
-	"fmt"
 	"log/slog"
 	"math"
-	"path/filepath"
 	"strings"
 )
 
@@ -356,38 +354,6 @@ func bitmapName(b []byte) string {
 		name[i] = b[6+i] ^ stringHashKey[i%8]
 	}
 	return strings.ToLower(string(name))
-}
-
-// loadZoneWLD reads and parses the zone .wld from <shortName>.s3d.
-func loadZoneWLD(clientDir, shortName string) (*WLD, error) {
-	path := filepath.Join(clientDir, shortName+".s3d")
-	// Only the .wld entries are used; the textures are skipped.
-	arc, err := OpenArchiveFiles(path, func(name string) bool {
-		return strings.HasSuffix(strings.ToLower(name), ".wld")
-	})
-	if err != nil {
-		return nil, err
-	}
-	raw, ok := arc[shortName+".wld"]
-	if !ok {
-		// A few archives name the main WLD differently; fall back to the only
-		// .wld that isn't one of the known auxiliary files.
-		for name, b := range arc {
-			l := strings.ToLower(name)
-			if strings.HasSuffix(l, ".wld") && l != "objects.wld" && l != "lights.wld" {
-				raw, ok = b, true
-				break
-			}
-		}
-	}
-	if !ok {
-		return nil, fmt.Errorf("%s: no zone .wld inside archive", shortName)
-	}
-	w, err := ParseWLD(raw)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", shortName, err)
-	}
-	return w, nil
 }
 
 // Encode packs the mesh little-endian: the magic; vertex, index, group,
