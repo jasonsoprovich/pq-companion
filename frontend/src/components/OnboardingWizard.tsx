@@ -80,6 +80,7 @@ export default function OnboardingWizard({
   const [eqPath, setEqPath] = useState('')
   const [validating, setValidating] = useState(false)
   const [validationError, setValidationError] = useState<string | null>(null)
+  const [validationNote, setValidationNote] = useState<string | null>(null)
   const [eqDiag, setEqDiag] = useState<EqDiagnostics | null>(null)
   const [discovered, setDiscovered] = useState<DiscoveredCharacter[]>([])
   const [pathConfirmed, setPathConfirmed] = useState(false)
@@ -231,9 +232,11 @@ export default function OnboardingWizard({
     }
     setValidating(true)
     setValidationError(null)
+    setValidationNote(null)
     try {
       const result = await validateEQPath(eqPath.trim())
       setEqDiag(result.diagnostics ?? null)
+      setValidationNote(result.valid ? result.note ?? null : null)
       if (!result.valid) {
         setValidationError(result.error ?? 'Folder is not a valid EverQuest installation')
         setDiscovered(result.characters)
@@ -441,9 +444,15 @@ export default function OnboardingWizard({
               <div>
                 <p>Folder looks good!</p>
                 <p className="mt-1 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-                  Found {discovered.length} character{discovered.length === 1 ? '' : 's'}:{' '}
-                  {discovered.slice(0, 5).map((d) => d.name).join(', ')}
-                  {discovered.length > 5 ? ', …' : ''}
+                  {discovered.length > 0 ? (
+                    <>
+                      Found {discovered.length} character{discovered.length === 1 ? '' : 's'}:{' '}
+                      {discovered.slice(0, 5).map((d) => d.name).join(', ')}
+                      {discovered.length > 5 ? ', …' : ''}
+                    </>
+                  ) : (
+                    validationNote ?? 'No characters found yet. You can type your name on the next step.'
+                  )}
                 </p>
               </div>
             </div>

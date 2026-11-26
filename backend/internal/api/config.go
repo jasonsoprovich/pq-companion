@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/jasonsoprovich/pq-companion/backend/internal/applog"
 	"github.com/jasonsoprovich/pq-companion/backend/internal/backup"
@@ -169,8 +170,12 @@ type validateEQPathRequest struct {
 }
 
 type validateEQPathResponse struct {
-	Valid      bool                            `json:"valid"`
-	Error      string                          `json:"error,omitempty"`
+	Valid bool   `json:"valid"`
+	Error string `json:"error,omitempty"`
+	// Note explains a valid folder that has no log files yet (a new player,
+	// or logging off). It doesn't block setup: the wizard's next step turns
+	// logging on.
+	Note       string                          `json:"note,omitempty"`
 	HasLogs    bool                            `json:"has_logs"`
 	Characters []logparser.DiscoveredCharacter `json:"characters"`
 	// Diagnostics is populated for a real directory so the wizard can explain
@@ -210,22 +215,42 @@ func (h *configHandler) validateEQPath(w http.ResponseWriter, r *http.Request) {
 	diag := buildDiagnostics(req.Path)
 	resp.Diagnostics = &diag
 	if !resp.HasLogs {
-		// Explain the most likely cause rather than the bare "no logs".
+		// No logs yet is normal for a new player or with logging off, so it
+		// only blocks when the folder doesn't look like an EverQuest install
+		// either. Otherwise explain the most likely cause as a note.
+		if !looksLikeEQInstall(req.Path) {
+			resp.Error = "This doesn't look like an EverQuest folder (no eqgame.exe, eqclient.ini or log files). Choose the folder that contains eqgame.exe."
+			writeJSON(w, http.StatusOK, resp)
+			return
+		}
 		switch {
 		case diag.LogFound && !diag.LogEnabled:
-			resp.Error = "EverQuest logging is turned OFF (eqclient.ini Log=FALSE). Enable it, then log in once to create a log file."
+			resp.Note = "No log files yet: EverQuest logging is off (eqclient.ini Log=FALSE). The next step can turn it on."
 		case !diag.LogFound:
-			resp.Error = "No log files yet, and eqclient.ini has no Log setting. Turn logging on, then log in once."
-		case diag.ZealInstalled && diag.ExportOnCampFound && !diag.ExportOnCamp:
-			resp.Error = "No log files yet. Zeal's \"output on camp\" is OFF — enable it so exports are written on camp/logout."
+			resp.Note = "No log files yet, and eqclient.ini has no Log setting. The next step can turn logging on."
 		default:
-			resp.Error = "no EverQuest log files (eqlog_*_pq.proj.txt) found in this folder"
+			resp.Note = "No log files yet. They appear the first time you play with logging on."
 		}
-		writeJSON(w, http.StatusOK, resp)
-		return
 	}
 	resp.Valid = true
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// looksLikeEQInstall reports whether dir holds an EverQuest client: eqgame.exe,
+// eqgame.dll or eqclient.ini, matched case-insensitively (Windows and macOS
+// file names vary in case, Linux/Wine installs keep whatever was copied).
+func looksLikeEQInstall(dir string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		switch strings.ToLower(e.Name()) {
+		case "eqgame.exe", "eqgame.dll", "eqclient.ini":
+			return true
+		}
+	}
+	return false
 }
 
 // serverInfo reports the port the backend is actually listening on (which may

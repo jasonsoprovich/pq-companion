@@ -2717,6 +2717,8 @@ export interface EqDiagnostics {
 export interface ValidateEQPathResponse {
   valid: boolean
   error?: string
+  // Set on a valid folder with no log files yet (new player / logging off).
+  note?: string
   has_logs: boolean
   characters: DiscoveredCharacter[]
   diagnostics?: EqDiagnostics
