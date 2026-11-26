@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 )
 
 // MinSupportedVersion is the lowest Zeal release that exports everything
@@ -57,10 +59,51 @@ var versionPattern = regexp.MustCompile(`(?:^|\x00)([0-9]{1,2}\.[0-9]{1,3}\.[0-9
 // returns one of those (e.g. libpng's "1.1.3"). A wrong version is worse
 // than no version — it would false-alarm the "update Zeal" banner — so an
 // unanchored binary is reported as unknown.
+//
+// Zeal.asi is ~11 MB and Settings › Feature health reads it on every refresh,
+// so the result is cached per path until the file's size or mtime changes.
 func ReadInstalledVersion(asiPath string) (string, error) {
 	if strings.TrimSpace(asiPath) == "" {
 		return "", nil
 	}
+	st, err := os.Stat(asiPath)
+	if err != nil {
+		return "", err
+	}
+	key := versionStamp{size: st.Size(), mod: st.ModTime()}
+	versionCacheMu.Lock()
+	hit, ok := versionCache[asiPath]
+	versionCacheMu.Unlock()
+	if ok && hit.versionStamp == key {
+		return hit.version, nil
+	}
+	v, err := readInstalledVersion(asiPath)
+	if err != nil {
+		return "", err
+	}
+	versionCacheMu.Lock()
+	versionCache[asiPath] = cachedVersion{key, v}
+	versionCacheMu.Unlock()
+	return v, nil
+}
+
+type versionStamp struct {
+	size int64
+	mod  time.Time
+}
+
+type cachedVersion struct {
+	versionStamp
+	version string
+}
+
+var (
+	versionCacheMu sync.Mutex
+	versionCache   = map[string]cachedVersion{}
+)
+
+// readInstalledVersion is ReadInstalledVersion without the cache.
+func readInstalledVersion(asiPath string) (string, error) {
 	data, err := os.ReadFile(asiPath)
 	if err != nil {
 		return "", err
@@ -156,4 +199,3 @@ func splitVersion(s string) []int {
 	}
 	return out
 }
-
