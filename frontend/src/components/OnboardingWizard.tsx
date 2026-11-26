@@ -20,16 +20,17 @@ import {
   getBackfillInfo,
   runBackfill,
   probeLog,
+  setLogging,
   type LogProbe,
   type DiscoveredCharacter,
   type EqDiagnostics,
 } from '../services/api'
 import { useWebSocket } from '../hooks/useWebSocket'
+import { ago } from '../hooks/useSetupHealth'
 import { WSEvent } from '../lib/wsEvents'
 import type { Config } from '../types/config'
 import type { ZealInstallStatus, ZealSettings } from '../types/zeal'
 import ZealChecklist from './ZealChecklist'
-import { charClassLabel, charClassOptions } from '../lib/enumsCache'
 
 const ZEAL_RELEASE_URL = 'https://github.com/CoastalRedwood/Zeal/releases/latest'
 
@@ -84,7 +85,6 @@ export default function OnboardingWizard({
   const [pathConfirmed, setPathConfirmed] = useState(false)
 
   const [character, setCharacter] = useState('')
-  const [characterClass, setCharacterClass] = useState<number>(-1)
 
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -104,7 +104,6 @@ export default function OnboardingWizard({
         setConfig(c)
         if (c.eq_path) setEqPath(c.eq_path)
         if (c.character) setCharacter(c.character)
-        if (typeof c.character_class === 'number') setCharacterClass(c.character_class)
       })
       .catch((err: Error) => setLoadError(err.message))
   }, [])
@@ -158,38 +157,48 @@ export default function OnboardingWizard({
   )
   const STEPS = ALL_STEPS.filter((s) => s !== 'zeal-extras' || hasZealExtras)
 
-  // Logging step: poll the (unsaved) folder + character every 2 s while the
-  // step is open. Detected when the log's mtime moves after the step opened,
-  // or it was written within the last 2 minutes when the step opened.
+  // Logging step. Most people run setup with EverQuest closed, so this
+  // doesn't wait for the log to move: it reads once whether EQ is set to log
+  // at every login (eqclient.ini Log=TRUE) and whether a log file exists for
+  // the folder being set up (probeLog takes the unsaved path), and offers to
+  // turn the ini switch on. Green when either is true.
   const [probe, setProbe] = useState<LogProbe | null>(null)
-  const [logLive, setLogLive] = useState(false)
+  const [logWriting, setLogWriting] = useState(false)
+  const [logWriteError, setLogWriteError] = useState<string | null>(null)
+  const refreshProbe = (): void => {
+    probeLog(eqPath.trim(), character.trim())
+      .then(setProbe)
+      .catch(() => setProbe(null))
+  }
   useEffect(() => {
     if (step !== 'logging') return
-    let stopped = false
-    let baseline: string | null = null
-    setLogLive(false)
-    const tick = (): void => {
-      probeLog(eqPath.trim(), character.trim())
-        .then((p) => {
-          if (stopped) return
-          setProbe(p)
-          if (!p.last_write_at) return
-          if (baseline === null) {
-            baseline = p.last_write_at
-            if (Date.now() - new Date(p.last_write_at).getTime() < 2 * 60 * 1000) setLogLive(true)
-          } else if (p.last_write_at !== baseline) {
-            setLogLive(true)
-          }
-        })
-        .catch(() => undefined)
-    }
-    tick()
-    const t = window.setInterval(tick, 2000)
-    return () => {
-      stopped = true
-      window.clearInterval(t)
-    }
+    setLogWriteError(null)
+    refreshProbe()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, eqPath, character])
+  const loggingReady = !!probe && (probe.log_enabled || probe.exists)
+
+  // The ini write and its auto-backup use the SAVED EQ folder, so save the
+  // folder (and character) being set up first; only happens on this click.
+  async function turnOnLogging(): Promise<void> {
+    if (!config) return
+    setLogWriting(true)
+    setLogWriteError(null)
+    try {
+      const saved = await saveConfigChanges(
+        { ...config, eq_path: eqPath.trim(), character: character.trim() },
+        config,
+      )
+      setConfig(saved)
+      await setLogging(true)
+      window.dispatchEvent(new Event('pq:setup-health-changed'))
+      refreshProbe()
+    } catch (err) {
+      setLogWriteError((err as Error).message)
+    } finally {
+      setLogWriting(false)
+    }
+  }
 
   const stepIndex = STEPS.indexOf(step)
   const hasElectronDialog = Boolean(window.electron?.dialog)
@@ -261,7 +270,6 @@ export default function OnboardingWizard({
         ...config,
         eq_path: eqPath.trim(),
         character: character.trim(),
-        character_class: characterClass,
         onboarding_completed: true,
       }
       await saveConfigChanges(updated, config)
@@ -321,7 +329,7 @@ export default function OnboardingWizard({
       primary={
         step !== 'confirm'
           ? {
-              label: step === 'logging' && !logLive ? 'Skip for now' : 'Next',
+              label: 'Next',
               onClick: goNext,
               disabled: !canAdvance,
             }
@@ -474,8 +482,9 @@ export default function OnboardingWizard({
       {step === 'character' && (
         <div className="space-y-4">
           <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
-            Pick the character you play most often. PQ Companion will use this
-            to tail the right log file and pre-select your class in spell views.
+            Pick the character you play most often. PQ Companion uses this to
+            read the right log file. Class, level and gear are picked up
+            automatically from your log and Zeal exports.
           </p>
 
           {discovered.length > 0 && (
@@ -528,75 +537,83 @@ export default function OnboardingWizard({
             />
           </div>
 
-          <div className="space-y-2">
-            <label className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-muted)' }}>
-              Class (optional)
-            </label>
-            <select
-              value={characterClass}
-              onChange={(e) => setCharacterClass(Number(e.target.value))}
-              className="w-full rounded px-3 py-2 text-sm"
-              style={{
-                backgroundColor: 'var(--color-surface-2)',
-                border: '1px solid var(--color-border)',
-                color: 'var(--color-foreground)',
-                outline: 'none',
-              }}
-            >
-              {charClassOptions().map(({ value: v, label }) => (
-                <option key={v} value={v}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </div>
         </div>
       )}
 
       {step === 'logging' && (
         <div className="space-y-4">
           <p className="text-sm" style={{ color: 'var(--color-foreground)' }}>
-            PQ Companion reads EverQuest&apos;s log file, so logging needs to be on
-            in game. Log in as <strong>{character || 'your character'}</strong> and type:
+            PQ Companion reads EverQuest&apos;s log file for live features (DPS,
+            timers, triggers, overlays), so logging needs to be on in game.
+            You don&apos;t need EverQuest running for this step.
           </p>
-          <code
-            className="block rounded px-3 py-2 text-sm"
-            style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-primary)' }}
-          >
-            /log on
-          </code>
+
           <div
             className="flex items-center gap-3 rounded p-3 text-sm"
             style={{
               backgroundColor: 'var(--color-surface-2)',
-              border: `1px solid ${logLive ? '#22c55e' : 'var(--color-border)'}`,
+              border: `1px solid ${probe?.log_enabled ? '#22c55e' : 'var(--color-border)'}`,
             }}
           >
-            {logLive ? (
-              <CheckCircle2 size={18} style={{ color: '#22c55e' }} />
+            {probe?.log_enabled ? (
+              <CheckCircle2 size={18} className="shrink-0" style={{ color: '#22c55e' }} />
             ) : (
-              <Loader2 size={18} className="animate-spin" style={{ color: 'var(--color-muted)' }} />
+              <Info size={18} className="shrink-0" style={{ color: 'var(--color-primary)' }} />
             )}
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <p style={{ color: 'var(--color-foreground)' }}>
-                {logLive ? 'Log is being written. You\'re good to go.' : 'Waiting for log activity…'}
+                {probe?.log_enabled
+                  ? 'Logging turns on every time you log in.'
+                  : 'Turn logging on for every login'}
               </p>
-              <p className="truncate text-xs" style={{ color: 'var(--color-muted)' }} title={probe?.path}>
-                <ScrollText size={10} className="mr-1 inline" />
-                {probe?.path
-                  ? probe.exists
-                    ? probe.path
-                    : `${probe.path} (not created yet)`
-                  : 'Checking…'}
+              <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+                {probe?.log_enabled
+                  ? 'Set in eqclient.ini (Log=TRUE). Nothing else to do.'
+                  : 'Sets Log=TRUE in eqclient.ini. Close EverQuest first, or it ' +
+                    'overwrites the change when it exits. A backup is saved.'}
               </p>
             </div>
+            {!probe?.log_enabled && (
+              <button
+                onClick={() => void turnOnLogging()}
+                disabled={logWriting || !config}
+                className="flex shrink-0 items-center gap-1.5 rounded px-3 py-1.5 text-xs font-semibold"
+                style={{
+                  backgroundColor: 'var(--color-primary)',
+                  color: '#fff',
+                  opacity: logWriting ? 0.6 : 1,
+                  cursor: logWriting ? 'default' : 'pointer',
+                }}
+              >
+                {logWriting && <Loader2 size={12} className="animate-spin" />}
+                Turn on
+              </button>
+            )}
           </div>
+          {logWriteError && (
+            <p className="text-xs" style={{ color: '#f87171' }}>
+              Couldn&apos;t change eqclient.ini: {logWriteError}
+            </p>
+          )}
+
+          <div className="flex items-start gap-2 text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
+            <ScrollText size={12} className="mt-0.5 shrink-0" />
+            <p className="min-w-0 break-words" title={probe?.path}>
+              {!probe
+                ? 'Checking for a log file…'
+                : probe.exists
+                  ? `Log file found${probe.last_write_at ? `, last written ${ago(probe.last_write_at)}` : ''}: ${probe.path}`
+                  : `No log file for ${character || 'this character'} yet. It appears the first time you play with logging on.`}
+            </p>
+          </div>
+
           <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
-            {probe?.log_enabled
-              ? 'Logging is already set to turn on at every login (eqclient.ini Log=TRUE).'
-              : 'Tip: after setup you can make logging turn on at every login with the switch in Settings → General → EverQuest logging & Zeal.'}{' '}
-            EverQuest not running right now? Skip this step; the Setup health card in Settings shows
-            when the log starts.
+            {loggingReady
+              ? 'You\'re set. '
+              : 'Or skip this and type '}
+            {!loggingReady && <code style={{ color: 'var(--color-primary)' }}>/log on</code>}
+            {!loggingReady && ' in game next time you play. '}
+            Settings → General shows live log status any time.
           </p>
         </div>
       )}
@@ -757,12 +774,6 @@ export default function OnboardingWizard({
             <div className="flex justify-between text-sm">
               <span style={{ color: 'var(--color-muted-foreground)' }}>Character</span>
               <span style={{ color: 'var(--color-foreground)' }}>{character || '—'}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span style={{ color: 'var(--color-muted-foreground)' }}>Class</span>
-              <span style={{ color: 'var(--color-foreground)' }}>
-                {charClassLabel(characterClass)}
-              </span>
             </div>
           </div>
 
