@@ -9,6 +9,42 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v1.0.0 — 2026-11-26
+
+PQ Companion 1.0. Overlays get a new home: the Overlays hub, with named layouts, stacking, hotkeys, an Arrange view of your monitors, filtered Chat Windows and Custom Overlays you build yourself. All overlays now share one process and use far less memory. Twelve raid trigger packs curated with Xanax <Former Glory> cover every raid from Nagafen to Quarm. The app also adds a built-in help center with guided tours, 3D character models with a dressing room, an HPS meter, raid nights in Raid Replay, and a Gear Upgrades overlay.
+
+### Highlights
+- **Overlays hub** — one page for every overlay: a Library of overlay cards, settings for each, and an actions menu. Save named layouts, and have a layout switch in on its own when a linked character logs in. Global hotkeys show or hide all overlays, toggle a single overlay, switch layouts or enter position mode, and Hide All hides overlays without closing them.
+- **Stack and arrange overlays** — drag one overlay onto another to stack them as tabs in one window. The Arrange tab shows a to-scale map of your monitors, where you can move, stack and unstack overlays. Overlays can collapse to their title bar when idle. A setup wizard after first launch places a starter set and ends on Arrange.
+- **Chat Windows** — filtered chat overlays: pick the channels and lines you want, split them into tabs with unread alerts, give each tell conversation its own tab, color your own lines, and set the font size in pixels.
+- **Custom Overlays** — build your own overlay from widgets (fields, tables, feeds, counters and countdowns) driven by log lines, with a simple pattern mode, templates such as a DKP bid tracker, a live preview and test lines. Share an overlay as JSON for others to import.
+- **Raid trigger packs, curated with Xanax <Former Glory>** — twelve "Raid:" packs from Classic & Planar through Kunark, Velious, Luclin, the PoP tiers, the elemental planes and Plane of Time. Each has boss breath and spell recast timers that bind to the boss casting them, cure alerts for curable debuffs on you, Death Touch timers, event clocks and phase callouts. /tell <boss> x shows a boss's level, resists, abilities and spells. They sit under a new Raid Packs header with Raid: Scripted Event Timers (formerly Raid Event Timers), which existing installs move to automatically.
+- **Help center and guided tours** — every page has a help drawer, Ctrl+K finds pages, settings and help articles, and short tours walk through Triggers, timer settings, CH Chain, Settings and the Overlays hub. A Getting Started checklist tracks first steps. Each tour and pill closes with one click.
+- **Easier triggers** — New Trigger opens a template picker, and patterns can be written in plain text ("{name} tells you, '{msg}'") instead of regex. The editor is split into sections, and the Packs tab marks packs with pending updates.
+- **Feature health** — one Settings section checks everything the app reads (your EverQuest folder, log file and logging, Zeal and its live data and exports) and links to the fix for anything missing. A Zeal settings checklist shows which Zeal options PQ Companion needs and whether they're on.
+- **3D character models** — players and NPCs drawn from your EverQuest client: a dressing room to try on gear, illusions and looks (face, hair, beard, eyes), models on item and NPC pages, and raiders on the 3D Live Map drawn as Zeal sees them, with NPC models standing on their spawn points and your pet shown on the map.
+- **HPS in the DPS meter** — a DPS | HPS toggle shows your own healing alongside damage.
+- **Raid nights in Raid Replay** — sessions group into raid nights, with a join/leave log and a per-raider summary.
+- **Gear Upgrades overlay** — shows the upgrades that drop in your current zone, and can narrow to the current target's loot. The Gear Upgrade Finder also scores the new PoP item stats and rogue backstab, lists wanted-focus items separately, and compares foci by what they cover, not just their percent.
+- **PoP armor molds** — item pages, the NPC overlay's loot tab and the Item Info overlay show what a mold makes for each class, and mold-crafted armor names the mold behind it.
+- **Zone access** — flag-gated zone pages show the flags and level-based access PoP needs.
+- **Faction standing estimates** — the Faction Tracker estimates your standing from cap messages and /con, and can backfill from old logs.
+- **Bag value** — each bag shows its combined vendor value and an estimated merchant payout.
+- **Rogue backstab popup** and a **{groupmember}** token, which limits Group Member Died to your actual group when Zeal is connected.
+- **CH Chain lanes view** — an optional lanes layout for following several healers at once.
+- **Sidebar** — regrouped into Live, History, Character, and Progress & Goals. Edit it in place, and right-click a page to favorite or hide it. Green dots point to new features.
+- **Wildcards** — * and ? work in every search box.
+- **Zeal 1.5.2** — detrimental timers key to the exact mob through Zeal's spell actions, PoP flags read from Zeal's export, and the newest item stats are captured from Zeal's character export.
+
+### Fixes
+- **Memory use** — overlay windows now share one process, pause while hidden and close after 30 minutes hidden. The 3D Live Map no longer keeps every zone you've visited in memory.
+- **Boss timers on the wrong mob** — boss spell timers now bind to the boss that cast the spell, and see titled bosses with a comma in their name, like "Ralthazor, Champion of Marr".
+- **Others' group recourses as timers** — other players' group recourses stay out of your buff timers, and a new "Only show spells I cast" option limits timers to your own casts.
+- **Same-named NPCs on the overlay** — the NPC overlay picks the right version of a same-named mob by its spawn point, when Zeal is connected.
+- **Setup without logs yet** — the setup wizard accepts an EverQuest folder with no log files yet, no longer asks for a class, and detects /log while you're logged in.
+- **Spellbook columns** — Level and Mana line up on spells you haven't learned.
+- **Closing an overlay while it opens** — closing an overlay now cancels a pending open instead of letting it reappear.
+
 ## v0.33.5 — 2026-11-22
 
 Support for the November 23 server patch: the new PoP item stats show on items and in Character Info, and the PoP flag tracker follows the patch's new rules for Plane of Fire, Bertoxxulous and the Quintessence of Elements. Also fixes key-ring steps that let tiers look finished, a duplicate ROOT BROKE alert, and Instill breaks that also said MEZ BROKE.
