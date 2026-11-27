@@ -445,27 +445,31 @@ function SpellRow({ spell, classIndex, known, ownedLocations, selected, passed, 
         {spell.mana > 0 ? `${spell.mana}m` : ''}
       </span>
 
-      {/* Pass / un-pass: skip a spell the user will never buy (reversible). */}
-      {!known && onTogglePass && (
-        <button
-          onClick={(e) => { e.stopPropagation(); onTogglePass(spell.id) }}
-          className={`shrink-0 transition-opacity ${passed ? '' : 'opacity-0 group-hover:opacity-100'}`}
-          title={passed ? 'Un-pass — count this spell as missing again' : "Pass — don't count this spell as missing"}
-        >
-          {passed
-            ? <Eye size={12} style={{ color: 'var(--color-primary)' }} />
-            : <EyeOff size={12} style={{ color: 'var(--color-muted)' }} />}
-        </button>
-      )}
+      {/* Row actions sit in a fixed-width slot so Level and Mana line up on
+          every row, whether or not the spell offers Pass. */}
+      <div className="shrink-0 w-10 flex items-center justify-end gap-3">
+        {/* Pass / un-pass: skip a spell the user will never buy (reversible). */}
+        {!known && onTogglePass && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onTogglePass(spell.id) }}
+            className={`transition-opacity ${passed ? '' : 'opacity-0 group-hover:opacity-100'}`}
+            title={passed ? 'Un-pass — count this spell as missing again' : "Pass — don't count this spell as missing"}
+          >
+            {passed
+              ? <Eye size={12} style={{ color: 'var(--color-primary)' }} />
+              : <EyeOff size={12} style={{ color: 'var(--color-muted)' }} />}
+          </button>
+        )}
 
-      {/* Open in explorer */}
-      <button
-        onClick={(e) => { e.stopPropagation(); onSelect(spell.id) }}
-        className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-        title="View in Spell Explorer"
-      >
-        <ExternalLink size={12} style={{ color: 'var(--color-muted)' }} />
-      </button>
+        {/* Open in explorer */}
+        <button
+          onClick={(e) => { e.stopPropagation(); onSelect(spell.id) }}
+          className="opacity-0 group-hover:opacity-100 transition-opacity"
+          title="View in Spell Explorer"
+        >
+          <ExternalLink size={12} style={{ color: 'var(--color-muted)' }} />
+        </button>
+      </div>
     </div>
   )
 }
@@ -962,7 +966,7 @@ export default function SpellChecklistPage(): React.ReactElement {
         <div className="flex-1">Spell</div>
         <div className="shrink-0 w-12">Level</div>
         <div className="shrink-0 w-16 text-right">Mana</div>
-        <div className="shrink-0 w-5" />
+        <div className="shrink-0 w-10" />
       </div>
 
       {/* ── Body ── */}
