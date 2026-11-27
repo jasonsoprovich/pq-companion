@@ -92,10 +92,14 @@ export default function UpdateNotification(): React.ReactElement | null {
     return (
       <div className="flex items-center gap-2 px-4 py-2 text-xs"
         style={{ backgroundColor: 'var(--color-surface)', borderTop: '1px solid var(--color-border)', color: 'var(--color-muted)' }}>
-        <span>Update failed — {state.message}</span>
+        {/* One line, always: a long message must never push the buttons
+            off-screen or grow over the app (see updaterErrorSummary). */}
+        <span className="min-w-0 truncate" title={state.message}>
+          Update failed — {state.message}
+        </span>
         <button
           onClick={() => { setState({ phase: 'idle' }); window.electron.updater.check() }}
-          className="ml-2 px-2 py-0.5 rounded text-xs font-medium"
+          className="ml-2 shrink-0 px-2 py-0.5 rounded text-xs font-medium"
           style={{ backgroundColor: 'var(--color-surface-hover)', color: 'var(--color-text)' }}
         >
           Retry

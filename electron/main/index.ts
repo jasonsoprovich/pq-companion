@@ -1651,6 +1651,24 @@ function stopSidecar(): Promise<void> {
 // leave a second copy behind, so it only reports updates — see installCheck.ts.
 let canSelfUpdate = true
 
+// updaterErrorSummary turns an electron-updater error into one short line
+// for the banner. Its raw message can embed the whole response (headers,
+// stack and GitHub's entire releases feed on a 504), which once filled the
+// window; the full text still goes to the log above.
+function updaterErrorSummary(err: Error): string {
+  const msg = err?.message ?? String(err)
+  const http = /HttpError: (\d{3})/.exec(msg)
+  if (http) {
+    return `GitHub didn't respond (HTTP ${http[1]}). This is usually ` +
+      'temporary; try again later.'
+  }
+  if (/net::ERR_|ENOTFOUND|ECONNRESET|ETIMEDOUT|ECONNREFUSED/.test(msg)) {
+    return "Couldn't reach GitHub to check for updates."
+  }
+  const first = msg.split('\n')[0].trim()
+  return first.length > 160 ? `${first.slice(0, 157)}…` : first
+}
+
 function setupAutoUpdater(): void {
   if (isDev) return // not applicable outside a packaged build
 
@@ -1689,7 +1707,7 @@ function setupAutoUpdater(): void {
 
   autoUpdater.on('error', (err) => {
     console.error('[updater] Error:', err.message)
-    mainWindow?.webContents.send('updater:error', err.message)
+    mainWindow?.webContents.send('updater:error', updaterErrorSummary(err))
   })
 
   // Delay first check so the app finishes launching before hitting the network.
