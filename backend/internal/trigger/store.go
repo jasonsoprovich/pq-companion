@@ -226,6 +226,9 @@ func (s *Store) migrate() error {
 	if err := s.MigrateRaidEventTimersRename(); err != nil {
 		return err
 	}
+	if err := s.migrateRaidEventTimersBaselineCategory(); err != nil {
+		return err
+	}
 	if err := s.backfillSourcePack(); err != nil {
 		return err
 	}
@@ -848,6 +851,36 @@ func (s *Store) MigrateRaidEventTimersRename() error {
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit raid event timers rename: %w", err)
+	}
+	return s.MarkDefaultUpdateApplied(key)
+}
+
+// migrateRaidEventTimersBaselineCategory finishes the rename for update
+// baselines: their stored definitions still carried the old category, so
+// the pack diff reported every trigger as changed (category only). Runs
+// after MigrateRaidEventTimersRename; separate ledger key because v1.0.0
+// installs already applied that one.
+func (s *Store) migrateRaidEventTimersBaselineCategory() error {
+	const key = "RaidEventTimers:RenameScripted:baselines:v1"
+	applied, err := s.IsDefaultUpdateApplied(key)
+	if err != nil {
+		return err
+	}
+	if applied {
+		return nil
+	}
+	baselines, err := s.PackBaselines(RaidEventTimersPackName)
+	if err != nil {
+		return err
+	}
+	for _, b := range baselines {
+		if b.PackName != legacyRaidEventTimersPackName {
+			continue
+		}
+		b.PackName = RaidEventTimersPackName
+		if err := s.UpsertPackBaseline(RaidEventTimersPackName, b); err != nil {
+			return err
+		}
 	}
 	return s.MarkDefaultUpdateApplied(key)
 }

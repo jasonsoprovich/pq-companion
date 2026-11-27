@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -1258,7 +1259,7 @@ func (h *triggerHandler) fireTimerAlertOverlay(w http.ResponseWriter, r *http.Re
 // installBuiltinPack installs the named pre-built pack, replacing any existing
 // triggers for that pack.
 func (h *triggerHandler) installBuiltinPack(w http.ResponseWriter, r *http.Request) {
-	name := chi.URLParam(r, "name")
+	name := packNameParam(r)
 	var found *trigger.TriggerPack
 	for _, p := range trigger.AllPacks() {
 		if p.PackName == name {
@@ -1300,7 +1301,7 @@ func (h *triggerHandler) listPackUpdates(w http.ResponseWriter, r *http.Request)
 // per-trigger changed/added/removed/deleted-locally groups with field-level
 // old/new/current values for the side-by-side compare view.
 func (h *triggerHandler) packDiff(w http.ResponseWriter, r *http.Request) {
-	name := chi.URLParam(r, "name")
+	name := packNameParam(r)
 	pack := findBuiltinPack(name)
 	if pack == nil {
 		writeError(w, http.StatusNotFound, "pack not found")
@@ -1326,7 +1327,7 @@ type applyPackUpdateRequest struct {
 // applyPackUpdate applies pending pack updates to the user's installed
 // triggers, per the requested mode and selection.
 func (h *triggerHandler) applyPackUpdate(w http.ResponseWriter, r *http.Request) {
-	name := chi.URLParam(r, "name")
+	name := packNameParam(r)
 	pack := findBuiltinPack(name)
 	if pack == nil {
 		writeError(w, http.StatusNotFound, "pack not found")
@@ -1507,6 +1508,18 @@ func (h *triggerHandler) resetAllPositions(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, res)
 }
 
+// packNameParam returns the {name} URL param decoded. Pack names like
+// "Raid: Velious" reach chi percent-encoded (the client sends %3A), and chi
+// routes on r.URL.RawPath in that case, so the param arrives still encoded
+// and would never match a pack.
+func packNameParam(r *http.Request) string {
+	name := chi.URLParam(r, "name")
+	if decoded, err := url.PathUnescape(name); err == nil {
+		return decoded
+	}
+	return name
+}
+
 // findBuiltinPack returns the named built-in pack definition, or nil.
 func findBuiltinPack(name string) *trigger.TriggerPack {
 	for _, p := range trigger.AllPacks() {
@@ -1522,7 +1535,7 @@ func findBuiltinPack(name string) *trigger.TriggerPack {
 // pack would have provided. Used by both built-in packs and user-imported
 // packs — anything stored with a pack_name can be removed in one shot.
 func (h *triggerHandler) removePack(w http.ResponseWriter, r *http.Request) {
-	name := chi.URLParam(r, "name")
+	name := packNameParam(r)
 	if name == "" {
 		writeError(w, http.StatusBadRequest, "pack name is required")
 		return

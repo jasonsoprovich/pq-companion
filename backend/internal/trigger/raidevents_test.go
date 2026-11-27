@@ -147,12 +147,14 @@ func TestMigrateRaidEventTimersRename(t *testing.T) {
 	for _, q := range []string{
 		`UPDATE triggers SET pack_name = ?, source_pack = ? WHERE source_pack = ?`,
 		`UPDATE trigger_categories SET name = ? WHERE parent_id = '' AND name = ?`,
-		`UPDATE pack_baselines SET source_pack = ? WHERE source_pack = ?`,
-		`DELETE FROM pack_default_updates WHERE key = 'RaidEventTimers:RenameScripted:v1'`,
+		`UPDATE pack_baselines SET source_pack = ?, definition = json_set(definition, '$.pack_name', ?) WHERE source_pack = ?`,
+		`DELETE FROM pack_default_updates WHERE key LIKE 'RaidEventTimers:RenameScripted:%'`,
 	} {
 		var err error
 		switch {
 		case strings.HasPrefix(q, "UPDATE triggers"):
+			_, err = store.db.Exec(q, old, old, cur)
+		case strings.HasPrefix(q, "UPDATE pack_baselines"):
 			_, err = store.db.Exec(q, old, old, cur)
 		case strings.HasPrefix(q, "DELETE"):
 			_, err = store.db.Exec(q)
@@ -166,6 +168,9 @@ func TestMigrateRaidEventTimersRename(t *testing.T) {
 
 	if err := store.MigrateRaidEventTimersRename(); err != nil {
 		t.Fatalf("migrate: %v", err)
+	}
+	if err := store.migrateRaidEventTimersBaselineCategory(); err != nil {
+		t.Fatalf("migrate baselines: %v", err)
 	}
 
 	installed, err := store.InstalledPackNames()
