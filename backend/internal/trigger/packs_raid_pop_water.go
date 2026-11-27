@@ -2,7 +2,7 @@ package trigger
 
 // raidPoPWater is the Plane of Water: the reef nameds and Coirnav. Coirnav's
 // lines and clock are from Project Quarm's powater/encounters/Coirnav.lua;
-// his final-phase reinforcement timer lives in Raid Event Timers.
+// his final-phase reinforcement timer lives in Raid: Scripted Event Timers.
 func raidPoPWater() raidPackDef {
 	return raidPackDef{
 		Name: "Raid: Plane of Water",

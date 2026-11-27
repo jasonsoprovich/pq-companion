@@ -2,7 +2,7 @@ package trigger
 
 // raidVelious covers the Velious raid targets: the open-world dragons,
 // Temple of Veeshan, Sleeper's Tomb, Kael Drakkel, Skyshrine, Icewell Keep
-// and the Ring War. Event lines are from Project Quarm's
+// and Narandi's arrival in the Ring War. Event lines are from Project Quarm's
 // greatdivide/encounters/Ring10.lua and growthplane/a_protector_of_growth.lua;
 // timings from the same scripts and the protector's spawn2 respawn.
 func raidVelious() raidPackDef {
@@ -11,9 +11,9 @@ func raidVelious() raidPackDef {
 		Description: "Velious raid targets: the dragons, Temple of Veeshan, " +
 			"Sleeper's Tomb, Kael Drakkel, Skyshrine and Icewell Keep. Boss " +
 			"breath and spell recast timers that bind to the dragon casting " +
-			"them, cure alerts for curable debuffs on you, the Ring War's " +
-			"first wave and Narandi timers, Narandi's arrival, the Plane of " +
-			"Growth protector respawn and the Temple of Veeshan jet traps. " +
+			"them, cure alerts for curable debuffs on you, Narandi's arrival " +
+			"(the Ring War clocks are in Raid: Scripted Event Timers), the " +
+			"Plane of Growth protector respawn and the Temple of Veeshan jet traps. " +
 			"/tell <boss> x (e.g. /tell vulak`aerr x) shows the boss's level, " +
 			"resists, abilities, spells, CH cadence and tactics. " + raidCredit,
 		Shared: raidSignatureShared("Caustic Mist / Putrefy Flesh"),
@@ -317,18 +317,9 @@ func raidVelious() raidPackDef {
 }
 
 func raidVeliousEvents() []Trigger {
-	// Ring War (greatdivide/encounters/Ring10.lua): the Seneschal's first
-	// rally shout signals the war; wave 1 comes 125s later and the waves
-	// that follow (190s ×6, 10s, 520s, 285s ×4, 255s, 685s, 320s ×5) bring
-	// Narandi at wave 20, 5475s after the shout. Calling a wave early
-	// ("the kromrif are attacking") moves everything after it forward.
-	wave1 := raidEventTimer("Ring War — first wave",
-		lit("Good citizens of Thurgadin, hear me!"), 125)
-	wave1.TimerAlerts[0].TTSTemplate = "First wave in 10"
-	narandi := raidEventTimer("Ring War — Narandi",
-		lit("Good citizens of Thurgadin, hear me! Our city"), 5475)
-	narandi.TimerAlerts[0].Seconds = 60
-	narandi.TimerAlerts[0].TTSTemplate = "Narandi in one minute"
+	// The Ring War's wave and Narandi clocks (greatdivide/encounters/
+	// Ring10.lua), and clearing them on an early charge, live in Raid:
+	// Scripted Event Timers; this pack only calls Narandi's arrival.
 
 	// a protector of growth respawns in 25 minutes (spawn2 1500s); half
 	// its spawns also bring the #protector that starts Tunare's event.
@@ -338,10 +329,6 @@ func raidVeliousEvents() []Trigger {
 	growth.TimerAlerts[0].TTSTemplate = "Protector of growth in 30"
 
 	return []Trigger{
-		wave1,
-		narandi,
-		raidAlert("Ring War — wave called early", lit("has spotted tha' next wave! Charge!"),
-			"Wave called early — the Narandi timer now runs late", "Wave called"),
 		raidAlert("Ring War — Narandi arrives", lit("Meddling fools, you are no match for the likes of me."),
 			"Narandi — kill him before he reaches the end of his path", "Narandi"),
 		growth,

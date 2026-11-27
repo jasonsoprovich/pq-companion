@@ -7,8 +7,13 @@ import (
 )
 
 // RaidEventTimersPackName is the display/category name of the built-in
-// scripted-event timer pack.
-const RaidEventTimersPackName = "Raid Event Timers"
+// scripted-event timer pack. It sits with the "Raid:" packs, which leave
+// these event clocks to it rather than carrying their own copies.
+const RaidEventTimersPackName = "Raid: Scripted Event Timers"
+
+// legacyRaidEventTimersPackName is the pack's name through v0.34;
+// MigrateRaidEventTimersRename moves installs over to the new one.
+const legacyRaidEventTimersPackName = "Raid Event Timers"
 
 // RaidEventTimersPack returns custom-timer triggers for scripted raid events
 // that run on server timers rather than kill counts (kill-count events live
@@ -36,10 +41,12 @@ func RaidEventTimersPack() TriggerPack {
 	triggers = append(triggers, grimlingWarTimers()...)
 	return TriggerPack{
 		PackName: RaidEventTimersPackName,
+		Group:    PackGroupRaid,
 		Description: "Countdown timers for scripted raid events: Paffa, Coirnav's reinforcements, " +
 			"the Plane of Time instance clock, Plane of Air boss despawns, the Emperor and his room " +
 			"curse, Doomshade, Ring of Fear, the Great Divide Ring War, Hollowshade's invasions and " +
-			"the Grimling war. Timings are from Project Quarm's quest scripts.",
+			"the Grimling war. Timings are from Project Quarm's quest scripts. Works " +
+			"alongside the era raid packs, which leave these event clocks to it.",
 		Triggers: triggers,
 	}
 }

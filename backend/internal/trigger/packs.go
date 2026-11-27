@@ -3562,7 +3562,6 @@ func AllPacks() []TriggerPack {
 		SpellBreaksPack(),
 		GroupAlertsPack(),
 		RaidAlertsPack(),
-		RaidEventTimersPack(),
 		TrackingPack(),
 		MiscAlertsPack(),
 		SlowsPack(),
@@ -3572,6 +3571,8 @@ func AllPacks() []TriggerPack {
 		out = append(out, applyBuffTargetCapture(applyDefaultTimerAlerts(p)))
 	}
 	out = append(out, generalPacks...)
+	// The scripted-event clocks span every era, so they lead the raid group.
+	out = append(out, RaidEventTimersPack())
 	return append(out, raidPacks()...)
 }
 

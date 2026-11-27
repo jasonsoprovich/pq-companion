@@ -98,11 +98,11 @@ Triggers can be scoped to specific characters — handy for class-specific packs
 
 ### Built-in packs
 
-Class packs ship for all 15 classes (Bard, Beastlord, Cleric, Druid, Enchanter, Magician, Monk, Necromancer, Paladin, Ranger, Rogue, Shadowknight, Shaman, Warrior, Wizard). Each bundles the relevant CC-break and cast-failure alerts plus spell timers for the class's core buffs, debuffs, roots, mezzes, charms, and pacify lines — including their Planes of Power upgrades, such as Command of Druzzil, Voice of Quellious, Tranquility, Virtue and Seduction of Saryrn. Ten general packs sit alongside them: General Triggers (incoming tells, deaths, zoning), Caster Alerts, Crit Alerts, Spell Breaks, Group Alerts, Raid Alerts, Raid Event Timers, Tracking, Misc Alerts and Slows.
+Class packs ship for all 15 classes (Bard, Beastlord, Cleric, Druid, Enchanter, Magician, Monk, Necromancer, Paladin, Ranger, Rogue, Shadowknight, Shaman, Warrior, Wizard). Each bundles the relevant CC-break and cast-failure alerts plus spell timers for the class's core buffs, debuffs, roots, mezzes, charms, and pacify lines — including their Planes of Power upgrades, such as Command of Druzzil, Voice of Quellious, Tranquility, Virtue and Seduction of Saryrn. Nine general packs sit alongside them: General Triggers (incoming tells, deaths, zoning), Caster Alerts, Crit Alerts, Spell Breaks, Group Alerts, Raid Alerts, Tracking, Misc Alerts and Slows. Raid packs sit under their own Raid Packs header: Raid: Scripted Event Timers plus one pack per raid era with boss timers, cure alerts and Who cards.
 
-### Raid Event Timers pack
+### Raid: Scripted Event Timers pack
 
-Countdown timers for scripted raid events that run on a server clock: Paffa's waves, Coirnav's final-phase reinforcements, the Plane of Time instance clock, Plane of Air boss despawns, the Emperor and his room curse, Doomshade, Ring of Fear, the Great Divide Ring War, Hollowshade invasions and the Grimling war. Install it from the built-in packs on the Triggers page.
+Countdown timers for scripted raid events that run on a server clock: Paffa's waves, Coirnav's final-phase reinforcements, the Plane of Time instance clock, Plane of Air boss despawns, the Emperor and his room curse, Doomshade, Ring of Fear, the Great Divide Ring War, Hollowshade invasions and the Grimling war. It covers every era and works alongside the era raid packs, which leave these event clocks to it. Install it from the Raid Packs section of the Packs tab.
 
 ### Non-destructive pack updates
 

@@ -3,6 +3,7 @@ package trigger
 import (
 	"encoding/json"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -131,5 +132,64 @@ func TestRaidEventTimersFire(t *testing.T) {
 	e.Handle(now, "Frenzied howling fills the air, the sound taking on every aspect of an angry wail. The sonic wolves are mounting an offensive.")
 	if sink.starts["Hollowshade: invasion begins"] != 720 {
 		t.Errorf("Hollowshade = %v", sink.starts["Hollowshade: invasion begins"])
+	}
+}
+
+// TestMigrateRaidEventTimersRename installs the pack, rewinds it to its old
+// name as a v0.34 database would hold it, and checks the migration moves
+// every trace of it to the new name with no pending pack update.
+func TestMigrateRaidEventTimersRename(t *testing.T) {
+	store := openTestStore(t)
+	if err := InstallPack(store, RaidEventTimersPack()); err != nil {
+		t.Fatalf("InstallPack: %v", err)
+	}
+	old, cur := legacyRaidEventTimersPackName, RaidEventTimersPackName
+	for _, q := range []string{
+		`UPDATE triggers SET pack_name = ?, source_pack = ? WHERE source_pack = ?`,
+		`UPDATE trigger_categories SET name = ? WHERE parent_id = '' AND name = ?`,
+		`UPDATE pack_baselines SET source_pack = ? WHERE source_pack = ?`,
+		`DELETE FROM pack_default_updates WHERE key = 'RaidEventTimers:RenameScripted:v1'`,
+	} {
+		var err error
+		switch {
+		case strings.HasPrefix(q, "UPDATE triggers"):
+			_, err = store.db.Exec(q, old, old, cur)
+		case strings.HasPrefix(q, "DELETE"):
+			_, err = store.db.Exec(q)
+		default:
+			_, err = store.db.Exec(q, old, cur)
+		}
+		if err != nil {
+			t.Fatalf("rewind %q: %v", q, err)
+		}
+	}
+
+	if err := store.MigrateRaidEventTimersRename(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	installed, err := store.InstalledPackNames()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !installed[cur] || installed[old] {
+		t.Errorf("installed packs = %v, want %q only", installed, cur)
+	}
+	var n int
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM triggers WHERE pack_name = ? OR source_pack = ?`, old, old).Scan(&n); err != nil || n != 0 {
+		t.Errorf("triggers still on old name: %d (%v)", n, err)
+	}
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM trigger_categories WHERE parent_id = '' AND name = ?`, cur).Scan(&n); err != nil || n != 1 {
+		t.Errorf("new category rows = %d (%v), want 1", n, err)
+	}
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM triggers t JOIN trigger_categories c ON c.id = t.category_id WHERE c.name = ?`, cur).Scan(&n); err != nil || n != len(RaidEventTimersPack().Triggers) {
+		t.Errorf("triggers linked to new category = %d (%v), want %d", n, err, len(RaidEventTimersPack().Triggers))
+	}
+	diff, err := ComputePackDiff(store, RaidEventTimersPack())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff.HasUpdates() {
+		t.Errorf("pack shows updates after rename: %+v", diff)
 	}
 }

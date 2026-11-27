@@ -13,8 +13,8 @@ func raidLuclin() raidPackDef {
 			"spell recast timers that bind to the boss casting them (Aten Ha " +
 			"Ra's Fling and Silence, Seru's Torturing Winds, Touch of " +
 			"Vinitras...), cure alerts for curable debuffs on you, Shei's add " +
-			"waves, Vyzh`dra's first Touch of Vinitras and the Emperor's spawn " +
-			"and Rage of Ssraeshza. /tell <boss> x (e.g. /tell aten_ha_ra x) " +
+			"waves, Vyzh`dra's first Touch of Vinitras and Rage of Ssraeshza " +
+			"(the Emperor's spawn clock is in Raid: Scripted Event Timers). /tell <boss> x (e.g. /tell aten_ha_ra x) " +
 			"shows the boss's level, resists, abilities, spells and what to " +
 			"nuke with. " + raidCredit,
 		Shared: raidSignatureShared("Fling", "Silence of the Shadows",
@@ -286,14 +286,8 @@ func raidLuclinEvents() []Trigger {
 		lit("Bow before your only god!"), 120)
 	vyzh.TimerAlerts[0].TTSTemplate = "Death touch in 10"
 
-	// Blood of Ssraeshza dies → 10s → this emote → the Emperor spawns 120s
-	// later (ssratemple/encounters/Emperor.lua "spawnemp").
-	emp := raidEventTimer("Emperor Ssraeshza — spawns",
-		lit("The Emperor twitches."), 120)
-	emp.TimerAlerts[0].TTSTemplate = "Emperor in 10"
-	emp.Actions = []Action{
-		{Type: ActionOverlayText, Text: "Emperor spawns in 2 minutes", DurationSecs: 5, Color: "#f59e0b"},
-	}
+	// The Emperor's spawn clock ("The Emperor twitches.") lives in
+	// Raid: Scripted Event Timers.
 
 	// Rage of Ssraeshza (spell 2310, 4000 damage, 60s recast) logs no land
 	// text, only the damage line.
@@ -308,7 +302,6 @@ func raidLuclinEvents() []Trigger {
 	return []Trigger{
 		shei,
 		vyzh,
-		emp,
 		rage,
 		raidAlert("a glyph covered serpent — Wave of Death (stand up)", lit("Your mind fills with images of death."),
 			"Wave of Death — stand up", "Stand up"),

@@ -223,6 +223,9 @@ func (s *Store) migrate() error {
 	if err := s.migrateCategoryHierarchy(); err != nil {
 		return err
 	}
+	if err := s.MigrateRaidEventTimersRename(); err != nil {
+		return err
+	}
 	if err := s.backfillSourcePack(); err != nil {
 		return err
 	}
@@ -777,6 +780,74 @@ func (s *Store) MigrateGroupAwarenessToGeneralTriggers() error {
 				return fmt.Errorf("insert %s: %w", t.Name, err)
 			}
 		}
+	}
+	return s.MarkDefaultUpdateApplied(key)
+}
+
+// MigrateRaidEventTimersRename moves an installed "Raid Event Timers" pack
+// to its new name, "Raid: Scripted Event Timers": its triggers' source and
+// category, its update baselines, and its category row (renamed in place so
+// the category id, and anything keyed on it, carries over). One-time via
+// the pack_default_updates ledger. Must run before anything that looks up
+// installed packs by name, or the pack reads as not installed.
+func (s *Store) MigrateRaidEventTimersRename() error {
+	const key = "RaidEventTimers:RenameScripted:v1"
+	applied, err := s.IsDefaultUpdateApplied(key)
+	if err != nil {
+		return err
+	}
+	if applied {
+		return nil
+	}
+	from, to := legacyRaidEventTimersPackName, RaidEventTimersPackName
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin raid event timers rename: %w", err)
+	}
+	defer tx.Rollback()
+
+	// The category row: rename it, or fold it into a same-named one if
+	// that somehow exists already.
+	var oldID, newID string
+	err = tx.QueryRow(`SELECT id FROM trigger_categories WHERE parent_id = '' AND name = ?`, from).Scan(&oldID)
+	if err != nil && err != sql.ErrNoRows {
+		return fmt.Errorf("find %s category: %w", from, err)
+	}
+	if oldID != "" {
+		err = tx.QueryRow(`SELECT id FROM trigger_categories WHERE parent_id = '' AND name = ?`, to).Scan(&newID)
+		if err != nil && err != sql.ErrNoRows {
+			return fmt.Errorf("find %s category: %w", to, err)
+		}
+		if newID == "" {
+			if _, err := tx.Exec(`UPDATE trigger_categories SET name = ? WHERE id = ?`, to, oldID); err != nil {
+				return fmt.Errorf("rename %s category: %w", from, err)
+			}
+		} else {
+			if _, err := tx.Exec(`UPDATE triggers SET category_id = ? WHERE category_id = ?`, newID, oldID); err != nil {
+				return fmt.Errorf("move %s triggers: %w", from, err)
+			}
+			if _, err := tx.Exec(`UPDATE trigger_categories SET parent_id = ? WHERE parent_id = ?`, newID, oldID); err != nil {
+				return fmt.Errorf("move %s subcategories: %w", from, err)
+			}
+			if _, err := tx.Exec(`DELETE FROM trigger_categories WHERE id = ?`, oldID); err != nil {
+				return fmt.Errorf("drop %s category: %w", from, err)
+			}
+		}
+	}
+	if _, err := tx.Exec(`UPDATE triggers SET pack_name = ? WHERE pack_name = ?`, to, from); err != nil {
+		return fmt.Errorf("rename %s pack_name: %w", from, err)
+	}
+	if _, err := tx.Exec(`UPDATE triggers SET source_pack = ? WHERE source_pack = ?`, to, from); err != nil {
+		return fmt.Errorf("rename %s source_pack: %w", from, err)
+	}
+	if _, err := tx.Exec(`UPDATE OR IGNORE pack_baselines SET source_pack = ? WHERE source_pack = ?`, to, from); err != nil {
+		return fmt.Errorf("rename %s baselines: %w", from, err)
+	}
+	if _, err := tx.Exec(`DELETE FROM pack_baselines WHERE source_pack = ?`, from); err != nil {
+		return fmt.Errorf("drop leftover %s baselines: %w", from, err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit raid event timers rename: %w", err)
 	}
 	return s.MarkDefaultUpdateApplied(key)
 }

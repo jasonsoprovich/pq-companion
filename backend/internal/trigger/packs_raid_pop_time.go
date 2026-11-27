@@ -3,7 +3,7 @@ package trigger
 // raidPoPTime is the Plane of Time: the phase 1 elemental and undead
 // nameds, the gods of phases 2–5 and Quarm. Event lines are from Project
 // Quarm's potimeb/encounters/Phase2.lua and Phase6.lua; the instance clock
-// lives in Raid Event Timers.
+// lives in Raid: Scripted Event Timers.
 func raidPoPTime() raidPackDef {
 	return raidPackDef{
 		Name: "Raid: Plane of Time",
@@ -11,7 +11,7 @@ func raidPoPTime() raidPackDef {
 			"spell recast timers that bind to the god casting them (from the " +
 			"server's NPC recasts, not the spell data), cure alerts for " +
 			"curable debuffs on you including Quarm's scripted spells, and " +
-			"phase 2 and Quarm head callouts (install Raid Event Timers for " +
+			"phase 2 and Quarm head callouts (install Raid: Scripted Event Timers for " +
 			"the instance clock). /tell <boss> x (e.g. /tell cazic_thule x) " +
 			"shows the boss's level, resists, abilities and spells. " + raidCredit,
 		Bosses: []raidBoss{

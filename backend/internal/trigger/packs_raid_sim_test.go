@@ -13,7 +13,7 @@ import (
 )
 
 // Raid pack simulations: every raid pack is installed (the way a raider
-// would have them, next to Raid Alerts and Raid Event Timers) into one real
+// would have them, next to Raid Alerts and Raid: Scripted Event Timers) into one real
 // engine, and log lines are replayed through it, checking what actually
 // fires rather than only that each regex matches.
 

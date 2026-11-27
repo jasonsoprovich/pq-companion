@@ -3,14 +3,14 @@ package trigger
 // raidPoPAir is the Plane of Air: the island nameds, the four avatars and
 // Xegony. Island spawn shouts are from Project Quarm's
 // poair/encounters/{Dust,Mist,Smoke,Wind}.lua; their 2.5-hour despawn
-// timers live in Raid Event Timers.
+// timers live in Raid: Scripted Event Timers.
 func raidPoPAir() raidPackDef {
 	return raidPackDef{
 		Name: "Raid: Plane of Air",
 		Description: "Plane of Air: island nameds, the four avatars and " +
 			"Xegony. Boss spell recast timers that bind to the boss casting " +
 			"them, cure alerts for curable debuffs on you, and island event " +
-			"callouts (install Raid Event Timers for the despawn countdowns). " +
+			"callouts (install Raid: Scripted Event Timers for the despawn countdowns). " +
 			"/tell <boss> x (e.g. /tell xegony_the_queen_of_air x) shows the " +
 			"boss's level, resists, abilities and spells. " + raidCredit,
 		Bosses: []raidBoss{

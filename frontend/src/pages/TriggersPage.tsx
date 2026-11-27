@@ -1169,8 +1169,9 @@ function PacksTab({ installedPacks, onInstalled }: PacksTabProps): React.ReactEl
                     Raid Packs
                   </span>
                   <span className="text-[10px]" style={{ color: 'var(--color-muted-foreground)' }}>
-                    {raid.length} packs{active > 0 ? ` · ${active} active` : ''} · boss
-                    timers, cures and Who cards, curated with Xanax &lt;Former Glory&gt;
+                    {raid.length} packs{active > 0 ? ` · ${active} active` : ''} · scripted
+                    event timers, plus boss timers, cures and Who cards curated with
+                    Xanax &lt;Former Glory&gt;
                   </span>
                 </button>
               )
