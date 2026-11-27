@@ -12,7 +12,11 @@ A searchable database of every item, spell, NPC, and zone in Project Quarm. Item
 
 ### Global search
 
-Press <kbd>Ctrl + K</kbd> from anywhere in the app for global search. Results group by type (items, spells, NPCs, zones) so you can jump straight to what you want.
+Press <kbd>Ctrl + K</kbd> from anywhere in the app for global search. Results group by type (items, spells, NPCs, zones) so you can jump straight to what you want. It also finds app pages, individual settings (opening the right tab and highlighting the setting) and help articles.
+
+### Wildcards
+
+Every search box takes `*` for any run of characters and `?` for one character. `Spirit * Wolf` also finds "Spirit Wolf", and `Elemental * Mold` lists every Elemental mold. This works in the item, spell, NPC, zone, recipe, faction and quest searches, Ctrl + K, and the chat, loot, kill, combat and player history searches.
 
 ### Filters
 

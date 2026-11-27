@@ -20,6 +20,10 @@ CH-chain tracking is callout-driven: it reads the heal announcements your cleric
 
 Each chain callout's captured target is watched for the spell's own heal-landed confirmation text — Complete Healing's exact bystander line for Clerics. If that confirmation never arrives before the callout's cast window elapses, the timer is flagged and the bar renders **red** instead of silently expiring, surfacing fizzles, interrupts, and skipped casts that would otherwise slip by unnoticed. It's on by default for Clerics. Druids filling a chain slot can opt in to the same detection for Superior Healing (the CH Chain overlay's settings in the **Overlays** hub) — it's opt-in there because Superior Healing's confirmation line is shared with over a dozen unrelated heal spells, so watching it unconditionally risks a filler heal on the same tank masking an actual missed cast.
 
+### Lanes view
+
+An optional lanes style for clerics used to Quarm Tools: one lane per heal target with a 1–10 second track, where each callout is a numbered block that slides toward the target's name and lands when it reaches it. The list view stays the default. Switch between them from the overlay header (on the card or the popped-out window, kept in sync) or in CH Chain settings.
+
 ### Personal CH metronome
 
 The metronome overlay is the cleric's-eye view: a standalone window that paces *your* slot in the rotation, so you know exactly when to start casting to keep the cadence steady. Pop it out over the game like any other overlay. If the watched cleric misses a cast, the metronome keeps advancing by projecting off whichever other slot's callout is freshest, instead of stalling indefinitely.
