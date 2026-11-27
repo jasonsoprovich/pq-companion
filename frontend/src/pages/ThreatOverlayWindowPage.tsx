@@ -35,11 +35,9 @@ export default function ThreatOverlayWindowPage(): React.ReactElement {
   const { locked, mode: lockedMode, toggleLocked, rootInteractionProps, headerInteractionProps } =
     useOverlayLock('threat')
   const chromeFade = useOverlayChromeFade('threat', lockedMode === 'display-only')
-  // Collapse to title bar. A collapsed window is only its title bar, so keep
-  // that visible through the inactive fade.
+  // Collapse to title bar.
   const { collapsed, toggleCollapsed, setCollapsed, headerRef, ready: collapseReady } =
     useOverlayCollapse(lockedMode !== 'display-only')
-  const chrome = chromeFade || collapsed
   const onDragMouseDown = useWindowDrag()
   const [state, setState] = useState<ThreatState | null>(null)
   const [raidState, setRaidState] = useState<RaidThreatState | null>(null)
@@ -93,6 +91,9 @@ export default function ThreatOverlayWindowPage(): React.ReactElement {
     setCollapsed,
     allowed: lockedMode !== 'display-only',
   })
+  // A collapsed window is only its title bar: keep it through the inactive
+  // fade while there's something to show, but let an idle one fade too.
+  const chrome = chromeFade || (collapsed && !!(state?.in_combat || raidState?.in_combat))
 
   return (
     <div

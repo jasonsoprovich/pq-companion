@@ -215,7 +215,6 @@ function StackWindow({ info }: { info: StackInfo }): React.ReactElement {
   const chromeFade = useOverlayChromeFade(key, mode === 'display-only')
   const { collapsed, toggleCollapsed, setCollapsed, headerRef, ready: collapseReady } =
     useOverlayCollapse(mode !== 'display-only')
-  const chrome = chromeFade || collapsed
   const onDragMouseDown = useWindowDrag()
   const config = useConfig()
   const zooms = config?.preferences.overlay_zoom_factors ?? {}
@@ -257,15 +256,19 @@ function StackWindow({ info }: { info: StackInfo }): React.ReactElement {
   const own = config?.preferences.overlay_idle_collapse?.[info.key]
   const tabDelays = info.tabs.map((t) => idleCollapseSecs(config, t)).filter((v) => v > 0)
   const delay = own !== undefined ? Math.max(own, 0) : tabDelays.length > 0 ? Math.max(...tabDelays) : 0
+  const anyActive = info.tabs.some((t) => (supportsIdleCollapse(t) ? !!activity[t] : true))
   useIdleCollapse({
     key: info.key,
-    active: info.tabs.some((t) => (supportsIdleCollapse(t) ? !!activity[t] : true)),
+    active: anyActive,
     collapsed,
     ready: collapseReady && config !== null,
     setCollapsed,
     allowed: mode !== 'display-only',
     delaySecs: delay,
   })
+  // A collapsed window is only its title bar: keep it through the inactive
+  // fade while a tab has something to show, but let an idle one fade too.
+  const chrome = chromeFade || (collapsed && anyActive)
 
   const inertCollapse = useMemo<OverlayStackValue['collapse']>(
     () => ({ collapsed: false, toggleCollapsed: noop, setCollapsed: noop, headerRef: createRef(), ready: false }),

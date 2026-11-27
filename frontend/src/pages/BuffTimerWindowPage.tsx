@@ -174,11 +174,9 @@ export default function BuffTimerWindowPage(): React.ReactElement {
   const { locked, mode, toggleLocked, rootInteractionProps, headerInteractionProps, rowsInteractive } =
     useOverlayLock('buffTimer')
   const chromeFade = useOverlayChromeFade('buffTimer', mode === 'display-only')
-  // Collapse to title bar. A collapsed window is only its title bar, so keep
-  // that visible through the inactive fade.
+  // Collapse to title bar.
   const { collapsed, toggleCollapsed, setCollapsed, headerRef, ready: collapseReady } =
     useOverlayCollapse(mode !== 'display-only')
-  const chrome = chromeFade || collapsed
   const onDragMouseDown = useWindowDrag()
   const [state, setState] = useState<TimerState | null>(null)
   const activePlayer = useActivePlayerName()
@@ -216,6 +214,9 @@ export default function BuffTimerWindowPage(): React.ReactElement {
     setCollapsed,
     allowed: mode !== 'display-only',
   })
+  // A collapsed window is only its title bar: keep it through the inactive
+  // fade while there's something to show, but let an idle one fade too.
+  const chrome = chromeFade || (collapsed && collapsedSummary !== null)
 
   return (
     <div

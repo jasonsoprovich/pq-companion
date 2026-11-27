@@ -29,11 +29,9 @@ export default function RespawnTimerWindowPage(): React.ReactElement {
   const { locked, mode, toggleLocked, rootInteractionProps, headerInteractionProps, rowsInteractive } =
     useOverlayLock('respawnTimer')
   const chromeFade = useOverlayChromeFade('respawnTimer', mode === 'display-only')
-  // Collapse to title bar. A collapsed window is only its title bar, so keep
-  // that visible through the inactive fade.
+  // Collapse to title bar.
   const { collapsed, toggleCollapsed, setCollapsed, headerRef, ready: collapseReady } =
     useOverlayCollapse(mode !== 'display-only')
-  const chrome = chromeFade || collapsed
   const onDragMouseDown = useWindowDrag()
   const appearance = useTimerAppearance()
   const [state, setState] = useState<RespawnState | null>(null)
@@ -78,6 +76,9 @@ export default function RespawnTimerWindowPage(): React.ReactElement {
     setCollapsed,
     allowed: mode !== 'display-only',
   })
+  // A collapsed window is only its title bar: keep it through the inactive
+  // fade while there's something to show, but let an idle one fade too.
+  const chrome = chromeFade || (collapsed && collapsedSummary !== null)
 
   return (
     <div

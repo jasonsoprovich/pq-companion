@@ -218,11 +218,9 @@ export default function CustomTimerWindowPage({ groupId: groupProp }: { groupId?
   const { locked, mode, toggleLocked, rootInteractionProps, headerInteractionProps, rowsInteractive } =
     useOverlayLock('customTimer')
   const chromeFade = useOverlayChromeFade('customTimer', mode === 'display-only')
-  // Collapse to title bar. A collapsed window is only its title bar, so keep
-  // that visible through the inactive fade.
+  // Collapse to title bar.
   const { collapsed, toggleCollapsed, setCollapsed, headerRef, ready: collapseReady } =
     useOverlayCollapse(mode !== 'display-only')
-  const chrome = chromeFade || collapsed
   const onDragMouseDown = useWindowDrag()
   const [state, setState] = useState<TimerState | null>(null)
   const thresholds = useDisplayThresholds()
@@ -306,6 +304,9 @@ export default function CustomTimerWindowPage({ groupId: groupProp }: { groupId?
     setCollapsed,
     allowed: mode !== 'display-only',
   })
+  // A collapsed window is only its title bar: keep it through the inactive
+  // fade while there's something to show, but let an idle one fade too.
+  const chrome = chromeFade || (collapsed && collapsedSummary !== null)
 
   return (
     <div
