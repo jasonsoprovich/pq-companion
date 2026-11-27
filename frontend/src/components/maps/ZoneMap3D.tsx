@@ -430,7 +430,13 @@ export default function ZoneMap3D({
         sc.remove(npcs.group)
         if (s.layers) {
           s.layers.materials.forEach((m) => m.dispose())
-          s.layers.textures.forEach((t) => t.dispose())
+          // dispose() frees only the GPU copy; the decoded ImageBitmap holds
+          // its pixels outside the JS heap until closed, which GC doesn't
+          // hurry, so each zone visited stayed resident.
+          s.layers.textures.forEach((t) => {
+            t.dispose()
+            if (t.image instanceof ImageBitmap) t.image.close()
+          })
           for (const m of layerMeshes(s.layers)) m.geometry.dispose()
           // Instance matrix and colour buffers aren't the geometry's.
           for (const m of instancedMeshes(s.layers)) m.dispose()
