@@ -9,6 +9,16 @@ Newest first. To add a new release, prepend a new `## vX.Y.Z — YYYY-MM-DD`
 section at the top — the `discord-notify` workflow picks up the topmost
 section automatically.
 
+## v1.0.1 — 2026-11-27
+
+Hotfix for v1.0.0: raid trigger packs install, update and remove again, a failed update check no longer covers the app in error text, and CH Chain lanes no longer pause on landing.
+
+### Fixes
+- **Raid packs did nothing** — turning on a Raid: pack, reviewing its updates or removing it failed silently, whether or not you had the older raid triggers. All of these work now.
+- **"40 updates" on Raid: Scripted Event Timers** — after upgrading, the renamed Raid Event Timers pack listed every trigger as changed when only the pack's name had. The phantom update is gone, and triggers you customized are untouched.
+- **Error text covering the app** — when GitHub was slow to answer the update check, the banner at the bottom filled the window with the raw response, hiding the app and its own close button. It now shows one short line you can retry or dismiss.
+- **CH Chain lanes paused on landing** — each block stopped for up to a second at the name badge before sliding on. Blocks now slide under the badge on time; only a possible miss stops there, in red.
+
 ## v1.0.0 — 2026-11-26
 
 PQ Companion 1.0. Overlays get a new home: the Overlays hub, with named layouts, stacking, hotkeys, an Arrange view of your monitors, filtered Chat Windows and Custom Overlays you build yourself. All overlays now share one process and use far less memory. Twelve raid trigger packs curated with Xanax <Former Glory> cover every raid from Nagafen to Quarm. The app also adds a built-in help center with guided tours, 3D character models with a dressing room, an HPS meter, raid nights in Raid Replay, and a Gear Upgrades overlay.
