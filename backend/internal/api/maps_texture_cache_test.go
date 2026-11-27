@@ -56,8 +56,8 @@ func testPFS(t *testing.T, files map[string][]byte) []byte {
 	return out
 }
 
-// testBMP is a 2x2 8-bit bitmap: palette 0 (the colour key) at top-left,
-// the rest palette 1 = white.
+// testBMP is a 2x2 8-bit bitmap: palette 0 (the colour key) first in the
+// first stored row, which decodes to top-left; the rest palette 1 = white.
 func testBMP() []byte {
 	b := make([]byte, 54+256*4+8)
 	copy(b, "BM")
@@ -69,8 +69,8 @@ func testBMP() []byte {
 	le.PutUint16(b[28:], 8)
 	copy(b[54:], []byte{0, 255, 0, 0, 255, 255, 255, 0})
 	px := 54 + 256*4
-	copy(b[px:], []byte{1, 1, 0, 0})
-	copy(b[px+4:], []byte{0, 1, 0, 0})
+	copy(b[px:], []byte{0, 1, 0, 0})
+	copy(b[px+4:], []byte{1, 1, 0, 0})
 	return b
 }
 

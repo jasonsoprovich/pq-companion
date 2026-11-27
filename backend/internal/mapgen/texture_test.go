@@ -76,7 +76,8 @@ func TestDecodeDXT1Mask(t *testing.T) {
 }
 
 func TestDecodeBMP8(t *testing.T) {
-	// 2x2, palette: 0 = green key, 1 = white. Bottom row first.
+	// 2x2, palette: 0 = green key, 1 = white. Rows stay in file order,
+	// as the client uses them.
 	const w, h = 2, 2
 	b := make([]byte, 54+256*4+4*h)
 	copy(b, "BM")
@@ -88,17 +89,17 @@ func TestDecodeBMP8(t *testing.T) {
 	le.PutUint16(b[28:], 8)
 	copy(b[54:], []byte{0, 255, 0, 0, 255, 255, 255, 0})
 	px := 54 + 256*4
-	copy(b[px:], []byte{1, 1, 0, 0})   // bottom row: white
-	copy(b[px+4:], []byte{0, 1, 0, 0}) // top row: key, white
+	copy(b[px:], []byte{0, 1, 0, 0})   // first row: key, white
+	copy(b[px+4:], []byte{1, 1, 0, 0}) // second row: white
 	img, err := DecodeTexture(b, 256, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if c := img.NRGBAAt(0, 0); c.A != 0 {
-		t.Errorf("top-left key texel = %v, want transparent", c)
+		t.Errorf("first-row key texel = %v, want transparent", c)
 	}
 	if c := img.NRGBAAt(0, 1); c.R != 255 || c.G != 255 || c.A != 255 {
-		t.Errorf("bottom-left = %v, want white", c)
+		t.Errorf("second row = %v, want white", c)
 	}
 	if img, _ = DecodeTexture(b, 1, false); img.Rect.Dx() != 1 || img.NRGBAAt(0, 0).A != 255 {
 		t.Errorf("halved unmasked = %v", img.Rect)

@@ -267,7 +267,10 @@ func mix(a, b color.NRGBA, wa, wb int) color.NRGBA {
 	return color.NRGBA{R: f(a.R, b.R), G: f(a.G, b.G), B: f(a.B, b.B), A: 255}
 }
 
-// decodeBMP decodes an uncompressed 8, 24 or 32-bit bitmap.
+// decodeBMP decodes an uncompressed 8, 24 or 32-bit bitmap. Rows come out
+// in file order, not flipped upright: the client uploads a bitmap's rows as
+// stored (bottom row first), and its UVs and DDS textures are made to match.
+// Flipping them drew stock old-model textures upside down.
 func decodeBMP(raw []byte, masked bool) (*image.NRGBA, error) {
 	if len(raw) < 54 {
 		return nil, fmt.Errorf("bmp header too short")
@@ -281,8 +284,7 @@ func decodeBMP(raw []byte, masked bool) (*image.NRGBA, error) {
 	if comp := le.Uint32(raw[30:]); comp != 0 {
 		return nil, fmt.Errorf("compressed bmp (%d) not supported", comp)
 	}
-	topDown := h < 0
-	if topDown {
+	if h < 0 {
 		h = -h
 	}
 	if w <= 0 || h <= 0 || w > 8192 || h > 8192 {
@@ -312,10 +314,6 @@ func decodeBMP(raw []byte, masked bool) (*image.NRGBA, error) {
 	img := image.NewNRGBA(image.Rect(0, 0, w, h))
 	for y := 0; y < h; y++ {
 		row := raw[dataOff+stride*y:]
-		dy := h - 1 - y
-		if topDown {
-			dy = y
-		}
 		for x := 0; x < w; x++ {
 			var c color.NRGBA
 			switch bpp {
@@ -328,7 +326,7 @@ func decodeBMP(raw []byte, masked bool) (*image.NRGBA, error) {
 			case 32:
 				c = color.NRGBA{R: row[4*x+2], G: row[4*x+1], B: row[4*x], A: 255}
 			}
-			img.SetNRGBA(x, dy, c)
+			img.SetNRGBA(x, y, c)
 		}
 	}
 	return img, nil
