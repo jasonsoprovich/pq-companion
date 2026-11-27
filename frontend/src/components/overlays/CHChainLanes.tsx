@@ -250,12 +250,16 @@ export default function CHChainLanes({
               {laneTimers.map((t) => {
                 const missed = t.possible_miss ?? false
                 const { position } = parseLabel(t.spell_name)
-                // Live blocks stop at the badge (a flagged miss lingers there
-                // red); landed ghosts carry on underneath it.
+                // Only a flagged miss stops at the badge (it lingers there
+                // red). Everything else slides on underneath on schedule:
+                // a live block held at 0 until the backend's next once-a-
+                // second broadcast dropped it, which read as a stutter.
                 const raw = rawRemaining(t, now)
                 const rem = Math.min(
                   span,
-                  liveIds.has(t.id) ? Math.max(0, raw) : Math.max(-LAND_OVERRUN_SECS, raw),
+                  missed && liveIds.has(t.id)
+                    ? Math.max(0, raw)
+                    : Math.max(-LAND_OVERRUN_SECS, raw),
                 )
                 const landing = !missed && rem / span < LANDING_FRACTION
                 const rgb = missed ? BLOCK_RED : landing ? BLOCK_GREEN : BLOCK_BLUE
