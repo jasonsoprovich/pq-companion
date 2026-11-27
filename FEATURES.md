@@ -2461,6 +2461,77 @@ name-based path when a field is nil, so older Zeal is unaffected.
   Quintessence of Elements to Maelin, Muon or the Time machine marks all
   earlier planar progression done.
 
+## v1.0.0 — Overlays hub, raid packs, help center, character models
+
+- **Overlays hub** — a Library of overlay cards with per-overlay settings
+  drawers, named layouts (each with its own dashboard) that can switch in
+  when a linked character logs in, a sidebar quick switcher, and global
+  hotkeys to show/hide all overlays, toggle one overlay, switch layouts or
+  enter position mode. Hide All hides without closing.
+- **Stacks and Arrange** — drag one overlay onto another to stack them as
+  tabs in one window (unstack menu, activity dots, idle collapse). The
+  Arrange tab draws a to-scale map of your monitors to move, stack and
+  unstack overlays. Overlays can collapse to their title bar when idle. A
+  setup wizard after first launch places a starter set and ends on Arrange.
+- **Chat Windows** — filtered chat overlays with rules per channel and
+  line, a tabs layout with unread alerts, a tab per tell conversation, your
+  own lines in their own color, and pixel font sizes.
+- **Custom Overlays** — user-built overlays from fields, table, feed,
+  counter and countdown widgets driven by line-matching rules (regex or
+  simple mode), with templates (DKP bid tracker), a live preview, multi-line
+  test lines and JSON sharing.
+- **Overlay memory** — overlays share one renderer process, hidden overlays
+  pause and close after 30 minutes hidden, timer bars animate with
+  transforms, and the 3D map reads textures on demand, draws repeated
+  objects instanced, caps its mesh cache and frees zone textures on zone
+  change. Settings > Advanced can record a performance timeline to
+  `logs/perf-*.log`.
+- **Raid trigger packs** — twelve "Raid:" packs curated with Xanax <Former
+  Glory> (Classic & Planar, Kunark, Velious, Luclin, PoP Tiers 1–3, Fire,
+  Air, Water, Earth, Time): boss recast timers that bind to the casting
+  boss through per-caster binding, cure alerts, Death Touch timers, event
+  clocks and phase callouts, and `/tell <boss> x` Who cards. They list
+  under a Raid Packs header with Raid: Scripted Event Timers (renamed from
+  Raid Event Timers; existing installs migrate automatically).
+- **Triggers** — New Trigger opens a template picker; a plain-text pattern
+  mode (`{name} tells you, '{msg}'`) converts to and from regex; a
+  sectioned editor; nav and Packs tab dots for pending pack updates; a
+  Rogue backstab damage popup; and a `{groupmember}` token that gates Group
+  Member Died on the Zeal group roster.
+- **Help and onboarding** — a built-in help center (the same `docs/help`
+  articles as the website), a per-page help drawer, Ctrl+K search across
+  pages, settings and help, guided tours (Triggers, timer settings, CH
+  Chain, Settings, Overlays hub), a Getting Started checklist, and a
+  logging step that detects `/log` on a live character. Tours and pills
+  dismiss with one click.
+- **Feature health** — one Settings section for everything the app reads
+  (EverQuest folder, log file and logging, Zeal live data and exports) with
+  fix links, plus a Zeal settings checklist backed by zeal.ini and pipe
+  proof.
+- **Character models** — player and NPC models loaded from the client: a
+  dressing room (gear, illusions, face/hair/beard/eye looks, Luclin worn
+  models), models on item and NPC pages, raiders on the 3D map drawn as
+  Zeal sees them, NPC models on their spawn points, and your pet on the
+  live maps with its distance.
+- **Combat and raids** — a DPS | HPS toggle in the DPS meter (your own
+  heals), and raid nights in Raid Replay with a join/leave log and a
+  per-raider summary.
+- **Gear** — a Gear Upgrades overlay for the current zone (can narrow to
+  the target's drops); the finder scores PoP item stats and rogue
+  backstab, lists wanted-focus items separately with caps, and compares
+  foci by coverage. PoP armor molds show what they make per class on item
+  pages, the NPC overlay and the Item Info overlay.
+- **Data pages** — flag-gated zone pages show flag and level-based PoP
+  access; the Faction Tracker estimates standing from cap lines and `/con`
+  (with log backfill); bags show combined vendor value and an estimated
+  merchant payout; `*` and `?` wildcards work in every search box.
+- **CH Chain lanes view**, a regrouped and editable sidebar (Live, History,
+  Character, Progress & Goals; right-click to favorite or hide), and green
+  dots for new features.
+- **Zeal 1.5.2** — detrimental timers key to spawns through Zeal spell
+  actions, PoP flags read from Zeal's export, and `/mystats` captures the
+  item mod2 stats section.
+
 ## Phase 11 — Project Website
 _Planned_
 
