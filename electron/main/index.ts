@@ -3032,8 +3032,10 @@ function watchFit(win: BrowserWindow, name: WindowKey): void {
     // further whenever there are fewer rows anyway.
     f.cap = Math.max(b.height, minSizeFor(name).minHeight)
     f.expectH = b.height
-    // Mid-drag the window is the full-size one, bottom edge and all.
-    f.userTop = b.y + b.height - f.cap
+    // Mid-drag the window is the full-size one. A cap floored above the
+    // dragged height extends from the anchored edge: down from the top, or
+    // up from the bottom when rows stack from the bottom.
+    f.userTop = f.fromBottom ? b.y + b.height - f.cap : b.y
   })
   // Moving the window (by its title bar, collapsed or not) moves the
   // full-size rectangle with it; our own moves don't.
