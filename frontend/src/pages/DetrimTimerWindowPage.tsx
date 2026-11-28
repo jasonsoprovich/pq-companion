@@ -283,6 +283,7 @@ export default function DetrimTimerWindowPage(): React.ReactElement {
     collapsed,
     collapseReady,
     rows: detrims.length,
+    fromBottom: appearance.stackFromBottom,
     rootRef,
     listRef,
     contentRef: rowsRef,

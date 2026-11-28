@@ -53,6 +53,7 @@ export function useFitHeight({
   collapsed,
   collapseReady,
   rows,
+  fromBottom = false,
   rootRef,
   listRef,
   contentRef,
@@ -64,6 +65,9 @@ export function useFitHeight({
   // the cap.
   collapseReady: boolean
   rows: number
+  // Rows stack from the bottom: keep the window's bottom edge still, so
+  // the newest row stays put, and grow upward.
+  fromBottom?: boolean
   rootRef: React.RefObject<HTMLElement>
   listRef: React.RefObject<HTMLElement>
   contentRef: React.RefObject<HTMLElement>
@@ -93,9 +97,9 @@ export function useFitHeight({
         ? contentRef.current?.getBoundingClientRect().height ?? 0
         : EMPTY_BODY_PX * (document.documentElement.currentCSSZoom || 1)
       const fraction = (root - list + body) / root
-      window.electron?.overlay?.fitHeightSet?.(true, fraction).catch(() => {})
+      window.electron?.overlay?.fitHeightSet?.(true, fraction, fromBottom).catch(() => {})
     })
-  }, [on, collapsed, rootRef, listRef, contentRef])
+  }, [on, collapsed, fromBottom, rootRef, listRef, contentRef])
 
   // Turned off: give the window its full height back. Main ignores it when
   // the window isn't fitted.

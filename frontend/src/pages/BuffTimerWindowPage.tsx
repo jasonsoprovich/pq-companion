@@ -224,6 +224,7 @@ export default function BuffTimerWindowPage(): React.ReactElement {
     collapsed,
     collapseReady,
     rows: buffs.length,
+    fromBottom: appearance.stackFromBottom,
     rootRef,
     listRef,
     contentRef: rowsRef,

@@ -256,7 +256,7 @@ export interface ElectronAPI {
     collapseGet: () => Promise<boolean>
     collapseSet: (collapsed: boolean, headerFraction: number) => Promise<boolean>
     onCollapseChanged: (cb: (collapsed: boolean) => void) => () => void
-    fitHeightSet?: (on: boolean, fraction: number) => Promise<void>
+    fitHeightSet?: (on: boolean, fraction: number, fromBottom?: boolean) => Promise<void>
     // Hidden windows are paused (content unmounted) until shown again.
     onPausedChanged: (cb: (paused: boolean) => void) => () => void
     stackGet: () => Promise<StackInfo | null>

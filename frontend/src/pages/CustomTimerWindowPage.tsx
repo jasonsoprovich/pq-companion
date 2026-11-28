@@ -314,6 +314,7 @@ export default function CustomTimerWindowPage({ groupId: groupProp }: { groupId?
     collapsed,
     collapseReady,
     rows: timers.length,
+    fromBottom: appearance.stackFromBottom,
     rootRef,
     listRef,
     contentRef: rowsRef,
