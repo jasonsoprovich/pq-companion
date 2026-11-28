@@ -4,7 +4,7 @@
  * quick-add form below, and trigger-driven timers with timer_type "custom".
  * Renders in a dedicated frameless Electron window; no sidebar or title bar.
  */
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Bell, BellOff, Hourglass, Pin, Trash2, X } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
@@ -17,6 +17,7 @@ import { useTimerAppearance, type TimerAppearance } from '../hooks/useTimerAppea
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { CollapseToggle, useOverlayCollapse } from '../hooks/useOverlayCollapse'
 import { useIdleCollapse } from '../hooks/useIdleCollapse'
+import { useFitHeight } from '../hooks/useFitHeight'
 import { timerSummary } from '../lib/overlaySummaries'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
@@ -304,12 +305,26 @@ export default function CustomTimerWindowPage({ groupId: groupProp }: { groupId?
     setCollapsed,
     allowed: mode !== 'display-only',
   })
+  // Fit height to rows: the rows' own height, for the window to shrink to.
+  const rootRef = useRef<HTMLDivElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+  const rowsRef = useRef<HTMLDivElement>(null)
+  useFitHeight({
+    key: groupId ? `customTimer:${groupId}` : 'customTimer',
+    collapsed,
+    collapseReady,
+    rows: timers.length,
+    rootRef,
+    listRef,
+    contentRef: rowsRef,
+  })
   // A collapsed window is only its title bar: keep it through the inactive
   // fade while there's something to show, but let an idle one fade too.
   const chrome = chromeFade || (collapsed && collapsedSummary !== null)
 
   return (
     <div
+      ref={rootRef}
       {...rootInteractionProps}
       style={{
         width: '100%',
@@ -406,6 +421,7 @@ export default function CustomTimerWindowPage({ groupId: groupProp }: { groupId?
 
       {/* ── Timer list ───────────────────────────────────────────────────── */}
       <div
+        ref={listRef}
         style={{
           flex: 1,
           overflow: 'auto',
@@ -446,9 +462,20 @@ export default function CustomTimerWindowPage({ groupId: groupProp }: { groupId?
             </p>
           </div>
         ) : (
-          timers.map((t) => (
-            <TimerRow key={t.id} timer={t} appearance={appearance} showRemove={rowsInteractive} />
-          ))
+          // Sized by its rows, not stretched to the window, so Fit height
+          // to rows can measure them; same direction as the list.
+          <div
+            ref={rowsRef}
+            style={{
+              display: 'flex',
+              flexDirection: appearance.stackFromBottom ? 'column-reverse' : 'column',
+              flexShrink: 0,
+            }}
+          >
+            {timers.map((t) => (
+              <TimerRow key={t.id} timer={t} appearance={appearance} showRemove={rowsInteractive} />
+            ))}
+          </div>
         )}
       </div>
 

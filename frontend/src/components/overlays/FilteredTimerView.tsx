@@ -472,6 +472,9 @@ export interface FilteredTimerViewProps {
   rowsInteractive: boolean
   // Hide the idle "nothing to show" placeholder (overlay chrome faded).
   hideEmptyState?: boolean
+  // The scrolling list and the rows inside it, for Fit height to rows.
+  listRef?: React.Ref<HTMLDivElement>
+  rowsRef?: React.Ref<HTMLDivElement>
 }
 
 export default function FilteredTimerView({
@@ -487,6 +490,8 @@ export default function FilteredTimerView({
   appearance,
   rowsInteractive,
   hideEmptyState,
+  listRef,
+  rowsRef,
 }: FilteredTimerViewProps): React.ReactElement {
   const pal = PALETTES[theme]
   const bySpell = config.viewBy === 'spell'
@@ -521,6 +526,7 @@ export default function FilteredTimerView({
         </div>
       )}
       <div
+        ref={listRef}
         style={{
           flex: 1,
           minHeight: 0,
@@ -540,51 +546,55 @@ export default function FilteredTimerView({
             </p>
           )
         ) : (
-          groups.map((g) => (
-            <React.Fragment key={g.key}>
-              <GroupHeader
-                group={g}
-                config={config}
-                update={update}
-                roster={roster}
-                interactive={rowsInteractive}
-                pal={pal}
-              />
-              {g.rows.map((t) => (
-                <TimerRow
-                  key={t.id}
-                  timer={t}
-                  label={rowLabel(t)}
-                  appearance={appearance}
-                  showRemove={rowsInteractive}
-                  unproven={g.unproven.has(t.id)}
+          // Sized by its rows, not stretched to the list, so Fit height to
+          // rows can measure them.
+          <div ref={rowsRef} style={{ display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+            {groups.map((g) => (
+              <React.Fragment key={g.key}>
+                <GroupHeader
+                  group={g}
+                  config={config}
+                  update={update}
+                  roster={roster}
+                  interactive={rowsInteractive}
                   pal={pal}
                 />
-              ))}
-              {g.missing.map((name) => (
-                <div
-                  key={`missing-${name}`}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    padding: `${appearance.rowPadding}px 8px`,
-                    borderBottom: `1px solid ${pal.border}`,
-                    opacity: 0.55,
-                    flexShrink: 0,
-                  }}
-                >
-                  <UserX size={14} style={{ color: '#f87171', flexShrink: 0 }} />
-                  <span style={{ flex: 1, minWidth: 0, fontSize: appearance.nameFontSize, color: pal.fg, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {name}
-                  </span>
-                  <span style={{ fontSize: appearance.timeFontSize, color: '#f87171', flexShrink: 0 }}>
-                    missing
-                  </span>
-                </div>
-              ))}
-            </React.Fragment>
-          ))
+                {g.rows.map((t) => (
+                  <TimerRow
+                    key={t.id}
+                    timer={t}
+                    label={rowLabel(t)}
+                    appearance={appearance}
+                    showRemove={rowsInteractive}
+                    unproven={g.unproven.has(t.id)}
+                    pal={pal}
+                  />
+                ))}
+                {g.missing.map((name) => (
+                  <div
+                    key={`missing-${name}`}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      padding: `${appearance.rowPadding}px 8px`,
+                      borderBottom: `1px solid ${pal.border}`,
+                      opacity: 0.55,
+                      flexShrink: 0,
+                    }}
+                  >
+                    <UserX size={14} style={{ color: '#f87171', flexShrink: 0 }} />
+                    <span style={{ flex: 1, minWidth: 0, fontSize: appearance.nameFontSize, color: pal.fg, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {name}
+                    </span>
+                    <span style={{ fontSize: appearance.timeFontSize, color: '#f87171', flexShrink: 0 }}>
+                      missing
+                    </span>
+                  </div>
+                ))}
+              </React.Fragment>
+            ))}
+          </div>
         )}
       </div>
     </>

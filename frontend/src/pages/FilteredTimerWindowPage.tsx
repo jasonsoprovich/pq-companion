@@ -5,7 +5,7 @@
  * Electron window. The filter bar hides while the overlay is locked so it
  * stays a clean HUD in game.
  */
-import React from 'react'
+import React, { useRef } from 'react'
 import { Filter, SlidersHorizontal } from 'lucide-react'
 import FilteredTimerView, { filterSummary } from '../components/overlays/FilteredTimerView'
 import { useFilteredTimers } from '../hooks/useFilteredTimers'
@@ -13,6 +13,7 @@ import { useTimerAppearance } from '../hooks/useTimerAppearance'
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { CollapseToggle, useOverlayCollapse } from '../hooks/useOverlayCollapse'
 import { useIdleCollapse } from '../hooks/useIdleCollapse'
+import { useFitHeight } from '../hooks/useFitHeight'
 import { timerSummary } from '../lib/overlaySummaries'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
@@ -53,12 +54,26 @@ export default function FilteredTimerWindowPage(): React.ReactElement {
     setCollapsed,
     allowed: mode !== 'display-only',
   })
+  // Fit height to rows: the rows' own height, for the window to shrink to.
+  const rootRef = useRef<HTMLDivElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+  const rowsRef = useRef<HTMLDivElement>(null)
+  useFitHeight({
+    key: 'filteredTimer',
+    collapsed,
+    collapseReady,
+    rows: f.groups.length,
+    rootRef,
+    listRef,
+    contentRef: rowsRef,
+  })
   // A collapsed window is only its title bar: keep it through the inactive
   // fade while there's something to show, but let an idle one fade too.
   const chrome = chromeFade || (collapsed && collapsedSummary !== null)
 
   return (
     <div
+      ref={rootRef}
       {...rootInteractionProps}
       style={{
         width: '100%',
@@ -144,6 +159,8 @@ export default function FilteredTimerWindowPage(): React.ReactElement {
         appearance={appearance}
         rowsInteractive={rowsInteractive}
         hideEmptyState={!chrome}
+        listRef={listRef}
+        rowsRef={rowsRef}
       />
     </div>
   )

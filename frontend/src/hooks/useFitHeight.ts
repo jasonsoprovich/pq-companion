@@ -2,11 +2,14 @@
  * useFitHeight — shrinks a popout's window to its rows, never past the
  * height the user set (Settings → the overlay → Fit height to rows).
  *
- * The page hands over its title bar and a wrapper around its rows whose
- * height is the rows' own (not stretched to the window). Whenever either
- * changes size, the wanted height goes to the main process as a fraction of
- * the window, like collapse, so CSS zoom and display scaling cancel out.
- * The main process keeps the cap: the height you dragged the window to.
+ * The page hands over its root, its scrolling list and a wrapper around
+ * its rows whose height is the rows' own (not stretched to the window).
+ * The window wants to be its root minus the list plus the rows, which
+ * counts every bar around the list (title bar, filters, a quick-add form)
+ * without naming them. It goes to the main process as a fraction of the
+ * root, all measured by bounding rect, so CSS zoom and display scaling
+ * cancel out. The main process keeps the cap: the height you dragged the
+ * window to.
  *
  * Off while collapsed (collapse owns the height then) and inside a stack
  * (the stack window holds several pages).
@@ -50,7 +53,8 @@ export function useFitHeight({
   collapsed,
   collapseReady,
   rows,
-  headerRef,
+  rootRef,
+  listRef,
   contentRef,
 }: {
   key: string
@@ -60,7 +64,8 @@ export function useFitHeight({
   // the cap.
   collapseReady: boolean
   rows: number
-  headerRef: React.RefObject<HTMLElement>
+  rootRef: React.RefObject<HTMLElement>
+  listRef: React.RefObject<HTMLElement>
   contentRef: React.RefObject<HTMLElement>
 }): void {
   const stack = useOverlayStack()
@@ -70,7 +75,6 @@ export function useFitHeight({
   rowsRef.current = rows
 
   // Measured a frame later, so a zoom or row change has been laid out.
-  // Header and rows both by bounding rect, the space collapse measures in.
   // One frame pending at most, and it rechecks: turned off, collapsed or
   // unmounted in the meantime, it sends nothing.
   const eligibleRef = useRef(false)
@@ -81,16 +85,17 @@ export function useFitHeight({
     if (!on || collapsed) return
     cancelAnimationFrame(frameRef.current)
     frameRef.current = requestAnimationFrame(() => {
-      if (!eligibleRef.current || window.innerHeight <= 0) return
-      const header = headerRef.current?.getBoundingClientRect().height ?? 0
+      if (!eligibleRef.current) return
+      const root = rootRef.current?.getBoundingClientRect().height ?? 0
+      const list = listRef.current?.getBoundingClientRect().height ?? 0
+      if (root <= 0) return
       const body = rowsRef.current > 0
         ? contentRef.current?.getBoundingClientRect().height ?? 0
         : EMPTY_BODY_PX * (document.documentElement.currentCSSZoom || 1)
-      // +2 for the root's 1px top and bottom border.
-      const px = header + body + 2
-      window.electron?.overlay?.fitHeightSet?.(true, px / window.innerHeight).catch(() => {})
+      const fraction = (root - list + body) / root
+      window.electron?.overlay?.fitHeightSet?.(true, fraction).catch(() => {})
     })
-  }, [on, collapsed, headerRef, contentRef])
+  }, [on, collapsed, rootRef, listRef, contentRef])
 
   // Turned off: give the window its full height back. Main ignores it when
   // the window isn't fitted.
@@ -107,12 +112,13 @@ export function useFitHeight({
   useEffect(() => {
     if (!on) return
     const ro = new ResizeObserver(() => send())
-    if (headerRef.current) ro.observe(headerRef.current)
+    // The list shrinks when a bar around it grows; the rows when they change.
+    if (listRef.current) ro.observe(listRef.current)
     if (contentRef.current) ro.observe(contentRef.current)
     window.addEventListener('resize', send)
     return () => {
       ro.disconnect()
       window.removeEventListener('resize', send)
     }
-  }, [on, send, headerRef, contentRef, hasRows])
+  }, [on, send, listRef, contentRef, hasRows])
 }

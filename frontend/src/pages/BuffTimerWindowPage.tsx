@@ -216,13 +216,16 @@ export default function BuffTimerWindowPage(): React.ReactElement {
     allowed: mode !== 'display-only',
   })
   // Fit height to rows: the rows' own height, for the window to shrink to.
+  const rootRef = useRef<HTMLDivElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
   const rowsRef = useRef<HTMLDivElement>(null)
   useFitHeight({
     key: 'buffTimer',
     collapsed,
     collapseReady,
     rows: buffs.length,
-    headerRef,
+    rootRef,
+    listRef,
     contentRef: rowsRef,
   })
   // A collapsed window is only its title bar: keep it through the inactive
@@ -231,6 +234,7 @@ export default function BuffTimerWindowPage(): React.ReactElement {
 
   return (
     <div
+      ref={rootRef}
       {...rootInteractionProps}
       style={{
         width: '100%',
@@ -348,6 +352,7 @@ export default function BuffTimerWindowPage(): React.ReactElement {
           to fill — without this the icon/label clings to the top edge instead
           of centering. */}
       <div
+        ref={listRef}
         style={{
           flex: 1,
           overflow: 'auto',
