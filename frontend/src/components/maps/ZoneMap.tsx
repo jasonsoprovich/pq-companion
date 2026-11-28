@@ -1150,8 +1150,12 @@ export function ZoneMap({
       ctx.restore()
     }
 
-    // ── compass ── only on a turned map, where north isn't up.
-    if (rot) drawCompass(ctx, 24, 60, rot)
+    // ── compass ── bottom-right, where the 3D view keeps its own, with the
+    // centre-on-me button above it. Shown wherever you are on the map, so
+    // the two sit together, and on any turned map.
+    if (rot || (playerPos && playerPos.zone === zone.zone)) {
+      drawCompass(ctx, size.w - 24, size.h - 28, rot)
+    }
   }, [geometry, shown, zone, size, toScreen, rot, view.zoom, depth, highlights, aggroRings, spawnDots, raiders, replayTarget, playerPos, groupMembers, pet, showLabels, detail, showDetail, outline, external, mode, zScale, paths])
 
   // Wheel zoom is attached natively with passive:false. React registers wheel
@@ -1272,25 +1276,34 @@ export function ZoneMap({
         player={onThisMap}
       />
 
+      {/* Centre on me, above the compass in the bottom-right, matching the
+          3D view. Always rendered when there is a position on this map,
+          overlays included — it is what makes panning safe there, since an
+          overlay has no Follow toggle to find and a stranded view would
+          otherwise need the window closed and reopened. */}
+      {onThisMap && (
+        <button
+          type="button"
+          aria-label="Centre on me"
+          onClick={() => { centreOnPlayer(); onFollowRequest?.() }}
+          title="Centre on me and follow (right-click the map to centre once)"
+          className="absolute flex items-center justify-center rounded-full"
+          style={{
+            right: 13,
+            bottom: 60,
+            width: 22,
+            height: 22,
+            cursor: 'pointer',
+            backgroundColor: 'rgba(10,10,12,0.7)',
+            border: `1px solid ${followPlayer ? 'rgba(201,168,76,0.7)' : 'rgba(255,255,255,0.25)'}`,
+            color: followPlayer ? '#c9a84c' : 'rgba(255,255,255,0.75)',
+          }}
+        >
+          <LocateFixed size={12} />
+        </button>
+      )}
+
       <div className="absolute right-2 top-2 flex flex-col items-end gap-1">
-        {/* Centre on me. Always rendered when there is a position on this map,
-            overlays included — it is what makes panning safe there, since an
-            overlay has no Follow toggle to find and a stranded view would
-            otherwise need the window closed and reopened. */}
-        {onThisMap && (
-          <button
-            onClick={() => { centreOnPlayer(); onFollowRequest?.() }}
-            title="Centre on me and follow (right-click the map to centre once)"
-            className="rounded border p-1"
-            style={{
-              backgroundColor: followPlayer ? 'var(--color-primary)' : 'var(--color-surface)',
-              borderColor: followPlayer ? 'var(--color-primary)' : 'var(--color-border)',
-              color: followPlayer ? 'var(--color-background)' : 'var(--color-muted-foreground)',
-            }}
-          >
-            <LocateFixed size={12} />
-          </button>
-        )}
         {!chromeless && (
           <>
             <span
@@ -1578,7 +1591,7 @@ function DepthControl({
     <div
       className={`flex items-center rounded ${compact ? 'gap-1.5 px-1.5 py-1' : 'gap-2.5 px-2.5 py-1.5'}${
         docked ? '' : ' absolute bottom-2 left-2'
-      }${compact ? ' right-2' : ''}`}
+      }${compact ? ' right-11' : ''}`}
       style={{ backgroundColor: 'var(--color-surface-2)' }}
     >
       {!compact && (
