@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
-import { RotateCcw, SlidersHorizontal, Tag } from 'lucide-react'
+import { LocateFixed, RotateCcw, SlidersHorizontal, Tag } from 'lucide-react'
 import { getZoneMesh3D, getZoneTextureUrl } from '../../services/api'
 import type { ZoneMesh3D, ZoneModel3D } from '../../services/api'
 import {
@@ -294,6 +294,23 @@ export default function ZoneMap3D({
   leaveChase.current = () => {
     if (camera === undefined && camRef.current === 'chase') setCamOwn('free')
   }
+  // centreOnFocus snaps the orbit point back onto whoever the camera
+  // follows, keeping the angle and distance. Zoom-to-cursor, panning and
+  // flying all slide it off, and the follow then keeps that offset, so
+  // this is the way back. A ref so the key handler can reach it.
+  const centreOnFocus = useRef<() => void>(() => {})
+  centreOnFocus.current = () => {
+    const s = scene.current
+    const f = markersRef.current.find((r) => r.focus)
+    if (!s || !f) return
+    const at = new THREE.Vector3(f.x, -f.y, f.z)
+    s.camera.position.add(at.clone().sub(s.controls.target))
+    s.controls.target.copy(at)
+    lastFocus.current = at
+    if (camRef.current === 'chase') chaseBehind(s, f)
+    s.controls.update()
+    s.render()
+  }
 
   // Build the scene once per zone.
   useEffect(() => {
@@ -515,6 +532,10 @@ export default function ZoneMap3D({
     ])
     const onKeyDown = (e: KeyboardEvent): void => {
       fast = e.shiftKey
+      if (e.code === 'KeyC' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        centreOnFocus.current()
+        return
+      }
       if (!FLY_KEYS.has(e.code) || e.ctrlKey || e.metaKey || e.altKey) return
       // Arrows would otherwise scroll the page.
       e.preventDefault()
@@ -783,6 +804,28 @@ export default function ZoneMap3D({
             northUp(s)
           }}
         />
+      )}
+      {status === 'ready' && markers.some((r) => r.focus) && (
+        // Centre on me, stacked above the compass like a map app's.
+        <button
+          type="button"
+          aria-label="Centre on me"
+          title="Centre on me (C)"
+          className="absolute flex items-center justify-center rounded-full"
+          style={{
+            right: 13,
+            bottom: 60,
+            width: 22,
+            height: 22,
+            cursor: 'pointer',
+            backgroundColor: 'rgba(10,10,12,0.7)',
+            border: '1px solid rgba(255,255,255,0.25)',
+            color: 'rgba(255,255,255,0.75)',
+          }}
+          onClick={() => centreOnFocus.current()}
+        >
+          <LocateFixed size={12} />
+        </button>
       )}
       {status !== 'ready' && (
         <div className="absolute inset-0 flex items-center justify-center p-6 text-center text-sm" style={{ color: 'var(--color-muted)' }}>
