@@ -9,6 +9,7 @@ import { OVERLAY_DEFS, resolveLockedMode } from '../../../lib/overlays'
 import type { OverlayName, LockedMode, FadeMode } from '../../../lib/overlays'
 import type { Config } from '../../../types/config'
 import { IDLE_DELAY_OPTIONS, idleCollapseSecs, supportsIdleCollapse } from '../../../lib/idleCollapse'
+import { fitHeightOn, supportsFitHeight } from '../../../lib/fitHeight'
 
 // OverlayLockModeCard lets the user pick, per popout overlay, how it behaves
 // while locked. The two modes trade off "click reaches the game" against
@@ -611,6 +612,24 @@ export function OverlayWindowControls({
           isStack
             ? 'Folds to the title bar once every tab is idle. Follow its tabs uses the longest delay set on them.'
             : IDLE_COLLAPSE_HINT,
+        )}
+      {supportsFitHeight(windowKey) &&
+        row(
+          'Fit height to rows',
+          <input
+            type="checkbox"
+            checked={fitHeightOn(config, windowKey)}
+            onChange={(e) => {
+              const next = { ...(prefs.overlay_fit_height ?? {}) }
+              if (e.target.checked) next[windowKey] = true
+              else delete next[windowKey]
+              patch({ overlay_fit_height: next })
+            }}
+            style={{ accentColor: 'var(--color-primary)', cursor: 'pointer' }}
+            title={`Shrink the ${label} window to its rows`}
+          />,
+          'Shrinks the window to its rows and grows it back as more land, up to ' +
+            'the height you set. Drag the bottom edge to change that height.',
         )}
       {displays.length > 1 &&
         row(

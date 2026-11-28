@@ -3,7 +3,7 @@
  * Renders in a dedicated frameless Electron window; no sidebar or title bar.
  * Shows timers with category === 'buff'.
  */
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Shield, Trash2, ArrowDownNarrowWide, Clock, Pin, X } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useActivePlayerName, targetSuffix } from '../hooks/useActivePlayerName'
@@ -15,6 +15,7 @@ import { useTimerAppearance, type TimerAppearance } from '../hooks/useTimerAppea
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { CollapseToggle, useOverlayCollapse } from '../hooks/useOverlayCollapse'
 import { useIdleCollapse } from '../hooks/useIdleCollapse'
+import { useFitHeight } from '../hooks/useFitHeight'
 import { plural, timerSummary } from '../lib/overlaySummaries'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { useOverlayLock } from '../hooks/useOverlayLock'
@@ -214,6 +215,16 @@ export default function BuffTimerWindowPage(): React.ReactElement {
     setCollapsed,
     allowed: mode !== 'display-only',
   })
+  // Fit height to rows: the rows' own height, for the window to shrink to.
+  const rowsRef = useRef<HTMLDivElement>(null)
+  useFitHeight({
+    key: 'buffTimer',
+    collapsed,
+    collapseReady,
+    rows: buffs.length,
+    headerRef,
+    contentRef: rowsRef,
+  })
   // A collapsed window is only its title bar: keep it through the inactive
   // fade while there's something to show, but let an idle one fade too.
   const chrome = chromeFade || (collapsed && collapsedSummary !== null)
@@ -377,15 +388,26 @@ export default function BuffTimerWindowPage(): React.ReactElement {
             </p>
           </div>
         ) : (
-          buffs.map((t) => (
-            <TimerRow
-              key={t.id}
-              timer={t}
-              activePlayer={activePlayer}
-              appearance={appearance}
-              showRemove={rowsInteractive}
-            />
-          ))
+          // Sized by its rows, not stretched to the window, so Fit height
+          // to rows can measure them; same direction as the list.
+          <div
+            ref={rowsRef}
+            style={{
+              display: 'flex',
+              flexDirection: appearance.stackFromBottom ? 'column-reverse' : 'column',
+              flexShrink: 0,
+            }}
+          >
+            {buffs.map((t) => (
+              <TimerRow
+                key={t.id}
+                timer={t}
+                activePlayer={activePlayer}
+                appearance={appearance}
+                showRemove={rowsInteractive}
+              />
+            ))}
+          </div>
         )}
       </div>
     </div>

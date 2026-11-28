@@ -274,6 +274,9 @@ export interface Preferences {
   // to show, keyed by window key (overlay name or customTimer:<groupId>).
   // Missing/0 = off.
   overlay_idle_collapse?: Record<string, number>
+  // Shrink a popout's window to its rows, never past the height you set,
+  // keyed by window key. Missing/false = off.
+  overlay_fit_height?: Record<string, boolean>
   parse_combat_log: boolean
   overlay_dps_enabled: boolean
   overlay_hps_enabled: boolean

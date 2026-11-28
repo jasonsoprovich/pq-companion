@@ -211,6 +211,11 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.on('overlay:collapse-changed', listener)
       return () => ipcRenderer.removeListener('overlay:collapse-changed', listener)
     },
+    // Fit this overlay window's height to its rows, capped at the height the
+    // user set. fraction = wanted height / window content height; on=false
+    // gives the window its full height back.
+    fitHeightSet: (on: boolean, fraction: number): Promise<void> =>
+      ipcRenderer.invoke('overlay:fit-height:set', on, fraction),
     // Main pauses a window it hides (Hide All, the hotkey) and resumes it on
     // show: a hidden overlay drops its content and data feed until then.
     // Stacks: several overlays as tabs in one window. A stack window reads

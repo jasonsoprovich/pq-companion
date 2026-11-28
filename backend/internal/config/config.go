@@ -537,6 +537,10 @@ type Preferences struct {
 	// window key (overlay name or customTimer:<groupId>); missing or 0 = off.
 	OverlayIdleCollapse map[string]int `yaml:"overlay_idle_collapse,omitempty" json:"overlay_idle_collapse"`
 
+	// OverlayFitHeight shrinks a popout's window to its rows, never past the
+	// height the user set, keyed by window key; missing or false = off.
+	OverlayFitHeight map[string]bool `yaml:"overlay_fit_height,omitempty" json:"overlay_fit_height"`
+
 	// ParseCombatLog enables real-time combat log parsing.
 	ParseCombatLog bool `yaml:"parse_combat_log" json:"parse_combat_log"`
 

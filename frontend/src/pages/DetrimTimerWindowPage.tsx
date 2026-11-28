@@ -4,7 +4,7 @@
  * Renders in a dedicated frameless Electron window; no sidebar or title bar.
  * Shows timers with category in: 'debuff' | 'dot' | 'mez' | 'stun'.
  */
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Skull, Trash2, Pin, X } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useActivePlayerName } from '../hooks/useActivePlayerName'
@@ -14,6 +14,7 @@ import { useTimerAppearance, type TimerAppearance } from '../hooks/useTimerAppea
 import { useOverlayOpacity } from '../hooks/useOverlayOpacity'
 import { CollapseToggle, useOverlayCollapse } from '../hooks/useOverlayCollapse'
 import { useIdleCollapse } from '../hooks/useIdleCollapse'
+import { useFitHeight } from '../hooks/useFitHeight'
 import { mobCount, plural, timerSummary } from '../lib/overlaySummaries'
 import { useOverlayChromeFade } from '../hooks/useOverlayChromeFade'
 import { WSEvent } from '../lib/wsEvents'
@@ -273,6 +274,16 @@ export default function DetrimTimerWindowPage(): React.ReactElement {
     setCollapsed,
     allowed: mode !== 'display-only',
   })
+  // Fit height to rows: the rows' own height, for the window to shrink to.
+  const rowsRef = useRef<HTMLDivElement>(null)
+  useFitHeight({
+    key: 'detrimTimer',
+    collapsed,
+    collapseReady,
+    rows: detrims.length,
+    headerRef,
+    contentRef: rowsRef,
+  })
   // A collapsed window is only its title bar: keep it through the inactive
   // fade while there's something to show, but let an idle one fade too.
   const chrome = chromeFade || (collapsed && collapsedSummary !== null)
@@ -415,17 +426,28 @@ export default function DetrimTimerWindowPage(): React.ReactElement {
             </p>
           </div>
         ) : (
-          detrims.map((t) => (
-            <TimerRow
-              key={t.id}
-              timer={t}
-              activePlayer={activePlayer}
-              appearance={appearance}
-              showRemove={rowsInteractive}
-              overrides={overrides}
-              setOverride={setOverride}
-            />
-          ))
+          // Sized by its rows, not stretched to the window, so Fit height
+          // to rows can measure them; same direction as the list.
+          <div
+            ref={rowsRef}
+            style={{
+              display: 'flex',
+              flexDirection: appearance.stackFromBottom ? 'column-reverse' : 'column',
+              flexShrink: 0,
+            }}
+          >
+            {detrims.map((t) => (
+              <TimerRow
+                key={t.id}
+                timer={t}
+                activePlayer={activePlayer}
+                appearance={appearance}
+                showRemove={rowsInteractive}
+                overrides={overrides}
+                setOverride={setOverride}
+              />
+            ))}
+          </div>
         )}
       </div>
     </div>

@@ -572,8 +572,8 @@ function writeBoundsNow(name: WindowKey, win: BrowserWindow): void {
   }
   if (win.isDestroyed()) return
   const b = win.getBounds()
-  // A collapsed window is title-bar height; persist its expanded height.
-  const height = collapsedEntry(name)?.expandedHeight ?? b.height
+  // A collapsed or fitted window persists the height you gave it.
+  const height = userHeight(name, win)
   const store = loadBoundsStore()
   store[name] = { x: b.x, y: b.y, width: b.width, height }
   saveBoundsStore(store)
@@ -2880,13 +2880,20 @@ function restoreCollapsedState(win: BrowserWindow, name: WindowKey): void {
 function setOverlayCollapsed(win: BrowserWindow, name: WindowKey, collapsed: boolean, headerHeight: number): void {
   const store = loadCollapseStore()
   const cur = store[name]
+  const fit = fitState.get(win)
   if (collapsed) {
-    const expandedHeight = cur?.collapsed ? cur.expandedHeight : win.getBounds().height
+    // A fitted window's expanded height is its cap, not its fitted height.
+    const expandedHeight = cur?.collapsed ? cur.expandedHeight : fit?.cap ?? win.getBounds().height
     store[name] = { collapsed: true, headerHeight, expandedHeight }
     applyCollapsedSize(win, name, headerHeight)
   } else {
     const height = cur?.collapsed ? cur.expandedHeight : win.getBounds().height
     if (cur) store[name] = { ...cur, collapsed: false }
+    // The expanded height is the cap (see above); the renderer refits next.
+    if (fit) {
+      fit.cap = height
+      fit.expectH = height
+    }
     applyExpandedSize(win, name, height)
   }
   saveCollapseStore()
@@ -2926,6 +2933,109 @@ ipcMain.handle('overlay:collapse:set', (event, collapsed: boolean, headerFractio
   const headerHeight = Math.max(16, Math.min(96, Math.round(frac * contentHeight) || 28))
   setOverlayCollapsed(win, name, collapsed === true, headerHeight)
   return collapsed === true
+})
+
+// ── Fit height to rows ───────────────────────────────────────────────────────
+// A popout with Fit height to rows on (Buffs, Detrimental) shrinks to its
+// rows and grows back as more land, never past its cap: the height you gave
+// it. The cap is never stored on its own — it is the saved height (bounds,
+// layout, collapse's expanded height), so layouts, resets, restarts and
+// backups need nothing new. userHeight() is what every save uses, so the
+// fitted height never reaches disk. State lives here only while fitted.
+type FitState = {
+  cap: number
+  // The height we last set, so its resize event isn't taken for a new cap.
+  expectH: number
+  // What the renderer last asked for, in DIP, to re-apply on a new cap.
+  desiredDip: number | null
+  // Between will-resize and resized: the user is dragging an edge.
+  userResizing: boolean
+}
+
+const fitState = new WeakMap<BrowserWindow, FitState>()
+const fitWatched = new WeakSet<BrowserWindow>()
+const FIT_MIN_HEIGHT = 24
+
+// The height you gave a window, whatever it's showing: collapsed, its
+// expanded height; fitted, its cap.
+function userHeight(name: WindowKey, win: BrowserWindow): number {
+  return collapsedEntry(name)?.expandedHeight ?? fitState.get(win)?.cap ?? win.getBounds().height
+}
+
+function applyFit(win: BrowserWindow, name: WindowKey): void {
+  const f = fitState.get(win)
+  if (!f || f.desiredDip === null || f.userResizing || win.isDestroyed()) return
+  if (collapsedEntry(name)) return
+  const target = Math.max(FIT_MIN_HEIGHT, Math.min(f.desiredDip, f.cap))
+  const { width, height } = win.getBounds()
+  win.setMinimumSize(minSizeFor(name).minWidth, FIT_MIN_HEIGHT)
+  f.expectH = target
+  if (Math.abs(height - target) > 1) win.setSize(width, target)
+}
+
+function watchFit(win: BrowserWindow, name: WindowKey): void {
+  if (fitWatched.has(win)) return
+  fitWatched.add(win)
+  win.on('will-resize', () => {
+    const f = fitState.get(win)
+    if (f) f.userResizing = true
+  })
+  win.on('resized', () => {
+    const f = fitState.get(win)
+    if (!f) return
+    f.userResizing = false
+    applyFit(win, name)
+  })
+  // Only an edge drag changes the cap here. Main's own resizes (layouts,
+  // resets, collapse) set it explicitly through fitAdoptHeight, so their
+  // in-between sizes can't be mistaken for one.
+  win.on('resize', () => {
+    const f = fitState.get(win)
+    if (!f || !f.userResizing || win.isDestroyed() || collapsedEntry(name)) return
+    const h = win.getBounds().height
+    // A width-only drag leaves the height where we put it: the cap stays.
+    if (Math.abs(h - f.expectH) <= 1) return
+    // Never below the overlay's normal minimum: a window opens no smaller,
+    // so a lower cap wouldn't survive a reopen, and fitting shrinks it
+    // further whenever there are fewer rows anyway.
+    f.cap = Math.max(h, minSizeFor(name).minHeight)
+    f.expectH = h
+  })
+}
+
+// Main is giving a fitted window a new full height (a layout, a reset):
+// that height is its new cap. Call before moving it; fitAfter refits.
+function fitAdoptHeight(win: BrowserWindow, height: number): void {
+  const f = fitState.get(win)
+  if (f) f.cap = height
+}
+
+function fitAfter(win: BrowserWindow, name: WindowKey): void {
+  if (fitState.has(win)) applyFit(win, name)
+}
+
+ipcMain.handle('overlay:fit-height:set', (event, on: boolean, fraction: number) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  const name = win ? windowToOverlayName.get(win) : undefined
+  if (!win || !name || win.isDestroyed()) return
+  const f = fitState.get(win)
+  if (on !== true) {
+    if (!f) return
+    fitState.delete(win)
+    if (collapsedEntry(name)) return
+    // Give it its full height back.
+    applyExpandedSize(win, name, f.cap)
+    return
+  }
+  if (!Number.isFinite(fraction) || fraction <= 0) return
+  // Collapse owns the height; a late request mustn't take the title bar's
+  // height for a cap.
+  if (collapsedEntry(name)) return
+  const state = f ?? { cap: win.getBounds().height, expectH: win.getBounds().height, desiredDip: null, userResizing: false }
+  fitState.set(win, state)
+  watchFit(win, name)
+  state.desiredDip = Math.round(fraction * win.getContentBounds().height)
+  applyFit(win, name)
 })
 
 // ── Global overlay hotkeys ───────────────────────────────────────────────────
@@ -3419,9 +3529,17 @@ function placeWindowForLayout(win: BrowserWindow, w: LayoutWindow): void {
   const min = minSizeFor(w.key)
   win.setMaximumSize(0, 0)
   win.setMinimumSize(min.minWidth, min.minHeight)
-  if (w.bounds && isOnScreen(w.bounds)) win.setBounds(w.bounds)
+  if (w.bounds && isOnScreen(w.bounds)) {
+    fitAdoptHeight(win, w.bounds.height)
+    win.setBounds(w.bounds)
+  }
   const c = collapsedEntry(w.key)
-  if (c) applyCollapsedSize(win, w.key, c.headerHeight)
+  if (c) {
+    fitAdoptHeight(win, c.expandedHeight)
+    applyCollapsedSize(win, w.key, c.headerHeight)
+  } else {
+    fitAfter(win, w.key)
+  }
   win.webContents.send('overlay:collapse-changed', !!c)
   showOverlayWindow(win)
 }
@@ -3642,7 +3760,7 @@ function liveBounds(key: WindowKey): Bounds | undefined {
   const win = overlayWindowByName(key)
   if (win && !win.isDestroyed()) {
     const b = win.getBounds()
-    return { ...b, height: collapsedEntry(key)?.expandedHeight ?? b.height }
+    return { ...b, height: userHeight(key, win) }
   }
   return activeLayout().windows.find((w) => w.key === key)?.bounds ?? loadBoundsStore()[key]
 }
@@ -4516,7 +4634,9 @@ function resetOverlayPosition(name: WindowKey): void {
   if (win && !win.isDestroyed()) {
     win.setResizable(true)
     win.setIgnoreMouseEvents(false)
+    fitAdoptHeight(win, target.height)
     win.setBounds(target)
+    fitAfter(win, name)
     // The lock hook only reads lock state on mount, so push the cleared state
     // to the overlay's renderer to keep its padlock button in sync.
     win.webContents.send('overlay:lock-changed', false)
@@ -4642,12 +4762,17 @@ ipcMain.handle('overlay:move-to-display', (_event, requested: string, displayId:
   const target = screen.getAllDisplays().find((d) => d.id === displayId)
   if (!target) return
   const win = overlayWindowByName(name)
-  const size = win && !win.isDestroyed() ? win.getBounds() : loadBoundsStore()[name] ?? defaultBoundsFor(name)
+  const size = win && !win.isDestroyed()
+    ? { width: win.getBounds().width, height: userHeight(name, win) }
+    : loadBoundsStore()[name] ?? defaultBoundsFor(name)
   const bounds = centeredOnDisplay(target, { width: size.width, height: size.height })
   const store = loadBoundsStore()
   store[name] = bounds
   saveBoundsStore(store)
-  if (win && !win.isDestroyed()) win.setBounds(bounds)
+  if (win && !win.isDestroyed()) {
+    win.setBounds(bounds)
+    fitAfter(win, name)
+  }
 })
 
 // ── IPC handlers — click-through ─────────────────────────────────────────────
